@@ -1,0 +1,35 @@
+# 환경변수 (절대 커밋 금지!)
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# 데이터 (개인 대화 파일)
+data/uploads/*
+data/faiss/*
+data/exports/*
+
+# 예외: 샘플 파일은 허용
+!data/uploads/.gitkeep
+!data/faiss/.gitkeep
+!data/exports/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+
+# API Keys (이중 체크!)
+*.key
+*.pem
+secrets.json
+
+# 임시 생성 및 메모
+temp/
