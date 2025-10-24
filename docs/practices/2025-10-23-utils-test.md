@@ -171,28 +171,28 @@ def format_file_size(size_bytes: int) -> str:
 
 ```
 
-  * ![스트림릿으로 실행](/flownote-mvp/assets/figures/2025-10-23-utils-test-1.png)
+  * ![스트림릿으로 실행](../../assets/figures/utils_test/2025-10-23-utils-test-1.png)
 
 <br>
 
 * `➁ 테스트 - 파일 업로드 탭`
 
   * **`✅ 파일 선택 (.md 또는 .txt)`**
-  * ![파일 선택3](/flownote-mvp/assets/figures/2025-10-23-utils-test-4.png)
+  * ![파일 선택3](../../assets/figures/utils_test/2025-10-23-utils-test-4.png)
 
   * **`✅ 미리보기 확인`**
-  * ![확인](/flownote-mvp/assets/figures/2025-10-23-utils-test-5.png)
+  * ![확인](../../assets/figures/utils_test/2025-10-23-utils-test-5.png)
 
   * **`✅ 저장하기 클릭`**
-  * ![저장하기](/flownote-mvp/assets/figures/2025-10-23-utils-test-6.png)
+  * ![저장하기](../../assets/figures/utils_test/2025-10-23-utils-test-6.png)
 
   * **`✅ 성공 메시지 & balloons`**
-  * ![성공 메시지](/flownote-mvp/assets/figures/2025-10-23-utils-test-12.png)
+  * ![성공 메시지](../../assets/figures/utils_test/2025-10-23-utils-test-12.png)
 
 <br>
 
 * *`파일 관리 - 현재 미구현`*
-  * ![파일 선택](/flownote-mvp/assets/figures/2025-10-23-utils-test-2.png)
+  * ![파일 선택](../../assets/figures/utils_test/2025-10-23-utils-test-2.png)
 
 <br>
 
@@ -200,18 +200,18 @@ def format_file_size(size_bytes: int) -> str:
 
   * **`✅ 파일 목록 표시`**
 
-  * ![파일 관리 탭1](/flownote-mvp/assets/figures/2025-10-23-utils-test-3.png)
+  * ![파일 관리 탭1](../../assets/figures/utils_test/2025-10-23-utils-test-3.png)
 
-  * ![파일 관리 탭2](/flownote-mvp/assets/figures/2025-10-23-utils-test-7.png)
+  * ![파일 관리 탭2](../../assets/figures/utils_test/2025-10-23-utils-test-7.png)
 
   * **`✅ 파일 정보 확인`**
-  * ![파일 정보 확인](/flownote-mvp/assets/figures/2025-10-23-utils-test-8.png)
+  * ![파일 정보 확인](../../assets/figures/utils_test/2025-10-23-utils-test-8.png)
 
     * 파일 생성 확인
-    * ![파일 생성 확인](/flownote-mvp/assets/figures/2025-10-23-utils-test-10.png) 
+    * ![파일 생성 확인](../../assets/figures/utils_test/2025-10-23-utils-test-10.png) 
 
   * **`✅ 삭제 버튼 작동`**
-  * ![파일 삭제](/flownote-mvp/assets/figures/2025-10-23-utils-test-11.png)
+  * ![파일 삭제](../../assets/figures/utils_test/2025-10-23-utils-test-11.png)
 
 
 <br>
@@ -223,5 +223,4 @@ def format_file_size(size_bytes: int) -> str:
 | **`📂 파일 경로`**      | `/flownote-mvp/backend/utils.py`                                                           |
 | 🧩 함수 구성            | `get_timestamp`, `read_file`, `save_file`, `chunk_text`, `format_file_size`, `validate_file_extension` |
 | 🧠 기능 요약              | `파일 입출력`, `텍스트 청크 분할`, `파일 크기 변환`, `확장자 검증` 등 ***`핵심 헬퍼 모듈`***                                             |
-
 

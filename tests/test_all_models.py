@@ -1,11 +1,20 @@
-#━━━━━━━━━━━━━━━━━━━━━━━━━━
-#test_all_models.py (완전판!)
-#━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+# tests/test_all_models.py
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 """
 FlowNote MVP - API 테스트
 3개 모델 모두 테스트
 """
+
+import sys
+from pathlib import Path
+
+# 프로젝트 루트 추가 (상위 폴더)
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+from backend.config import get_openai_client
 
 from openai import OpenAI
 import os
