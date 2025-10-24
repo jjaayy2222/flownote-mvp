@@ -10,173 +10,214 @@ FlowNote MVP - AI 대화 관리 도구
 
 import streamlit as st
 from pathlib import Path
-from datetime import datetime
+import sys
 
-# Backend 모듈 임포트
-from backend.config import UPLOADS_DIR
-from backend.utils import (
-    get_timestamp,
-    save_file,
-    format_file_size,
-    validate_file_extension
-)
+# 프로젝트 루트 추가
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
+
+from backend.utils import read_file
+from backend.chunking import chunk_with_metadata
+from backend.embedding import get_embeddings, get_single_embedding
+from backend.faiss_search import FAISSRetriever
 
 # 페이지 설정
 st.set_page_config(
     page_title="FlowNote MVP",
-    page_icon="📝",
+    page_icon="🔍",
     layout="wide"
 )
 
-# 제목
-st.title("📝 FlowNote MVP")
-st.markdown("**AI 대화를 체계적으로 저장하고 검색하세요**")
+# 세션 상태 초기화
+if 'retriever' not in st.session_state:
+    st.session_state.retriever = None
+if 'uploaded_files' not in st.session_state:
+    st.session_state.uploaded_files = []
+
+# 헤더
+st.title("🔍 FlowNote MVP")
+st.markdown("**AI 대화를 체계적으로 저장하고 검색하세요!**")
 
 # 사이드바
 with st.sidebar:
-    st.header("⚙️ 설정")
+    st.header("📁 파일 관리")
     
-    # 파일 통계
-    if UPLOADS_DIR.exists():
-        files = list(UPLOADS_DIR.glob("*"))
-        file_count = len([f for f in files if f.is_file()])
-        st.metric("업로드된 파일", file_count)
-    else:
-        st.metric("업로드된 파일", 0)
+    # 파일 업로드
+    uploaded_files = st.file_uploader(
+        "Markdown 파일 업로드",
+        type=['md', 'txt'],
+        accept_multiple_files=True
+    )
     
-    st.divider()
+    # 업로드 버튼
+    if st.button("📤 업로드 & 처리", type="primary"):
+        if uploaded_files:
+            with st.spinner("파일 처리 중..."):
+                # 검색 엔진 초기화
+                if st.session_state.retriever is None:
+                    st.session_state.retriever = FAISSRetriever(dimension=1536)
+                
+                all_chunks = []
+                all_embeddings = []
+                total_tokens = 0
+                total_cost = 0.0
+                
+                for uploaded_file in uploaded_files:
+                    # 파일 읽기
+                    content = uploaded_file.read().decode('utf-8')
+                    
+                    # 청킹
+                    chunks = chunk_with_metadata(
+                        content,
+                        uploaded_file.name,
+                        chunk_size=500,
+                        chunk_overlap=100
+                    )
+                    
+                    # 임베딩
+                    texts = [chunk['text'] for chunk in chunks]
+                    embeddings, tokens, cost = get_embeddings(texts, show_progress=False)
+                    
+                    all_chunks.extend(chunks)
+                    all_embeddings.extend(embeddings)
+                    total_tokens += tokens
+                    total_cost += cost
+                
+                # FAISS에 추가
+                texts_only = [chunk['text'] for chunk in all_chunks]
+                st.session_state.retriever.add_documents(
+                    texts_only,
+                    all_embeddings,
+                    all_chunks
+                )
+                
+                st.session_state.uploaded_files.extend([f.name for f in uploaded_files])
+                
+                st.success(f"✅ {len(uploaded_files)}개 파일 처리 완료!")
+                st.info(f"📊 총 {len(all_chunks)}개 청크 생성")
+                st.info(f"💰 토큰: {total_tokens:,} | 비용: ${total_cost:.6f}")
+        else:
+            st.warning("⚠️ 파일을 먼저 선택하세요!")
     
-    # 정보
-    st.info("""
-    **사용법**:
-    1. AI 대화 파일 업로드 (.md, .txt)
-    2. 키워드 검색
-    3. 결과 요약 및 내보내기
-    """)
-    
-    st.divider()
-    
-    # 버전 정보
-    st.caption("FlowNote MVP v0.1.0")
-    st.caption(f"Made with ❤️ by Jay Lee")
+    # 업로드된 파일 목록
+    if st.session_state.uploaded_files:
+        st.divider()
+        st.subheader("📋 업로드된 파일")
+        for filename in st.session_state.uploaded_files:
+            st.text(f"✓ {filename}")
+        
+        # 통계
+        if st.session_state.retriever:
+            stats = st.session_state.retriever.get_stats()
+            st.divider()
+            st.subheader("📊 통계")
+            st.metric("총 문서", stats['total_documents'])
+            st.metric("인덱스 크기", stats['index_size'])
 
 # 메인 영역
-tab1, tab2, tab3 = st.tabs(["📤 업로드", "🔍 검색", "📊 관리"])
+if st.session_state.retriever is None:
+    # 초기 화면
+    st.info("👈 사이드바에서 파일을 업로드하세요!")
+    
+    st.markdown("### 📖 사용 방법")
+    st.markdown("""
+    1. 사이드바에서 Markdown 파일 업로드
+    2. "업로드 & 처리" 버튼 클릭
+    3. 검색어 입력하여 검색!
+    """)
+    
+    st.markdown("### ✨ 주요 기능")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("#### 📤 파일 업로드")
+        st.markdown("Markdown 파일을 업로드하여 AI 대화를 저장합니다.")
+    
+    with col2:
+        st.markdown("#### 🔍 스마트 검색")
+        st.markdown("키워드로 관련 대화를 빠르게 찾을 수 있습니다.")
+    
+    with col3:
+        st.markdown("#### 💾 로컬 저장")
+        st.markdown("모든 데이터는 로컬에 안전하게 저장됩니다.")
 
-# ===================================
-# Tab 1: 파일 업로드
-# ===================================
-with tab1:
-    st.header("파일 업로드")
+else:
+    # 검색 화면
+    st.markdown("### 🔍 검색")
     
-    uploaded_file = st.file_uploader(
-        "AI 대화 파일을 업로드하세요",
-        type=["md", "txt"],
-        help="Markdown(.md) 또는 텍스트(.txt) 파일만 지원합니다"
-    )
-    
-    if uploaded_file:
-        # 파일 정보 표시
-        st.success(f"✅ {uploaded_file.name} 업로드 완료!")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("파일명", uploaded_file.name)
-        with col2:
-            file_size_str = format_file_size(uploaded_file.size)
-            st.metric("크기", file_size_str)
-        
-        # 미리보기
-        with st.expander("📄 미리보기"):
-            content = uploaded_file.read().decode("utf-8")
-            st.text_area(
-                "내용",
-                content,
-                height=200,
-                disabled=True
-            )
-            uploaded_file.seek(0)  # 파일 포인터 리셋
-        
-        # 저장 버튼
-        if st.button("💾 저장하기", type="primary"):
-            try:
-                # 타임스탬프 추가 (중복 방지)
-                timestamp = get_timestamp()
-                file_name = f"{timestamp}_{uploaded_file.name}"
-                file_path = UPLOADS_DIR / file_name
-                
-                # 파일 저장
-                content = uploaded_file.read().decode("utf-8")
-                save_file(content, file_path)
-                
-                st.success(f"✅ {file_name}에 저장되었습니다!")
-                st.balloons()
-                
-                # 저장 위치 안내
-                st.info(f"📂 저장 위치: `{file_path}`")
-                
-            except Exception as e:
-                st.error(f"❌ 저장 실패: {e}")
-
-# ===================================
-# Tab 2: 검색 (미구현)
-# ===================================
-with tab2:
-    st.header("검색")
-    st.info("🚧 검색 기능은 다음에 구현 예정입니다")
-    
-    # 검색 입력 (UI만)
-    search_query = st.text_input(
+    # 검색어 입력
+    query = st.text_input(
         "검색어를 입력하세요",
-        placeholder="예: 프로젝트 기획"
+        placeholder="예: Python으로 어떻게 개발하나요?"
     )
     
-    if st.button("🔍 검색", disabled=True):
-        st.warning("아직 구현되지 않았습니다")
-
-# ===================================
-# Tab 3: 관리
-# ===================================
-with tab3:
-    st.header("파일 관리")
+    # 검색 버튼
+    col1, col2 = st.columns([1, 5])
+    with col1:
+        search_button = st.button("🔍 검색", type="primary")
+    with col2:
+        top_k = st.slider("결과 개수", 1, 10, 3)
     
-    # 파일 목록 표시
-    if UPLOADS_DIR.exists():
-        files = sorted(
-            [f for f in UPLOADS_DIR.glob("*") if f.is_file()],
-            key=lambda x: x.stat().st_mtime,
-            reverse=True
-        )
-        
-        if files:
-            st.markdown(f"**총 {len(files)}개 파일**")
+    # 검색 실행
+    if search_button and query:
+        with st.spinner("검색 중..."):
+            # 쿼리 임베딩
+            query_embedding = get_single_embedding(query)
             
-            for file in files:
-                with st.expander(f"📄 {file.name}"):
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        st.text(f"크기: {format_file_size(file.stat().st_size)}")
-                    
-                    with col2:
-                        modified_time = datetime.fromtimestamp(file.stat().st_mtime)
-                        st.text(f"수정: {modified_time.strftime('%Y-%m-%d %H:%M')}")
-                    
-                    with col3:
-                        if st.button("🗑️ 삭제", key=f"delete_{file.name}"):
-                            file.unlink()
-                            st.success(f"✅ {file.name} 삭제 완료!")
-                            st.rerun()
-        else:
-            st.warning("업로드된 파일이 없습니다")
-    else:
-        st.warning("업로드된 파일이 없습니다")
+            # 검색
+            results = st.session_state.retriever.search(query_embedding, top_k=top_k)
+            
+            # 결과 표시
+            st.divider()
+            st.markdown(f"### 📋 검색 결과 ({len(results)}개)")
+            
+            if results:
+                for result in results:
+                    with st.expander(
+                        f"🏆 {result['rank']}위 | "
+                        f"유사도: {result['score']:.2%} | "
+                        f"파일: {result.get('filename', 'N/A')}"
+                    ):
+                        st.markdown(f"**청크 ID:** {result.get('chunk_id', 'N/A')}")
+                        st.markdown(f"**위치:** {result.get('start_pos', 'N/A')} - {result.get('end_pos', 'N/A')}")
+                        st.divider()
+                        st.markdown("**내용:**")
+                        st.text(result['text'])
+            else:
+                st.warning("검색 결과가 없습니다.")
+    
+    elif search_button:
+        st.warning("⚠️ 검색어를 입력하세요!")
 
 # 푸터
 st.divider()
-st.markdown("""
-<div style='text-align: center; color: gray; font-size: 0.9em;'>
-    FlowNote MVP v0.1.0 | Made with ❤️ by Jay Lee
-</div>
-""", unsafe_allow_html=True)
+st.markdown(
+    """
+    <div style='text-align: center; color: gray;'>
+        FlowNote MVP v0.1.0 | Built with ❤️ by Jay
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
+
+
+"""result
+
+    (myenv) ➜  flownote-mvp git:(main) ✗ streamlit run app.py
+
+    You can now view your Streamlit app in your browser.
+
+    Local URL: http://localhost:8501
+    Network URL: http://192.168.35.27:8501
+
+    For better performance, install the Watchdog module:
+
+    $ xcode-select --install
+    $ pip install watchdog
+                
+    ✅ 문서 추가 완료!
+    - 총 문서 수: 174
+    - 인덱스 크기: 174
+
+"""
