@@ -34,3 +34,4 @@ secrets.json
 
 # 임시 생성 및 메모
 temp/
+*.tmp
