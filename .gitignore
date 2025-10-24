@@ -25,6 +25,7 @@ data/exports/*
 .vscode/
 .idea/
 .DS_Store
+*.code-workspace
 
 # API Keys (이중 체크!)
 *.key
