@@ -1,3 +1,7 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# app.py (파일 목록에 업로드된 파일 추가)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 """
 FlowNote MVP - Streamlit UI
 """
@@ -100,14 +104,23 @@ with st.sidebar:
     all_files = st.session_state.metadata.get_all_files()
     
     if all_files:
-        # 딕셔너리를 리스트로 변환 후 최근 5개만 표시
-        file_items = list(all_files.items())
-        for file_id, file_data in file_items[:5]:
-            with st.expander(f"📄 {file_data['file_name']}"):
-                st.text(f"크기: {file_data['file_size_mb']:.2f} MB")
-                st.text(f"청크: {file_data['chunk_count']}개")
-                st.text(f"모델: {file_data['embedding_model']}")
-                st.text(f"업로드: {file_data['created_at']}")
+        # ✅ 딕셔너리를 리스트로 변환하고 생성 시간 기준 정렬
+        file_items = sorted(
+            all_files.items(),
+            key=lambda x: x[1].get('created_at', ''),
+            reverse=True  # 최신 순
+        )
+        
+        # ✅ 전체 파일 표시 (최대 10개로 제한)
+        display_count = min(len(file_items), 10)
+        st.caption(f"최근 {display_count}개 파일")
+        
+        for file_id, file_data in file_items[:display_count]:
+            with st.expander(f"📄 {file_data.get('file_name', 'Unknown')}"):
+                st.text(f"크기: {file_data.get('file_size_mb', 0):.2f} MB")
+                st.text(f"청크: {file_data.get('chunk_count', 0)}개")
+                st.text(f"모델: {file_data.get('embedding_model', 'N/A')}")
+                st.text(f"업로드: {file_data.get('created_at', 'N/A')}")
     else:
         st.info("업로드된 파일이 없습니다.")
 
