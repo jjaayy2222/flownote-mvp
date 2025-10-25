@@ -2,11 +2,6 @@
 #backend/__init__.py
 #━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-"""
-FlowNote Backend
-"""
-
-from . import config
-from . import utils
+"""FlowNote MVP Backend"""
 
 __version__ = "0.1.0"

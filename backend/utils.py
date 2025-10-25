@@ -3,69 +3,45 @@
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 """
-FlowNote 유틸리티 함수
+FlowNote MVP - 유틸리티 함수
 """
 
-from pathlib import Path
-from datetime import datetime
-from typing import List
+import tiktoken
 
-def get_timestamp():
-    """
-    현재 시간 문자열 반환 (YYYY-MM-DD_HH-MM-SS)
-    
-    Returns:
-        str: 타임스탬프 문자열
-    """
-    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-def read_file(file_path: Path) -> str:
+def count_tokens(text: str, model: str = "gpt-4") -> int:
     """
-    파일 읽기 (UTF-8)
+    텍스트의 토큰 수 계산
     
     Args:
-        file_path: 파일 경로
+        text: 토큰을 계산할 텍스트
+        model: 사용할 모델 (기본: gpt-4)
         
     Returns:
-        str: 파일 내용
+        토큰 수
     """
-    with open(file_path, "r", encoding="utf-8") as f:
-        return f.read()
+    try:
+        encoding = tiktoken.encoding_for_model(model)
+    except KeyError:
+        # 모델을 찾을 수 없으면 cl100k_base 사용
+        encoding = tiktoken.get_encoding("cl100k_base")
+    
+    return len(encoding.encode(text))
 
-def save_file(content: str, file_path: Path):
+
+def estimate_cost(tokens: int, cost_per_token: float) -> float:
     """
-    파일 저장 (UTF-8)
+    토큰 수를 기반으로 비용 추정
     
     Args:
-        content: 저장할 내용
-        file_path: 파일 경로
-    """
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(content)
-
-def chunk_text(text: str, chunk_size: int = 500, overlap: int = 100) -> List[str]:
-    """
-    텍스트를 청크로 분할
-    
-    Args:
-        text: 분할할 텍스트
-        chunk_size: 청크 크기 (기본: 500자)
-        overlap: 겹치는 크기 (기본: 100자)
+        tokens: 토큰 수
+        cost_per_token: 토큰당 비용
         
     Returns:
-        List[str]: 청크 리스트
+        추정 비용 (USD)
     """
-    chunks = []
-    start = 0
-    
-    while start < len(text):
-        end = start + chunk_size
-        chunk = text[start:end]
-        chunks.append(chunk)
-        start += (chunk_size - overlap)
-    
-    return chunks
+    return tokens * cost_per_token
+
 
 def format_file_size(size_bytes: int) -> str:
     """
@@ -75,7 +51,7 @@ def format_file_size(size_bytes: int) -> str:
         size_bytes: 바이트 단위 크기
         
     Returns:
-        str: 포맷된 크기 (예: "1.5 MB")
+        포맷된 크기 (예: "1.5 MB")
     """
     for unit in ['B', 'KB', 'MB', 'GB']:
         if size_bytes < 1024.0:
@@ -83,16 +59,34 @@ def format_file_size(size_bytes: int) -> str:
         size_bytes /= 1024.0
     return f"{size_bytes:.1f} TB"
 
-def validate_file_extension(filename: str, allowed_extensions: List[str]) -> bool:
-    """
-    파일 확장자 검증
+
+if __name__ == "__main__":
+    # 테스트
+    test_text = "FlowNote는 AI 대화 관리 도구입니다."
+    tokens = count_tokens(test_text)
+    cost = estimate_cost(tokens, 0.02 / 1_000_000)
     
-    Args:
-        filename: 파일명
-        allowed_extensions: 허용된 확장자 리스트 (예: ['.md', '.txt'])
-        
-    Returns:
-        bool: 허용 여부
-    """
-    file_path = Path(filename)
-    return file_path.suffix.lower() in allowed_extensions
+    print("=" * 50)
+    print("유틸리티 함수 테스트")
+    print("=" * 50)
+    print(f"\n텍스트: {test_text}")
+    print(f"토큰 수: {tokens}")
+    print(f"예상 비용: ${cost:.6f}")
+    print(f"파일 크기 예시: {format_file_size(1536)}")
+    print("\n" + "=" * 50)
+
+
+"""result_2
+
+    ==================================================
+    유틸리티 함수 테스트
+    ==================================================
+
+    텍스트: FlowNote는 AI 대화 관리 도구입니다.
+    토큰 수: 13
+    예상 비용: $0.000000
+    파일 크기 예시: 1.5 KB
+
+    ==================================================
+
+"""

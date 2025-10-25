@@ -1,182 +1,221 @@
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
-# backend/config.py (확장)
+# backend/config.py
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+
 """
-FlowNote MVP - 통합 설정 관리
+FlowNote MVP - 통합 설정
+"""
+
+"""
+FlowNote MVP - 통합 설정
 """
 
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from openai import OpenAI
 
-# .env 파일 로드
+# 환경 변수 로드
 load_dotenv()
 
-# 프로젝트 루트 경로
-ROOT_DIR = Path(__file__).parent.parent
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+# API 설정
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-# 데이터 경로
-DATA_DIR = ROOT_DIR / "data"
+# GPT-4o
+GPT4O_API_KEY = os.getenv("GPT4O_API_KEY")
+GPT4O_BASE_URL = os.getenv("GPT4O_BASE_URL")
+GPT4O_MODEL = os.getenv("GPT4O_MODEL")
+
+# GPT-4o-mini
+GPT4O_MINI_API_KEY = os.getenv("GPT4O_MINI_API_KEY")
+GPT4O_MINI_BASE_URL = os.getenv("GPT4O_MINI_BASE_URL")
+GPT4O_MINI_MODEL = os.getenv("GPT4O_MINI_MODEL")
+
+# Text-Embedding-3-Small
+EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY")
+EMBEDDING_BASE_URL = os.getenv("EMBEDDING_BASE_URL")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+
+# Text-Embedding-3-Large
+EMBEDDING_LARGE_API_KEY = os.getenv("EMBEDDING_LARGE_API_KEY")
+EMBEDDING_LARGE_BASE_URL = os.getenv("EMBEDDING_LARGE_BASE_URL")
+EMBEDDING_LARGE_MODEL = os.getenv("EMBEDDING_LARGE_MODEL", "openai/text-embedding-3-large")
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 임베딩 비용 (1M 토큰당 USD)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EMBEDDING_COSTS = {
+    "text-embedding-3-small": 0.02 / 1_000_000,
+    "text-embedding-3-large": 0.13 / 1_000_000,
+}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 클라이언트 생성 함수
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def get_embedding_model(model_name: str = None):
+    """임베딩 모델 클라이언트 생성"""
+    if model_name is None:
+        model_name = EMBEDDING_MODEL
+    
+    if "large" in model_name.lower():
+        api_key = EMBEDDING_LARGE_API_KEY
+        base_url = EMBEDDING_LARGE_BASE_URL
+    else:
+        api_key = EMBEDDING_API_KEY
+        base_url = EMBEDDING_BASE_URL
+    
+    if not api_key:
+        raise ValueError(f"{model_name} API 키가 설정되지 않았습니다!")
+    
+    if not base_url:
+        raise ValueError(f"{model_name} BASE URL이 설정되지 않았습니다!")
+    
+    return OpenAI(base_url=base_url, api_key=api_key)
+
+
+def get_openai_client(model_name: str):
+    """OpenAI 클라이언트 생성 (범용)"""
+    if "embedding" in model_name.lower():
+        return get_embedding_model(model_name)
+    
+    if "4o-mini" in model_name:
+        api_key = GPT4O_MINI_API_KEY
+        base_url = GPT4O_MINI_BASE_URL
+    elif "4o" in model_name:
+        api_key = GPT4O_API_KEY
+        base_url = GPT4O_BASE_URL
+    else:
+        raise ValueError(f"지원하지 않는 모델: {model_name}")
+    
+    if not api_key:
+        raise ValueError(f"{model_name} API 키가 설정되지 않았습니다!")
+    
+    if not base_url:
+        raise ValueError(f"{model_name} BASE URL이 설정되지 않았습니다!")
+    
+    return OpenAI(base_url=base_url, api_key=api_key)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 프로젝트 경로
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PROJECT_ROOT = Path(__file__).parent.parent
+DATA_DIR = PROJECT_ROOT / "data"
 UPLOADS_DIR = DATA_DIR / "uploads"
 FAISS_DIR = DATA_DIR / "faiss"
 EXPORTS_DIR = DATA_DIR / "exports"
 
-# 폴더 생성
-UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-FAISS_DIR.mkdir(parents=True, exist_ok=True)
-EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+# 디렉토리 생성
+for dir_path in [DATA_DIR, UPLOADS_DIR, FAISS_DIR, EXPORTS_DIR]:
+    dir_path.mkdir(parents=True, exist_ok=True)
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━
-# OpenAI 관련 설정
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-class OpenAIConfig:
-    """OpenAI 모델 설정"""
+if __name__ == "__main__":
+    print("=" * 50)
+    print("설정 확인")
+    print("=" * 50)
     
-    # GPT-4o (Chat - 고성능)
-    GPT4O_API_KEY = os.getenv("GPT4O_API_KEY")
-    GPT4O_BASE_URL = os.getenv("GPT4O_BASE_URL")
-    GPT4O_MODEL = os.getenv("GPT4O_MODEL", "openai/gpt-4o")
+    print(f"\n📁 프로젝트 경로:")
+    print(f"   - ROOT: {PROJECT_ROOT}")
+    print(f"   - DATA: {DATA_DIR}")
     
-    # GPT-4o-mini (Chat - 빠르고 저렴) ⭐️ 주로 사용!
-    GPT4O_MINI_API_KEY = os.getenv("GPT4O_MINI_API_KEY")
-    GPT4O_MINI_BASE_URL = os.getenv("GPT4O_MINI_BASE_URL")
-    GPT4O_MINI_MODEL = os.getenv("GPT4O_MINI_MODEL", "openai/gpt-4o-mini")
+    print(f"\n🔑 API 키 확인:")
+    print(f"   - GPT4O: {'✅ 설정됨' if GPT4O_API_KEY else '❌ 없음'}")
+    print(f"   - GPT4O_MINI: {'✅ 설정됨' if GPT4O_MINI_API_KEY else '❌ 없음'}")
+    print(f"   - EMBEDDING: {'✅ 설정됨' if EMBEDDING_API_KEY else '❌ 없음'}")
+    print(f"   - EMBEDDING_LARGE: {'✅ 설정됨' if EMBEDDING_LARGE_API_KEY else '❌ 없음'}")
     
-    # Text-Embedding-3-Small (벡터 검색용) ⭐️ FAISS 사용!
-    EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY")
-    EMBEDDING_BASE_URL = os.getenv("EMBEDDING_BASE_URL")
-    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    print(f"\n🤖 모델:")
+    print(f"   - GPT4O: {GPT4O_MODEL}")
+    print(f"   - GPT4O_MINI: {GPT4O_MINI_MODEL}")
+    print(f"   - EMBEDDING: {EMBEDDING_MODEL}")
+    print(f"   - EMBEDDING_LARGE: {EMBEDDING_LARGE_MODEL}")
     
-    # Text-Embedding-3-Large (고성능 임베딩)
-    EMBEDDING_LARGE_API_KEY = os.getenv("EMBEDDING_LARGE_API_KEY")
-    EMBEDDING_LARGE_BASE_URL = os.getenv("EMBEDDING_LARGE_BASE_URL")
-    EMBEDDING_LARGE_MODEL = os.getenv("EMBEDDING_LARGE_MODEL", "openai/text-embedding-3-large")
+    try:
+        client = get_embedding_model()
+        print("\n✅ 임베딩 클라이언트 생성 성공!")
+    except Exception as e:
+        print(f"\n❌ 오류: {e}")
     
-    # 임베딩 차원
-    EMBEDDING_DIMENSIONS = {
-        "text-embedding-3-small": 1536,
-        "text-embedding-3-large": 3072
-    }
+    print("\n" + "=" * 50)
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Anthropic 관련 설정 (OpenAI 호환!)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-class ClaudeConfig:
-    """Claude 모델 설정 (OpenAI 호환 API)"""
-    
-    # Claude-4-Sonnet (강력한 추론)
-    CLAUDE_4_SONNET_API_KEY = os.getenv("CLAUDE_4_SONNET_API_KEY")
-    CLAUDE_4_SONNET_BASE_URL = os.getenv("CLAUDE_4_SONNET_BASE_URL")
-    CLAUDE_4_SONNET_MODEL = os.getenv("CLAUDE_4_SONNET_MODEL", "anthropic/claude-sonnet-4")
-    
-    # Claude-3.5-Haiku (빠른 응답)
-    CLAUDE_3_5_HAIKU_API_KEY = os.getenv("CLAUDE_3.5_HAIKU_API_KEY")
-    CLAUDE_3_5_HAIKU_BASE_URL = os.getenv("CLAUDE_3.5_HAIKU_BASE_URL")
-    CLAUDE_3_5_HAIKU_MODEL = os.getenv("CLAUDE_3.5_HAIKU_MODEL", "anthropic/claude-3-5-haiku")
+"""result_2
 
+    ==================================================
+    설정 확인
+    ==================================================
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 청킹 설정
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+    📁 프로젝트 경로:
+        - ROOT: /Users/jay/ICT-projects/flownote-mvp
+        - DATA: /Users/jay/ICT-projects/flownote-mvp/data
 
-class ChunkingConfig:
-    """텍스트 청킹 설정"""
-    
-    CHUNK_SIZE = 500                        # 청크 크기 (글자 수)
-    CHUNK_OVERLAP = 100                     # 청크 겹침 (글자 수)
-    MIN_CHUNK_SIZE = 50                     # 최소 청크 크기
+    🔑 API 키 확인:
+        - GPT4O: ✅ 설정됨
+        - GPT4O_MINI: ✅ 설정됨
+        - EMBEDDING: ✅ 설정됨
+        - EMBEDDING_LARGE: ✅ 설정됨
 
+    🌐 BASE URL 확인:
+        - GPT4O: https://mlapi.run/0e6857e3-a90b-4c99-93ac-1f9f887a...
+        - GPT4O_MINI: https://mlapi.run/40cc17ae-a89b-4f12-a7d6-13293180...
+        - EMBEDDING: https://mlapi.run/b54ff33e-6d14-42df-93f9-0f113216...
+        - EMBEDDING_LARGE: https://mlapi.run/4aae6995-00ec-445b-bfc1-cc2689af...
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 비용 계산 설정
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+    🤖 모델:
+        - GPT4O: openai/gpt-4o
+        - GPT4O_MINI: openai/gpt-4o-mini
+        - EMBEDDING: text-embedding-3-small
+        - EMBEDDING_LARGE: openai/text-embedding-3-large
 
-class CostConfig:
-    """API 비용 계산 설정"""
-    
-    # OpenAI 임베딩 비용 (per 1M tokens)
-    EMBEDDING_COST = {
-        "text-embedding-3-small": 0.02,     # $0.02 / 1M tokens
-        "text-embedding-3-large": 0.13      # $0.13 / 1M tokens
-    }
-    
-    # Chat 모델 비용 (per 1M tokens)
-    CHAT_COST = {
-        "gpt-4o": {"input": 2.50, "output": 10.00},
-        "gpt-4o-mini": {"input": 0.15, "output": 0.60},
-        "claude-sonnet-4": {"input": 3.00, "output": 15.00},
-        "claude-3-5-haiku": {"input": 1.00, "output": 5.00}
-    }
+    💰 비용 (1M 토큰당):
+        - text-embedding-3-small: $0.02
+        - text-embedding-3-large: $0.13
+
+    ==================================================
+    클라이언트 생성 테스트
+    ==================================================
+
+    ✅ 임베딩 클라이언트 생성 성공!
+        - 모델: text-embedding-3-small
+        - URL: https://mlapi.run/b54ff33e-6d14-42df-93f9-0f1132160ee8/v1
+
+    ==================================================
+
+"""
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 통합 설정 클래스
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-class Config:
-    """FlowNote MVP 통합 설정"""
-    
-    # 하위 설정 클래스
-    openai = OpenAIConfig
-    claude = ClaudeConfig
-    chunking = ChunkingConfig
-    cost = CostConfig
-    
-    # 프로젝트 정보
-    PROJECT_NAME = "FlowNote MVP"
-    VERSION = "0.1.0"
-    
-    # 기본 모델 선택
-    DEFAULT_CHAT_MODEL = "gpt-4o-mini"
-    DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
-    
-    @classmethod
-    def get_embedding_client(cls, model="small"):
-        """임베딩 클라이언트 생성"""
-        from openai import OpenAI
-        
-        if model == "small":
-            return OpenAI(
-                api_key=cls.openai.EMBEDDING_API_KEY,
-                base_url=cls.openai.EMBEDDING_BASE_URL
-            )
-        elif model == "large":
-            return OpenAI(
-                api_key=cls.openai.EMBEDDING_LARGE_API_KEY,
-                base_url=cls.openai.EMBEDDING_LARGE_BASE_URL
-            )
-        else:
-            raise ValueError(f"Unknown embedding model: {model}")
-    
-    @classmethod
-    def get_chat_client(cls, model="gpt-4o-mini"):
-        """챗 클라이언트 생성"""
-        from openai import OpenAI
-        
-        if model == "gpt-4o":
-            return OpenAI(
-                api_key=cls.openai.GPT4O_API_KEY,
-                base_url=cls.openai.GPT4O_BASE_URL
-            )
-        elif model == "gpt-4o-mini":
-            return OpenAI(
-                api_key=cls.openai.GPT4O_MINI_API_KEY,
-                base_url=cls.openai.GPT4O_MINI_BASE_URL
-            )
-        elif model == "claude-sonnet-4":
-            return OpenAI(
-                api_key=cls.claude.CLAUDE_4_SONNET_API_KEY,
-                base_url=cls.claude.CLAUDE_4_SONNET_BASE_URL
-            )
-        elif model == "claude-3-5-haiku":
-            return OpenAI(
-                api_key=cls.claude.CLAUDE_3_5_HAIKU_API_KEY,
-                base_url=cls.claude.CLAUDE_3_5_HAIKU_BASE_URL
-            )
-        else:
-            raise ValueError(f"Unknown chat model: {model}")
+"""result_3
+
+    ==================================================
+    설정 확인
+    ==================================================
+
+    📁 프로젝트 경로:
+        - ROOT: /Users/jay/ICT-projects/flownote-mvp
+        - DATA: /Users/jay/ICT-projects/flownote-mvp/data
+
+    🔑 API 키 확인:
+        - GPT4O: ✅ 설정됨
+        - GPT4O_MINI: ✅ 설정됨
+        - EMBEDDING: ✅ 설정됨
+        - EMBEDDING_LARGE: ✅ 설정됨
+
+    🤖 모델:
+        - GPT4O: openai/gpt-4o
+        - GPT4O_MINI: openai/gpt-4o-mini
+        - EMBEDDING: text-embedding-3-small
+        - EMBEDDING_LARGE: openai/text-embedding-3-large
+
+    ✅ 임베딩 클라이언트 생성 성공!
+
+==================================================
+
+"""
