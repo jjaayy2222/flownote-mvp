@@ -24,6 +24,7 @@ data/uploads/*
 data/faiss/*
 data/exports/*
 data/metadata.json
+/data/search_history.json
 
 # 예외: 샘플 파일은 허용
 !data/uploads/.gitkeep
