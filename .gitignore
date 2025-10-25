@@ -2,11 +2,19 @@
 .env
 .env.local
 .env.*.local
+.env.development
+.env.production
 
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
+
+# 가상환경
+myenv/
+ENV/
 .venv/
 venv/
 env/
@@ -15,6 +23,7 @@ env/
 data/uploads/*
 data/faiss/*
 data/exports/*
+data/metadata.json
 
 # 예외: 샘플 파일은 허용
 !data/uploads/.gitkeep
@@ -26,6 +35,13 @@ data/exports/*
 .idea/
 .DS_Store
 *.code-workspace
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
 
 # API Keys (이중 체크!)
 *.key
