@@ -18,7 +18,7 @@
 
 <br>
 
-* ![main 화면](../flownote-mvp/assets/images/for_README/flownote-mvp-01.png)
+* ![main 화면](/assets/images/for_README/flownote-mvp-01.png)
 
 <br>
 
@@ -113,9 +113,9 @@ FlowNote는 이런 고민을 해결합니다!
 
 <br>
 
-  * ![업로드_1](../flownote-mvp/assets/images/for_README/flownote-mvp-02.png)
+  * ![업로드_1](/assets/images/for_README/flownote-mvp-02.png)
 
-  * ![업로드_2](../flownote-mvp/assets/images/for_README/flownote-mvp-03.png)
+  * ![업로드_2](/assets/images/for_README/flownote-mvp-03.png)
 
 <br>
 
@@ -125,7 +125,7 @@ FlowNote는 이런 고민을 해결합니다!
 
 <br>
 
-  * ![업로드 & 처리_1](../flownote-mvp/assets/images/for_README/flownote-mvp-04.png)
+  * ![업로드 & 처리_1](/assets/images/for_README/flownote-mvp-04.png)
 
 <br>
 
@@ -133,7 +133,7 @@ FlowNote는 이런 고민을 해결합니다!
 
 <br>
 
-  * ![업로드 & 처리_2](../flownote-mvp/assets/images/for_README/flownote-mvp-05.png)
+  * ![업로드 & 처리_2](/assets/images/for_README/flownote-mvp-05.png)
 
 <br>
 
@@ -141,21 +141,21 @@ FlowNote는 이런 고민을 해결합니다!
 
 <br>
 
-* ![검색 main 화면](../flownote-mvp/assets/images/for_README/flownote-mvp-10.png)
+* ![검색 main 화면](/assets/images/for_README/flownote-mvp-10.png)
 
   * *`최근 업로드한 파일이 좌측 사이드바에 추가된 것을 확인할 수 있음`*
 
 * **`검색 결과 개수 조절 슬라이더`**
-  * ![검색 화면_1](../flownote-mvp/assets/images/for_README/flownote-mvp-06.png)
+  * ![검색 화면_1](/assets/images/for_README/flownote-mvp-06.png)
 
     * 검색 결과 개수: *`기본값 = 3`*
-    * [검색 결과 개수_1](../flownote-mvp/assets/images/for_README/flownote-mvp-07.png)
+    * [검색 결과 개수_1](/assets/images/for_README/flownote-mvp-07.png)
 
     * 검색 결과 개수 증가 ➀: `k=5`
-    * [검색 결과 개수_2](../flownote-mvp/assets/images/for_README/flownote-mvp-08.png)
+    * [검색 결과 개수_2](/assets/images/for_README/flownote-mvp-08.png)
 
     * 검색 결과 개수 증가 ➂: `k=10` / *최대치*
-    * [검색 결과 개수_3](../flownote-mvp/assets/images/for_README/flownote-mvp-09.png)
+    * [검색 결과 개수_3](/assets/images/for_README/flownote-mvp-09.png)
 
 <br>
 
@@ -166,10 +166,10 @@ FlowNote는 이런 고민을 해결합니다!
 <br>
 
   * 검색_➀: **`OpenAI API 프록시 서비스`**
-  * ![OpenAI API 프록시 서비스](../flownote-mvp/assets/images/for_README/flownote-mvp-11.png)
+  * ![OpenAI API 프록시 서비스](/assets/images/for_README/flownote-mvp-11.png)
 
   * 검색_➁: **`마이그레이션`**
-  * ![마이그레이션](../flownote-mvp/assets/images/for_README/flownote-mvp-15.png)
+  * ![마이그레이션](/assets/images/for_README/flownote-mvp-15.png)
 
 <br>
 
@@ -181,16 +181,16 @@ FlowNote는 이런 고민을 해결합니다!
 
   * 검색_➀: **`OpenAI API 프록시 서비스`**
     * **`검색` → `관련도 높은 순`으로 표기 → `유사도 점수` + `원본 텍스트` 확인**
-    * ![관련도 순 표기_1](../flownote-mvp/assets/images/for_README/flownote-mvp-12.png)
-    * ![관련도 순 표기_2](../flownote-mvp/assets/images/for_README/flownote-mvp-13.png)
-    * ![관련도 순 표기_3](../flownote-mvp/assets/images/for_README/flownote-mvp-14.png)
+    * ![관련도 순 표기_1](/assets/images/for_README/flownote-mvp-12.png)
+    * ![관련도 순 표기_2](/assets/images/for_README/flownote-mvp-13.png)
+    * ![관련도 순 표기_3](/assets/images/for_README/flownote-mvp-14.png)
 
 
   * 검색_➁: **`마이그레이션`**
     * **`검색` → `관련도 높은 순`으로 표기 → `유사도 점수` + `원본 텍스트` 확인**
-    * ![관련도 순 표기_1](../flownote-mvp/assets/images/for_README/flownote-mvp-16.png)
-    * ![관련도 순 표기_2](../flownote-mvp/assets/images/for_README/flownote-mvp-17.png)
-    * ![관련도 순 표기_3](../flownote-mvp/assets/images/for_README/flownote-mvp-18.png)
+    * ![관련도 순 표기_1](/assets/images/for_README/flownote-mvp-16.png)
+    * ![관련도 순 표기_2](/assets/images/for_README/flownote-mvp-17.png)
+    * ![관련도 순 표기_3](/assets/images/for_README/flownote-mvp-18.png)
 
 <br>
 
@@ -202,15 +202,15 @@ FlowNote는 이런 고민을 해결합니다!
 <br>
 
   * 검색 히스토리 파일 목록
-    * ![검색 히스토리 파일 목록](../flownote-mvp/assets/images/for_README/flownote-mvp-19.png)
+    * ![검색 히스토리 파일 목록](/assets/images/for_README/flownote-mvp-19.png)
 
   * 검색_➀: **`OpenAI API 프록시 서비스`**
     * **`검색` → `관련도 높은 순`으로 표기 → `유사도 점수` + `원본 텍스트` 확인**
-    * ![검색 히스토리_1](../flownote-mvp/assets/images/for_README/flownote-mvp-20.png)
+    * ![검색 히스토리_1](/assets/images/for_README/flownote-mvp-20.png)
 
   * 검색_➁: **`마이그레이션`**
     * **`검색` → `관련도 높은 순`으로 표기 → `유사도 점수` + `원본 텍스트` 확인**
-    * ![검색 히스토리_1](../flownote-mvp/assets/images/for_README/flownote-mvp-21.png)
+    * ![검색 히스토리_1](/assets/images/for_README/flownote-mvp-21.png)
 
 <br>
 
