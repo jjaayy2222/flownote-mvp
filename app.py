@@ -20,6 +20,7 @@ from backend.chunking import TextChunker
 from backend.faiss_search import FAISSRetriever
 from backend.metadata import FileMetadata
 from backend.search_history import SearchHistory
+from backend.export import MarkdownExporter
 
 # 검증 및 파일 처리 유틸리티 임포트
 from backend.validators import FileValidator, QueryValidator, APIKeyValidator           # 유효성 검증 클래스
@@ -60,6 +61,13 @@ if "file_metadata_manager" not in st.session_state:
 # 검색 히스토리 관리 객체
 if "search_history_manager" not in st.session_state:
     st.session_state.search_history_manager = SearchHistory()
+
+if "last_search_results" not in st.session_state:
+    st.session_state.last_search_results = []
+
+if "last_query" not in st.session_state:
+    st.session_state.last_query = ""
+
 
 # 청커 초기화
 chunker = TextChunker(chunk_size=500, chunk_overlap=50)
@@ -313,6 +321,42 @@ with st.sidebar:
                 help="총 검색 횟수"
             )
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 마크다운 내보내기
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 📝 검색 결과 내보내기")
+
+if st.sidebar.button("📥 마크다운으로 저장", use_container_width=True):
+    if st.session_state.last_search_results:
+        try:
+            # 1. 마크다운 생성
+            exporter = MarkdownExporter()
+            markdown_content = exporter.export_search_results(
+                query=st.session_state.last_query,
+                results=st.session_state.last_search_results,
+                include_metadata=True
+            )
+            
+            # 2. 파일명 생성
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"flownote_search_{timestamp}.md"
+            
+            # 3. 다운로드 버튼
+            st.sidebar.download_button(
+                label="⬇️ 다운로드",
+                data=markdown_content,
+                file_name=filename,
+                mime="text/markdown",
+                use_container_width=True
+            )
+            
+            st.sidebar.success("✅ 마크다운 생성 완료!")
+            
+        except Exception as e:
+            st.sidebar.error(f"❌ 내보내기 오류: {str(e)}")
+    else:
+        st.sidebar.warning("⚠️ 검색 결과가 없습니다.")
 
 
 
@@ -334,37 +378,44 @@ if st.session_state.faiss_retriever is not None:
     
     with col2:
         k = st.number_input("결과 수", min_value=1, max_value=10, value=3)
+
+
+# 검색 섹션 수정
+if st.button("🔍 검색", type="primary"):
+    # ✨ 쿼리 검증
+    valid, error = query_validator.validate_query(query)
     
-    if st.button("🔍 검색", type="primary"):
-        # ✨ 쿼리 검증
-        valid, error = query_validator.validate_query(query)
-        
-        if not valid:
-            st.warning(f"⚠️ {error}")
-        else:
-            with st.spinner("검색 중입니다..."):
-                try:
-                    # FAISS 검색
-                    search_results = st.session_state.faiss_retriever.search(query, k=k)
-                    
-                    # 검색 히스토리 저장
-                    st.session_state.search_history_manager.add_search(
-                        query=query,
-                        results_count=len(search_results)
-                    )
-                    
-                    # 결과 표시
-                    st.success(f"✅ {len(search_results)}개 결과를 찾았습니다.")
-                    
-                    for i, result in enumerate(search_results, 1):
-                        with st.expander(f"📄 결과 {i} - {result['metadata']['source']} (유사도: {result['score']:.2%})"):
-                            st.markdown(f"**내용:**\n{result['content']}")
-                            st.caption(f"출처: {result['metadata']['source']} (청크 {result['metadata']['chunk_index']})")
-                    
-                except Exception as e:
-                    st.error(f"❌ 검색 중 오류가 발생했습니다: {str(e)}")
-                    import traceback
-                    st.code(traceback.format_exc())
+    if not valid:
+        st.warning(f"⚠️ {error}")
+    else:
+        with st.spinner("검색 중입니다..."):
+            try:
+                # FAISS 검색
+                search_results = st.session_state.faiss_retriever.search(query, k=k)
+                
+                # ===== ✅ 검색 결과 저장 (여기 추가!) =====
+                st.session_state.last_search_results = search_results
+                st.session_state.last_query = query
+                # ========================================
+                
+                # 검색 히스토리 저장
+                st.session_state.search_history_manager.add_search(
+                    query=query,
+                    results_count=len(search_results)
+                )
+                
+                # 결과 표시
+                st.success(f"✅ {len(search_results)}개 결과를 찾았습니다.")
+                
+                for i, result in enumerate(search_results, 1):
+                    with st.expander(f"📄 결과 {i} - {result['metadata']['source']} (유사도: {result['score']:.2%})"):
+                        st.markdown(f"**내용:**\n{result['content']}")
+                        st.caption(f"출처: {result['metadata']['source']} (청크 {result['metadata']['chunk_index']})")
+                
+            except Exception as e:
+                st.error(f"❌ 검색 중 오류가 발생했습니다: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
 
     # 검색 섹션 아래에 히스토리 표시
     if st.session_state.faiss_retriever is not None:
@@ -419,3 +470,40 @@ else:
 # ━━━━━━━━━━━━━━━━━━━━━━
 st.divider()
 st.caption("FlowNote MVP v2.0 | Made with ❤️ by Jay")
+
+
+
+"""bash
+
+    ✅ 인코딩 감지: None (신뢰도: 0.00%)
+    ✅ utf-8으로 파일 읽기 성공
+    ✅ 인코딩 감지: utf-8 (신뢰도: 99.00%)
+    ✅ utf-8으로 파일 읽기 성공
+    ✅ PDF 페이지 1 처리 완료
+    ✅ PDF 페이지 2 처리 완료
+    ✅ PDF 페이지 3 처리 완료
+    ✅ PDF 페이지 4 처리 완료
+    ✅ PDF 페이지 5 처리 완료
+    ✅ PDF 페이지 6 처리 완료
+    ✅ PDF 페이지 7 처리 완료
+    ✅ PDF 페이지 8 처리 완료
+    ✅ PDF 페이지 9 처리 완료
+    ✅ PDF 페이지 10 처리 완료
+    ✅ PDF 페이지 11 처리 완료
+    ✅ PDF 페이지 12 처리 완료
+    ✅ PDF 페이지 13 처리 완료
+    ✅ PDF 페이지 14 처리 완료
+    ✅ PDF 페이지 15 처리 완료
+    ✅ PDF 페이지 16 처리 완료
+    ✅ PDF 페이지 17 처리 완료
+    ✅ PDF 페이지 18 처리 완료
+    ✅ PDF 페이지 19 처리 완료
+    ✅ PDF 페이지 20 처리 완료
+    ✅ PDF 페이지 21 처리 완료
+    ✅ PDF 페이지 22 처리 완료
+    ✅ PDF 페이지 23 처리 완료
+    ✅ pdfplumber로 PDF 처리 성공: 27567 문자
+    ✅ FAISS에 69개 문서 추가 완료
+
+"""
+
