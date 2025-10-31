@@ -1,1 +1,5 @@
-# backend/dashboard/__init__.py 
+# backend/database/__init__.py
+
+from .connection import DatabaseConnection
+
+__all__ = ["DatabaseConnection"]

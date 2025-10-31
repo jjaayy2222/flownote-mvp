@@ -1,4 +1,4 @@
-# backend/dashboard/connection.py
+# backend/dashboard/connection.py (수정)
 
 import sqlite3
 from pathlib import Path
@@ -164,7 +164,20 @@ class DatabaseConnection:
         except Exception as e:
             print(f"Error getting top keywords: {e}")
             return []
-    
+
+
+    def get_total_searches(self) -> int:
+        """총 검색 횟수"""
+        try:
+            total = self.cursor.execute(
+                "SELECT SUM(search_count) FROM search_analytics"
+            ).fetchone()[0] or 0
+            return total
+        except Exception as e:
+            print(f"Error getting total searches: {e}")
+            return 0
+
+
     def close(self):
         """데이터베이스 연결 종료"""
         if self.conn:
@@ -177,10 +190,26 @@ class DatabaseConnection:
         self.close()
 
 
-"""test_result
+"""test_result_1 (수정 전)
 
     python -c "from backend.database.connection import DatabaseConnection; db = DatabaseConnection(); print('✅ DatabaseConnection OK'); db.close()"
 
     ✅ DatabaseConnection OK
+
+"""
+
+
+"""test_result_2 (수정 후)
+
+    python -c "from backend.database.connection import DatabaseConnection; db = DatabaseConnection(); print('✅ DatabaseConnection OK'); db.close()"
+
+    ✅ DatabaseConnection OK
+
+    ✅ MetadataAggregator 초기화 성공
+    ✅ get_file_statistics() 작동: {'total_files': 0, 'total_searches': 0, 'by_type': {}, 'by_category': {}, 'top_keywords': ['PARA', 'Dashboard', '분류', 'LangChain', '메타데이터']}
+    ✅ get_para_breakdown() 작동: {'Projects': 0, 'Areas': 0, 'Resources': 0, 'Archive': 0}
+    ✅ get_keyword_categories() 작동: {'업무': 0, '개인': 0, '학습': 0, '참고자료': 0}
+    ✅ get_top_keywords() 작동: ['PARA', 'Dashboard', '분류', 'LangChain', '메타데이터']
+    ✅ 모든 테스트 통과!
 
 """
