@@ -1,5 +1,12 @@
 # frontend/pages/dashboard.py (수정)
 
+import sys
+from pathlib import Path
+
+# 루트 폴더 경로 추가
+root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(root))
+
 import streamlit as st
 from streamlit_option_menu import option_menu
 from backend.dashboard.dashboard_core import MetadataAggregator
