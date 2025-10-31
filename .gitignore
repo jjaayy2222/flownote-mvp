@@ -53,3 +53,5 @@ secrets.json
 temp/
 *.tmp
 uploaded_files/
+tests/test_results.txt
+data/
