@@ -55,3 +55,6 @@ temp/
 uploaded_files/
 tests/test_results.txt
 data/
+
+# Streamlit
+.streamlit/
