@@ -58,3 +58,7 @@ data/
 
 # Streamlit
 .streamlit/
+
+# tests/ 내용
+/tests/
+

@@ -1,533 +1,630 @@
-# 📚 FlowNote MVP
+# 🎯 FlowNote Dashboard - PARA Classifier
 
-> AI 대화를 체계적으로 저장하고, 필요할 때 빠르게 찾아 활용하는 로컬 우선 문서 검색 도구
+> **AI 기반 자동 분류 시스템**  
+> 
+> 텍스트를 입력하면 AI가 PARA 방식으로 자동 분류하고, 신뢰도를 제시하는 대시보드
+> 
+
+<br>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.11.10-blue" alt="Python Version">
-  <img src="https://img.shields.io/badge/streamlit-latest-red" alt="Streamlit">
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
+  <img src="https://img.shields.io/badge/python-3.11+-blue?logo=python&logoColor=white" style="margin: 4px;" />
+  <img src="https://img.shields.io/badge/fastapi-latest-green?logo=fastapi&logoColor=white" style="margin: 4px;" />
+  <img src="https://img.shields.io/badge/react-18+-blue?logo=react&logoColor=white" style="margin: 4px;" />
+  <img src="https://img.shields.io/badge/langchain-latest-orange?logo=chainlink&logoColor=white" style="margin: 4px;" />
+  <img src="https://img.shields.io/badge/openai-gpt4o-red?logo=openai&logoColor=white" style="margin: 4px;" />
+  <img src="https://img.shields.io/badge/license-MIT-green?logo=opensourceinitiative&logoColor=white" style="margin: 4px;" />
 </p>
 
----
-
 <br>
-
-## 📖 프로젝트 소개
-
-**FlowNote**는 ChatGPT, Claude, Perplexity 등 AI 도구와 나눈 소중한 대화들을 **흘려보내지 않고** 체계적으로 저장하고, 나중에 쉽게 찾아볼 수 있게 도와주는 **로컬 우선(Local-First)** 문서 관리 도구입니다.
-
-<br>
-
-* ![main 화면](/assets/images/for_README/flownote-mvp-01.png)
-
-<br>
-
-
-### 💡 왜 FlowNote인가?
-
-- 🤔 **"저번에 AI한테 뭐라고 물어봤더라?"** - 기억이 안 나는 경험, 누구나 있죠?
-- 📝 **"그때 받은 답변이 정말 좋았는데..."** - 다시 찾으려니 막막하셨나요?
-- 💼 **"프로젝트 자료로 쓰고 싶은데..."** - 체계적으로 정리되어 있지 않아 어려우셨나요?
-
-FlowNote는 이런 고민을 해결합니다!
-
-### ✨ 핵심 기능 (v1.0 MVP)
-
-#### 📤 파일 업로드 & 처리
-- **다양한 파일 형식 지원**: `.md`, `.txt`, `.pdf` 파일 업로드 가능
-- **자동 청킹**: RecursiveCharacterTextSplitter로 적절한 크기로 분할
-- **임베딩 생성**: OpenAI `text-embedding-3-small` 모델 사용
-- **메타데이터 관리**: 파일명, 크기, 청크 수, 업로드 시간 자동 기록
-
-#### 🔍 의미 기반 검색
-- **FAISS 벡터 검색**: 키워드가 아닌 **의미**를 이해하는 검색
-- **유사도 점수**: 각 검색 결과의 관련도를 0-100% 점수로 표시
-- **검색 히스토리**: 이전 검색 내역을 자동 저장하고 재사용 가능
-- **빠른 응답 속도**: 평균 0.3초 이하의 빠른 검색
-
-#### 📊 대시보드 & 통계
-- **파일 통계**: 전체 파일 수, 총 청크 수, 평균 유사도 한눈에 확인
-- **파일 목록**: 최근 업로드한 파일 10개를 사이드바에서 확인
-- **검색 히스토리**: 최근 검색 5개를 빠르게 재실행
-
-#### 🎨 직관적인 UI/UX
-- **Streamlit 기반**: 간결하고 사용하기 쉬운 웹 인터페이스
-- **실시간 피드백**: 파일 업로드, 검색 진행 상황을 실시간으로 표시
-- **반응형 레이아웃**: 사이드바와 메인 영역으로 깔끔하게 구성
 
 ---
 
-<br>
+## 1. 📖 프로젝트 소개
 
-## 🚀 빠른 시작
+**FlowNote Dashboard**는 당신의 할일/메모/자료를 **PARA 방식**(Projects, Areas, Resources, Archives)으로 **자동 분류**해주는 AI 기반 분류 시스템입니다.
 
-### 1️⃣ 사전 요구사항
+### 💡 핵심 아이디어
 
-- **Python**: 3.11.10 이상
-- **pyenv**: Python 버전 관리 (권장)
-- **OpenAI API Key**: [OpenAI Platform](https://platform.openai.com/)에서 발급
+```markdown
+    당신의 입력 텍스트
+        ↓
+    AI가 읽고 분석 (LangChain + GPT-4o)
+        ↓
+    P/A/R/A 중 하나로 분류
+        ↓
+    분류 결과 + 신뢰도 제시
+        ↓
+    🎉 완료!
+```
 
-### 2️⃣ 설치 방법
+**예시:**
+- 입력: `"프로젝트 11월 30일까지 완료"`
+- 결과: `📋 Projects` (신뢰도 100%)
+
+---
+
+## 2. 🚀 개발 히스토리 (Git 기반)
+
+### 📊 Issue별 개발 진행도
+
+| Issue | 단계 | 완료 날짜 | 핵심 기능 | Git Commits | 상태 |
+|-------|------|----------|-----------|-------------|------|
+| **#1** | 환경 구축 | ~10/23 | - Python 3.11 환경<br>- 프로젝트 구조<br>- API 설정 | `#1.1` ~ `#1.7` | ✅ |
+| **#2** | MVP v1.0 | 10/24-10/25 | - Streamlit UI<br>- 파일 업로드<br>- FAISS 검색<br>- 임베딩 | `#2.1` ~ `#2.17` | ✅ |
+| **#3** | PARA 분류 v1 | 10/26-10/28 | - PARA 분류기<br>- UI 통합<br>- 테스트 | `#3.1` ~ `#3.3` | ✅ |
+| **#4** | Vision API | 10/29 | - GPT-4.1 API<br>- Vision Helper<br>- 모델 Config | `#4.1` ~ `#4.4` | ✅ |
+| **#5** | Dashboard v3.0 | 10/30-11/01 | - **LangChain 통합**<br>- **GPT-4o 분류**<br>- **React Frontend**<br>- **FastAPI Backend** | `#5.1` ~ `#5.3` | 🔵 **진행 중** |
+
+---
+
+## 3. 📈 Issue별 상세 개발 과정
+
+### **Issue #1: 환경 구축** ✅
+```markdown
+    #1.1: FlowNote MVP 프로젝트 문서 초안
+    #1.2: Python 3.11 개발 환경 구축
+    #1.3: README.md 추가
+    #1.4: API 환경 설정 & 테스트
+    #1.5: .gitignore 업데이트 & Backend 구조
+    #1.6: 프로젝트 구조 개선 & Assets 정리
+    #1.7: 원격 잔여 이미지 정리
+```
+
+**기술 스택:**
+- Python 3.11.10
+- 프로젝트 구조 설계
+- Git 환경 설정
+
+---
+
+### **Issue #2: MVP v1.0 - 기본 검색 시스템** ✅
+```markdown
+    #2.1: Streamlit UI & 파일 업로드 기능
+    #2.2: 청킹 & 임베딩 기능 추가
+    #2.3: FAISS 검색 엔진 완성
+    #2.4: Streamlit UI 검색 기능 완성
+    #2.5: app.py 실습 문서 추가
+    #2.6: Multi-Model API 설정
+    #2.7: 파일 메타데이터 관리 기능
+    #2.8: 검색 히스토리 관리 기능
+    #2.9: Backend 모듈 통합 및 최적화
+    #2.10: Streamlit UI 개선 및 Backend 연동
+    #2.11: Backend 통합 테스트 결과 문서
+    #2.12: 파일 처리 로직 구현
+    #2.13: 사이드바 파일 목록 표시 기능
+    #2.14: MVP v1.0 공식 문서
+    #2.15: MVP 사용자 가이드
+    #2.16: 문서 업로드 및 검색 기능
+    #2.17: 마크다운 내보내기 기능
+```
+
+**기술 스택:**
+- **Frontend**: Streamlit
+- **검색**: FAISS (벡터 검색)
+- **임베딩**: OpenAI text-embedding-3-small
+- **파일 처리**: TXT, PDF (pdfplumber)
+- **청킹**: RecursiveCharacterTextSplitter
+
+---
+
+### **Issue #3: PARA 분류 v1.0** ✅
+```markdown
+    #3.1: PARA 분류기 백엔드 구현
+    #3.2: PARA 분류 UI 통합 및 사이드바 개선
+    #3.3: PARA 분류기 테스트 파일 추가
+```
+
+**기술 스택:**
+- PARA 분류 로직
+- Streamlit UI 통합
+- 테스트 파일
+
+---
+
+### **Issue #4: Vision API 통합** ✅
+```markdown
+    #4.1: GPT-4.1 API connection test
+    #4.2: config.py 클래스 기반 리팩토링
+    #4.3: ModelConfig 클래스 기반 통합 테스트
+    #4.4: Vision Helper 모듈 구현 & 통합 테스트
+```
+
+**기술 스택:**
+- GPT-4.1 Vision API
+- ModelConfig 클래스
+- Vision Helper 모듈
+
+---
+
+### **Issue #5: Dashboard v3.0 - AI 자동 분류** 🔵 **진행 중**
+```markdown
+    #5.1: DatabaseConnection class + SQLite schema
+    #5.2: MetadataAggregator core logic
+    #5.3: Dashboard UI structure
+    #5.4: update .gitignore
+    #5.5: .gitignore에 Streamlit 설정 추가
+
+  # PARA 분류 고도화
+    #5.2.1: AI PARA classifier module
+    #5.2.2: LangChain + GPT 통합 PARA 분류기
+    #5.2.3: ParaClassifier 컴포넌트 추가 (React)
+```
+
+**기술 스택:**
+- **Backend**: FastAPI
+- **Frontend**: React 18
+- **AI 통합**: LangChain
+- **LLM**: OpenAI GPT-4o
+- **Database**: SQLite *(예정)*
+- **분류 시스템**: PARA Method
+
+**현재 구조:**
+```markdown
+    User Input (React)
+        ↓
+    FastAPI Backend
+        ↓
+    LangChain Integration
+        ↓
+    GPT-4o 분류 모델
+        ↓
+    분류 결과 반환
+```
+
+---
+
+## 4. 💻 기술 스택 (분야별)
+
+### **4.1 `🧩 Backend`**
+| 기술 | 버전 | 용도 | 도입 Issue |
+|------|------|------|-----------|
+| **Python** | 3.11.10 | 개발 언어 | #1 |
+| **FastAPI** | latest | REST API 프레임워크 | #5 |
+| **LangChain** | >=0.1.0 | AI 체인 및 프롬프트 관리 | #5 |
+| **SQLite** | 3 | 메타데이터 저장소 | #5 |
+| **Uvicorn** | 0.24.0 | ASGI 서버 | #5 |
+
+### **4.2 `🎨 Frontend`**
+| 기술 | 버전 | 용도 | 도입 Issue |
+|------|------|------|-----------|
+| **React** | 18+ | UI 라이브러리 | #5 |
+| **JavaScript** | ES6 | 개발 언어 | #5 |
+| **CSS** | 3 | 스타일링 | #5 |
+| **Streamlit** | latest | 초기 UI (v1-v2) | #2 |
+
+### **4.3 `🧠` `LLM` & `AI`**
+| 기술 | 모델 | 용도 | 도입 Issue |
+|------|------|------|-----------|
+| **OpenAI API** | GPT-4o | PARA 분류 | #5 |
+| **OpenAI API** | GPT-4.1 Vision | 이미지 분석 (예정) | #4 |
+| **OpenAI Embeddings** | text-embedding-3-small | 벡터 임베딩 | #2 |
+
+### **4.4 `🔍` `검색` & `데이터`**
+| 기술 | 버전 | 용도 | 도입 Issue |
+|------|------|------|-----------|
+| **FAISS** | latest | 벡터 검색 엔진 | #2 |
+| **pdfplumber** | latest | PDF 파싱 | #2 |
+| **python-dotenv** | 1.0.0 | 환경변수 관리 | #1 |
+
+---
+
+## 5. ✨ 핵심 기능 (v3.0)
+
+### 5.1 **`AI 기반 자동 분류`**
+```markdown
+📋 Projects (프로젝트)
+   → 기한/마감일이 있는 구체적 목표
+   예: "11월까지 프로젝트 완료"
+
+🎯 Areas (분야)
+   → 지속적 책임 영역
+   예: "팀 성과 평가는 계속 진행 업무"
+
+📚 Resources (자료)
+   → 참고용 정보/자료
+   예: "API 사용 가이드"
+
+📦 Archives (보관)
+   → 완료되고 참고용이 된 것
+   예: "작년 프로젝트 결과"
+```
+
+### 5.2 **`신뢰도 점수`**
+- 각 분류의 신뢰도를 **0-100%**로 표시
+- AI의 판단 근거 설명 제공
+- 감지된 신호 표시
+
+### 5.3 **`직관적인 대시보드`**
+- **React** 기반 모던 UI
+- 실시간 분류 결과 표시
+- 분류 히스토리 관리
+
+---
+
+## 6. 🏗️ 아키텍처
+
+```
+┌────────────────────────────────────────┐
+│     Frontend (React)                   │
+│       ├─ ParaClassifier Component      │
+│       ├─ 입력 폼                         │
+│       └─ 결과 대시보드                    │
+└──────────────┬─────────────────────────┘
+               │ HTTP POST
+               │ /api/classify
+               ↓
+┌───────────────────────────────────────────────────┐
+│     Backend (FastAPI)                             │
+│       ├─ routes/classifier_routes.py              │
+│       ├─ services/para_classifier.py              │
+│       └─ services/langchain_integration.py        │
+└──────────────┬────────────────────────────────────┘
+               │
+               ↓
+┌─────────────────────────────────────┐
+│  OpenAI GPT-4o (분류 모델)            │
+│       → 텍스트 분석 및 분류             │
+└─────────────────────────────────────┘
+```
+
+---
+
+## 7. 📁 프로젝트 구조
 
 ```bash
-
-        # 1. 리포지토리 클론
-        git clone https://github.com/jjaayy2222/flownote-mvp.git
-        cd flownote-mvp
-
-        # 2. Python 버전 확인 (자동)
-        # .python-version 파일이 있어서 자동으로 3.11.10 사용
-
-        # 3. 가상환경 생성 및 활성화
-        # pyenv virtualenv 3.11.10 <원하는 가상환경명>
-        pyenv virtualenv 3.11.10 myenv
-        pyenv activate myenv
-
-        # 4. 패키지 설치
-        pip install -r requirements.txt
-
-        # 5. 환경변수 설정
-        cp .env.example .env
-        # .env 파일을 열어 OPENAI_API_KEY 입력
-        # 파일명을 .env로 복사해서 다시 설정하기
-
-```
-
-### 3️⃣ 실행
-
-```bash
-        streamlit run app.py
-```
-
-- 브라우저에서 자동으로 `http://localhost:8501` 열림!
-
----
-
-<br>
-
-## 📖 사용 방법
-
-### Step 1: 파일 업로드
-
-1. **main**에서 **`📤 파일 업로드`** 클릭
-
-<br>
-
-  * ![업로드_1](/assets/images/for_README/flownote-mvp-02.png)
-
-  * ![업로드_2](/assets/images/for_README/flownote-mvp-03.png)
-
-<br>
-
-2. AI 대화 파일(`.md`, `.txt`, `.pdf`) 선택 → *미구현, 구현 예정*
-
-3. **"업로드 & 처리"** 버튼 클릭
-
-<br>
-
-  * ![업로드 & 처리_1](/assets/images/for_README/flownote-mvp-04.png)
-
-<br>
-
-4. 자동으로 청킹 → 임베딩 → FAISS 저장 완료!
-
-<br>
-
-  * ![업로드 & 처리_2](/assets/images/for_README/flownote-mvp-05.png)
-
-<br>
-
-### Step 2: 검색
-
-<br>
-
-* ![검색 main 화면](/assets/images/for_README/flownote-mvp-10.png)
-
-  * *`최근 업로드한 파일이 좌측 사이드바에 추가된 것을 확인할 수 있음`*
-
-* **`검색 결과 개수 조절 슬라이더`**
-  * ![검색 화면_1](/assets/images/for_README/flownote-mvp-06.png)
-
-    * 검색 결과 개수: *`기본값 = 3`*
-    * [검색 결과 개수_1](/assets/images/for_README/flownote-mvp-07.png)
-
-    * 검색 결과 개수 증가 ➀: `k=5`
-    * [검색 결과 개수_2](/assets/images/for_README/flownote-mvp-08.png)
-
-    * 검색 결과 개수 증가 ➂: `k=10` / *최대치*
-    * [검색 결과 개수_3](/assets/images/for_README/flownote-mvp-09.png)
-
-<br>
-
-1. **메인 화면** 검색창에 질문 입력: *업로드한 파일의 내용에 맞는 내용을 검색하기*
-   - 예: *`프로젝트 기획 관련 대화 찾아줘`*
-   - 예: *`Python 코드 최적화 방법`*
-
-<br>
-
-  * 검색_➀: **`OpenAI API 프록시 서비스`**
-  * ![OpenAI API 프록시 서비스](/assets/images/for_README/flownote-mvp-11.png)
-
-  * 검색_➁: **`마이그레이션`**
-  * ![마이그레이션](/assets/images/for_README/flownote-mvp-15.png)
-
-<br>
-
-2. **`🔍 검색`** 버튼 클릭
-3. 관련도 높은 순으로 결과 표시
-4. 각 결과의 유사도 점수와 원본 텍스트 확인
-
-<br>
-
-  * 검색_➀: **`OpenAI API 프록시 서비스`**
-    * **`검색` → `관련도 높은 순`으로 표기 → `유사도 점수` + `원본 텍스트` 확인**
-    * ![관련도 순 표기_1](/assets/images/for_README/flownote-mvp-12.png)
-    * ![관련도 순 표기_2](/assets/images/for_README/flownote-mvp-13.png)
-    * ![관련도 순 표기_3](/assets/images/for_README/flownote-mvp-14.png)
-
-
-  * 검색_➁: **`마이그레이션`**
-    * **`검색` → `관련도 높은 순`으로 표기 → `유사도 점수` + `원본 텍스트` 확인**
-    * ![관련도 순 표기_1](/assets/images/for_README/flownote-mvp-16.png)
-    * ![관련도 순 표기_2](/assets/images/for_README/flownote-mvp-17.png)
-    * ![관련도 순 표기_3](/assets/images/for_README/flownote-mvp-18.png)
-
-<br>
-
-### Step 3: 히스토리 활용
-
-- **검색 히스토리**
-- **파일 목록**: 업로드한 파일 정보 확인 (최대 10개)
-
-<br>
-
-  * 검색 히스토리 파일 목록
-    * ![검색 히스토리 파일 목록](/assets/images/for_README/flownote-mvp-19.png)
-
-  * 검색_➀: **`OpenAI API 프록시 서비스`**
-    * **`검색` → `관련도 높은 순`으로 표기 → `유사도 점수` + `원본 텍스트` 확인**
-    * ![검색 히스토리_1](/assets/images/for_README/flownote-mvp-20.png)
-
-  * 검색_➁: **`마이그레이션`**
-    * **`검색` → `관련도 높은 순`으로 표기 → `유사도 점수` + `원본 텍스트` 확인**
-    * ![검색 히스토리_1](/assets/images/for_README/flownote-mvp-21.png)
-
-<br>
-
----
-
-<br>
-
-## 📁 프로젝트 구조
-
-```
 flownote-mvp/
-├── app.py                  # 메인 Streamlit 앱
 │
-├── requirements.txt        # Python 패키지 의존성
+├── requirements.txt                    # Python 의존성 (Root)
 │
-├── .env                    # 환경변수 (git 무시)
-├── .env.example            # .env 작성 예시 파일
-│
-├── .python-version         # Python 버전 (3.11.10)
+├── .env.example                        # 환경변수 예시
 │
 ├── .gitignore
 │
-├── README.md
+├── backend/                            # FastAPI 백엔드
+│   │
+│   ├── app.py                          # 메인 앱
+│   │
+│   ├── routes/
+│   │   └── classifier_routes.py        # /api/classify 엔드포인트
+│   │
+│   ├── services/
+│   │   ├── para_classifier.py          # PARA 분류 로직
+│   │   └── langchain_integration.py    # LangChain 통합
+│   │
+│   └── prompts/
+│       └── para_classification_prompt.txt      # 분류 프롬프트
 │
-├── backend/                # 백엔드 로직
-│   ├──__pycache__/         # python 소스 파일의 바이트코드 캐시 저장 폴더 (.gitignore 처리)
-│   │
-│   ├── data/
-│   │
-│   ├── __init__.py
-│   ├── config.py           # 설정 관리
-│   ├── chunking.py         # 텍스트 분할
-│   ├── embedding.py        # 임베딩 생성
-│   ├── faiss_search.py     # FAISS 검색
-│   ├── metadata.py         # 메타데이터 관리
-│   ├── search_history.py   # 검색 히스토리
-│   └── utils.py            # 유틸리티 함수
+├── frontend/                           # React 프론트엔드
+│   ├── public/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── ParaClassifier.jsx          # 메인 컴포넌트
+│   │   │   └── ParaClassifier.css          # 스타일
+│   │   ├── App.js
+│   │   ├── App.css
+│   │   └── index.js
+│   ├── package.json
+│   └── .env (자동 설정)
 │
-├── data/                   # 데이터 저장소
-│   │
-│   ├── uploads/            # 업로드된 원본 파일 폴더
-│   │   ├── 2025-10-24_17-39-17_gpt-4o.md                               # 테스트 업로드 파일 ➀
-│   │   ├── 2025-10-25_15-05-07_gemini-embedding-troubleshooting.md     # 테스트 업로드 파일 ➁
-│   │   ├── 2025-10-25_15-05-57_gpt-4o.md                               # 테스트 업로드 파일 ➂
-│   │   ├── gpt-4o.md                                                   # 테스트 업로드 파일 ➃
-│   │   └── requirements-mini.md                                        # 테스트 업로드 파일 ➄
-│   │
-│   ├── exports/            # 내보낸 파일 (예정)
-│   ├── faiss/              # FAISS 인덱스 (에정) 
-│   ├── metadata/           # 파일 메타데이터 (JSON)
-│   └── history/            # 검색 히스토리 (JSON)
+├── data/ 
 │
-├── docs/                   # 문서
-│   ├── constitution.md     # 프로젝트 헌장
-│   │
-│   ├── practices/          # backend 파일들 확장 중 과정 기록 폴더
-│   │   ├── 2025-10-23-utils-test.md        # 1st 테스트 파일 + Stremlit UI로 확인 정리
-│   │   ├── 2025-10-23-utils-test.pdf       # 해당 파일을 pdf 버전
-│   │   │
-│   │   ├── 2025-10-24-app-py-test.md       # 2nd 테스트 파일 + Stremlit UI로 확인 정리
-│   │   ├── 2025-10-24-app-py-test.pdf      # 해당 파일을 pdf 버전
-│   │   │
-│   │   ├── 2025-10-25-backend-integration-test.md    # 3rd 테스트 파일 + Stremlit UI로 확인 정리
-│   │   └── 2025-10-25-backend-integration-test.pdf   # 해당 파일을 pdf 버전
-│   │
-│   └── specs/                          # 기능 명세서
-│       ├── file-upload.md              # 파일 업로드 관련
-│       ├── faiss-search.md             # 검색 관련 
-│       ├── prompt-templates.md         # 결과 변환 관련 *result_markdown (string)*
-│       ├── markdown-export.md          # 결과 저장 관련 *(data/exports/)*
-│       └── mcp-classification.md       # 업로드된 파일 자동 분류 관련
-│
+├── docs/                       # 문서
+│   ├── constitution.md         # 프로젝트 헌장
+│   ├── practices/              # Phase 1에서 backend 파일들 확장 중 과정 기록 폴더
+│   ├── specs/                  # 기능 명세서
+│   │    ├── file-upload.md              # 파일 업로드 관련
+│   │    ├── faiss-search.md             # 검색 관련 
+│   │    ├── prompt-templates.md         # 결과 변환 관련 *result_markdown (string)*
+│   │    ├── markdown-export.md          # 결과 저장 관련 *(data/exports/)*
+│   │    └── mcp-classification.md       # 업로드된 파일 자동 분류 관련
+│   └── troubleshooting/                 # 트러블슈팅 기록 문서 보관
+│        ├── PromptTemplate_Escaping.md            # PromptTemplate 중괄호 이스케이프 문제 해결 가이드
+│        └── PromptTemplate_Escaping.pdf
+│ 
 ├── assets/               # 프로젝트에서 사용되는 첨부파일 및 사각자료 등 정적 자원 포함하는 폴더
 │   ├── images/           # 일반 이미지 (스크린샷, 배경 등)
 │   │
 │   └── figures/          # 문서에 포함되는 분석 결과 이미지
+│ 
+├── app.py                          # 스트림릿 메인 실행 앱
+├── app_classifier.py               # 스트림릿 - 분류 페이지 앱
+│ 
+├── USER_GUIDE.md         # 유저 가이드  
 │
-└── tests/                # 테스트 파일 정리 폴더
-    ├── __init__.py
-    ├── test_all_models.py                  # gpt-4o, gpt-4o-mini, text-embedding-3-small 호출 확인 테스트
-    ├── test_chunking_embedding.py          # chunking_embedding 확인 테스트
-    ├── test_faiss.py                       # faiss 확인 테스트
-    └── test_new_models.py                  # 모델 추가 및 호출 확인 테스트
-                                            # text-embedding-3-large, claude-3.5-haiku, claude-4-sonnet 
-
+└── README.md             # 해당 파일
 ```
 
 ---
 
-## 🛠️ 기술 스택
+## 8. 🚀 빠른 시작
 
-### Core Technologies
+### 8.1 사전 요구사항
+- **Python**: 3.11+
+- **Node.js**: 18+
+- **OpenAI API Key**: [platform.openai.com](https://platform.openai.com/)
 
-| 분류 | 기술 | 설명 |
-|------|------|------|
-| **Frontend** | `Streamlit` | 빠르고 직관적인 웹 UI |
-| **Embedding** | OpenAI API | `text-embedding-3-small` 모델 |
-| **Vector DB** | FAISS | 빠른 로컬 벡터 검색 |
-| **Text Processing** | LangChain | 텍스트 분할 & 처리 |
-| **File Parsing** | PyMuPDF, python-docx | PDF, Word 파일 파싱 |
-| **Language** | `Python 3.11.10` | 안정적인 최신 버전 |
+### 8.2 설치 방법
 
-### Key Libraries
+#### 8.2.1 `Backend` 설정
+```bash
+# 1. 리포지토리 클론
+    git clone https://github.com/jjaayy2222/flownote-dashboard.git
+    cd flownote-dashboard
 
+    # 2. 가상환경 생성
+    python -m venv venv
+    source venv/bin/activate  # Windows: venv\Scripts\activate
+
+    # 3. 패키지 설치 (Root에서)
+    pip install -r requirements.txt
+
+    # 4. 환경변수 설정
+    cp .env.example .env
+    # .env 파일에 OPENAI_API_KEY 입력
+
+    # 5. Backend 실행
+    cd backend
+    python app.py
+    # → http://127.0.0.1:8000 에서 실행됨
 ```
-    streamlit>=1.28.0
-    openai>=1.3.0
-    faiss-cpu>=1.7.4
-    langchain>=0.0.340
-    python-dotenv>=1.0.0
-    pymupdf>=1.23.0
-    python-docx>=1.0.0
+
+#### 8.2.2 `Frontend` 설정
+```bash
+    # 1. Frontend 폴더로 이동
+    cd frontend
+
+    # 2. 패키지 설치
+    npm install
+
+    # 3. Frontend 실행
+    npm start
+    # → http://localhost:3000 에서 자동 열림
 ```
 
 ---
 
-<br>
+## 9. 📖 사용 방법
 
-## 🎯 주요 기능 상세
-
-### 1. 파일 처리 파이프라인
-
-```
-    파일 업로드
-        ↓
-    텍스트 추출 (PyMuPDF, python-docx)
-        ↓
-    청킹 (RecursiveCharacterTextSplitter)
-    ├─ chunk_size: 1000
-    └─ chunk_overlap: 200
-        ↓
-    임베딩 생성 (OpenAI text-embedding-3-small)
-        ↓
-    FAISS 인덱스 추가
-        ↓
-    메타데이터 저장
+### 9.1 **`Step 1`: 텍스트 입력**
+```markdown
+    예1: "프로젝트 11월 30일까지 완료"
+    예2: "팀 성과 평가는 계속 진행해야 해"
+    예3: "API 사용 가이드 문서"
 ```
 
-### 2. 검색 프로세스
+### 9.2 **`Step 2`: 분류 실행**
+- **"분류하기"** 버튼 클릭
 
+### 9.3 **`Step 3`: 결과 확인**
+```markdown
+    📊 분류 결과
+      카테고리: Projects
+      신뢰도: 100.0%
+      설명: 기한 표현(11월 30일까지)과 구체적 목표(프로젝트 완료)가 있어 Projects로 분류됨.
+      감지된 신호: 11월 30일까지, 프로젝트, 완료
 ```
-    사용자 질문 입력
-        ↓
-    질문 임베딩 생성
-        ↓
-    FAISS 유사도 검색 (Top K=3)
-        ↓
-    유사도 점수 계산 (0-100%)
-        ↓
-    결과 표시 & 히스토리 저장
-```
-
-### 3. 메타데이터 관리
-
-각 파일별로 다음 정보를 자동 기록:
-
-- **파일명**: 원본 파일 이름
-- **크기**: 파일 크기 (KB/MB)
-- **청크 수**: 분할된 텍스트 조각 개수
-- **임베딩 모델**: 사용한 임베딩 모델명
-- **업로드 시간**: ISO 8601 형식 타임스탬프
-- **파일 ID**: 고유 식별자
 
 ---
 
-<br>
+## 10. 🎯 PARA 방식 설명
 
-## 📊 성능 & 제약
+### 10.1 **`📋 P`** - Projects (프로젝트)
+- **정의**: 구체적인 마감일이 있는 목표
+- **특징**: 기한, 마일스톤, 구체적 목표
+- **예시**:
+  - "11월 5일까지 프로젝트 완료"
+  - "Dashboard 구현 (11/30 완료)"
 
-### ⚡ 성능
+### 10.2 **`🎯 A`** - Areas (분야)
+- **정의**: 지속적으로 관리하는 책임 영역
+- **특징**: 진행 상황 모니터링, 지속적 책임
+- **예시**:
+  - "팀 성과 평가는 계속 진행해야 해"
+  - "직원 관리 및 발전 (지속)"
 
-- **검색 속도**: 평균 0.3초 이하 (1000개 청크 기준)
-- **임베딩 속도**: 파일당 2-5초 (크기에 따라)
-- **동시 검색**: FAISS 인메모리 처리로 빠른 응답
+### 10.3 **`📚 R`** - Resources (자료)
+- **정의**: 참고/활용용 정보 및 자료
+- **특징**: 정적 정보, 참고용
+- **예시**:
+  - "API 사용 가이드"
+  - "Python 최적화 팁"
 
-### ⚠️ 현재 제약사항 (v1.0)
-
-- **파일 크기 제한**: 최대 200MB (Streamlit 기본값)
-- **FAISS 영속화**: 앱 재시작 시 인덱스 초기화 (v1.5에서 개선 예정)
-- **동시 사용자**: 로컬 단일 사용자만 지원
-- **검색 결과**: 최대 5개까지 표시
+### 10.4 **`📦 A`** - Archives (보관)
+- **정의**: 완료되고 보관만 하는 것
+- **특징**: 참고용, 완료됨
+- **예시**:
+  - "작년 프로젝트 정리"
+  - "2024년 회의록"
 
 ---
 
-## 🔮 로드맵
+## 11. 🧪 테스트
 
-### ✅ v1.0 MVP (현재)
-- [x] 파일 업로드 & 처리
-- [x] FAISS 벡터 검색
+### 11.1 **`API 테스트`** (Backend)
+```bash
+    cd backend
+
+    # API 직접 테스트
+    curl -X POST http://localhost:8000/api/classify \
+      -H "Content-Type: application/json" \
+      -d '{
+        "text": "프로젝트 11월 30일까지 완료",
+        "filename": "test.txt"
+      }'
+
+    # 예상 응답:
+    # {
+    #   "result": {
+    #     "category": "Projects",
+    #     "confidence": 1.0,
+    #     "reasoning": "...",
+    #     "signals": ["11월 30일까지", "프로젝트", "완료"]
+    #   }
+    # }
+```
+
+### 11.2. **`Frontend 테스트`** (콘솔)
+```jsx
+    // 브라우저 개발자 도구 (F12) → Console 탭
+
+    async function testAPI() {
+    const response = await fetch('http://localhost:8000/api/classify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+        text: '팀 성과 평가는 계속 진행하는 업무야',
+        filename: 'test.txt'
+        })
+    });
+    
+    const data = await response.json();
+    console.log(data);
+    }
+
+    testAPI();
+```
+
+---
+
+## 12. 🗺️ 개발 로드맵
+
+### ✅ Issue #1: 환경 구축 (완료)
+- [x] Python 3.11 환경
+- [x] 프로젝트 구조 설계
+- [x] Git 설정
+- [x] API 환경 설정
+
+### ✅ Issue #2: MVP v1.0 (완료)
+- [x] Streamlit UI
+- [x] 파일 업로드 (TXT, PDF)
+- [x] FAISS 검색 엔진
+- [x] OpenAI 임베딩
 - [x] 검색 히스토리
-- [x] 메타데이터 관리
-- [x] 기본 UI/UX
+- [x] 마크다운 내보내기
 
-### 🚧 v1.5 (11/5-11/16) - 프로젝트 버전
-- [ ] **LangChain 통합**: ConversationalRetrievalChain
-- [ ] **대화 기억**: Memory 기능 추가
-- [ ] **답변 생성**: 검색 결과 기반 AI 답변
-- [ ] **출처 인용**: 답변에 출처 자동 표시
-- [ ] **FAISS 영속화**: 인덱스 저장/로드
-- [ ] **에러 핸들링**: 안정성 강화
-- [ ] **파일별/날짜별 필터링**: 검색 결과 필터링 기능
+### ✅ Issue #3: PARA 분류 v1.0 (완료)
+- [x] PARA 분류기 백엔드
+- [x] UI 통합
+- [x] 테스트 파일
 
-### 🔮 v2.0 (12월 이후) - 확장 버전
+### ✅ Issue #4: Vision API (완료)
+- [x] GPT-4.1 API 연결
+- [x] ModelConfig 리팩토링
+- [x] Vision Helper 모듈
+
+### 🔵 Issue #5: Dashboard v3.0 (진행 중, ~11/12)
+- [x] SQLite 데이터베이스
+- [x] MetadataAggregator
+- [x] Dashboard UI 구조
+- [x] AI PARA 분류 모듈
+- [x] LangChain + GPT-4o 통합
+- [x] React Frontend
+- [x] FastAPI Backend
+- [ ] 분류 정확도 개선
+- [ ] 에러 처리 강화
+- [ ] 배치 처리 기능
+
+### 🚧 Issue #6: 고급 기능 (예정, ~11월 말)
+- [ ] LangGraph 멀티 스텝 분류
+- [ ] 태그 자동 생성
+- [ ] 유사 문서 찾기
+- [ ] 분류 히스토리 저장
+- [ ] 통계 대시보드
+
+### 🔮 Issue #7: 통합 시스템 (예정, 12월 이후)
 - [ ] Notion 연동
-- [ ] 옵시디언 Export
-- [ ] 자동 요약 & 인사이트
-- [ ] 카테고리 자동 분류
-- [ ] 다국어 지원
-- [ ] 멀티 사용자 지원
+- [ ] Obsidian Export
+- [ ] 자동 폴더 구조 생성
+- [ ] 배포 (Railway/Vercel)
 
 ---
 
-<br>
+## 13. 📊 Issue별 진행 상태
 
-## 🤝 기여하기
-
-FlowNote는 오픈소스 프로젝트입니다! 기여를 환영합니다.
-
-### 기여 방법
-
-1. 이 리포지토리를 **Fork**
-2. 새 브랜치 생성 (`git checkout -b feature/amazing-feature`)
-3. 변경사항 커밋 (`git commit -m 'feat: Add amazing feature'`)
-4. 브랜치에 푸시 (`git push origin feature/amazing-feature`)
-5. **Pull Request** 생성
-
-### 이슈 제보
-
-- 버그 발견: [Issue 생성](https://github.com/jjaayy2222/flownote-mvp/issues)
-- 기능 제안: [Discussion](https://github.com/jjaayy2222/flownote-mvp/discussions)
+| Issue | 진행률 | 완료 항목 | 남은 항목 | 상태 |
+|-------|--------|-----------|-----------|------|
+| **#1** | 100% | 7/7 | 0/7 | ✅ 완료 |
+| **#2** | 100% | 17/17 | 0/17 | ✅ 완료 |
+| **#3** | 100% | 3/3 | 0/3 | ✅ 완료 |
+| **#4** | 100% | 4/4 | 0/4 | ✅ 완료 |
+| **#5** | 80% | 8/10 | 2/10 | 🔵 **진행 중** |
+| **#6** | 0% | 0/5 | 5/5 | ⏳ 대기 |
+| **#7** | 0% | 0/4 | 4/4 | ⏳ 대기 |
 
 ---
 
-<br>
+## 14. ❓ FAQ
 
-## 📚 문서 & 리소스
+### Q1. Backend와 Frontend를 동시에 실행해야 하나요?
+- **A**: 네, 둘 다 실행해야 합니다.
+  - Backend: `python app.py` (포트 8000)
+  - Frontend: `npm start` (포트 3000)
 
-- **프로젝트 헌장**: [docs/constitution.md](docs/constitution.md)
-- **기능 명세서**: [docs/specs/](docs/specs/)
-- **이슈 트래커**: [GitHub Issues](https://github.com/jjaayy2222/flownote-mvp/issues)
-- **프로젝트 보드**: [GitHub Projects](https://github.com/jjaayy2222/flownote-mvp/projects)
+### Q2. API Key를 어디서 얻나요?
+- **A**: [OpenAI Platform](https://platform.openai.com/)에서 발급 가능합니다.
 
----
+### Q3. 무료로 사용할 수 있나요?
+- **A**: 무료 사용량 내에서 가능합니다. (초기 $5 크레딧 제공)
 
-<br>
+### Q4. 데이터는 어디에 저장되나요?
+- **A**: 모든 데이터는 **현재 로컬**에만 저장됩니다. (OpenAI API 제외)
 
-## **❓ FAQ**
+### Q5. 다른 AI 모델을 사용할 수 있나요?
+- **A**: `backend/services/langchain_integration.py`를 수정하면 *`Claude`* 등 다른 모델 사용 가능합니다.
 
-### Q1. API 비용이 많이 드나요?
-
-- OpenAI `text-embedding-3-small` 모델은 매우 저렴합니다 ($0.00002/1K tokens). 일반적인 사용(하루 10개 파일 업로드)으로는 월 $1 미만입니다.
-
-### Q2. 데이터는 어디에 저장되나요?
-
-- 모든 데이터는 **로컬**에 저장됩니다 (`data/` 폴더). 아직 외부 서버로 전송되지 않습니다. (OpenAI API 제외)
-
-### Q3. 다른 임베딩 모델을 사용할 수 있나요?
-
-- 현재는 OpenAI만 지원하지만, `backend/embedding.py`를 수정하면 HuggingFace 등 다른 모델 사용 가능합니다.
-
-### Q4. 검색이 느려요.
-
-- FAISS 인덱스가 커질수록 약간 느려질 수 있습니다. v1.5에서 최적화 예정입니다.
-
-### Q5. 앱을 재시작하면 데이터가 사라져요.
-
-- 현재 v1.0에서는 FAISS 인덱스가 인메모리로만 저장됩니다. 앱을 재시작하면 다시 업로드해야 합니다.
-
-**해결 방법:**
-- 메타데이터는 `data/metadata/`에 JSON으로 저장되어 유지됩니다
-- 원본 파일은 `data/uploads/`에 보관됩니다
-- v1.5에서 FAISS 영속화로 재업로드 불필요하게 개선 예정입니다
+### Q6. requirements.txt 위치가 궁금해요
+- **A**: **Root 디렉토리**에 있습니다. (`flownote-dashboard/requirements.txt`)
 
 ---
 
-<br>
+## 15. 🤝 기여하기
 
-## 📄 라이선스
+### 15.1 이슈 제보
+- 버그: [GitHub Issues](https://github.com/jjaayy2222/flownote-dashboard/issues)
+- 기능 제안: [Discussions](https://github.com/jjaayy2222/flownote-dashboard/discussions)
 
-이 프로젝트는 **MIT License** 하에 배포됩니다.
-
-자세한 내용은 [LICENSE](LICENSE) 파일을 참조하세요.
+### 15.2 기여 방법
+- `Fork` 후 `새 브랜치` 생성
+- `변경` 후 `커밋` (커밋 메시지 형식: `feat[#이슈번호]: 설명`)
+- `Pull Request` 제출
 
 ---
 
-<br>
+## 16. 📄 라이선스
 
-## 👤 개발자
+`MIT License` - 자유롭게 사용, 수정, 배포 가능합니다.
 
-**`Jay`**
+---
 
+## 17. 👤 개발자
+
+**Jay**
 - GitHub: [@jjaayy2222](https://github.com/jjaayy2222)
 
 ---
 
-<br>
+## 18. 🙏 감사의 말
 
-## 🙏 감사의 말
+이 프로젝트는 다음 기술/도구 덕분에 가능했습니다:
 
-이 프로젝트는 다음 라이브러리와 도구들 덕분에 가능했습니다:
-
-- [Streamlit](https://streamlit.io/) - 빠른 웹 앱 개발
-- [LangChain](https://python.langchain.com/) - LLM 애플리케이션 프레임워크
-- [FAISS](https://github.com/facebookresearch/faiss) - 빠른 벡터 검색
-- [OpenAI](https://openai.com/) - 강력한 임베딩 모델
-- [Perplexity AI](https://www.perplexity.ai/) - 개발 과정의 조력자
-- [Claude]([https://www.](https://claude.ai/)) - `Claude-4.5-sonnet` 모델
+- **OpenAI** - GPT-4o 모델
+- **LangChain** - AI 체인 프레임워크
+- **FastAPI** - 빠른 API 개발
+- **React** - 모던 UI
+- **Perplexity AI** - 개발 조력
+- **Claude** & **bomi 멘토님** - 멘토링 & 검수
 
 ---
 
 <br>
 
 <p align="center">
-  <strong>FlowNote</strong> - AI 대화를 흘려보내지 않고, 기록하고 활용하세요 💙
+  <strong>FlowNote Dashboard</strong> - AI가 당신의 할일을 정리해줍니다 🚀
 </p>
 
 <p align="center">
   Made with ❤️ by <a href="https://github.com/jjaayy2222">Jay</a>
 </p>
 
+---
