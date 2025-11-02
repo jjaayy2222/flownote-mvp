@@ -5,6 +5,7 @@ LangChain을 사용한 PARA 분류 통합 모듈 (메타데이터 대비)
 GPT-4o-mini를 사용한 AI 기반 분류
 - 상대경로 + 동적 버전
 - 정규표현식 사용
+- metadata_classification_prompt 읽기 추가 
 """
 
 import json
@@ -276,6 +277,195 @@ def classify_with_langchain(
         raise
 
 
+# ============================================================
+# 메타데이터 기반 PARA 분류 (새로 추가)
+# ============================================================
+
+def get_metadata_classification_prompt() -> str:
+    """메타데이터 분류 프롬프트 파일 읽기"""
+    prompt_path = CLASSIFIER_DIR / "prompts" / "metadata_classification_prompt.txt"
+    try:
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        
+        # 간단한 이스케이프 처리
+        lines = []
+        for line in content.split('\n'):
+            if '{metadata}' in line:
+                lines.append(line)
+            else:
+                line = line.replace('{', '{{').replace('}', '}}')
+                line = line.replace('{{metadata}}', '{metadata}')
+                lines.append(line)
+        
+        return '\n'.join(lines)
+    except FileNotFoundError:
+        logger.error(f"메타데이터 프롬프트 파일을 찾을 수 없습니다: {prompt_path}")
+        raise
+
+
+def create_metadata_classification_chain():
+    """메타데이터 기반 PARA 분류 Chain 생성"""
+    prompt_content = get_metadata_classification_prompt()
+    
+    prompt = PromptTemplate(
+        input_variables=["metadata"],
+        template=prompt_content
+    )
+    
+    llm = ChatOpenAI(
+        api_key=ModelConfig.GPT4O_MINI_API_KEY,
+        base_url=ModelConfig.GPT4O_MINI_BASE_URL,
+        model=ModelConfig.GPT4O_MINI_MODEL,
+        temperature=0.0,  # 메타데이터는 deterministic
+        max_tokens=500
+    )
+    
+    parser = JsonOutputParser(pydantic_object=PARAClassificationOutput)
+    return prompt | llm | parser
+
+
+def classify_with_metadata(
+    metadata: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    메타데이터만을 사용해 PARA로 분류
+    
+    Args:
+        metadata: 메타데이터 딕셔너리 (JSON 형식)
+        {
+            "basic_info": {...},
+            "temporal_info": {...},
+            ...
+        }
+    
+    Returns:
+        Dict: 분류 결과
+        {
+            "category": str,
+            "confidence": float,
+            "reasoning": str,
+            "detected_cues": List[str],
+            "source": str,
+            "metadata_used": bool
+        }
+    """
+    try:
+        # Chain 생성
+        chain = create_metadata_classification_chain()
+        
+        # 메타데이터를 JSON 문자열로 변환
+        metadata_json = json.dumps(metadata, ensure_ascii=False, indent=2)
+        
+        # 분류 실행
+        result = chain.invoke({"metadata": metadata_json})
+        
+        logger.info(
+            f"메타데이터 분류 완료: {result['category']} "
+            f"(confidence: {result['confidence']:.2%})"
+        )
+        
+        return {
+            "category": result["category"],
+            "confidence": result["confidence"],
+            "reasoning": result["reasoning"],
+            "detected_cues": result.get("detected_cues", []),
+            "source": "metadata",
+            "metadata_used": True
+        }
+    
+    except Exception as e:
+        logger.error(f"메타데이터 분류 중 오류: {str(e)}")
+        raise
+
+
+def hybrid_classify(
+    text: str,
+    metadata: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    텍스트와 메타데이터 모두를 사용해 하이브리드 분류
+    
+    Args:
+        text: 분류할 텍스트
+        metadata: 메타데이터 딕셔너리
+    
+    Returns:
+        Dict: 통합 분류 결과
+        {
+            "category": str,
+            "confidence": float,
+            "reasoning": str,
+            "text_result": {...},
+            "metadata_result": {...},
+            "merge_strategy": str,
+            "source": str
+        }
+    """
+    try:
+        # 1. 텍스트 분류
+        text_result = classify_with_langchain(text)
+        
+        # 2. 메타데이터 분류
+        metadata_result = classify_with_metadata(metadata)
+        
+        # 3. 신뢰도 기반 병합
+        text_conf = text_result["confidence"]
+        meta_conf = metadata_result["confidence"]
+        
+        if text_conf >= 0.7:
+            # 텍스트 70% + 메타 30%
+            merge_strategy = "text_dominant (0.7:0.3)"
+            # 텍스트 결과를 주로 사용하되 신뢰도 조정
+            final_category = text_result["category"]
+            final_confidence = min(
+                text_conf * 0.7 + meta_conf * 0.3,
+                1.0
+            )
+        elif text_conf >= 0.5:
+            # 텍스트 50% + 메타 50%
+            merge_strategy = "balanced (0.5:0.5)"
+            # 동의하면 높은 신뢰도, 불일치하면 낮은 신뢰도
+            if text_result["category"] == metadata_result["category"]:
+                final_category = text_result["category"]
+                final_confidence = max(text_conf, meta_conf)
+            else:
+                # 불일치 시 메타데이터 우선 (메타가 더 명시적)
+                final_category = metadata_result["category"]
+                final_confidence = min(
+                    text_conf * 0.5 + meta_conf * 0.5,
+                    1.0
+                )
+        else:
+            # 메타데이터 우선 (70% 이상)
+            merge_strategy = "metadata_dominant (0.3:0.7)"
+            final_category = metadata_result["category"]
+            final_confidence = min(
+                text_conf * 0.3 + meta_conf * 0.7,
+                1.0
+            )
+        
+        logger.info(
+            f"하이브리드 분류: {final_category} "
+            f"(strategy: {merge_strategy}, confidence: {final_confidence:.2%})"
+        )
+        
+        return {
+            "category": final_category,
+            "confidence": final_confidence,
+            "reasoning": f"텍스트: {text_result['reasoning']} | 메타: {metadata_result['reasoning']}",
+            "text_result": text_result,
+            "metadata_result": metadata_result,
+            "merge_strategy": merge_strategy,
+            "source": "hybrid"
+        }
+    
+    except Exception as e:
+        logger.error(f"하이브리드 분류 중 오류: {str(e)}")
+        raise
+
+
+
 # 테스트용
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
@@ -321,6 +511,55 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"오류: {e}")
 
+    # 추가
+    # 테스트 3: 메타데이터만 분류 (새로운 함수)
+    print("\n" + "="*60)
+    print("테스트 3: 메타데이터만 분류")
+    print("="*60)
+
+    test_metadata = {
+        "basic_info": {
+            "title": "2024년 완료된 프로젝트 보고서",
+            "summary": "지난해 프로젝트들의 최종 결과",
+            "content_type": "report"
+        },
+        "temporal_info": {
+            "created_date": "2024-12-31",
+            "deadline": None,
+            "status": "completed"
+        }
+    }
+
+    try:
+        result = classify_with_metadata(test_metadata)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+    except Exception as e:
+        print(f"오류: {e}")
+
+    # 테스트 4: 하이브리드 분류 (새로운 함수)
+    print("\n" + "="*60)
+    print("테스트 4: 하이브리드 분류 (텍스트 + 메타데이터)")
+    print("="*60)
+
+    test_text = "다음 분기 마케팅 캠페인"
+    test_metadata = {
+        "basic_info": {
+            "title": "Q2_Marketing_Campaign_2025.md",
+            "created_date": "2025-11-01"
+        },
+        "temporal_info": {
+            "deadline": "2025-06-30",
+            "status": "planning"
+        }
+    }
+
+    try:
+        result = hybrid_classify(test_text, test_metadata)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+    except Exception as e:
+        print(f"오류: {e}")
+
+
 
 
 """test_result
@@ -363,6 +602,76 @@ if __name__ == "__main__":
     "detected_cues": [],
     "source": "langchain",
     "has_metadata": true
+    }
+
+"""
+
+
+
+"""test_result_2(metadata_prompt용)
+
+    ✅ ModelConfig loaded from backend.config
+    
+    ============================================================
+    Config 기반 LangChain 테스트
+    ============================================================
+    API Key: eyJ...
+    API Base: htt...................
+    Model: openai/gpt-4o-mini
+    ============================================================
+
+    ============================================================
+    테스트 3: 메타데이터만 분류
+    ============================================================
+    INFO:httpx:HTTP Request: POST https:****** "HTTP/1.1 200 OK"
+    INFO:__main__:메타데이터 분류 완료: Archives (confidence: 95.00%)
+    {
+        "category": "Archives",
+        "confidence": 0.95,
+        "reasoning": "status가 'completed'로 명시되어 있으며, action_items이 없고, 과거 날짜로 설정되어 있어 Archives로 분류됩니다.",
+        "detected_cues": [
+            "status: completed"
+        ],
+        "source": "metadata",
+        "metadata_used": true
+    }
+
+    ============================================================
+    테스트 4: 하이브리드 분류 (텍스트 + 메타데이터)
+    ============================================================
+    INFO:httpx:HTTP Request: POST https:****** "HTTP/1.1 200 OK"
+    INFO:__main__:분류 완료: Projects (confidence: 90.00%, metadata: False)
+    INFO:httpx:HTTP Request: POST https:****** "HTTP/1.1 200 OK"
+    INFO:__main__:메타데이터 분류 완료: Projects (confidence: 90.00%)
+    INFO:__main__:하이브리드 분류: Projects (strategy: text_dominant (0.7:0.3), confidence: 90.00%)
+    {
+        "category": "Projects",
+        "confidence": 0.9,
+        "reasoning": "텍스트: 다음 분기라는 시간 표현과 마케팅 캠페인이라는 구체적 목표가 있어 Projects로 분류됨. | 메타: status가 'planning'이며, deadline이 존재하여 명확한 프로젝트로 분류됩니다.",
+        "text_result": {
+            "category": "Projects",
+            "confidence": 0.9,
+            "reasoning": "다음 분기라는 시간 표현과 마케팅 캠페인이라는 구체적 목표가 있어 Projects로 분류됨.",
+            "detected_cues": [
+                "다음 분기",
+                "마케팅 캠페인"
+            ],
+            "source": "langchain",
+            "has_metadata": false
+    },
+    "metadata_result": {
+        "category": "Projects",
+        "confidence": 0.9,
+        "reasoning": "status가 'planning'이며, deadline이 존재하여 명확한 프로젝트로 분류됩니다.",
+        "detected_cues": [
+            "status: planning",
+            "deadline: 2025-06-30"
+        ],
+        "source": "metadata",
+        "metadata_used": true
+    },
+    "merge_strategy": "text_dominant (0.7:0.3)",
+    "source": "hybrid"
     }
 
 """

@@ -1,16 +1,20 @@
 # backend/classifier/para_classifier.py 
 
 """
-PARA 분류기 모듈 (업그레이드 버전)
+PARA 분류기 - LangChain 기반
 텍스트를 Projects, Areas, Resources, Archives로 분류
-LangChain 통합 완료
+상대경로 + Fallback 시스템 포함
 """
 
 from typing import Dict, Tuple, Optional, Any
 import logging
 from datetime import datetime
+from pathlib import Path
 
-from langchain_integration import classify_with_langchain
+prompt_path = Path(__file__).parent / "prompts" / "para_system.txt"
+
+#from langchain_integration import classify_with_langchain
+from backend.classifier.langchain_integration import classify_with_langchain
 
 logger = logging.getLogger(__name__)
 
