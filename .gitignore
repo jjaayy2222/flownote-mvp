@@ -5,12 +5,30 @@
 .env.development
 .env.production
 
-# Python
+# Python 캐시
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
 # 가상환경
 myenv/
@@ -19,47 +37,66 @@ ENV/
 venv/
 env/
 
-# 데이터 (개인 대화 파일)
-data/uploads/*
-data/faiss/*
-data/exports/*
-data/metadata.json
-/data/search_history.json
-
-# 예외: 샘플 파일은 허용
-!data/uploads/.gitkeep
-!data/faiss/.gitkeep
-!data/exports/.gitkeep
-
 # IDE
 .vscode/
 .idea/
-.DS_Store
-*.code-workspace
 *.swp
 *.swo
-*~
+*.sublime-workspace
+*.sublime-project
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# API Keys (이중 체크!)
-*.key
-*.pem
-secrets.json
+# 테스트 & 커버리지
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
 
-# 임시 생성 및 메모
+# 데이터베이스
+*.db
+*.sqlite
+*.sqlite3
+
+# 로그 파일
+*.log
+logs/
+
+# 임시 파일들
 temp/
+tmp/
 *.tmp
-uploaded_files/
+data/*
+uploaded_files/*
+
+# 마크다운/PDF 문서 (테스트용)
+*.md~
+*.pdf~
+test_*.md
+test_*.pdf
+
+# IDE 생성 파일
+*.code-workspace
+
+# 다른 OS 파일들
+.AppleDouble
+.LSOverride
+._*
+
+# 프로젝트 임시 파일
+.env.backup
+.env.example
+
+# 테스트 불필요 파일들
+tests/conftest.py
+tests/para_agent2.py
+tests/test_all_categories.py
+tests/test_api.py
+tests/test_api_server.py
+tests/test_classifier_routes.py
+tests/test_classify_cli.py
+tests/test_frontend.js
 tests/test_results.txt
-data/
-
-# Streamlit
-.streamlit/
-
-# tests/ 내용 (단, test_conflict_cases_scenarios는 제외!)
-tests/*
-!tests/test_conflict_cases_scenarios/
-!tests/test_conflict_cases_scenarios/**
