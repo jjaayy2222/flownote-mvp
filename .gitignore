@@ -59,6 +59,7 @@ data/
 # Streamlit
 .streamlit/
 
-# tests/ 내용
-/tests/
-
+# tests/ 내용 (단, test_conflict_cases_scenarios는 제외!)
+tests/*
+!tests/test_conflict_cases_scenarios/
+!tests/test_conflict_cases_scenarios/**
