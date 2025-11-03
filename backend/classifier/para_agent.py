@@ -1,10 +1,11 @@
 # backend/classifier/para_agent.py
 
 """
-LangGraph 기반 PARA Agent (수정 버전)
+LangGraph 기반 PARA Agent (수정 버전-비동기 ver)
 """
 
-from typing import TypedDict, Annotated
+from typing import TypedDict
+import asyncio
 from langgraph.graph import StateGraph, START, END
 from langchain_openai import ChatOpenAI
 from backend.config import ModelConfig
@@ -77,6 +78,32 @@ def reanalysis_node(state: PARAAgentState) -> PARAAgentState:
     
     return state
 
+
+def conflict_resolution_node(state: PARAAgentState) -> PARAAgentState:
+    """Conflict Resolution Node - 진짜 충돌 해결 로직"""
+    
+    para_result = state.get("para_result", {})
+    keyword_result = state.get("keyword_result", {})
+    
+    # 테스트 후 딕셔너리 구조로 변환
+    conflict_result = {
+        "para_decision": para_result.get("category", "Unknown"),
+        "para_confidence": para_result.get("confidence", 0.0),
+        "keyword_decision": keyword_result.get("category", "None"),
+        "is_conflict": para_result.get("category") != keyword_result.get("category"),
+        "final_decision": para_result.get("category"),              # PARA 우선
+        "reasoning": para_result.get("reasoning", "")
+    }
+    
+    state["conflict_result"] = conflict_result
+    state["requires_user_review"] = conflict_result.get("is_conflict", False)
+    logger.info(f"✅ Conflict resolved: {conflict_result['final_decision']}")
+    
+    return state
+
+
+
+
 def final_decision_node(state: PARAAgentState) -> PARAAgentState:
     """Final Decision Node - 최종 결정"""
     state["final_result"] = state.get("para_result", {})
@@ -91,9 +118,9 @@ def create_para_agent_graph():
     # 노드 추가
     graph.add_node("input", input_node)
     graph.add_node("validation", validation_node)
-    graph.add_node("classification", classification_node)  # 추가!
+    graph.add_node("classification", classification_node)
     graph.add_node("reanalysis", reanalysis_node)
-    graph.add_node("conflict_resolution", conflict_resolution_node)  # ✅ 추가!
+    graph.add_node("conflict_resolution", conflict_resolution_node)
     graph.add_node("final_decision", final_decision_node)
     
     # 엣지 추가
@@ -109,17 +136,14 @@ def create_para_agent_graph():
     # ✅ 새 흐름 (conflict_resolution 포함!)
     graph.add_edge("classification", "conflict_resolution")  # ← 수정!
     graph.add_edge("conflict_resolution", "final_decision")
-    
-    # reanalysis도 최종 결정으로
-    graph.add_edge("reanalysis", "final_decision")  # ← 주석 제거!
-
+    graph.add_edge("reanalysis", "final_decision")
     graph.add_edge("final_decision", END)
     
     return graph.compile()
 
-# 🔷 4. 메인 함수
-def run_para_agent(text: str, metadata: dict = None) -> dict:
-    """PARA Agent 실행"""
+# 🔷 4. 메인 함수 (✅ 비동기 처리!)
+async def run_para_agent(text: str, metadata: dict = None) -> dict:
+    """PARA Agent 실행 (비동기)"""
     if metadata is None:
         metadata = {}
     
@@ -132,7 +156,6 @@ def run_para_agent(text: str, metadata: dict = None) -> dict:
         "confidence": 0.0,
         "needs_reanalysis": False,
         "final_result": {},
-        # ✅ 추가!!
         "keyword_result": {},
         "conflict_result": {},
         "requires_user_review": False,
@@ -141,30 +164,10 @@ def run_para_agent(text: str, metadata: dict = None) -> dict:
     result = agent.invoke(initial_state)
     return result["final_result"]
 
-# 새 Node 함수 1개 추가
-def conflict_resolution_node(state: PARAAgentState) -> PARAAgentState:
-    """ConflictResolver 호출 - PARA vs Keyword 충돌 해결"""
-    from backend.classifier.conflict_resolver import ConflictResolver
-    
-    para_result = state.get("para_result", {})
-    keyword_result = state.get("keyword_result", {})
-    metadata = state.get("metadata", {})
-    
-    # ConflictResolver 호출
-    resolver = ConflictResolver()
-    conflict_result = resolver.resolve_conflict(
-        para_result=para_result,
-        keyword_result=keyword_result,
-        metadata=metadata
-    )
-    
-    state["conflict_result"] = conflict_result
-    state["requires_user_review"] = conflict_result.get("requires_user_review", False)
-    
-    logger.info(f"Conflict resolution: {conflict_result.get('decision', 'N/A')}")
-    
-    return state
-
+# 🔷 5. Sync 래퍼 (CLI용)
+def run_para_agent_sync(text: str, metadata: dict = None) -> dict:
+    """PARA Agent 실행 (동기 - CLI용)"""
+    return asyncio.run(run_para_agent(text, metadata))
 
 
 
@@ -209,7 +212,7 @@ if __name__ == "__main__":
 """
 
 
-"""direct_test_result_2 ⭕️
+"""direct_test_result_2 → ⭕️
 
     ➀ 테스트 실행 = `pytest tests/test_para_agent.py::test_para_agent_basic -v`
     
@@ -273,3 +276,6 @@ if __name__ == "__main__":
     - ❌ 테스트 없는 것 (`test_para_agent_basic ()`)
 
 """
+
+
+
