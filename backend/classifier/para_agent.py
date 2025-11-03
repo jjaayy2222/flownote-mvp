@@ -164,12 +164,29 @@ async def run_para_agent(text: str, metadata: dict = None) -> dict:
     result = agent.invoke(initial_state)
     return result["final_result"]
 
-# 🔷 5. Sync 래퍼 (CLI용)
+# 새로운 동기함수 추가 (동기 wrapper)
 def run_para_agent_sync(text: str, metadata: dict = None) -> dict:
-    """PARA Agent 실행 (동기 - CLI용)"""
-    return asyncio.run(run_para_agent(text, metadata))
-
-
+    """PARA Agent 실행 (동기) - CLI/API용"""
+    if metadata is None:
+        metadata = {}
+    
+    agent = create_para_agent_graph()
+    
+    initial_state = {
+        "text": text,
+        "metadata": metadata,
+        "para_result": {},
+        "confidence": 0.0,
+        "needs_reanalysis": False,
+        "final_result": {},
+        "keyword_result": {},
+        "conflict_result": {},
+        "requires_user_review": False,
+    }
+    
+    # ✅ 비동기 없음! 직접 실행
+    result = agent.invoke(initial_state)
+    return result["final_result"]
 
 
 # 테스트 함수

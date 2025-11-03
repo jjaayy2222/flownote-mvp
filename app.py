@@ -1,7 +1,7 @@
 # ━━━━━━━━━━━━━━━━━━━━
 # app.py
 # ━━━━━━━━━━━━━━━━━━━━
-# app.py
+
 import streamlit as st
 import numpy as np
 from pathlib import Path
@@ -17,6 +17,17 @@ from backend.validators import FileValidator
 from backend.exceptions import FileValidationError
 from backend.utils import format_file_size, load_pdf
 from backend.export import MarkdownExporter
+from backend.routes.conflict_routes import router as conflict_router    # 추가
+
+# 추가
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+# 추가
+app = FastAPI()
+
+# Router 등록
+app.include_router(conflict_router, prefix="/api/conflict", tags=["conflict"])
 
 st.set_page_config(page_title="FlowNote", page_icon="📚", layout="wide")
 
