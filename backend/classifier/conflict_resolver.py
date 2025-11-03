@@ -3,6 +3,7 @@
 """
 Conflict Resolver
 """
+
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
 import logging
@@ -54,9 +55,12 @@ class ConflictResolver:
                 "para_category": str,
                 "keyword_tags": list,
                 "confidence": float,
+                "confidence_gap": float,  # 추가됨
                 "conflict_detected": bool,
                 "resolution_method": str,
-                "requires_review": bool
+                "requires_review": bool,
+                "para_reasoning": str,
+                "reason": str
             }
         """
         
@@ -72,10 +76,13 @@ class ConflictResolver:
                 "para_category": para_result.category,
                 "keyword_tags": keyword_result.tags or [keyword_result.category],
                 "confidence": winner.confidence,
+                "confidence_gap": round(gap, 3),  # 추가됨
                 "conflict_detected": False,
                 "resolution_method": "auto_by_confidence",
                 "requires_review": False,
-                "winner_source": winner.source
+                "winner_source": winner.source,
+                "para_reasoning": para_result.reasoning,
+                "reason": f"명확한 승자 선택됨 (Gap: {gap:.2f})"
             }
         else:
             # 모호한 상황 → User Review
@@ -84,11 +91,12 @@ class ConflictResolver:
                 "para_category": para_result.category,
                 "keyword_tags": keyword_result.tags or [keyword_result.category],
                 "confidence": max(para_result.confidence, keyword_result.confidence),
+                "confidence_gap": round(gap, 3),
                 "conflict_detected": True,
                 "resolution_method": "pending_user_review",
                 "requires_review": True,
-                "confidence_gap": round(gap, 3),
-                "reason": f"Confidence gap ({gap:.2f}) < threshold ({self.threshold})"
+                "para_reasoning": para_result.reasoning,
+                "reason": f"모호한 상황 감지됨 (Gap: {gap:.2f} < Threshold: {self.threshold})"
             }
         
         # 3. 히스토리 저장
@@ -137,11 +145,12 @@ class ConflictResolver:
             1 for h in self.resolution_history 
             if h["resolution"]["conflict_detected"]
         )
+        auto_resolved = total - conflicts
         
         return {
             "total_resolutions": total,
             "conflicts_detected": conflicts,
             "conflict_rate": round(conflicts / total, 3) if total > 0 else 0,
-            "auto_resolved": total - conflicts,
-            "auto_resolve_rate": round((total - conflicts) / total, 3) if total > 0 else 0
+            "auto_resolved": auto_resolved,
+            "auto_resolve_rate": round(auto_resolved / total, 3) if total > 0 else 0
         }
