@@ -11,7 +11,7 @@ Scenario 1: 자동 신뢰도 해결 (Confidence Gap > 0.2)
 import sys
 from pathlib import Path
 
-# ✅ 상대 경로
+# 상대 경로
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
