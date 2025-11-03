@@ -25,6 +25,11 @@ class PARAAgentState(TypedDict):
     confidence: float
     needs_reanalysis: bool
     final_result: dict
+    # 추가
+    keyword_result: dict
+    conflict_result: dict
+    requires_user_review: bool
+    
 
 # 🔷 2. Node 함수들
 def input_node(state: PARAAgentState) -> PARAAgentState:
@@ -86,22 +91,28 @@ def create_para_agent_graph():
     # 노드 추가
     graph.add_node("input", input_node)
     graph.add_node("validation", validation_node)
-    graph.add_node("classification", classification_node)  # ✅ 추가!
+    graph.add_node("classification", classification_node)  # 추가!
     graph.add_node("reanalysis", reanalysis_node)
+    graph.add_node("conflict_resolution", conflict_resolution_node)  # ✅ 추가!
     graph.add_node("final_decision", final_decision_node)
     
     # 엣지 추가
     graph.add_edge(START, "input")
     graph.add_edge("input", "validation")
     
-    # ✅ 조건부 분기 수정
+    # 조건부 분기 수정
     graph.add_conditional_edges(
         "validation",
         lambda x: "reanalysis" if x["needs_reanalysis"] else "classification"
     )
     
-    graph.add_edge("classification", "final_decision")  # ✅ 정상 경로
-    graph.add_edge("reanalysis", "final_decision")     # ✅ 재분석 경로
+    # ✅ 새 흐름 (conflict_resolution 포함!)
+    graph.add_edge("classification", "conflict_resolution")  # ← 수정!
+    graph.add_edge("conflict_resolution", "final_decision")
+    
+    # reanalysis도 최종 결정으로
+    graph.add_edge("reanalysis", "final_decision")  # ← 주석 제거!
+
     graph.add_edge("final_decision", END)
     
     return graph.compile()
@@ -120,11 +131,42 @@ def run_para_agent(text: str, metadata: dict = None) -> dict:
         "para_result": {},
         "confidence": 0.0,
         "needs_reanalysis": False,
-        "final_result": {}
+        "final_result": {},
+        # ✅ 추가!!
+        "keyword_result": {},
+        "conflict_result": {},
+        "requires_user_review": False,
     }
     
     result = agent.invoke(initial_state)
     return result["final_result"]
+
+# 새 Node 함수 1개 추가
+def conflict_resolution_node(state: PARAAgentState) -> PARAAgentState:
+    """ConflictResolver 호출 - PARA vs Keyword 충돌 해결"""
+    from backend.classifier.conflict_resolver import ConflictResolver
+    
+    para_result = state.get("para_result", {})
+    keyword_result = state.get("keyword_result", {})
+    metadata = state.get("metadata", {})
+    
+    # ConflictResolver 호출
+    resolver = ConflictResolver()
+    conflict_result = resolver.resolve_conflict(
+        para_result=para_result,
+        keyword_result=keyword_result,
+        metadata=metadata
+    )
+    
+    state["conflict_result"] = conflict_result
+    state["requires_user_review"] = conflict_result.get("requires_user_review", False)
+    
+    logger.info(f"Conflict resolution: {conflict_result.get('decision', 'N/A')}")
+    
+    return state
+
+
+
 
 
 # 테스트 함수
@@ -147,7 +189,7 @@ if __name__ == "__main__":
 
 
 
-"""direct_test_result → ⭕️
+"""direct_test_result_1 → ⭕️
 
     python -m backend.classifier.para_agent
 
@@ -163,5 +205,71 @@ if __name__ == "__main__":
     Result: {'category': 'Projects', 'confidence': 0.85, 
             'reasoning': "status가 'in_progress'로 활성 작업을 나타내며, 프로젝트로 분류할 수 있습니다.", 
             'detected_cues': ['status: in_progress'], 'source': 'metadata', 'metadata_used': True}
+
+"""
+
+
+"""direct_test_result_2 ⭕️
+
+    ➀ 테스트 실행 = `pytest tests/test_para_agent.py::test_para_agent_basic -v`
+    
+    ============================== test session starts ==============================
+    platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+    cachedir: .pytest_cache
+    rootdir: /Users/jay/ICT-projects/flownote-mvp
+    plugins: anyio-4.11.0, langsmith-0.4.37
+    collected 0 items                                                               
+
+    ============================= no tests ran in 0.68s =============================
+    ERROR: not found: /Users/jay/ICT-projects/flownote-mvp/tests/test_para_agent.py::test_para_agent_basic
+    (no match in any of [<Module test_para_agent.py>])
+    
+    ➁ conflict 테스트 = `pytest tests/ -k "conflict" -v 2>&1 | head -60`
+
+    ============================= test session starts ==============================
+    platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+    cachedir: .pytest_cache
+    rootdir: /Users/jay/ICT-projects/flownote-mvp
+    plugins: anyio-4.11.0, langsmith-0.4.37
+    collecting ... collected 33 items / 2 errors / 29 deselected / 4 selected
+
+    ==================================== ERRORS ====================================
+    ______________ ERROR collecting tests/test_chunking_embedding.py _______________
+    ImportError while importing test module '/Users/jay/ICT-projects/flownote-mvp/tests/test_chunking_embedding.py'.
+    Hint: make sure your test modules/packages have valid Python names.
+    Traceback:
+    ../../.pyenv/versions/3.11.10/lib/python3.11/importlib/__init__.py:126: in import_module
+        return _bootstrap._gcd_import(name[level:], package, level)
+    tests/test_chunking_embedding.py:16: in <module>
+        from backend.chunking import chunk_text, chunk_with_metadata
+    E   ImportError: cannot import name 'chunk_text' from 'backend.chunking' (/Users/jay/ICT-projects/flownote-mvp/backend/chunking.py)
+    _____________________ ERROR collecting tests/test_faiss.py _____________________
+    ImportError while importing test module '/Users/jay/ICT-projects/flownote-mvp/tests/test_faiss.py'.
+    Hint: make sure your test modules/packages have valid Python names.
+    Traceback:
+    ../../.pyenv/versions/3.11.10/lib/python3.11/importlib/__init__.py:126: in import_module
+        return _bootstrap._gcd_import(name[level:], package, level)
+    tests/test_faiss.py:16: in <module>
+        from backend.chunking import chunk_with_metadata
+    E   ImportError: cannot import name 'chunk_with_metadata' from 'backend.chunking' (/Users/jay/ICT-projects/flownote-mvp/backend/chunking.py)
+    =============================== warnings summary ===============================
+    tests/test_compatibility.py:30
+    /Users/jay/ICT-projects/flownote-mvp/tests/test_compatibility.py:30: PytestCollectionWarning: cannot collect test class 'TestIntegration' because it has a __init__ constructor (from: tests/test_compatibility.py)
+        class TestIntegration:
+
+    -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+    =========================== short test summary info ============================
+    ERROR tests/test_chunking_embedding.py
+    ERROR tests/test_faiss.py
+    !!!!!!!!!!!!!!!!!!! Interrupted: 2 errors during collection !!!!!!!!!!!!!!!!!!!!
+    ================= 29 deselected, 1 warning, 2 errors in 6.86s ==================
+
+    - `para_agent.py` 파일 문법 체크 완료
+        - conflict_resolution_node 추가
+        - State에 3개 필드 추가
+        - graph에 node + edge 추가
+        - initial_state에 필드 추가
+    - 수정 잘 되었음
+    - ❌ 테스트 없는 것 (`test_para_agent_basic ()`)
 
 """
