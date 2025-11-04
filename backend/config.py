@@ -192,6 +192,21 @@ class AppConfig:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 🔧 래퍼 함수 & 상수 (직접 임포트용)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def get_embedding_model(model_name: str):
+    """래퍼 함수 - 직접 임포트 가능"""
+    return ModelConfig.get_embedding_model(model_name)
+
+# 📌 app.py에서 사용할 상수들
+EMBEDDING_MODEL = ModelConfig.EMBEDDING_MODEL
+EMBEDDING_COSTS = {
+    "text-embedding-3-small": 0.02 / 1_000_000,
+    "text-embedding-3-large": 0.13 / 1_000_000,
+}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 메인 실행 (테스트용)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -245,6 +260,43 @@ if __name__ == "__main__":
 """result_5 - ⭕️ Configured successfully
 
     - .env에서 환경변수 이름 수정 후 성공 
+
+    🔍 Model Configuration Status:
+    ==================================================
+    GPT-4o:
+        Model: openai/gpt-4o
+        Status: ✅ 설정됨
+
+    GPT-4o-mini:
+        Model: openai/gpt-4o-mini
+        Status: ✅ 설정됨
+
+    🆕 GPT-4.1 (Vision API):
+        Model: openai/gpt-4.1
+        Base URL: https://ml********
+        Status: ✅ 설정됨
+
+    Embedding Small:
+        Model: text-embedding-3-small
+        Status: ✅ 설정됨
+
+    Embedding Large:
+        Model: openai/text-embedding-3-large
+        Status: ✅ 설정됨
+    ==================================================
+
+    📁 Path Configuration:
+    BASE_DIR: /Users/jay/ICT-projects/flownote-mvp
+    DATA_DIR: /Users/jay/ICT-projects/flownote-mvp/data
+    UPLOAD_DIR: /Users/jay/ICT-projects/flownote-mvp/data/uploads
+    DB_DIR: /Users/jay/ICT-projects/flownote-mvp/data/db
+
+"""
+
+
+"""test_result_6 - ⭕️ Configured successfully
+
+    - Class method + 함수형 method 분리 테스트
 
     🔍 Model Configuration Status:
     ==================================================

@@ -6,7 +6,9 @@
 FlowNote MVP - 임베딩 생성
 """
 
-from backend.config import get_embedding_model, EMBEDDING_MODEL, EMBEDDING_COSTS
+#from backend.config import get_embedding_model, EMBEDDING_MODEL, EMBEDDING_COSTS
+from backend.config import ModelConfig, EMBEDDING_MODEL
+from backend.config import EMBEDDING_MODEL, EMBEDDING_COSTS, get_embedding_model
 from backend.utils import count_tokens, estimate_cost
 
 
@@ -15,8 +17,9 @@ class EmbeddingGenerator:
     
     def __init__(self, model_name: str = EMBEDDING_MODEL):
         self.model_name = model_name
-        self.client = get_embedding_model(model_name)
-        self.cost_per_token = EMBEDDING_COSTS.get(model_name.split('/')[-1], 0.02 / 1_000_000)
+        #self.client = get_embedding_model(model_name)
+        self.client = ModelConfig.get_embedding_model(model_name)
+        self.cost_per_token = EMBEDDING_COSTS.get(model_name.split('/')[-1], 0.02 / 1_000_000)  #?
     
     def generate_embeddings(self, texts: list[str]) -> dict:
         """텍스트 리스트에 대한 임베딩 생성"""
@@ -94,6 +97,25 @@ if __name__ == "__main__":
 
 
 """result_3
+
+    ==================================================
+    임베딩 테스트
+    ==================================================
+
+    📊 임베딩 생성 중... (3개 청크)
+    ✅ 임베딩 완료!
+        - 청크 수: 3
+        - 토큰 수: 48
+        - 예상 비용: $0.000001
+        - 벡터 차원: 1536
+
+    ==================================================
+
+"""
+
+
+
+"""result_4 - 클래스형 + 함수형 config.py 수정 후 
 
     ==================================================
     임베딩 테스트
