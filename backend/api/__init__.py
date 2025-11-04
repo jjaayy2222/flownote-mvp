@@ -1,8 +1,7 @@
 # backend/api/__init__.py
 
-"""API module for FlowNote"""
+"""API Module - FlowNote"""
 
-from .models import *
-from .routes import *
+from . import endpoints
 
-__all__ = ["models", "routes"]
+__all__ = ["endpoints"]
