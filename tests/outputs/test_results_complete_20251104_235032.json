@@ -1,0 +1,181 @@
+{
+  "timestamp": "20251104_235032",
+  "test_stages": {
+    "step_01_upload": {
+      "status": "success",
+      "total_files": 4,
+      "uploaded_files": [
+        {
+          "filename": "project_flownote.md",
+          "file_id": "uuid-project_flownote.md",
+          "size": 375,
+          "status": "uploaded"
+        },
+        {
+          "filename": "area_development.md",
+          "file_id": "uuid-area_development.md",
+          "size": 265,
+          "status": "uploaded"
+        },
+        {
+          "filename": "resource_docs.md",
+          "file_id": "uuid-resource_docs.md",
+          "size": 344,
+          "status": "uploaded"
+        },
+        {
+          "filename": "archive_old.md",
+          "file_id": "uuid-archive_old.md",
+          "size": 357,
+          "status": "uploaded"
+        }
+      ]
+    },
+    "step_02_classification": {
+      "status": "success",
+      "classifications": [
+        {
+          "file_id": "uuid-project_flownote.md",
+          "filename": "project_flownote.md",
+          "para_category": "Projects",
+          "confidence": 0.95,
+          "keywords": [
+            "project",
+            "implementation",
+            "objectives",
+            "deploy"
+          ],
+          "metadata": {
+            "file_type": "markdown",
+            "content_length": 512,
+            "extracted_topics": [
+              "backend",
+              "api",
+              "database"
+            ]
+          }
+        },
+        {
+          "file_id": "uuid-area_development.md",
+          "filename": "area_development.md",
+          "para_category": "Areas",
+          "confidence": 0.92,
+          "keywords": [
+            "area",
+            "infrastructure",
+            "team",
+            "management"
+          ],
+          "metadata": {
+            "file_type": "markdown",
+            "content_length": 480,
+            "extracted_topics": [
+              "development",
+              "infrastructure"
+            ]
+          }
+        },
+        {
+          "file_id": "uuid-resource_docs.md",
+          "filename": "resource_docs.md",
+          "para_category": "Resources",
+          "confidence": 0.9,
+          "keywords": [
+            "resource",
+            "documentation",
+            "tool",
+            "reference"
+          ],
+          "metadata": {
+            "file_type": "markdown",
+            "content_length": 450,
+            "extracted_topics": [
+              "docs",
+              "tools",
+              "reference"
+            ]
+          }
+        },
+        {
+          "file_id": "uuid-archive_old.md",
+          "filename": "archive_old.md",
+          "para_category": "Archives",
+          "confidence": 0.88,
+          "keywords": [
+            "archive",
+            "old",
+            "deprecated",
+            "legacy"
+          ],
+          "metadata": {
+            "file_type": "markdown",
+            "content_length": 420,
+            "extracted_topics": [
+              "archive",
+              "legacy"
+            ]
+          }
+        }
+      ]
+    },
+    "step_03_conflict_detection": {
+      "status": "success",
+      "total_conflicts": 0,
+      "conflicts": []
+    },
+    "step_04_conflict_resolution": {
+      "status": "success",
+      "resolved_conflicts": 0,
+      "resolutions": []
+    },
+    "step_05_dashboard": {
+      "status": "success",
+      "dashboard_data": {
+        "total_files": 4,
+        "classified_files": 4,
+        "files": [
+          {
+            "file_id": "uuid-project_flownote.md",
+            "filename": "project_flownote.md",
+            "para_category": "Projects",
+            "confidence": 0.95,
+            "status": "processed"
+          },
+          {
+            "file_id": "uuid-area_development.md",
+            "filename": "area_development.md",
+            "para_category": "Areas",
+            "confidence": 0.92,
+            "status": "processed"
+          },
+          {
+            "file_id": "uuid-resource_docs.md",
+            "filename": "resource_docs.md",
+            "para_category": "Resources",
+            "confidence": 0.9,
+            "status": "processed"
+          },
+          {
+            "file_id": "uuid-archive_old.md",
+            "filename": "archive_old.md",
+            "para_category": "Archives",
+            "confidence": 0.88,
+            "status": "processed"
+          }
+        ],
+        "conflicts": {
+          "total": 0,
+          "resolved": 0,
+          "pending": 0
+        },
+        "statistics": {
+          "projects_count": 1,
+          "areas_count": 1,
+          "resources_count": 1,
+          "archives_count": 1,
+          "total_confidence_avg": 0.91
+        }
+      }
+    }
+  }
+}
