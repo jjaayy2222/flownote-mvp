@@ -86,9 +86,18 @@ test_*.pdf
 .LSOverride
 ._*
 
+# frontend
+/frontend/package-lock.json
+
 # 프로젝트 임시 파일
 .env.backup
 .env.example
+*.json
+
+
+# StreamLit 캐시
+.streamlit/
+
 
 # 테스트 불필요 파일들
 tests/conftest.py
