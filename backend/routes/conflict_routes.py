@@ -7,6 +7,8 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from backend.services.conflict_service import conflict_service
+from typing import List
+from backend.routes.api_models import ConflictRecord, ConflictReport
 
 #router = APIRouter(prefix="/api/classify", tags=["classification"])
 router = APIRouter()
@@ -42,3 +44,10 @@ async def get_snapshots():
     return {"snapshots": conflict_service.get_snapshots()}
 
 
+@router.post("/resolve")
+def resolve_conflicts(conflicts: List[ConflictRecord]) -> ConflictReport:
+    """
+    충돌 해결 엔드포인트
+    """
+    from backend.api.endpoints.conflict_resolver_agent import resolve_conflicts_sync
+    return resolve_conflicts_sync(conflicts)

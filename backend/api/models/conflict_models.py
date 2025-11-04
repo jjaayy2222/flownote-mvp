@@ -35,7 +35,9 @@ class ResolutionMethod(str, Enum):
     AUTO_BY_SIMILARITY = "auto_by_similarity"       # 유사도 기반 통합
     MANUAL_OVERRIDE = "manual_override"             # 사용자 수동 선택
     AUTO_BY_LATEST = "auto_by_latest"               # 최신 타임스탬프
-
+    MANUAL_REVIEW = "manual_review"
+    PREFER_LATEST_TIMESTAMP = "prefer_latest_timestamp"
+    HYBRID_FUSION = "hybrid_fusion"
 
 class ResolutionStatus(str, Enum):
     """해결 상태"""
