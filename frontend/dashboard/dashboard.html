@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlowNote Dashboard</title>
+    <link rel="stylesheet" href="./dashboard.css">
+</head>
+<body>
+    <div class="header">
+        <h1>FlowNote Dashboard</h1>
+        <button class="refresh-btn" onclick="location.reload()">
+            <span>🔄</span>
+            <span>Refresh</span>
+        </button>
+    </div>
+    
+    <div class="container">
+        <!-- Summary Cards -->
+        <div class="summary-cards">
+            <div class="card">
+                <div class="card-icon">📁</div>
+                <div class="card-label">TOTAL FILES</div>
+                <div class="card-value">4</div>
+                <div class="card-subtext">Files in system</div>
+            </div>
+            
+            <div class="card">
+                <div class="card-icon">✅</div>
+                <div class="card-label">CLASSIFIED</div>
+                <div class="card-value">100%</div>
+                <div class="card-subtext">4 of 4 files</div>
+            </div>
+            
+            <div class="card">
+                <div class="card-icon">🎯</div>
+                <div class="card-label">AVG CONFIDENCE</div>
+                <div class="card-value">91%</div>
+                <div class="card-subtext">⭐⭐⭐⭐⭐</div>
+            </div>
+            
+            <div class="card">
+                <div class="card-icon">⚠️</div>
+                <div class="card-label">CONFLICTS</div>
+                <div class="card-value">0</div>
+                <div class="card-subtext">Pending resolution</div>
+            </div>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- PARA Distribution -->
+            <div class="chart-container">
+                <h3>PARA Distribution</h3>
+                
+                <div class="para-item">
+                    <div class="para-header">
+                        <div class="para-label">
+                            <span class="para-icon">🎯</span>
+                            <span>Projects</span>
+                        </div>
+                        <span class="para-count">1 file (25%)</span>
+                    </div>
+                    <div class="para-bar-container">
+                        <div class="para-bar projects" style="width: 25%;">
+                            25%
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="para-item">
+                    <div class="para-header">
+                        <div class="para-label">
+                            <span class="para-icon">🏗️</span>
+                            <span>Areas</span>
+                        </div>
+                        <span class="para-count">1 file (25%)</span>
+                    </div>
+                    <div class="para-bar-container">
+                        <div class="para-bar areas" style="width: 25%;">
+                            25%
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="para-item">
+                    <div class="para-header">
+                        <div class="para-label">
+                            <span class="para-icon">📚</span>
+                            <span>Resources</span>
+                        </div>
+                        <span class="para-count">1 file (25%)</span>
+                    </div>
+                    <div class="para-bar-container">
+                        <div class="para-bar resources" style="width: 25%;">
+                            25%
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="para-item">
+                    <div class="para-header">
+                        <div class="para-label">
+                            <span class="para-icon">📦</span>
+                            <span>Archives</span>
+                        </div>
+                        <span class="para-count">1 file (25%)</span>
+                    </div>
+                    <div class="para-bar-container">
+                        <div class="para-bar archives" style="width: 25%;">
+                            25%
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Files Overview -->
+            <div class="table-container">
+                <div class="table-header">
+                    <h3>Files Overview</h3>
+                    <div class="table-controls">
+                        <input type="text" class="search-box" id="searchBox" placeholder="🔍 Search files...">
+                        <select class="filter-select" id="categoryFilter">
+                            <option value="">All Categories</option>
+                            <option value="Projects">Projects</option>
+                            <option value="Areas">Areas</option>
+                            <option value="Resources">Resources</option>
+                            <option value="Archives">Archives</option>
+                        </select>
+                        <button class="clear-filters-btn" onclick="clearFilters()">Clear Filters</button>
+                    </div>
+                </div>
+                
+                <table>
+                    <thead>
+                        <tr>
+                            <th onclick="sortTable(0)">Filename ▼</th>
+                            <th onclick="sortTable(1)">Category ▼</th>
+                            <th onclick="sortTable(2)">Confidence ▼</th>
+                            <th>Keywords</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Conflict Management -->
+        <div class="conflicts-panel">
+            <h3>Conflict Management</h3>
+            <div class="no-conflicts">
+                <div class="no-conflicts-icon">✅</div>
+                <div>
+                    <strong>No conflicts detected</strong>
+                    <div class="no-conflicts-text">All files have been successfully classified</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="./dashboard.js"></script>
+</body>
+</html>
