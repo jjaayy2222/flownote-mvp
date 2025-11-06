@@ -82,6 +82,8 @@ data/exports/
 data/uploads/
 data/db/
 data/faiss/
+data/metadata.json
+data/search_history.json
 
 # 하지만 새로운 CSV/JSON은 커밋!
 # data/users/users_profiles.csv
@@ -132,5 +134,3 @@ tests/test_results.txt
 
 # 업로드된 임시 파일
 uploaded_files/
-
-data/

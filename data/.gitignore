@@ -1,0 +1,17 @@
+# CSV/JSON 데이터 파일들
+users/
+context/
+classifications/
+
+# 파일 시스템
+uploads/
+exports/
+db/
+faiss/
+
+# 시스템 파일
+.DS_Store
+*.pyc
+__pycache__/
+*.tmp
+*.log
