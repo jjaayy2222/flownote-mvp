@@ -1,3 +1,5 @@
+# .gitignore
+
 # 환경변수 (절대 커밋 금지!)
 .env
 .env.local
@@ -56,7 +58,7 @@ desktop.ini
 htmlcov/
 .tox/
 
-# 데이터베이스
+# 데이터베이스 (레거시)
 *.db
 *.sqlite
 *.sqlite3
@@ -69,8 +71,22 @@ logs/
 temp/
 tmp/
 *.tmp
-data/*
-uploaded_files/*
+
+# 🎯 DATA STRUCTURE (Phase 2)
+# ============================================
+# 사용자 프로필, 컨텍스트, 분류 로그는 유지!
+# 레거시 캐시/임시 폴더만 무시
+
+# 레거시 폴더 무시
+data/exports/
+data/uploads/
+data/db/
+data/faiss/
+
+# 하지만 새로운 CSV/JSON은 커밋!
+# data/users/users_profiles.csv
+# data/context/user_context_mapping.json
+# data/classifications/classification_log.csv
 
 # 마크다운/PDF 문서 (테스트용)
 *.md~
@@ -92,15 +108,13 @@ test_*.pdf
 # 프로젝트 임시 파일
 .env.backup
 .env.example
-*.json
-
 
 # StreamLit 캐시
 .streamlit/
+streamlit/data/
 
 # web_ui - React 관련
 web_ui/node_modules/
-# 미완성
 web_ui/src/components/
 web_ui/package.json
 web_ui/package-lock.json
@@ -115,3 +129,8 @@ tests/test_classifier_routes.py
 tests/test_classify_cli.py
 tests/test_frontend.js
 tests/test_results.txt
+
+# 업로드된 임시 파일
+uploaded_files/
+
+data/
