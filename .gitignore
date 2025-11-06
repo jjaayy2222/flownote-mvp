@@ -98,6 +98,12 @@ test_*.pdf
 # StreamLit 캐시
 .streamlit/
 
+# web_ui - React 관련
+web_ui/node_modules/
+# 미완성
+web_ui/src/components/
+web_ui/package.json
+web_ui/package-lock.json
 
 # 테스트 불필요 파일들
 tests/conftest.py

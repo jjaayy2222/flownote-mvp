@@ -2,9 +2,15 @@
 # app.py
 # ━━━━━━━━━━━━━━━━━━━━
 
+import sys
+from pathlib import Path
+
+# 프로젝트 루트 경로 추가
+project_root = Path(__file__).parent.parent 
+sys.path.insert(0, str(project_root))
+
 import streamlit as st
 import numpy as np
-from pathlib import Path
 from datetime import datetime
 
 from backend.embedding import EmbeddingGenerator
@@ -17,17 +23,17 @@ from backend.validators import FileValidator
 from backend.exceptions import FileValidationError
 from backend.utils import format_file_size, load_pdf
 from backend.export import MarkdownExporter
-from backend.routes.conflict_routes import router as conflict_router    # 추가
+#from backend.routes.conflict_routes import router as conflict_router    # 추가
 
 # 추가
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # 추가
-app = FastAPI()
+#app = FastAPI()
 
 # Router 등록
-app.include_router(conflict_router, prefix="/api/conflict", tags=["conflict"])
+#app.include_router(conflict_router, prefix="/api/conflict", tags=["conflict"])
 
 st.set_page_config(page_title="FlowNote", page_icon="📚", layout="wide")
 

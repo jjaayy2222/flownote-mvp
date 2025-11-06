@@ -1,9 +1,16 @@
 # app_simple.py (완전 개선 버전)
 
+import os
+import sys
+from pathlib import Path
+
+# 프로젝트 루트 경로 추가 (중요!!!)
+project_root = Path(__file__).parent.parent 
+sys.path.insert(0, str(project_root))
+
 import streamlit as st
 import pypdf
-import os
-from pathlib import Path
+
 from backend.classifier.para_classifier import PARAClassifier
 
 st.set_page_config(page_title="PARA Classifier", page_icon="🤖")
