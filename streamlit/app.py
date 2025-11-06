@@ -2,6 +2,7 @@
 # app.py
 # ━━━━━━━━━━━━━━━━━━━━
 
+# 가장 먼저: sys.path 설정
 import sys
 from pathlib import Path
 
@@ -9,7 +10,32 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent 
 sys.path.insert(0, str(project_root))
 
+# 두 번째: Streamlit + 환경변수 로드
 import streamlit as st
+import os
+from dotenv import load_dotenv
+
+# 로컬에서는 .env 로드
+load_dotenv()
+
+# 세 번쩨: 배포 환경에서는 Streamlit Secrets 로드
+# 배포에서는 Streamlit Secrets → 환경변수 동기화
+# (로컬에서는 st.secrets 접근하지 않음)
+try:
+    if hasattr(st, 'secrets') and len(st.secrets) > 0:
+        for key in ["EMBEDDING_API_KEY", "EMBEDDING_BASE_URL", "EMBEDDING_MODEL",
+                    "EMBEDDING_LARGE_API_KEY", "EMBEDDING_LARGE_BASE_URL", "EMBEDDING_LARGE_MODEL",
+                    "GPT4O_API_KEY", "GPT4O_BASE_URL", "GPT4O_MODEL",
+                    "GPT4O_MINI_API_KEY", "GPT4O_MINI_BASE_URL", "GPT4O_MINI_MODEL",
+                    "GPT41_API_KEY", "GPT41_BASE_URL", "GPT41_MODEL"]:
+            if key in st.secrets:
+                os.environ[key] = st.secrets[key]
+except:
+    # Secrets 파일 없음 = 로컬 개발 환경
+    # .env에서 로드된 변수 사용
+    pass
+
+# 네 번째: 임포트
 import numpy as np
 from datetime import datetime
 

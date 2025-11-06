@@ -11,6 +11,20 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 
+# Streamlit Secrets가 있으면 환경변수로 설정
+try:
+    import streamlit as st
+    if hasattr(st, 'secrets'):
+        for key in ["EMBEDDING_API_KEY", "EMBEDDING_BASE_URL", "EMBEDDING_MODEL",
+                    "EMBEDDING_LARGE_API_KEY", "EMBEDDING_LARGE_BASE_URL", "EMBEDDING_LARGE_MODEL",
+                    "GPT4O_API_KEY", "GPT4O_BASE_URL", "GPT4O_MODEL",
+                    "GPT4O_MINI_API_KEY", "GPT4O_MINI_BASE_URL", "GPT4O_MINI_MODEL",
+                    "GPT41_API_KEY", "GPT41_BASE_URL", "GPT41_MODEL"]:
+            if key in st.secrets and key not in os.environ:
+                os.environ[key] = st.secrets[key]
+except:
+    pass
+
 # 환경 변수 로드
 load_dotenv()
 
