@@ -138,3 +138,8 @@ tests/test_results.txt
 
 # 업로드된 임시 파일
 uploaded_files/
+# Test outputs
+tests/outputs/
+.pytest_cache/
+__pycache__/
+*.pyc

@@ -1,1 +1,33 @@
-{}
+{
+  "users": {
+    "test_user": {
+      "user_id": "test_user",
+      "name": "테스트 사용자",
+      "occupation": "프로젝트 매니저",
+      "areas": [
+        {
+          "name": "프로젝트 관리",
+          "description": "팀 리드 및 일정 관리",
+          "keywords": ["회의", "일정", "태스크"]
+        },
+        {
+          "name": "커뮤니케이션",
+          "description": "팀원 간 소통",
+          "keywords": ["메시지", "보고", "피드백"]
+        }
+      ],
+      "resources": [
+        "Slack", "Jira", "Confluence"
+      ],
+      "projects": [
+        {
+          "id": "proj_001",
+          "name": "FlowNote MVP",
+          "status": "active"
+        }
+      ],
+      "created_at": "2025-11-07T15:01:00Z",
+      "updated_at": "2025-11-07T15:01:00Z"
+    }
+  }
+}
