@@ -5,7 +5,7 @@
 사용자 프로필 수집 → 영역 추천 → 맥락 저장
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from datetime import datetime
 import uuid
@@ -14,7 +14,8 @@ import os
 from backend.data_manager import DataManager
 from backend.classifier.context_injector import get_context_injector 
 
-router = APIRouter(prefix="/api/onboarding", tags=["onboarding"])
+router = APIRouter(tags=["onboarding"]) 
+#router = APIRouter(prefix="/api/onboarding", tags=["onboarding"])
 data_manager = DataManager()
 
 # =====================
@@ -184,6 +185,42 @@ async def get_onboarding_status(user_id: str):
         raise HTTPException(status_code=500, detail=f"상태 조회 실패: {str(e)}")
 
 
+@router.post("/step2")
+async def onboarding_step2(
+    user_id: str = Query(...),      # ← Query(...) 명시!
+    keywords: str = Query(...)      # ← Query(...) 명시!
+):
+    """
+    메타데이터 (키워드) 저장
+    """
+    try:
+        keyword_list = keywords.split(",")
+        # TODO: 데이터베이스에 저장
+        return {
+            "status": "success",
+            "user_id": user_id,
+            "keywords": keyword_list
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
+
+@router.post("/step3")
+async def onboarding_step3(user_id: str, goals: str):
+    """Step 3: 목표 저장"""
+    try:
+        # 구현
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@router.post("/step4")
+async def onboarding_step4(user_id: str, areas: str):
+    """Step 4: 영역 저장"""
+    try:
+        # 구현
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
