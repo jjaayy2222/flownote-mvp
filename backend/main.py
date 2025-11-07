@@ -14,6 +14,7 @@ import uuid
 # 현재 구조 그대로 import
 from backend.routes.api_routes import api_router
 from backend.routes.classifier_routes import router as classifier_router
+from backend.routes.onboarding_routes import router as onboarding_router
 from backend.metadata import FileMetadata
 
 
@@ -46,18 +47,16 @@ app.add_middleware(
 # 라우터 등록 (각각 따로!)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-# 1. api_router 등록 (있으면)
-if api_router:
-    app.include_router(api_router)
-    logger.info("✅ api_router 등록 완료")
+# ✅ 라우터 등록 (prefix 없이!!)
+app.include_router(api_router)
+logger.info("✅ api_router 등록 완료")
 
-# 2. classifier_router 등록 (필수!)
-app.include_router(
-    classifier_router,
-    prefix="/api/classifier",
-    tags=["Classification"]
-)
+app.include_router(classifier_router, prefix="/api/classify") 
 logger.info("✅ classifier_router 등록 완료")
+
+app.include_router(onboarding_router, prefix="/api/onboarding")
+logger.info("✅ onboarding_router 등록 완료")
+
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 요청 모델
