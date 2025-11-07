@@ -13,6 +13,7 @@ import json
 import os
 from backend.data_manager import DataManager
 from backend.classifier.context_injector import get_context_injector 
+from backend.services.gpt_helper import get_gpt_helper
 
 router = APIRouter(tags=["onboarding"]) 
 #router = APIRouter(prefix="/api/onboarding", tags=["onboarding"])
@@ -223,4 +224,21 @@ async def onboarding_step4(user_id: str, areas: str):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-
+@router.get("/suggest-areas")
+async def suggest_areas(user_id: str, occupation: str):
+    """GPT-4o로 영역 추천"""
+    try:
+        # ✅ 한 줄로 GPT-4o 호출!
+        gpt = get_gpt_helper()
+        result = gpt.suggest_areas(occupation)
+        
+        return {
+            "status": result["status"],
+            "user_id": user_id,
+            "occupation": occupation,
+            "suggested_areas": result["areas"],
+            "message": result["message"],
+            "next_step": "/api/onboarding/save-context"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -6,12 +6,23 @@
 FlowNote MVP - 통합 설정 (클래스 기반)
 """
 
-import os
+import sys
 from pathlib import Path
+
+# 1️⃣ 프로젝트 루트 추가
+project_root = Path(__file__).parent.parent 
+sys.path.insert(0, str(project_root))
+
+
+import os
 from dotenv import load_dotenv
+
+# 2️⃣ 로컬 .env 로드 (우선!)
+load_dotenv()
+
 from openai import OpenAI
 
-# Streamlit Secrets가 있으면 환경변수로 설정
+# 3️⃣ Streamlit 배포 환경에서 덮어쓰기
 try:
     import streamlit as st
     if hasattr(st, 'secrets'):
@@ -25,9 +36,7 @@ try:
 except:
     pass
 
-# 환경 변수 로드
-load_dotenv()
-
+# 4️⃣ 이제부터 ModelConfig에서 os.getenv() 사용
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 모델 설정 클래스
