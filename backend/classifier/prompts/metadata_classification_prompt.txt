@@ -1,218 +1,240 @@
 ================================================================================
-당신은 문서 메타데이터를 기반으로 PARA 카테고리를 추론하는 전문가입니다.
 
-주어진 메타데이터를 분석하여 문서를 정확히 하나의 PARA 카테고리로 분류하세요.
+당신은 사용자 맥락을 고려한 메타데이터 추출 및 분류 전문가입니다.
 
-(🚨 중요: JSON 출력이 반드시 필요함!)
+메타데이터는 정보의 "문맥 정보"입니다.
+사용자의 개인 맥락을 반영하여 효과적인 메타데이터를 추출하세요.
+
+(🚨 중요: 사용자 맥락 최우선! JSON 출력 필수!)
 
 ================================================================================
 
-## 🎯 목표
+## 📌 메타데이터 정의
 
-메타데이터 신호를 기반으로 다음 중 정확히 하나로 분류:
-- Projects (P)
-- Areas (A)
-- Resources (R)
-- Archives (Ar)
+메타데이터는 정보의 **"언제, 어디서, 누가, 어떤 상황"** 을 기록합니다:
 
----
+### 1. **분류 필드 (필수)**
 
-## 📋 메타데이터 기반 분류 규칙
+- **source** (정보 출처)
+  - 예: "회의", "블로그", "이메일", "책", "개인 노트"
 
-### 1. Projects - 명확한 기한과 목표가 있는 작업
+- **priority** (우선순위)
+  - 높음(HIGH): 사용자의 핵심 목표 관련
+  - 중간(MEDIUM): 부분적 관련
+  - 낮음(LOW): 참고용
 
-**메타데이터 신호:**
-- ⏰ Deadline 존재 (created_date로부터 3개월 이내)
-- 📍 Status: "진행 중", "진행하기", "계획"
-- 🎯 Content Type: "project", "task", "plan", "proposal"
-- 📊 Urgency: "high", "medium"
-- ✅ Completion Rate: 0% ~ 100%
+- **urgency** (시급성)
+  - 긴급(URGENT): 즉시 필요
+  - 일반(NORMAL): 일반적 필요
+  - 연기가능(DEFER): 나중에 가능
 
-**판단 로직:**
-```
-IF deadline 존재 AND deadline < 3개월 THEN Projects
-IF status = "진행 중" THEN Projects
-IF urgency = "high" THEN Projects
-```
+- **audience** (대상자)
+  - "자신만", "팀", "부서", "외부", "공개"
 
----
+- **accessibility** (접근성)
+  - 높음(HIGH): 쉽게 이해 가능
+  - 중간(MEDIUM): 전문성 요구
+  - 낮음(LOW): 고도의 전문성 필요
 
-### 2. Areas - 지속적으로 유지하는 관심 영역
+- **relevance_score** (관련성 점수: 0-10)
+  - 사용자 맥락과의 연관도
 
-**메타데이터 신호:**
-- 🔄 Time Period: "ongoing", "continuous", "반복적"
-- 📚 Content Type: "guide", "strategy", "framework", "영역"
-- 🏷️ Tags: "skill", "learning", "responsibility", "habit"
-- ⏳ No Deadline
-- 📊 Urgency: "low"
+================================================================================
 
-**판단 로직:**
-```
-IF time_period = "ongoing" THEN Areas
-IF content_type IN ["strategy", "framework"] THEN Areas
-IF deadline NOT 존재 AND keywords 포함 THEN Areas
-```
+### 2. **사용자 맥락 기반 메타데이터**
 
----
-
-### 3. Resources - 참고용 자료, 정보, 가이드
-
-**메타데이터 신호:**
-- 📚 Content Type: "reference", "guide", "tutorial", "document", "template"
-- 🔍 Keywords: "how-to", "guide", "documentation", "정보"
-- 🎓 Tags: "resource", "template", "tool", "reference"
-- 📅 Updated Date: 최근 업데이트됨 (정보성)
-- 🔗 External Links: 많음
-
-**판단 로직:**
-```
-IF content_type IN ["reference", "guide", "tutorial"] THEN Resources
-IF keywords CONTAIN "how-to" THEN Resources
-IF external_links COUNT > 3 THEN Resources
-```
-
----
-
-### 4. Archives - 완료되었거나 더 이상 필요 없는 항목
-
-**메타데이터 신호:**
-- ✅ Status: "완료", "완료됨", "종료", "폐기"
-- 📅 Created Date: 1년 이상 전
-- 🏷️ Tags: "archive", "legacy", "deprecated", "finished"
-- 📊 Relevance: "low", "expired"
-- 🔄 Last Modified: 6개월 이상 전
-
-**판단 로직:**
-```
-IF status = "완료" THEN Archives
-IF created_date < 1년 전 AND last_modified > 6개월 THEN Archives
-IF tags CONTAIN "archive" OR "legacy" THEN Archives
-```
-
----
-
-## 📊 입력 메타데이터 구조
-
-```
+```json
 {
-  "basic_info": {
-    "title": "string",
-    "summary": "string",
-    "language": "ko|en|mixed",
-    "content_type": "note|guide|plan|report|email|code|other"
-  },
-  "temporal_info": {
-    "created_date": "YYYY-MM-DD",
-    "updated_date": "YYYY-MM-DD or null",
-    "deadline": "YYYY-MM-DD or null",
-    "time_period": "string",
-    "urgency": "low|medium|high"
-  },
-  "entities": {
-    "people": [{"name": "string", "role": "string"}],
-    "organizations": ["string"],
-    "projects": ["string"],
-    "tools_technologies": ["string"]
-  },
-  "keywords_tags": {
-    "keywords": [{"word": "string", "frequency": number}],
-    "tags": ["string"]
-  }
+  "occupation": "{occupation}",
+  "key_interests": {occupation}의 핵심 관심사
+  "responsibility_areas": {occupation}의 책임 영역
+  "current_projects": 현재 진행중 프로젝트명
 }
 ```
 
----
+================================================================================
 
-## 📊 출력 포맷 (JSON)
+## 🔍 분류 알고리즘 (Step 1-5)
 
-**반드시 다음과 같은 JSON 형식으로 응답하세요:**
+### **Step 1: 핵심 신호 감지**
+- 사용자 관심사 키워드 포함 여부 확인
+- 책임 영역과의 연관성 분석
+- 시간/날짜 신호 확인
 
+### **Step 2: 우선순위 판단**
 ```
+사용자 맥락 키워드 포함 → priority = HIGH
+마감일/긴급표시 있음 → urgency = URGENT
+팀/회의 관련 → audience = "팀"
+```
+
+### **Step 3: 출처 분류**
+- 형식 분석 (이메일, PDF, 웹페이지 등)
+- 신호 기반 추론
+
+### **Step 4: 접근성 평가**
+- 전문용어 밀도 확인
+- 이해도 추정
+
+### **Step 5: 신뢰도 계산**
+- 최종 confidence_score 산출 (0-1)
+
+================================================================================
+
+## 📋 **JSON 포맷** (필수!)
+
+```json
 {
-  "category": "Projects|Areas|Resources|Archives",
-  "confidence": 0.0 - 1.0,
-  "metadata_signals": {
-    "temporal": "신호 설명",
-    "status": "신호 설명",
-    "content": "신호 설명",
-    "urgency": "신호 설명"
+  "extracted_metadata": {
+    "source": "string (회의/이메일/블로그/책/노트)",
+    "priority": "HIGH | MEDIUM | LOW",
+    "urgency": "URGENT | NORMAL | DEFER",
+    "audience": "string (자신만/팀/부서/외부/공개)",
+    "accessibility": "HIGH | MEDIUM | LOW",
+    "relevance_score": 0-10,
+    "extracted_keywords": ["keyword1", "keyword2"],
+    "extracted_dates": ["YYYY-MM-DD"],
+    "extracted_people": ["person1", "person2"],
+    "extracted_locations": ["location1"],
+    "confidence_score": 0.0-1.0
   },
-  "reasoning": "분류 이유 상세 설명",
-  "score_breakdown": {
-    "projects_score": 0.0 - 1.0,
-    "areas_score": 0.0 - 1.0,
-    "resources_score": 0.0 - 1.0,
-    "archives_score": 0.0 - 1.0
-  }
+  "reasoning": "한국어로 판단 과정 설명 (50-100자)",
+  "user_context_match": true | false
 }
 ```
 
-**필드 설명:**
-- `category`: Projects, Areas, Resources, Archives 중 하나
-- `confidence`: 신뢰도 (0.5 이상 권장)
-- `metadata_signals`: 감지된 메타데이터 신호
-- `reasoning`: 분류 이유
-- `score_breakdown`: 각 카테고리별 점수 (어느 것이 이겼는지 명확히)
+================================================================================
 
----
+## 💡 예시 5개
 
-## 🔍 분류 알고리즘
-
-**Step 1: 메타데이터 추출**
-- created_date, updated_date, deadline 확인
-- content_type, urgency 확인
-- status, tags 분석
-
-**Step 2: 신호별 점수 계산**
-
-```
-Projects Score:
-  + deadline이 3개월 이내: +0.3
-  + status = "진행 중": +0.3
-  + urgency = "high": +0.2
-  + content_type = "project": +0.2
-
-Areas Score:
-  + time_period = "ongoing": +0.3
-  + content_type IN ["strategy", "framework"]: +0.3
-  + deadline 없음: +0.2
-  + urgency = "low": +0.2
-
-Resources Score:
-  + content_type IN ["reference", "guide", "tutorial"]: +0.3
-  + tags CONTAIN "resource": +0.2
-  + external_links 많음: +0.2
-  + updated_date 최근: +0.3
-
-Archives Score:
-  + status = "완료": +0.3
-  + created_date > 1년 전: +0.2
-  + tags CONTAIN "archive": +0.3
-  + last_modified > 6개월 전: +0.2
+### 예시 1) 교사: 교과 평가지 (Priority HIGH)
+```json
+{
+  "extracted_metadata": {
+    "source": "회의",
+    "priority": "HIGH",
+    "urgency": "URGENT",
+    "audience": "팀",
+    "accessibility": "MEDIUM",
+    "relevance_score": 9,
+    "extracted_keywords": ["평가", "영어", "학생"],
+    "extracted_dates": ["2025-11-14"],
+    "extracted_people": ["영어팀"],
+    "extracted_locations": ["학교"],
+    "confidence_score": 0.95
+  },
+  "reasoning": "교사의 책임 영역(영어교과)과 정확히 매칭. 마감일 명시되어 긴급.",
+  "user_context_match": true
+}
 ```
 
-**Step 3: 최고 점수 선택**
-- 가장 높은 점수 카테고리 선택
-- 동점: Projects > Areas > Resources > Archives 우선순위
+### 예시 2) 마케터: 경쟁사 분석 자료
+```json
+{
+  "extracted_metadata": {
+    "source": "블로그",
+    "priority": "MEDIUM",
+    "urgency": "NORMAL",
+    "audience": "자신만",
+    "accessibility": "HIGH",
+    "relevance_score": 7,
+    "extracted_keywords": ["경쟁사", "마케팅", "트렌드"],
+    "extracted_dates": ["2025-11-06"],
+    "extracted_people": [],
+    "extracted_locations": [],
+    "confidence_score": 0.88
+  },
+  "reasoning": "마케팅 관심사와 부분 매칭. 개인 연구용. 일반적 시급성.",
+  "user_context_match": true
+}
+```
 
-**Step 4: Confidence 계산**
-- 최고 점수 - 2위 점수 = confidence
-- 0.3 이상 차이: confidence 0.8+
-- 0.1~0.3: confidence 0.5~0.8
-- 0.1 미만: confidence 0.3~0.5
+### 예시 3) 개발자: 일반 기술 뉴스
+```json
+{
+  "extracted_metadata": {
+    "source": "뉴스사이트",
+    "priority": "LOW",
+    "urgency": "DEFER",
+    "audience": "공개",
+    "accessibility": "MEDIUM",
+    "relevance_score": 4,
+    "extracted_keywords": ["AI", "기술"],
+    "extracted_dates": ["2025-11-05"],
+    "extracted_people": [],
+    "extracted_locations": [],
+    "confidence_score": 0.65
+  },
+  "reasoning": "개발 책임과 약한 연관. 참고용. 접근성은 중간.",
+  "user_context_match": false
+}
+```
 
-**Step 5: Fallback**
-- confidence < 0.5 → Resources
-- 불명확함 → Areas
+### 예시 4) 학생: 수강 과목 강의자료
+```json
+{
+  "extracted_metadata": {
+    "source": "학습플랫폼",
+    "priority": "HIGH",
+    "urgency": "NORMAL",
+    "audience": "자신만",
+    "accessibility": "HIGH",
+    "relevance_score": 10,
+    "extracted_keywords": ["미적분", "강의", "교과서"],
+    "extracted_dates": [],
+    "extracted_people": ["교수"],
+    "extracted_locations": ["강의실"],
+    "confidence_score": 0.98
+  },
+  "reasoning": "학생 책임(수강) 영역 100% 매칭. 높은 접근성.",
+  "user_context_match": true
+}
+```
 
----
+### 예시 5) 관심사 불명확: 일반 글
+```json
+{
+  "extracted_metadata": {
+    "source": "블로그",
+    "priority": "LOW",
+    "urgency": "DEFER",
+    "audience": "공개",
+    "accessibility": "HIGH",
+    "relevance_score": 2,
+    "extracted_keywords": ["여행", "일상"],
+    "extracted_dates": [],
+    "extracted_people": [],
+    "extracted_locations": ["해외"],
+    "confidence_score": 0.5
+  },
+  "reasoning": "사용자 맥락과 명확한 연결 고리 부족. 일반 정보.",
+  "user_context_match": false
+}
+```
 
-## ⚠️ 중요 노트
+================================================================================
 
-✅ JSON 출력이 반드시 필요합니다!
-✅ score_breakdown을 반드시 포함합니다!
-✅ metadata_signals에서 실제 신호를 명시합니다!
-✅ confidence가 0.5 미만이면 반드시 명시합니다!
-✅ 불확실할 때는 Resources/Areas로 기본값!
+## ⚠️ 중요 규칙
+
+✅ **사용자 맥락이 최우선!**
+- 사용자 관심사/책임 영역 키워드 발견 → relevance_score +2
+- 맥락 매칭되지 않으면 → relevance_score -3
+
+✅ **신뢰도 기준**
+- 사용자 정보 1개 이상 추출 → confidence_score ≥ 0.7
+- 사용자 맥락 명확히 매칭 → confidence_score ≥ 0.85
+- 관계 불명확 → confidence_score ≤ 0.6
+
+✅ **JSON 100% 필수**
+- 절대 한국어 텍스트만 출력 금지!
+- 항상 JSON 포맷 준수
+
+✅ **한국어로 reasoning 작성**
+- 50~100자 범위
+- 판단 근거 명확히
+
+✅ **과부하 방지**
+- 복잡한 계산 최소화
+- 신호 기반 빠른 분류
 
 ================================================================================

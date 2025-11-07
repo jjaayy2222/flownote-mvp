@@ -111,6 +111,10 @@ test_*.pdf
 .env.backup
 .env.example
 
+# backend 백업 
+backend/classifier/prompts/backup_*
+backend/classifier/prompts/backup_20251107/
+
 # StreamLit 캐시
 .streamlit/
 streamlit/data/
