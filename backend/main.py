@@ -13,7 +13,9 @@ import uuid
 
 # 현재 구조 그대로 import
 from backend.routes.api_routes import api_router
+from backend.routes.classifier_routes import router as classifier_router
 from backend.metadata import FileMetadata
+
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -23,11 +25,10 @@ logger = logging.getLogger(__name__)
 # FastAPI 앱 설정
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-# FastAPI 앱 생성
 app = FastAPI(
     title="FlowNote API",
     description="PARA Classification + Conflict Resolution API",
-    version="1.0.0"
+    version="3.0.0"
 )
 
 # CORS 미들웨어 추가
@@ -41,8 +42,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 라우터 등록
-app.include_router(api_router)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 라우터 등록 (각각 따로!)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# 1. api_router 등록 (있으면)
+if api_router:
+    app.include_router(api_router)
+    logger.info("✅ api_router 등록 완료")
+
+# 2. classifier_router 등록 (필수!)
+app.include_router(
+    classifier_router,
+    prefix="/api/classifier",
+    tags=["Classification"]
+)
+logger.info("✅ classifier_router 등록 완료")
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 요청 모델
@@ -92,3 +107,7 @@ if __name__ == "__main__":
         port=8000,
         log_level="info"
     )
+
+
+
+#
