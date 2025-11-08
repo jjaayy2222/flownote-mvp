@@ -107,6 +107,27 @@ class GPT4oHelper:
     # 🎯 핵심 기능 1: 직업별 영역 추천
     # ============================================
     
+    def _load_prompt(self, prompt_name: str) -> str:
+        """
+        prompts/ 폴더에서 프롬프트 파일 로드
+        
+        Args:
+            prompt_name: 프롬프트 파일명 (확장자 제외)
+            
+        Returns:
+            프롬프트 내용
+        """
+        from pathlib import Path
+        
+        prompt_path = Path(__file__).parent.parent / "classifier" / "prompts" / f"{prompt_name}.txt"
+        
+        if not prompt_path.exists():
+            logger.warning(f"⚠️ 프롬프트 파일 없음: {prompt_path}")
+            return ""
+        
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            return f.read()
+    
     def suggest_areas(self, occupation: str, count: int = 5) -> Dict[str, any]:
         """
         직업에 맞는 책임 영역 추천
@@ -123,11 +144,17 @@ class GPT4oHelper:
             }
         """
         try:
-            system_prompt = """
+            # ✅ prompts/에서 시스템 프롬프트 로드 시도
+            system_prompt = self._load_prompt("onboarding_suggest_areas")
+            
+            # ✅ 프롬프트 없으면 기본값 사용
+            if not system_prompt:
+                logger.warning("⚠️ 프롬프트 파일 없음, 기본 프롬프트 사용")
+                system_prompt = """
 당신은 직업별 핵심 책임 영역을 추천하는 전문가입니다.
 각 영역은 3-5단어로 간결하게 표현하세요.
 반드시 JSON 형식으로만 응답하세요.
-            """.strip()
+                """.strip()
             
             user_prompt = f"""
 직업: {occupation}
@@ -171,7 +198,10 @@ class GPT4oHelper:
                 "areas": self._get_fallback_areas(occupation, count),
                 "message": f"오류: {str(e)}"
             }
-    
+
+
+
+
     def _get_fallback_areas(self, occupation: str, count: int = 5) -> List[str]:
         """
         Fallback: 하드코딩된 직업별 영역
@@ -311,6 +341,10 @@ def get_gpt_helper() -> GPT4oHelper:
     return _gpt_helper_instance
 
 
+# ============================================
+# 테스트 코드
+# ============================================
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     
@@ -344,11 +378,8 @@ if __name__ == "__main__":
     print(f"이유: {classify_result['reasoning']}")
     
     print("\n" + "="*60)
-    print("🤖 GPT-4o Helper 테스트 완료")
+    print("🤖 GPT-4o Helper 수정 테스트 완료")
     print("="*60)
-
-
-
 
 
 """test_result_1 - ❌
@@ -605,3 +636,10 @@ if __name__ == "__main__":
     INFO:     127.0.0.1:59841 - "GET /api/onboarding/suggest-areas?user_id=test&occupation=teacher HTTP/1.1" 200 OK
 
 """
+
+
+
+
+
+
+
