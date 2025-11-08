@@ -101,7 +101,6 @@ def save_to_para_folder(filename, content, category):
     return str(file_path)
 
 
-
 # ==========================
 # 타이틀
 # ==========================
@@ -470,4 +469,4 @@ with tab5:
 
 # 하단 정보
 st.divider()
-st.caption("FlowNote MVP v3.3 | 사용자 맥락 통합 중... | Made with ❤️ by Jay")
+st.caption("FlowNote MVP v3.3 | 사용자 맥락 통합 중 | Made with ❤️ by Jay")
