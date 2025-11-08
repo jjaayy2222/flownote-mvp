@@ -8,9 +8,10 @@
 - 병렬 처리 지원
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, List,Any
+from datetime import datetime
 
 # 함수 임포트
 from backend.classifier.langchain_integration import (
@@ -19,6 +20,7 @@ from backend.classifier.langchain_integration import (
     hybrid_classify
 )
 from backend.classifier.context_injector import get_context_injector
+from backend.classifier.para_agent import run_para_agent_sync
 
 
 # 클래스 임포트 
@@ -31,6 +33,8 @@ from backend.classifier.context_injector import ContextInjector
 from backend.services.conflict_service import ConflictService
 from backend.routes.conflict_routes import ClassifyRequest, ClassifyResponse
 from backend.metadata import FileMetadata
+from backend.classifier.keyword_classifier import KeywordClassifier
+
 
 
 import logging
@@ -62,6 +66,24 @@ class ClassificationResponse(BaseModel):
     category: str
     confidence: float
     # <--- 나머지 필드들
+
+class ClassifyRequest(BaseModel):
+    text: str
+    user_id: Optional[str] = None
+    file_id: Optional[str] = None
+
+class ClassifyResponse(BaseModel):
+    category: str
+    confidence: float
+    snapshot_id: Optional[str] = None
+    conflict_detected: bool = False
+    requires_review: bool = False
+    keyword_tags: list
+    reasoning: str
+    user_context: str = ""
+    user_profile: dict = {}
+    context_injected: bool = False
+
 
 class MetadataClassifyRequest(BaseModel):
     """메타데이터 분류 요청"""
@@ -287,18 +309,93 @@ async def classify_keywords(request: ClassificationRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ============================================================
+# /classify 엔드포인트
+# ============================================================
+
+@router.post("/classify", response_model=ClassifyResponse)
+async def classify_text(request: ClassifyRequest):
+    """
+    텍스트 분류 API
+    
+    - 매번 새로운 KeywordClassifier 인스턴스 생성
+    - 매번 새로운 tag_keyword 생성
+    - Snapshot을 무시하고 매번 새로 분류
+    """
+    try:
+        logger.info(f"🔍 분류 요청: text={request.text[:50]}...")
+        logger.info(f"  - user_id: {request.user_id}")
+        logger.info(f"  - filename: {request.filename}")
+        
+        # ============================================================
+        # Step 1: PARA 분류 (매번 새로!)
+        # ============================================================
+        para_result = run_para_agent_sync(
+            text=request.text,
+            metadata={
+                "user_id": request.user_id,
+                "filename": request.filename
+            }
+        )
+        
+        logger.info(f"✅ PARA 분류 결과: {para_result.get('category')}")
+        
+        # ============================================================
+        # Step 2: 키워드 추출 (매번 새 인스턴스!)
+        # ============================================================
+        keyword_classifier = KeywordClassifier()  #  새 인스턴스!
+        keyword_result = keyword_classifier.classify(
+            text=request.text,
+            user_context={
+                "user_id": request.user_id,
+                "filename": request.filename
+            }
+        )
+        
+        # Step 3: 새로운 keyword_tags 생성!
+        new_keyword_tags = keyword_result.get('tags', [])
+        logger.info(f"✅ 새 키워드 생성: {new_keyword_tags}")
+        
+        # ============================================================
+        # Step 4: 충돌 해결
+        # ============================================================
+        conflict_service = ConflictService()
+        conflict_result = conflict_service.resolve_conflict(
+            para_result=para_result,
+            keyword_result=keyword_result,
+            text=request.text
+        )
+        
+        logger.info(f"✅ 충돌 해결 완료!")
+        logger.info(f"  - final_category: {conflict_result.get('final_category')}")
+        logger.info(f"  - keyword_tags: {conflict_result.get('keyword_tags')}")
+        logger.info(f"  - conflict_detected: {conflict_result.get('conflict_detected')}")
+        
+        # ============================================================
+        # Step 5: 응답 반환 (새 키워드 사용!)
+        # ============================================================
+        response = ClassifyResponse(
+            category=conflict_result.get('final_category', para_result.get('category', '기타')),
+            confidence=conflict_result.get('confidence', para_result.get('confidence', 0.0)),
+            snapshot_id=None,  # Snapshot 무시!
+            conflict_detected=conflict_result.get('conflict_detected', False),
+            requires_review=conflict_result.get('requires_review', False),
+            keyword_tags=new_keyword_tags,                      # 새 키워드
+            reasoning=conflict_result.get('reason', ''),
+            user_context="",
+            user_profile={},
+            context_injected=False
+        )
+        
+        logger.info(f"✅ 분류 완료!")
+        logger.info(f"  - category: {response.category}")
+        logger.info(f"  - keyword_tags: {response.keyword_tags}")
+        logger.info(f"  - confidence: {response.confidence}")
+        
+        return response
+    
+    except Exception as e:
+        logger.error(f"❌ 분류 실패: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"분류 실패: {str(e)}")
 
 
-
-
-
-
-
-
-
-"""test_result
-
-
-
-
-"""

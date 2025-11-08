@@ -108,7 +108,7 @@ class KeywordClassifier:
                 temperature=0.7,
                 max_tokens=600,
             )
-            
+                        
             logger.info("✅ KeywordClassifier LLM 초기화 성공")
             
         except Exception as e:
@@ -127,7 +127,7 @@ class KeywordClassifier:
             with open(prompt_path, "r", encoding="utf-8") as f:
                 template_content = f.read()
             
-            # ✅ 중요: {text} 변수만 남기고 나머지 { } 이스케이프
+            # 중요: {text} 변수만 남기고 나머지 { } 이스케이프
             escaped_content = self._escape_prompt_braces(template_content)
             
             # ChatPromptTemplate 생성
@@ -179,7 +179,10 @@ class KeywordClassifier:
         
         Returns:
             dict: 분류 결과
+        
+        캐싱 방지 처리 추가
         """
+        
         # 빈 텍스트 확인
         if not text or not text.strip():
             logger.warning("⚠️  빈 텍스트 입력")
@@ -191,6 +194,7 @@ class KeywordClassifier:
             return self._fallback_classify(text)
 
         try:
+            
             # Step 1: 사용자 컨텍스트 처리 (옵션)
             user_areas = []
             
@@ -216,7 +220,7 @@ class KeywordClassifier:
             logger.info(f"✅ KeywordClassifier result:")
             logger.info(f"  - Tags: {result.get('tags', [])[:5]}")
             logger.info(f"  - User context matched: {result['user_context_matched']}")
-            
+                        
             return result
 
         except json.JSONDecodeError as e:
