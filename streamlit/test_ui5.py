@@ -1,11 +1,18 @@
 # streamlit/test_ui5.py
+
 """
 FlowNote 통합 UI - 온보딩 플로우 추가
-- Tab 1: 파일 업로드 & 분류 (기존)
-- Tab 2: 메타데이터 확인 (기존)
-- Tab 3: 분류 통계 (기존)
-- Tab 4: 온보딩 플로우 (신규)
+- main
+    - tab1 : 온보딩
+    - tab2 : 파일 업로드 & 분류
+    - tab3 : 키워드 검색
+    - tab4 : 파일 통계 (← tab2의 정보 실시간 반영되도록 수정)
+    - tab5 : 메타데이터 + 사용자 정보 기반 필터링 추가
+- 사이드바
+    - 온보딩 상태 추가
+    - 분류 히스토리
 """
+
 import requests 
 import os
 import sys
@@ -113,6 +120,20 @@ st.markdown("**온보딩 → 분류 → 키워드 검색 → 통계 → 메타�
 # 사이드바: 분류 히스토리 등
 # ==========================
 with st.sidebar:
+    st.header("👤 사용자 정보")
+    
+    if st.session_state.onboarding_step == 3:
+        st.success("✅ 온보딩 완료")
+        st.write(f"이름: {st.session_state.onboarding_name}")
+        st.write(f"직업: {st.session_state.onboarding_occupation}")
+        st.write(f"User ID: {st.session_state.onboarding_user_id[:12]}...")
+    else:
+        st.warning("⚠️ 온보딩 필요")
+        st.info("Tab1에서 온보딩을 완료하세요")
+
+    st.divider()
+
+    # 분류 히스토리
     st.header("📊 분류 히스토리")
     if st.session_state.classification_history:
         st.metric("총 분류 파일", len(st.session_state.classification_history))
@@ -229,9 +250,31 @@ with tab1:
 
 with tab2:
     st.header("📤 파일 업로드 & 자동 분류")
+    
+    # ✅ 온보딩 완료 여부 확인
+    onboarding_complete = (
+        st.session_state.onboarding_step == 3 and 
+        st.session_state.onboarding_user_id is not None
+    )
+    
+    if not onboarding_complete:
+        st.warning("⚠️ 먼저 온보딩을 완료해주세요! (Tab1)")
+        st.info("온보딩을 완료하면 당신의 맥락에 맞는 정확한 분류를 제공합니다.")
+        st.stop()
+    
+    # ✅ 온보딩 정보 표시
+    with st.expander("👤 현재 사용자 정보", expanded=False):
+        st.write(f"**이름:** {st.session_state.onboarding_name}")
+        st.write(f"**직업:** {st.session_state.onboarding_occupation}")
+        st.write(f"**User ID:** {st.session_state.onboarding_user_id}")
+        st.write(f"**관심 영역:**")
+        for area in st.session_state.selected_areas:
+            st.write(f"  - {area}")
+    
     uploaded_file = st.file_uploader(
         "분류할 파일 업로드", type=['pdf', 'txt', 'md'], key="file_uploader_tab2"
     )
+    
     if uploaded_file:
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -243,46 +286,83 @@ with tab2:
         
         # 분류 버튼
         if st.button("🚀 분류 시작", key="classify_btn_tab2"):
-            with st.spinner("AI 분석 중..."):
+            with st.spinner("AI 분석 중... (사용자 맥락 반영)"):
                 try:
+                    # 1. 텍스트 추출
                     if uploaded_file.type == "application/pdf":
                         text = load_pdf(uploaded_file)
                     else:
                         text = uploaded_file.read().decode('utf-8')
+                    
+                    # 2. 메타데이터 구성 (✨ user_id 추가!)
                     metadata = {
                         "filename": uploaded_file.name,
                         "file_size": uploaded_file.size,
                         "file_type": uploaded_file.type,
-                        "uploaded_at": datetime.now().isoformat()
+                        "uploaded_at": datetime.now().isoformat(),
+                        # 사용자 정보 추가
+                        "user_id": st.session_state.onboarding_user_id,
+                        "user_name": st.session_state.onboarding_name,
+                        "user_occupation": st.session_state.onboarding_occupation,
+                        "user_areas": st.session_state.selected_areas
                     }
+                    
+                    # 3. 분류 실행 (✨ user_context 추가!)
+                    from backend.classifier.context_injector import get_context_injector
+                    
+                    injector = get_context_injector()
+                    
+                    # 3-1. 기본 분류
                     classification_result = run_para_agent_sync(
                         text=text[:2000],
                         metadata=metadata
                     )
+                    
+                    # 3-2. 사용자 맥락 주입
+                    classification_result = injector.inject_context_from_user_id(
+                        user_id=st.session_state.onboarding_user_id,
+                        ai_result=classification_result
+                    )
+                    
+                    # 4. DB 저장
                     file_id = st.session_state.db_extender.save_classification_result(
                         result=classification_result,
                         filename=uploaded_file.name
                     )
+                    
+                    # 5. 히스토리 저장
                     history_item = {
                         "filename": uploaded_file.name,
                         "category": classification_result.get('category', 'Unknown'),
                         "confidence": classification_result.get('confidence', 0),
                         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "file_id": file_id
+                        "file_id": file_id,
+                        "user_id": st.session_state.onboarding_user_id,
+                        "context_injected": classification_result.get('context_injected', False)
                     }
                     st.session_state.classification_history.append(history_item)
-                    st.success("✅ 결과 저장됨!")
-                    st.json(classification_result)
+                    
+                    # 6. 결과 표시
+                    st.success("✅ 분류 완료!")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric("카테고리", classification_result.get('category', 'N/A'))
+                        st.metric("신뢰도", f"{classification_result.get('confidence', 0):.0%}")
+                    
+                    with col2:
+                        st.metric("맥락 반영", 
+                                "✅ 반영됨" if classification_result.get('context_injected') else "❌ 미반영")
+                        keyword_tags = classification_result.get('keyword_tags', [])
+                        st.metric("키워드 수", len(keyword_tags))
+                    
+                    # 7. 상세 정보
+                    with st.expander("📊 상세 분류 정보", expanded=True):
+                        st.json(classification_result)
+                    
                 except Exception as e:
-                    st.error(f"분류 실패: {e}")
-
-            # 분류 결과 시각화
-            st.write("분류 결과 시각화")
-            st.json(st.session_state.classification_history)
-
-            # 분류 결과 저장
-            st.write("분류 결과 저장")
-            st.json(st.session_state.classification_history)
+                    st.error(f"❌ 분류 실패: {str(e)}")
+                    st.exception(e)
 
 # ────────────────
 # TAB 3: 키워드 검색
@@ -398,7 +478,7 @@ with tab3:
         last_query = st.session_state.get('last_search_query', '')
         if last_results:
             st.divider()
-            export_clicked = st.button("📥 검색 결과 MD로 내보내기", use_container_width=True)
+            export_clicked = st.button("📥 검색 결과 MD로 내보내기", width='stretch')
             if export_clicked:
                 try:
                     exporter = MarkdownExporter()
@@ -410,7 +490,7 @@ with tab3:
                         data=md_content,
                         file_name=filename,
                         mime="text/markdown",
-                        use_container_width=True
+                        width='stretch'
                     )
                 except Exception as e:
                     st.error(f"MD 내보내기 실패: {e}")
@@ -446,27 +526,105 @@ with tab4:
 
 with tab5:
     st.header("📊 메타데이터 확인")
-    try:
-        all_classifications = st.session_state.db_extender.get_all_classifications()
-        if all_classifications:
-            df_data = []
-            for item in all_classifications:
-                df_data.append({
-                    "파일명": item['filename'],
-                    "카테고리": item['para_category'],
-                    "신뢰도": f"{item['confidence_score']:.0%}",
-                    "키워드": item['keyword_tags'][:50] if item['keyword_tags'] else "",
-                    "충돌": "⚠️" if item['conflict_flag'] else "✅",
-                    "Snapshot ID": item['snapshot_id'][:20] if item['snapshot_id'] else ""
-                })
-            df = pd.DataFrame(df_data)
-            st.dataframe(df)
-        else:
-            st.info("저장된 메타데이터가 없습니다")
-    except Exception as e:
-        st.error(f"로드 실패: {e}")
+    
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.subheader("현재 세션 분류 결과")
+    with col2:
+        if st.button("🔄 새로고침", key="refresh_metadata"):
+            st.rerun()
+        # 사용자 ID 필터
+        user_filter = st.selectbox(
+            "🔍 사용자 필터",
+            options=["전체"] + list(set([
+                item.get('user_id', 'N/A')[:12] 
+                for item in st.session_state.classification_history
+            ])),
+            key="user_filter"
+        )
+    
+    # 1. 현재 세션 데이터 (st.session_state.classification_history)
+    if st.session_state.classification_history:
+        st.markdown("### 📝 이번 세션 분류 목록")
+        
+        # 필터링 로직 적용
+        filtered_history = st.session_state.classification_history
+        
+        if user_filter != "전체":
+            filtered_history = [
+                item for item in st.session_state.classification_history
+                if item.get('user_id', '').startswith(user_filter)
+            ]
+        
+        session_data = []
+        for item in st.session_state.classification_history:
+            session_data.append({
+                "파일명": item['filename'],
+                "카테고리": item['category'],
+                "신뢰도": f"{item['confidence']:.0%}",
+                "시간": item['timestamp'],
+                "맥락": "✅" if item.get('context_injected', False) else "❌",
+                "User ID": item.get('user_id', 'N/A')[:12] + "..."
+            })
+        
+        df_session = pd.DataFrame(session_data)
+        st.dataframe(df_session, width='stretch')
+        
+        # 필터링된 통계
+        st.divider()
+        col1, col2, col3, col4, col5= st.columns(5)
+        
+        with col1:
+            st.metric("필터 결과", len(filtered_history))
+        
+        with col2:
+            st.metric("총 파일", len(st.session_state.classification_history))
+        
+        with col3:
+            if filtered_history:
+                avg_conf = sum(item['confidence'] for item in filtered_history) / len(filtered_history)
+                st.metric("평균 신뢰도", f"{avg_conf:.0%}")
+        
+        with col4:
+            context_count = sum(1 for item in filtered_history if item.get('context_injected', False))
+            st.metric("맥락 반영", f"{context_count}/{len(filtered_history)}")
+        
+        with col5:
+            if st.button("🗑️ 세션 초기화"):
+                st.session_state.classification_history = []
+                st.rerun()
+    
+    else:
+        st.info("현재 세션에서 분류된 파일이 없습니다.")
+    
+    # 2. DB에 저장된 전체 데이터 (선택사항)
+    st.divider()
+    with st.expander("🗄️ 전체 DB 메타데이터 보기"):
+        try:
+            all_classifications = st.session_state.db_extender.get_all_classifications()
+            
+            if all_classifications:
+                df_data = []
+                for item in all_classifications:
+                    df_data.append({
+                        "파일명": item['filename'],
+                        "카테고리": item['para_category'],
+                        "신뢰도": f"{item['confidence_score']:.0%}",
+                        "키워드": item['keyword_tags'][:50] if item['keyword_tags'] else "",
+                        "충돌": "⚠️" if item['conflict_flag'] else "✅",
+                        "Snapshot ID": item['snapshot_id'][:20] if item['snapshot_id'] else ""
+                    })
+                
+                df_all = pd.DataFrame(df_data)
+                st.dataframe(df_all, width='stretch')
+                st.caption(f"총 {len(all_classifications)}개 항목")
+            else:
+                st.info("DB에 저장된 메타데이터가 없습니다")
+        
+        except Exception as e:
+            st.error(f"DB 로드 실패: {e}")
 
 
 # 하단 정보
 st.divider()
-st.caption("FlowNote MVP v3.3 | 사용자 맥락 통합 중 | Made with ❤️ by Jay")
+st.caption("FlowNote MVP v3.4 | 사용자 맥락 통합 중 | Made with ❤️ by Jay")
