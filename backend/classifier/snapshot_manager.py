@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Dict, Any
 import json
+import copy
 
 @dataclass
 class Snapshot:
@@ -41,14 +42,19 @@ class SnapshotManager:
     
     def save_snapshot(self, text: str, para_result: dict, 
                     keyword_result: dict, conflict_result: dict) -> Snapshot:
-        """분류 결과 저장"""
+        """
+        분류 결과 저장
+        
+        - Deep Copy로 데이터 독립성 보장하기
+        """
         snapshot = Snapshot(
-            id=f"snap_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            id=f"snap_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}",  # ← 밀리초 추가!
             timestamp=datetime.now(),
             text=text,
-            para_result=para_result,
-            keyword_result=keyword_result,
-            conflict_result=conflict_result,
+            # Deep Copy로 독립적인 복사본 저장
+            para_result=copy.deepcopy(para_result),
+            keyword_result=copy.deepcopy(keyword_result),
+            conflict_result=copy.deepcopy(conflict_result),
             metadata={
                 "confidence": conflict_result.get("confidence_score", 0),
                 "is_conflict": conflict_result.get("is_conflict", False),
@@ -61,7 +67,14 @@ class SnapshotManager:
     def get_snapshots(self) -> List[dict]:
         """모든 스냅샷 반환"""
         return [s.to_dict() for s in self.snapshots]
-    
+
+    def get_snapshot_by_id(self, snapshot_id: str) -> dict:
+        """ID로 스냅샷 조회"""
+        for snapshot in self.snapshots:
+            if snapshot.id == snapshot_id:
+                return snapshot.to_dict()
+        return {"error": "Snapshot not found"}
+
     def compare_snapshots(self, id1: str, id2: str) -> dict:
         """2개 스냅샷 비교"""
         snap1 = next((s for s in self.snapshots if s.id == id1), None)
@@ -78,3 +91,7 @@ class SnapshotManager:
             "keyword_diff": snap1.keyword_result != snap2.keyword_result,
             "conflict_diff": snap1.conflict_result != snap2.conflict_result,
         }
+    
+    def clear_snapshots(self):
+        """모든 스냅샷 삭제"""
+        self.snapshots.clear()
