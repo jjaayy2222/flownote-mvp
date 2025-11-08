@@ -8,7 +8,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from backend.services.conflict_service import conflict_service
 from typing import List
-from backend.routes.api_models import ConflictRecord, ConflictReport
+from backend.api.models import ConflictRecord, ConflictReport
+from backend.routes.api_models import ClassifyRequest, ClassifyResponse, MetadataResponse, ErrorResponse
 
 #router = APIRouter(prefix="/api/classify", tags=["classification"])
 router = APIRouter()

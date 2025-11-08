@@ -63,14 +63,20 @@ class DataManager:
         사용자 프로필 저장 (신규)
         """
         try:
+            # 디버깅 코드 추가
+            print(f"🔵 [DATA_MANAGER] 저장 시도: user_id={user_id}, occupation={occupation}")  # 추가
+            
             now = datetime.now().isoformat()
             
             with open(self.users_csv, "a", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
                 writer.writerow([user_id, occupation, areas, interests, now, now])
             
+            print(f"✅ [DATA_MANAGER] 저장 완료!")  # 추가
             return {"status": "success", "user_id": user_id}
+        
         except Exception as e:
+            print(f"❌ [DATA_MANAGER] 저장 실패: {str(e)}")  # 추가
             return {"status": "error", "message": str(e)}
     
     def get_user_profile(self, user_id: str) -> Optional[Dict]:

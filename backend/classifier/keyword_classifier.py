@@ -1,4 +1,6 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # backend/classifier/keyword_classifier.py
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 """
 키워드 기반 분류기 - LLM 기반 (프록시 API 지원)
@@ -76,7 +78,11 @@ logger.info(logger_msg)
 # ============================================================
 
 class KeywordClassifier:
-    """키워드 기반 분류기 (LLM 기반 - GPT-4o-mini)"""
+    """
+    키워드 기반 분류기 (LLM 기반 - GPT-4o-mini)
+    
+    ⚠️ 주의: 매번 새로운 인스턴스를 생성해야 캐싱 문제를 방지할 수 있음!
+    """
 
     def __init__(self):
         """KeywordClassifier 초기화"""
@@ -84,6 +90,9 @@ class KeywordClassifier:
         self.chain = None
         self._initialize_llm()
         self._load_prompt()
+        
+        logger.info("✅ KeywordClassifier initialized (new instance)")
+
 
     def _initialize_llm(self):
         """LLM 초기화"""
@@ -96,7 +105,7 @@ class KeywordClassifier:
                 api_key=api_key,
                 base_url=ModelConfig.GPT4O_MINI_BASE_URL,
                 model=ModelConfig.GPT4O_MINI_MODEL,
-                temperature=0.0,
+                temperature=0.7,
                 max_tokens=600,
             )
             
@@ -105,6 +114,7 @@ class KeywordClassifier:
         except Exception as e:
             logger.error(f"❌ LLM 초기화 실패: {e}")
             self.llm = None
+
 
     def _load_prompt(self):
         """프롬프트 파일 로드 및 Chain 생성"""
@@ -136,7 +146,8 @@ class KeywordClassifier:
         except Exception as e:
             logger.error(f"❌ 프롬프트 로드 실패: {e}")
             self.chain = None
-    
+
+
     def _escape_prompt_braces(self, content: str) -> str:
         """
         프롬프트의 중괄호 이스케이프 (핵심!)
@@ -157,8 +168,18 @@ class KeywordClassifier:
         
         return '\n'.join(lines)
 
-    def classify(self, text: str) -> Dict[str, Any]:
-        """텍스트 분류 (LLM 기반)"""
+
+    def classify(self, text: str, user_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        텍스트 분류 (LLM 기반)
+        
+        Args:
+            text: 분류할 텍스트
+            user_context: 사용자 컨텍스트 (areas, user_id 등)
+        
+        Returns:
+            dict: 분류 결과
+        """
         # 빈 텍스트 확인
         if not text or not text.strip():
             logger.warning("⚠️  빈 텍스트 입력")
@@ -170,41 +191,43 @@ class KeywordClassifier:
             return self._fallback_classify(text)
 
         try:
-            # 🔥 LLM 호출 (Chain 사용)
-            logger.info(f"🚀 LLM 호출 시작: {text[:50]}...")
-            response_text = self.chain.invoke({"text": text})
+            # Step 1: 사용자 컨텍스트 처리 (옵션)
+            user_areas = []
             
-            # 디버깅: 원본 응답 출력
-            print(f"\n{'='*80}")
-            print(f"🔍 원본 LLM 응답:")
-            print(f"{'='*80}")
-            print(response_text)
-            print(f"{'='*80}\n")
+            if user_context and user_context.get('areas'):
+                user_areas = user_context['areas']
+                logger.info(f"  - User areas: {user_areas}")
             
-            # JSON 추출
+            # Step 2: LLM 호출 (매번 새로운 요청)
+            logger.info(f"🔍 KeywordClassifier: Calling LLM...")
+            logger.info(f"  - Text length: {len(text)}")
+            
+            response_text = self.chain.invoke({"text": text[:1000]})  # 최대 1000자로 제한
+            
+            # Step 3: JSON 추출 및 파싱
             json_text = self._extract_json_from_response(response_text)
-            
-            # 디버깅: 추출된 JSON
-            print(f"📄 추출된 JSON:")
-            print(json_text)
-            print()
-            
-            # JSON 파싱
             result = json.loads(json_text)
             
-            # 성공 로그
-            logger.info(f"✅ LLM 분류 성공: {result.get('tags', [])}")
-            return result
+            # 사용자 컨텍스트 정보 추가
+            result['user_context_matched'] = bool(user_areas)
+            result['user_areas'] = user_areas
             
+            # Step 4: 디버깅 로그
+            logger.info(f"✅ KeywordClassifier result:")
+            logger.info(f"  - Tags: {result.get('tags', [])[:5]}")
+            logger.info(f"  - User context matched: {result['user_context_matched']}")
+            
+            return result
+
         except json.JSONDecodeError as e:
             logger.error(f"❌ JSON 파싱 실패: {e}")
             logger.debug(f"파싱 시도 텍스트: {json_text[:300] if 'json_text' in locals() else 'N/A'}")
             return self._fallback_classify(text)
-            
+        
         except Exception as e:
             logger.error(f"❌ 분류 오류: {type(e).__name__}: {e}")
-            logger.error(f"상세 에러: {str(e)}")
             return self._fallback_classify(text)
+
 
     def _extract_json_from_response(self, response_text: str) -> str:
         """LLM 응답에서 JSON 추출"""
@@ -231,6 +254,7 @@ class KeywordClassifier:
         logger.warning("⚠️  JSON 포맷 찾기 실패")
         return response_text
 
+
     def _fallback_classify(self, text: str) -> Dict[str, Any]:
         """Fallback 분류 (키워드 매칭)"""
         keywords_map = {
@@ -242,6 +266,7 @@ class KeywordClassifier:
         }
         
         matched_dict = {}
+        
         for category, keywords in keywords_map.items():
             matched = [kw for kw in keywords if kw in text]
             if matched:
@@ -250,22 +275,19 @@ class KeywordClassifier:
         if not matched_dict:
             return self._create_empty_response()
         
-        total_matched = sum(len(kws) for kws in matched_dict.values())
-        base_confidence = min(total_matched / 5, 0.7)
-        if total_matched >= 2:
-            base_confidence += 0.15
-        confidence = min(base_confidence + 0.10, 1.0)
-        
         logger.info(f"🔄 Fallback 분류: {list(matched_dict.keys())}")
         
         return {
             "tags": list(matched_dict.keys())[:3],
-            "confidence": round(confidence, 2),
+            "confidence": 0.6,
             "matched_keywords": matched_dict,
-            "reasoning": f"Fallback: {total_matched}개 키워드 감지",
-            "para_hints": {cat: ["Areas"] for cat in matched_dict.keys()},
+            "reasoning": "Fallback 키워드 매칭",
+            "para_hints": {},
+            "user_context_matched": False,
+            "user_areas": [],
             "is_fallback": True
         }
+
 
     def _create_empty_response(self) -> Dict[str, Any]:
         """빈 응답"""
@@ -273,9 +295,12 @@ class KeywordClassifier:
             "tags": ["기타"],
             "confidence": 0.0,
             "matched_keywords": {},
-            "reasoning": "명확한 키워드가 감지되지 않음",
-            "para_hints": {"기타": ["Resources"]},
+            "reasoning": "명확한 키워드 없음",
+            "para_hints": {},
+            "user_context_matched": False,
+            "user_areas": []
         }
+
 
     def get_statistics(self) -> Dict[str, Any]:
         """분류기 통계"""
