@@ -15,11 +15,11 @@
 ### Type 1: P vs A 충돌
 "프로젝트냐 영역이냐?"
 
-**예시:**
+예시:
 - "팀 문화 개선" ← 마감이 있나? (P) vs 계속 유지 책임? (A)
 - "마케팅 전략" ← 1회성 계획? (P) vs 핵심 책임 영역? (A)
 
-**판단 신호:**
+판단 신호:
 - P 신호: 마감, 체크리스트, "~까지"
 - A 신호: 주기적, 유지, "계속", 책임 수준
 
@@ -28,11 +28,11 @@
 ### Type 2: A vs R 충돌
 "책임 영역이냐 참고냐?"
 
-**예시:**
+예시:
 - "리더십 스킬" ← 내 책임 영역 스킬? (A) vs 일반 정보? (R)
 - "프로젝트 관리법" ← 직무 표준? (A) vs 참고 자료? (R)
 
-**판단 신호:**
+판단 신호:
 - A 신호: 내 직무/책임과 직결, 유지 수준 있음
 - R 신호: 배경 정보, 일반 지식, 미래 참고용
 
@@ -41,11 +41,11 @@
 ### Type 3: R vs AR 충돌
 "순수 참고냐 행동 필요 참고냐?"
 
-**예시:**
+예시:
 - "회계 법규" ← 배경 정보? (R) vs 실행 필요? (AR)
 - "트렌드 분석" ← 일반 정보? (R) vs 의사결정 필요? (AR)
 
-**판단 신호:**
+판단 신호:
 - R 신호: 배경, 이해 목적, 직결 없음
 - AR 신호: "이걸로 뭔가 해야 함", 의사결정/행동 트리거
 
@@ -54,11 +54,11 @@
 ### Type 4: P/A vs R 충돌
 "실행/유지냐 정보냐?"
 
-**예시:**
+예시:
 - "예산 가이드" ← 실행할 책임? (P/A) vs 참고? (R)
 - "회의록" ← 나의 액션 있나? (P/A) vs 기록만? (R)
 
-**판단 신호:**
+판단 신호:
 - P/A: 내 책임/마감과 연결
 - R: 수동적, 기록 목적, 나와 분리됨
 
@@ -66,24 +66,24 @@
 
 ## 🎯 해결 우선순위 (Rule 1-5)
 
-### **Rule 1: 사용자 맥락이 최우선** (가중치 0.4)
-```python
+### Rule 1: 사용자 맥락 최우선 (가중치 0.4)
+```
 IF "사용자 책임 영역" 포함
   → 그 카테고리 선택 (P/A 우선)
-ELSE IF "일반 정보" 
+ELSE IF "일반 정보"
   → R 또는 AR
 ```
 
-### **Rule 2: 마감/시간 신호** (가중치 0.3)
-```python
+### Rule 2: 마감/시간 신호 (가중치 0.3)
+```
 IF "~까지", "D-day", "deadline" 있음
   → P (프로젝트)
 ELSE IF "매주", "주기적" 있음
   → A (영역)
 ```
 
-### **Rule 3: 행동 신호** (가중치 0.2)
-```python
+### Rule 3: 행동 신호 (가중치 0.2)
+```
 IF "해야 함", "실행", "의사결정" 있음
   → AR 또는 P (우선 AR)
 ELSE
@@ -92,7 +92,7 @@ ELSE
 
 ### Rule 4: 양수성 점검 (가중치 0.05) - 사용자 맥락 최우선!
 - 신뢰도 < 0.6일 때:
-```python
+```
     IF 사용자_프로필에서_관련_키워드_발견:
         → AREA 또는 PROJECT (적극적)
     ELSE:
@@ -101,8 +101,7 @@ ELSE
 - 신뢰도 ≥ 0.8일 때:
     → 적극적으로 P/A 분류
 
-
-### **Rule 5: 마지막 확인** (가중치 0.05)
+### Rule 5: 마지막 확인 (가중치 0.05)
 ```
 "내가 이 정보로 뭘 할 수 있나?"
   → 그 활동 기반 최종 결정
@@ -110,9 +109,9 @@ ELSE
 
 ---
 
-## 📋 **JSON 포맷** (필수!)
+## 📋 JSON 포맷 (필수!)
 
-```json
+```
 {
   "conflict_analysis": {
     "conflict_type": "P vs A | A vs R | R vs AR | P/A vs R",
@@ -137,7 +136,7 @@ ELSE
 ## 💡 예시 5개
 
 ### 예시 1) Type 1: P vs A - 교사의 "수업 평가지 작성"
-```json
+```
 {
   "conflict_analysis": {
     "conflict_type": "P vs A",
@@ -158,7 +157,7 @@ ELSE
 ```
 
 ### 예시 2) Type 2: A vs R - 마케터의 "SEO 기초"
-```json
+```
 {
   "conflict_analysis": {
     "conflict_type": "A vs R",
@@ -179,7 +178,7 @@ ELSE
 ```
 
 ### 예시 3) Type 3: R vs AR - 개발자의 "AI 보안 가이드"
-```json
+```
 {
   "conflict_analysis": {
     "conflict_type": "R vs AR",
@@ -200,7 +199,7 @@ ELSE
 ```
 
 ### 예시 4) Type 4: P/A vs R - 학생의 "강의 공지사항"
-```json
+```
 {
   "conflict_analysis": {
     "conflict_type": "P/A vs R",
@@ -224,8 +223,8 @@ ELSE
 
 입력: "리더십 스킬 자료" + 사용자: 개발자
 
-**Case 1) 사용자 맥락 없을 때:**
-```json
+Case 1) 사용자 맥락 없을 때:
+```
 {
   "conflict_analysis": {
     "conflict_type": "A vs R",
@@ -244,17 +243,18 @@ ELSE
   "user_context_match": false
 }
 ```
-**Case 2) 사용자 맥락 있을 때 (개발자의 관심사: 리더십/팀관리):**
-```json
+
+Case 2) 사용자 맥락 있을 때 (개발자의 관심사: 리더십/팀관리):
+```
 {
   "conflict_analysis": {
     "conflict_type": "A vs R",
     "candidates": ["AREA", "RESOURCE"],
-    "decision": "AREA",  ← ✨ 적극적으로!
-    "confidence_score": 0.72  ← confidence 올라감
+    "decision": "AREA",
+    "confidence_score": 0.72
   },
   "decision_rule_applied": {
-    "rule1_context": true,  ← 사용자 맥락 매칭!
+    "rule1_context": true,
     "rule2_signal": "없음",
     "rule3_action": false,
     "rule4_trust": "낮음 (0.55) BUT 사용자_맥락_있음 → +0.17 = 0.72",
@@ -269,28 +269,27 @@ ELSE
 
 ## ⚠️ 중요 규칙
 
-✅ **사용자 맥락 최우선!**
-- 사용자 책임/관심사 키워드 포함 → confidence_score +0.2
-- 명확한 연결 없음 → confidence_score -0.3
+✅ 사용자 맥락 최우선!  
+- 사용자 책임/관심사 키워드 포함 → confidence_score +0.2  
+- 명확한 연결 없음 → confidence_score -0.3  
 
-✅ **신뢰도 기준**
-- 사용자 맥락 + 시간 신호 명확 → confidence_score ≥ 0.85
-- 모호한 경우
-  - confidence_score ≤ 0.6
-    - IF 사용자_프로필에서_관련_키워드_발견: AREA 또는 PROJECT (적극적)
-    - ELSE: RESOURCE (보수적)
-  - confidence ≥ 0.8 : 적극적으로 P/A 분류
+✅ 신뢰도 기준  
+- 사용자 맥락 + 시간 신호 명확 → confidence_score ≥ 0.85  
+- 모호한 경우  
+  - confidence_score ≤ 0.6  
+    - IF 사용자_프로필에서_관련_키워드_발견: AREA 또는 PROJECT (적극적)  
+    - ELSE: RESOURCE (보수적)  
+  - confidence ≥ 0.8 : 적극적으로 P/A 분류  
 
-✅ **JSON 100% 필수**
-- 절대 한국어만 출력 금지!
-- 항상 JSON 포맷 준수
+✅ JSON 100% 필수  
+- 절대 한국어만 출력 금지  
+- 항상 JSON 포맷 준수  
 
-✅ **한국어 reasoning**
-- 50~100자 범위
-- 판단 근거 명확히
+✅ 한국어 reasoning  
+- 50~100자 범위, 판단 근거 명확히  
 
-✅ **과부하 방지**
-- 복잡한 계산 X
-- 신호 기반 빠른 결정
+✅ 과부하 방지  
+- 복잡한 계산 X  
+- 신호 기반 빠른 결정  
 
 ================================================================================
