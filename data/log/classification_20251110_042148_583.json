@@ -1,0 +1,34 @@
+{
+  "timestamp": "2025-11-10T04:21:48.583123",
+  "user_id": "test_user",
+  "file_id": "unknown",
+  "text": "최종 완전 테스트",
+  "classification": {
+    "category": "Resources",
+    "confidence": 0.85,
+    "keyword_tags": [
+      "테스트 영역",
+      "테스트 영역 관련",
+      "테스트 영역 업무"
+    ],
+    "conflict_detected": false,
+    "requires_review": false,
+    "user_context": {
+      "occupation": "테스트 직업",
+      "areas": [
+        "테스트 영역"
+      ],
+      "interests": [
+        "테스트 관심사"
+      ],
+      "matched": false
+    },
+    "processing_times": {
+      "para_time": "N/A",
+      "keyword_time": "7.16s",
+      "total_time": "2.00s"
+    }
+  },
+  "technical": {
+    "instance_id": "bcc0e198",
+    "snapshot_id": 

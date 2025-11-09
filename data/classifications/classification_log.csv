@@ -1,1 +1,8 @@
 timestamp,user_id,file_name,ai_prediction,user_selected,confidence,status
+2025-11-09T22:12:53.249277,test_user,test_file.txt,Projects,,0.9,pending
+2025-11-10T04:40:56.702466,test_personal,unknown,,,0.0,pending
+2025-11-10T04:43:45.284825,project_user,unknown,,,0.0,pending
+2025-11-10T04:45:00.322805,dev_student_02,react_tutorial.md,,,0.0,pending
+2025-11-10T04:45:30.827629,meeting_manager_03,client_meeting_prep.pptx,,,0.0,pending
+2025-11-10T04:50:32.636980,health_user_04,workout_routine.txt,,,0.0,pending
+2025-11-10T04:50:57.175765,design_research_05,uxui_trends_2025.pdf,,,0.0,pending

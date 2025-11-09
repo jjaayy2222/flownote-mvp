@@ -1,0 +1,36 @@
+{
+  "timestamp": "2025-11-10T04:23:58.939326",
+  "user_id": "test_user",
+  "file_id": "test_file",
+  "text": "테스트 텍스트로 시간/태그/스냅샷 확인",
+  "classification": {
+    "category": "Areas",
+    "confidence": 0.9,
+    "keyword_tags": [
+      "테스트 영역1",
+      "테스트 영역2",
+      "테스트",
+      "관심사"
+    ],
+    "conflict_detected": false,
+    "requires_review": false,
+    "user_context": {
+      "occupation": "테스트 직업",
+      "areas": [
+        "테스트 영역1",
+        "테스트 영역2"
+      ],
+      "interests": [
+        "테스트 관심사"
+      ],
+      "matched": false
+    },
+    "processing_times": {
+      "para_time": "N/A",
+      "keyword_time": "6.34s",
+      "total_time": "2.00s"
+    }
+  },
+  "technical": {
+    "instance_id": "9b32fa5f",
+    "snapshot_id": 

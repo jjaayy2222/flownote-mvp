@@ -1,0 +1,19 @@
+{
+  "timestamp": "20251110_044500_328",
+  "user_id": "dev_student_02",
+  "text_preview": "최신 React.js 튜토리얼을 보고 있어. 새로운 프레임워크 공부하기 좋네.",
+  "category": "Resources",
+  "confidence": 0.0,
+  "keyword_tags": [
+    "프론트엔드",
+    "개발",
+    "React",
+    "기술 학습",
+    "웹 개발"
+  ],
+  "snapshot_id": "Snapshot(id='snap_20251110_044456_471363', timestamp=datetime.datetime(2025, 11, 10, 4, 44, 56, 471387), text='최신 React.js 튜토리얼을 보고 있어. 새로운 프레임워크 공부하기 좋네.', para_result={'category': 'Resources', 'confidence': 0.85, 'reasoning': '텍스트는 참고용 자료로, 사용자 책임 영역과는 관련이 없으며, 즉시 행동이 필요하지 않은 가이드 성격입니다. 따라서 Resources로 분류되었습니다.', 'detected_cues': [], 'source': 'langchain', 'has_metadata': True}, keyword_result={'tags': ['기타'], 'confidence': 0.0, 'matched_keywords': {'Projects': [], 'Areas': [], 'Resources': [], 'Archives': []}, 'reasoning': '사용자 맥락에 따른 키워드가 존재하지 않음. 따라서 적절한 키워드를 추출할 수 없음.', 'para_hints': {'Projects': [], 'Areas': [], 'Resources': [], 'Archives': []}, 'actionability': 'none', 'relevance': 'none', 'user_context_matched': False, 'context_keywords': [], 'context_boost_applied': 0.0, 'user_areas': [], 'processing_time': '3.59s', 'instance_id': '60e2739a'}, conflict_result={'final_category': 'Resources', 'para_category': 'Resources', 'keyword_tags': ['기타'], 'confidence': 0.85, 'confidence_gap': 0.85, 'conflict_detected': False, 'resolution_method': 'auto_by_confidence', 'requires_review': False, 'winner_source': 'para', 'para_reasoning': '텍스트는 참고용 자료로, 사용자 책임 영역과는 관련이 없으며, 즉시 행동이 필요하지 않은 가이드 성격입니다. 따라서 Resources로 분류되었습니다.', 'reason': '명확한 승자 선택됨 (Gap: 0.85)'}, metadata={'confidence': 0, 'is_conflict': False, 'final_category': 'Resources'})",
+  "user_areas": [
+    "기술 학습"
+  ],
+  "matched_context": true
+}
