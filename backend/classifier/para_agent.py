@@ -160,7 +160,7 @@ async def run_para_agent(text: str, metadata: dict = None) -> dict:
         "text": text,
         "metadata": metadata,
         "para_result": {},
-        "keyword_result": {},  # ✅ 추가
+        "keyword_result": {},                                   # 추가
         "conflict_result": {},
         "snapshot_id": "",
         "final_result": {}
@@ -169,12 +169,10 @@ async def run_para_agent(text: str, metadata: dict = None) -> dict:
     result = await agent.ainvoke(initial_state)
     return result["final_result"]
 
-
 # 🔷 8. 동기 래퍼 함수 (✅ 추가!)
 def run_para_agent_sync(text: str, metadata: dict = None) -> dict:
     """PARA Agent 실행 (동기 버전 - asyncio.run 래퍼)"""
     return asyncio.run(run_para_agent(text, metadata))
-
 
 
 # 테스트 함수

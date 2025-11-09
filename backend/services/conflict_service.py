@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # 필요한 분류기 import
 try:
-    from backend.classifier.para_agent import run_para_agent_sync
+    from backend.classifier.para_agent import run_para_agent
     from backend.classifier.keyword_classifier import KeywordClassifier
     from backend.classifier.conflict_resolver import ClassificationResult, ConflictResolver
     from backend.classifier.snapshot_manager import SnapshotManager
@@ -27,11 +27,12 @@ except ImportError:
     from pathlib import Path
     PROJECT_ROOT = Path(__file__).parent.parent.parent
     sys.path.insert(0, str(PROJECT_ROOT))
-    from backend.classifier.para_agent import run_para_agent_sync
+    from backend.classifier.para_agent import run_para_agent
     from backend.classifier.keyword_classifier import KeywordClassifier
     from backend.classifier.conflict_resolver import ClassificationResult, ConflictResolver
     from backend.classifier.snapshot_manager import SnapshotManager
-    logger.warning(f"Import fallback used: {e}")
+    
+    logger.warning("Import fallback used")  # logger.warning(f"Import fallback used: {e}")
 
 
 
@@ -45,13 +46,15 @@ class ConflictService:
     def __init__(self):
         """초기화"""
         #self.snapshots = {}
-        self.keyword_classifier = KeywordClassifier()
+        #self.keyword_classifier = KeywordClassifier()
         self.snapshot_manager = SnapshotManager()
         logger.info("✅ ConflictService 초기화 완료")
     
     def classify_text(
         self, 
         text: str,
+        para_result: Optional[Dict[str, Any]] = None,
+        keyword_result: Optional[Dict[str, Any]] = None,
         user_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
@@ -66,32 +69,39 @@ class ConflictService:
         Returns:
             통합 분류 결과
         """
-        snapshot_id = f"snap_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+        #snapshot_id = f"snap_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+        
+        #if user_context is None:
+        #    user_context = {}
         
         try:
             logger.info(f"📝 통합 분류 시작: {text[:50]}...")
             
-            # 1. PARA 분류
-            logger.info("1. PARA 분류 실행...")
-            para_result = run_para_agent_sync(text)
-            logger.info(f"  ✅ PARA: {para_result.get('category')}")
+            # 1. PARA 분류 (이미 있으면 재사용)
+            if para_result is None:
+                logger.info("1. PARA 분류 실행...")
+                para_result = run_para_agent(text)      # 임시로 동기 방식 처리 
+                logger.info(f"  ✅ PARA: {para_result.get('category')}")
             
             # 2. Keyword 분류 (매번 새로운 키워드!)
-            logger.info("2. Keyword 분류 실행...")
-            keyword_result = self.keyword_classifier.classify(text, user_context)
-            logger.info(f"  ✅ 새 키워드: {keyword_result.get('tags', [])}")
+            if keyword_result is None:
+                logger.info("2. Keyword 분류 실행...")
+                # ✅ 매번 새 인스턴스!
+                keyword_classifier = KeywordClassifier()
+                keyword_result = keyword_classifier.classify(text, user_context)
+                logger.info(f"  ✅ 새 키워드: {keyword_result.get('tags', [])}")
             
-            # 3. Conflict Resolution (매번 새로운 통합!)
+            # 3. Conflict Resolution
             logger.info("3. Conflict Resolution 실행...")
-            conflict_result = self._simple_resolve_conflict(
+            conflict_result = self._resolve_conflict(
                 para_result=para_result,
                 keyword_result=keyword_result,
                 text=text
             )
+            # conflict_result = await self._resolve_conflict_async(para_result, keyword_result, text)
             
-            # 4. Snapshot 저장 (Deep Copy로 독립성 보장!)
+            # 4. Snapshot 저장
             logger.info("4. Snapshot 저장...")
-            
             snapshot = self.snapshot_manager.save_snapshot(
                 text=text,
                 para_result=para_result,
@@ -117,48 +127,62 @@ class ConflictService:
         except Exception as e:
             logger.error(f"❌ 분류 오류: {e}", exc_info=True)
             
-            # 에러 결과도 Snapshot으로 저장
-            error_result = {
-                'snapshot_id': snapshot_id,
+            return {
+                'snapshot_id': f"error_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
                 'timestamp': datetime.now().isoformat(),
                 'text': text[:100],
                 'error': str(e),
                 'status': 'error'
             }
-            
-            return error_result
 
-    def _simple_resolve_conflict(
+    def _resolve_conflict(
         self,
         para_result: Dict[str, Any],
         keyword_result: Dict[str, Any],
         text: str
     ) -> Dict[str, Any]:
         """
-        간단한 충돌 해결
-        
-        ✅ ConflictResolver 없이도 동작!
+        충돌 해결 (ConflictResolver 사용)
         """
-        # PARA 결과 우선
-        final_category = para_result.get('category', 'Projects')
         
-        # 키워드 추가
-        final_keywords = keyword_result.get('tags', [])
-        
-        # 신뢰도 계산
-        para_confidence = para_result.get('confidence', 0.8)
-        keyword_confidence = keyword_result.get('confidence', 0.8)
-        final_confidence = (para_confidence + keyword_confidence) / 2
-        
-        return {
-            'final_category': final_category,
-            'final_keywords': final_keywords,
-            'confidence_score': final_confidence,
-            'is_conflict': False,
-            'resolution_method': 'simple_merge'
-        }
+        try:
+            # ClassificationResult 객체 생성
+            para_obj = ClassificationResult(
+                category=para_result.get("category", "Projects"),
+                confidence=para_result.get("confidence", 0.8),
+                source="para",
+                reasoning=para_result.get("reasoning", ""),
+                tags=None
+            )
+            
+            keyword_obj = ClassificationResult(
+                category=keyword_result.get("tags", ["기타"])[0] if keyword_result.get("tags") else "기타",
+                confidence=keyword_result.get("confidence", 0.8),
+                source="keyword",
+                reasoning=keyword_result.get("reasoning", ""),
+                tags=keyword_result.get("tags", ["기타"])
+            )
+            
+            # ConflictResolver로 해결
+            resolver = ConflictResolver()
+            conflict_result = resolver.resolve(para_obj, keyword_obj)
+            
+            return conflict_result
 
+        except Exception as e:
+            logger.error(f"❌ 충돌 해결 실패: {e}")
+            # Fallback
+            return {
+                'final_category': para_result.get('category', 'Projects'),
+                'keyword_tags': keyword_result.get('tags', ['기타']),
+                'confidence': para_result.get('confidence', 0.8),
+                'conflict_detected': False,
+                'resolution_method': 'simple_merge',
+                'requires_review': False,
+                'reason': 'Fallback 해결'
+            }
 
+    # 스냅샷 관련 메서드
     def get_snapshots(self) -> list:
         """모든 스냅샷 조회"""
         return self.snapshot_manager.get_snapshots()

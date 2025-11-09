@@ -19,6 +19,9 @@ import os
 import sys
 import re
 from typing import Dict, Any, Optional
+from datetime import datetime
+import uuid  
+
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -81,23 +84,34 @@ class KeywordClassifier:
     """
     키워드 기반 분류기 (LLM 기반 - GPT-4o-mini)
     
-    ⚠️ 주의: 매번 새로운 인스턴스를 생성해야 캐싱 문제를 방지할 수 있음!
+    ✅ 특징:
+    - 비동기/동기 메서드 모두 지원
+    - 사용자 컨텍스트 완전 지원
+    - UUID 기반 인스턴스 추적
+    - 프롬프트 파일 그대로 사용 (모든 변수 전달하기)
     """
 
     def __init__(self):
         """KeywordClassifier 초기화"""
+        
+        # 고유 ID로 인스턴스 추적
+        self.instance_id = str(uuid.uuid4())[:8]
+        self.created_at = datetime.now().strftime('%H:%M:%S')
+        
         self.llm = None
         self.chain = None
         self._initialize_llm()
         self._load_prompt()
         
-        logger.info("✅ KeywordClassifier initialized (new instance)")
+        logger.info(f"✅ KeywordClassifier initialized (ID: {self.instance_id}, Time: {self.created_at})")
 
 
     def _initialize_llm(self):
-        """LLM 초기화"""
+        """LLM 초기화 - 캐싱 없음"""
         try:
+            # 매번 새로 연결하기
             api_key = ModelConfig.GPT4O_MINI_API_KEY
+            
             if not api_key:
                 raise ValueError("❌ GPT4O_MINI_API_KEY not set")
             
@@ -117,7 +131,11 @@ class KeywordClassifier:
 
 
     def _load_prompt(self):
-        """프롬프트 파일 로드 및 Chain 생성"""
+        """프롬프트 파일 로드 및 Chain 생성
+        
+        - 프롬프트 파일 그대로 사용하기
+        - 템플릿 변수 모두 전달하기
+        """
         try:
             prompt_path = CLASSIFIER_DIR / "prompts" / "keyword_classification_prompt.txt"
             
@@ -127,7 +145,7 @@ class KeywordClassifier:
             with open(prompt_path, "r", encoding="utf-8") as f:
                 template_content = f.read()
             
-            # 중요: {text} 변수만 남기고 나머지 { } 이스케이프
+            # 프롬프트 그대로 사용 (변수 이스케이프 처리)
             escaped_content = self._escape_prompt_braces(template_content)
             
             # ChatPromptTemplate 생성
@@ -139,10 +157,9 @@ class KeywordClassifier:
             # Chain 생성: Prompt → LLM → StrOutputParser
             if self.llm:
                 self.chain = prompt | self.llm | StrOutputParser()
-                logger.info("✅ 프롬프트 로드 및 Chain 생성 성공")
+                logger.info(f"[{self.instance_id}] ✅ Chain 생성 성공 (프롬프트 파일 로드 완료)")
             else:
-                logger.warning("⚠️  LLM 미초기화로 Chain 생성 불가")
-            
+                logger.warning(f"[{self.instance_id}] ⚠️  LLM 미초기화로 Chain 생성 불가")
         except Exception as e:
             logger.error(f"❌ 프롬프트 로드 실패: {e}")
             self.chain = None
@@ -150,13 +167,20 @@ class KeywordClassifier:
 
     def _escape_prompt_braces(self, content: str) -> str:
         """
-        프롬프트의 중괄호 이스케이프 (핵심!)
-        {text} 변수만 남기고 나머지 모든 { } 를 {{ }} 로 변환
+        프롬프트의 중괄호 이스케이프
+        
+        - {text}, {occupation}, {areas}, {interests}, {context_keywords} 변수 유지
+        - 나머지 {}는 {{ }}로 이스케이프
         """
+        # 템플릿 변수 목록
+        template_vars = ['{text}', '{occupation}', '{areas}', '{interests}', '{context_keywords}']
+        
         lines = []
+        
         for line in content.split('\n'):
-            # {text}가 있는 라인은 그대로 유지
-            if '{text}' in line:
+            
+            # 템플릿 변수가 있는 라인은 그대로 유지
+            if any(var in line for var in template_vars):
                 lines.append(line)
             else:
                 # 나머지 라인의 { } 를 {{ }} 로 변환
@@ -168,68 +192,166 @@ class KeywordClassifier:
         
         return '\n'.join(lines)
 
+    # 추가
+    def _prepare_prompt_variables(
+        self, 
+        text: str, 
+        user_context: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+        """프롬프트 템플릿 변수 준비
 
-    def classify(self, text: str, user_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+            - 모든 변수를 문자열로 변환해서 전달!
         """
-        텍스트 분류 (LLM 기반)
+        # 기본값 설정
+        occupation = "일반 사용자"
+        areas = []
+        interests = []
+        context_keywords = {}
         
-        Args:
-            text: 분류할 텍스트
-            user_context: 사용자 컨텍스트 (areas, user_id 등)
+        # 사용자 컨텍스트에서 추출
+        if user_context:
+            occupation = user_context.get('occupation', '일반 사용자')
+            areas = user_context.get('areas', [])
+            interests = user_context.get('interests', [])
+            
+            # context_keywords 생성 (areas 기반)
+            for area in areas:
+                context_keywords[area] = [area, f"{area} 관련", f"{area} 업무"]
         
-        Returns:
-            dict: 분류 결과
+        # 모든 변수를 문자열로 변환하기
+        return {
+            "text": str(text[:1000]),                               # 최대 1000자
+            "occupation": str(occupation),
+            "areas": ", ".join(areas) if areas else "없음",          # 리스트 → 문자열
+            "interests": ", ".join(interests) if interests else "없음",
+            "context_keywords": json.dumps(context_keywords, ensure_ascii=False)  # dict → JSON 문자열
+        }
+
+    # ============================================================
+    # 비동기 메서드 (FastAPI에서 사용!)
+    # ============================================================
+    async def aclassify(self, text: str, user_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """텍스트 분류 (비동기 버전)
         
-        캐싱 방지 처리 추가
+        - 모든 프롬프트 변수 전달
+        - 비동기 LLM 호출
+        - 매번 새로운 키워드 생성
         """
-        
+
+        start_time = datetime.now()
+
         # 빈 텍스트 확인
         if not text or not text.strip():
-            logger.warning("⚠️  빈 텍스트 입력")
+            logger.warning(f"[{self.instance_id}] ⚠️  빈 텍스트 입력")
             return self._create_empty_response()
-
+    
         # Chain 미초기화 확인
         if self.chain is None:
-            logger.warning("⚠️  Chain 미초기화, Fallback 사용")
+            logger.warning(f"[{self.instance_id}] ⚠️  Chain 미초기화, Fallback")
             return self._fallback_classify(text)
-
+    
         try:
+            # Step 1: 프롬프트 변수 준비 (모든 변수!)
+            prompt_vars = self._prepare_prompt_variables(text, user_context)
             
-            # Step 1: 사용자 컨텍스트 처리 (옵션)
-            user_areas = []
+            logger.info(f"[{self.instance_id}] 🔍 Calling LLM (async)...")
+            logger.info(f"[{self.instance_id}]   - Text length: {len(text)}")
+            logger.info(f"[{self.instance_id}]   - Occupation: {prompt_vars['occupation']}")
+            logger.info(f"[{self.instance_id}]   - Areas: {prompt_vars['areas']}")
             
-            if user_context and user_context.get('areas'):
-                user_areas = user_context['areas']
-                logger.info(f"  - User areas: {user_areas}")
-            
-            # Step 2: LLM 호출 (매번 새로운 요청)
-            logger.info(f"🔍 KeywordClassifier: Calling LLM...")
-            logger.info(f"  - Text length: {len(text)}")
-            
-            response_text = self.chain.invoke({"text": text[:1000]})  # 최대 1000자로 제한
+            # Step 2: 비동기 LLM 호출! (모든 변수 전달!)
+            response_text = await self.chain.ainvoke(prompt_vars)
             
             # Step 3: JSON 추출 및 파싱
             json_text = self._extract_json_from_response(response_text)
             result = json.loads(json_text)
             
-            # 사용자 컨텍스트 정보 추가
-            result['user_context_matched'] = bool(user_areas)
-            result['user_areas'] = user_areas
+            # tags 보장
+            if 'tags' not in result or not result['tags']:
+                logger.warning(f"[{self.instance_id}] ⚠️  tags 없음, 기본값 설정")
+                result['tags'] = ['기타']
             
-            # Step 4: 디버깅 로그
-            logger.info(f"✅ KeywordClassifier result:")
-            logger.info(f"  - Tags: {result.get('tags', [])[:5]}")
-            logger.info(f"  - User context matched: {result['user_context_matched']}")
+            # confidence 보장
+            if 'confidence' not in result:
+                result['confidence'] = 0.5
+            
+            # 사용자 컨텍스트 정보 추가
+            result['user_context_matched'] = bool(user_context and user_context.get('areas'))
+            result['user_areas'] = user_context.get('areas', []) if user_context else []
+            
+            # 처리 시간 기록
+            elapsed = (datetime.now() - start_time).total_seconds()
+            result['processing_time'] = f"{elapsed:.2f}s"
+            result['instance_id'] = self.instance_id
+            
+            logger.info(f"[{self.instance_id}] ✅ 분류 완료 (async):")
+            logger.info(f"[{self.instance_id}]   - Tags: {result.get('tags', [])[:5]}")
+            logger.info(f"[{self.instance_id}]   - Confidence: {result.get('confidence')}")
+            logger.info(f"[{self.instance_id}]   - Time: {elapsed:.2f}s")
                         
             return result
 
         except json.JSONDecodeError as e:
-            logger.error(f"❌ JSON 파싱 실패: {e}")
-            logger.debug(f"파싱 시도 텍스트: {json_text[:300] if 'json_text' in locals() else 'N/A'}")
+            logger.error(f"[{self.instance_id}] ❌ JSON 파싱 실패: {e}")
             return self._fallback_classify(text)
         
         except Exception as e:
-            logger.error(f"❌ 분류 오류: {type(e).__name__}: {e}")
+            logger.error(f"[{self.instance_id}] ❌ 분류 오류 (async): {type(e).__name__}: {e}")
+            return self._fallback_classify(text)
+
+
+    # ============================================================
+    # 동기 메서드 (테스트용)
+    # ============================================================
+    def classify(self, text: str, user_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """ 키워드 분류 (동기 버전)"""
+        
+        start_time = datetime.now()
+        
+        # 로그로 호출 추적
+        logger.info(f"🔍 [{self.instance_id}] CLASSIFY 시작: text_len={len(text)}, has_context={bool(user_context)}")
+        
+        # 빈 텍스트 확인
+        if not text or not text.strip():
+            logger.warning(f"[{self.instance_id}] ⚠️  빈 텍스트 입력")
+            return self._create_empty_response()
+
+        # Chain 미초기화 확인
+        if self.chain is None:
+            logger.warning(f"[{self.instance_id}] ⚠️  Chain 미초기화, Fallback")
+            return self._fallback_classify(text)
+
+        try:            
+            # 프롬프트 변수 준비
+            prompt_vars = self._prepare_prompt_variables(text, user_context)
+            logger.info(f"[{self.instance_id}] 🔍 Calling LLM (sync)...")
+            
+            # 동기 호출
+            response_text = self.chain.invoke(prompt_vars)
+            
+            json_text = self._extract_json_from_response(response_text)
+            result = json.loads(json_text)
+            
+            # tags 보장
+            if 'tags' not in result or not result['tags']:
+                result['tags'] = ['기타']
+            
+            if 'confidence' not in result:
+                result['confidence'] = 0.5
+            
+            result['user_context_matched'] = bool(user_context and user_context.get('areas'))
+            result['user_areas'] = user_context.get('areas', []) if user_context else []
+            
+            elapsed = (datetime.now() - start_time).total_seconds()
+            result['processing_time'] = f"{elapsed:.2f}s"
+            result['instance_id'] = self.instance_id
+            
+            logger.info(f"[{self.instance_id}] ✅ 분류 완료 (sync):")
+            logger.info(f"[{self.instance_id}]   - Tags: {result.get('tags', [])}")
+                        
+            return result
+            
+        except Exception as e:
+            logger.error(f"[{self.instance_id}] ❌ 분류 오류 (sync): {e}")
             return self._fallback_classify(text)
 
 
@@ -255,12 +377,12 @@ class KeywordClassifier:
             return match.group(0)
         
         # Step 4: 실패 - 전체 반환
-        logger.warning("⚠️  JSON 포맷 찾기 실패")
+        logger.warning(f"[{self.instance_id}] ⚠️  JSON 포맷 찾기 실패")
         return response_text
 
 
     def _fallback_classify(self, text: str) -> Dict[str, Any]:
-        """Fallback 분류 (키워드 매칭)"""
+        """Fallback 분류"""
         keywords_map = {
             "업무": ["회의", "업무", "작업", "프로젝트", "계획", "보고서", "미팅", "팀", "협업"],
             "학습": ["공부", "학습", "강의", "스터디", "교육", "자격증", "연구", "독서"],
@@ -279,17 +401,20 @@ class KeywordClassifier:
         if not matched_dict:
             return self._create_empty_response()
         
-        logger.info(f"🔄 Fallback 분류: {list(matched_dict.keys())}")
+        tags = list(matched_dict.keys()[:3])
+        
+        logger.info(f"[{self.instance_id}] 🔄 Fallback 분류: {tags}")
         
         return {
-            "tags": list(matched_dict.keys())[:3],
+            "tags": tags,                           # 항상 존재
             "confidence": 0.6,
             "matched_keywords": matched_dict,
             "reasoning": "Fallback 키워드 매칭",
             "para_hints": {},
             "user_context_matched": False,
             "user_areas": [],
-            "is_fallback": True
+            "is_fallback": True,
+            "instance_id": self.instance_id
         }
 
 
@@ -302,13 +427,16 @@ class KeywordClassifier:
             "reasoning": "명확한 키워드 없음",
             "para_hints": {},
             "user_context_matched": False,
-            "user_areas": []
+            "user_areas": [],
+            "instance_id": self.instance_id
         }
 
 
     def get_statistics(self) -> Dict[str, Any]:
         """분류기 통계"""
         return {
+            "instance_id": self.instance_id,
+            "created_at": self.created_at,
             "llm_initialized": self.llm is not None,
             "chain_initialized": self.chain is not None,
             "model": ModelConfig.GPT4O_MINI_MODEL if self.llm else "None",
@@ -321,21 +449,19 @@ class KeywordClassifier:
 # ============================================================
 
 if __name__ == "__main__":
+    import asyncio
+    
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s"
     )
     
     print("\n" + "="*70)
-    print("KeywordClassifier 테스트")
+    print("KeywordClassifier 테스트 (프롬프트 파일 그대로 사용!)")
     print("="*70)
     
-    classifier = KeywordClassifier()
-    
-    stats = classifier.get_statistics()
-    print("\n📊 분류기 상태:")
-    for key, value in stats.items():
-        print(f"  {key}: {value}")
+    # 동기 테스트
+    classifier1 = KeywordClassifier()
     
     test_texts = [
         "오늘 회의가 있고, 저녁에 스터디 모임이 있습니다.",
@@ -343,17 +469,44 @@ if __name__ == "__main__":
         "오늘 헬스장에 가서 운동했습니다.",
     ]
     
+    user_context = {
+        "occupation": "소프트웨어 엔지니어",
+        "areas": ["코드 품질 관리", "기술 역량 개발"],
+        "interests": ["AI", "백엔드 개발"]
+    }
+    
     print("\n" + "="*70)
-    print("분류 테스트")
+    print("동기 테스트 (사용자 컨텍스트 포함)")
     print("="*70)
     
     for i, text in enumerate(test_texts, 1):
         print(f"\n📝 테스트 {i}: {text}")
-        result = classifier.classify(text)
+        result = classifier1.classify(text, user_context=user_context)
         print(f"✅ 태그: {result['tags']}")
         print(f"📊 신뢰도: {result['confidence']}")
-        print(f"🔑 키워드: {result['matched_keywords']}")
+        print(f"🆔 Instance: {result.get('instance_id')}")
+        print(f"👤 User matched: {result.get('user_context_matched')}")
 
+    # 비동기 테스트
+    print("\n" + "="*70)
+    print("비동기 테스트")
+    print("="*70)
+    
+    async def async_test():
+        classifier2 = KeywordClassifier()  # 새 인스턴스!
+        
+        for i, text in enumerate(test_texts, 1):
+            print(f"\n📝 비동기 테스트 {i}: {text}")
+            result = await classifier2.aclassify(text, user_context=user_context)
+            print(f"✅ 태그: {result['tags']}")
+            print(f"📊 신뢰도: {result['confidence']}")
+            print(f"🆔 Instance: {result.get('instance_id')}")
+            print(f"⏱️  Time: {result.get('processing_time')}")
+            print(f"👤 User areas: {result.get('user_areas')}")
+    
+    asyncio.run(async_test())
+
+##############################################################################
 
 
 """test_result_1 → ❌
@@ -686,5 +839,112 @@ if __name__ == "__main__":
     ✅ 태그: ['건강']
     📊 신뢰도: 0.85
     🔑 키워드: {'건강': ['헬스장', '운동']}
+
+"""
+
+
+
+"""test_result_6 → ⭕️ 
+
+    python -m backend.classifier.keyword_classifier
+
+    ======================================================================
+    KeywordClassifier 테스트 (프롬프트 파일 그대로 사용!)
+    ======================================================================
+    2025-11-09 23:30:54,219 - INFO - ✅ KeywordClassifier LLM 초기화 성공
+    2025-11-09 23:30:54,221 - INFO - [3587ef52] ✅ Chain 생성 성공 (프롬프트 파일 로드 완료)
+    2025-11-09 23:30:54,221 - INFO - ✅ KeywordClassifier initialized (ID: 3587ef52, Time: 23:30:54)
+
+    ======================================================================
+    동기 테스트 (사용자 컨텍스트 포함)
+    ======================================================================
+
+    📝 테스트 1: 오늘 회의가 있고, 저녁에 스터디 모임이 있습니다.
+    2025-11-09 23:30:54,221 - INFO - 🔍 [3587ef52] CLASSIFY 시작: text_len=28, has_context=True
+    2025-11-09 23:30:54,221 - INFO - [3587ef52] 🔍 Calling LLM (sync)...
+    2025-11-09 23:30:58,985 - INFO - HTTP Request: POST https://**** "HTTP/1.1 200 OK"
+    2025-11-09 23:30:59,003 - INFO - [3587ef52] ✅ 분류 완료 (sync):
+    2025-11-09 23:30:59,003 - INFO - [3587ef52]   - Tags: ['코드', '품질', '개선', '테스트']
+    ✅ 태그: ['코드', '품질', '개선', '테스트']
+    📊 신뢰도: 0.85
+    🆔 Instance: 3587ef52
+    👤 User matched: True
+
+    📝 테스트 2: 일기를 쓰면서 오늘 하루를 돌아봅니다.
+    2025-11-09 23:30:59,003 - INFO - 🔍 [3587ef52] CLASSIFY 시작: text_len=21, has_context=True
+    2025-11-09 23:30:59,004 - INFO - [3587ef52] 🔍 Calling LLM (sync)...
+    2025-11-09 23:31:03,820 - INFO - HTTP Request: POST https://**** "HTTP/1.1 200 OK"
+    2025-11-09 23:31:03,823 - INFO - [3587ef52] ✅ 분류 완료 (sync):
+    2025-11-09 23:31:03,823 - INFO - [3587ef52]   - Tags: ['코드', '품질', '관리', '테스트', '리팩토링']
+    ✅ 태그: ['코드', '품질', '관리', '테스트', '리팩토링']
+    📊 신뢰도: 0.9
+    🆔 Instance: 3587ef52
+    👤 User matched: True
+
+    📝 테스트 3: 오늘 헬스장에 가서 운동했습니다.
+    2025-11-09 23:31:03,823 - INFO - 🔍 [3587ef52] CLASSIFY 시작: text_len=18, has_context=True
+    2025-11-09 23:31:03,823 - INFO - [3587ef52] 🔍 Calling LLM (sync)...
+    2025-11-09 23:31:09,864 - INFO - HTTP Request: POST https://**** "HTTP/1.1 200 OK"
+    2025-11-09 23:31:09,867 - INFO - [3587ef52] ✅ 분류 완료 (sync):
+    2025-11-09 23:31:09,867 - INFO - [3587ef52]   - Tags: ['코드', '품질', '관리', '테스트', '리팩토링']
+    ✅ 태그: ['코드', '품질', '관리', '테스트', '리팩토링']
+    📊 신뢰도: 0.85
+    🆔 Instance: 3587ef52
+    👤 User matched: True
+
+    ======================================================================
+    비동기 테스트
+    ======================================================================
+    2025-11-09 23:31:09,868 - INFO - ✅ KeywordClassifier LLM 초기화 성공
+    2025-11-09 23:31:09,871 - INFO - [fdc6dd02] ✅ Chain 생성 성공 (프롬프트 파일 로드 완료)
+    2025-11-09 23:31:09,871 - INFO - ✅ KeywordClassifier initialized (ID: fdc6dd02, Time: 23:31:09)
+
+    📝 비동기 테스트 1: 오늘 회의가 있고, 저녁에 스터디 모임이 있습니다.
+    2025-11-09 23:31:09,871 - INFO - [fdc6dd02] 🔍 Calling LLM (async)...
+    2025-11-09 23:31:09,871 - INFO - [fdc6dd02]   - Text length: 28
+    2025-11-09 23:31:09,871 - INFO - [fdc6dd02]   - Occupation: 소프트웨어 엔지니어
+    2025-11-09 23:31:09,872 - INFO - [fdc6dd02]   - Areas: 코드 품질 관리, 기술 역량 개발
+    2025-11-09 23:31:13,576 - INFO - HTTP Request: POST https://**** "HTTP/1.1 200 OK"
+    2025-11-09 23:31:13,579 - INFO - [fdc6dd02] ✅ 분류 완료 (async):
+    2025-11-09 23:31:13,579 - INFO - [fdc6dd02]   - Tags: ['웹앱', '개발', '팀', '환경 구축', '12/31']
+    2025-11-09 23:31:13,579 - INFO - [fdc6dd02]   - Confidence: 0.95
+    2025-11-09 23:31:13,579 - INFO - [fdc6dd02]   - Time: 3.71s
+    ✅ 태그: ['웹앱', '개발', '팀', '환경 구축', '12/31']
+    📊 신뢰도: 0.95
+    🆔 Instance: fdc6dd02
+    ⏱️  Time: 3.71s
+    👤 User areas: ['코드 품질 관리', '기술 역량 개발']
+
+    📝 비동기 테스트 2: 일기를 쓰면서 오늘 하루를 돌아봅니다.
+    2025-11-09 23:31:13,579 - INFO - [fdc6dd02] 🔍 Calling LLM (async)...
+    2025-11-09 23:31:13,579 - INFO - [fdc6dd02]   - Text length: 21
+    2025-11-09 23:31:13,579 - INFO - [fdc6dd02]   - Occupation: 소프트웨어 엔지니어
+    2025-11-09 23:31:13,579 - INFO - [fdc6dd02]   - Areas: 코드 품질 관리, 기술 역량 개발
+    2025-11-09 23:31:17,959 - INFO - HTTP Request: POST https://**** "HTTP/1.1 200 OK"
+    2025-11-09 23:31:17,964 - INFO - [fdc6dd02] ✅ 분류 완료 (async):
+    2025-11-09 23:31:17,964 - INFO - [fdc6dd02]   - Tags: ['코드', '품질', '관리', '테스트', '리팩토링']
+    2025-11-09 23:31:17,964 - INFO - [fdc6dd02]   - Confidence: 0.88
+    2025-11-09 23:31:17,964 - INFO - [fdc6dd02]   - Time: 4.38s
+    ✅ 태그: ['코드', '품질', '관리', '테스트', '리팩토링']
+    📊 신뢰도: 0.88
+    🆔 Instance: fdc6dd02
+    ⏱️  Time: 4.38s
+    👤 User areas: ['코드 품질 관리', '기술 역량 개발']
+
+    📝 비동기 테스트 3: 오늘 헬스장에 가서 운동했습니다.
+    2025-11-09 23:31:17,964 - INFO - [fdc6dd02] 🔍 Calling LLM (async)...
+    2025-11-09 23:31:17,964 - INFO - [fdc6dd02]   - Text length: 18
+    2025-11-09 23:31:17,964 - INFO - [fdc6dd02]   - Occupation: 소프트웨어 엔지니어
+    2025-11-09 23:31:17,964 - INFO - [fdc6dd02]   - Areas: 코드 품질 관리, 기술 역량 개발
+    2025-11-09 23:31:27,785 - INFO - HTTP Request: POST https://**** "HTTP/1.1 200 OK"
+    2025-11-09 23:31:27,789 - INFO - [fdc6dd02] ✅ 분류 완료 (async):
+    2025-11-09 23:31:27,789 - INFO - [fdc6dd02]   - Tags: ['코드 품질 관리', '테스트', '리팩토링', '버그', '품질']
+    2025-11-09 23:31:27,789 - INFO - [fdc6dd02]   - Confidence: 0.85
+    2025-11-09 23:31:27,790 - INFO - [fdc6dd02]   - Time: 9.83s
+    ✅ 태그: ['코드 품질 관리', '테스트', '리팩토링', '버그', '품질']
+    📊 신뢰도: 0.85
+    🆔 Instance: fdc6dd02
+    ⏱️  Time: 9.83s
+    👤 User areas: ['코드 품질 관리', '기술 역량 개발']
 
 """

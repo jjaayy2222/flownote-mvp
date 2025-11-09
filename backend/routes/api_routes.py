@@ -7,7 +7,8 @@ FastAPI 라우터: 통합 버전
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from backend.routes.api_models import ClassifyResponse
-from backend.classifier.para_agent_wrapper import run_para_agent_sync
+#from backend.classifier.para_agent_wrapper import run_para_agent_sync
+from backend.classifier.para_agent import run_para_agent
 from backend.metadata import FileMetadata
 from backend.chunking import TextChunker
 import logging
@@ -71,7 +72,7 @@ async def classify_file(file: UploadFile = File(...)):
         
         # 🔥 Sync 버전 호출!
         try:
-            para_result = run_para_agent_sync(
+            para_result = await run_para_agent(
                 text=sample_text,
                 metadata=metadata
             )
@@ -451,6 +452,7 @@ async def health():
     - 저장된 파일 조회 ❌
 
 """
+
 
 """test_result_5 - 메타데이터 방식 추가 ⭕️
 
