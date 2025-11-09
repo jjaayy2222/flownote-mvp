@@ -149,6 +149,7 @@ tests/test_api_e2e_complete2.py
 tests/test_context_injector.py
 tests/test_integration_onboarding_classification.py
 tests/test_prompt_conflict.py
+tests/test_classification_flow.py
 
 # 업로드된 임시 파일
 uploaded_files/
