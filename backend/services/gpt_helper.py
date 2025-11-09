@@ -2,7 +2,7 @@
 
 """
 🤖 GPT-4o 헬퍼 클래스
-기존 config.py를 활용한 재사용 가능한 GPT 호출 유틸리티
+    - GPT 모델 호출 헬퍼 함수 모음
 """
 
 import sys
@@ -34,7 +34,6 @@ import re
 import json
 import logging
 from typing import Dict, List, Optional
-from backend.config import ModelConfig
 
 logger = logging.getLogger(__name__)
 
@@ -128,13 +127,14 @@ class GPT4oHelper:
         with open(prompt_path, "r", encoding="utf-8") as f:
             return f.read()
     
-    def suggest_areas(self, occupation: str, count: int = 5) -> Dict[str, any]:
+    # count 파라미터 기본값을 10으로 변경 (5~10개를 추천함)
+    def suggest_areas(self, occupation: str, count: int = 10) -> Dict[str, any]:
         """
         직업에 맞는 책임 영역 추천
         
         Args:
             occupation: 직업 (예: "교사", "개발자")
-            count: 추천할 영역 개수
+            count: 추천할 영역 개수 (기본값: 10)
             
         Returns:
             {
@@ -163,7 +163,7 @@ class GPT4oHelper:
 
 출력 형식 (JSON만):
 {{
-  "areas": ["영역1", "영역2", "영역3", "영역4", "영역5"]
+  "areas": ["영역1", "영역2", "영역3", ...]
 }}
             """.strip()
             
@@ -201,19 +201,26 @@ class GPT4oHelper:
 
 
 
-
-    def _get_fallback_areas(self, occupation: str, count: int = 5) -> List[str]:
+    # 수정: Fallback에서도 count 파라미터 기본값 10으로 변경
+    def _get_fallback_areas(self, occupation: str, count: int = 10) -> List[str]:
         """
         Fallback: 하드코딩된 직업별 영역
         """
         fallback_map = {
-            "교사": ["학생 평가", "수업 계획", "학급 운영", "학부모 소통", "교사 연수"],
-            "개발자": ["코드 리뷰", "아키텍처 설계", "팀 협업", "기술 학습", "프로젝트 관리"],
-            "마케터": ["캠페인 전략", "고객 분석", "브랜드 관리", "데이터 분석", "시장 조사"],
-            "학생": ["시험 준비", "과제 관리", "동아리 활동", "진로 탐색", "공부 습관"],
+            # 수정: 각 직업별 10개 영역으로 확장
+            "교사": ["학생 평가", "수업 계획", "학급 운영", "학부모 소통", "교사 연수", 
+                    "교육 자료 개발", "학생 상담", "성적 관리", "동료 협력", "교육 연구"],
+            "개발자": ["코드 리뷰", "아키텍처 설계", "팀 협업", "기술 학습", "프로젝트 관리",
+                    "버그 수정", "API 개발", "문서화", "배포 관리", "기술 블로그"],
+            "마케터": ["캠페인 전략", "고객 분석", "브랜드 관리", "데이터 분석", "시장 조사",
+                    "SNS 운영", "콘텐츠 제작", "광고 관리", "파트너십", "고객 소통"],
+            "학생": ["시험 준비", "과제 관리", "동아리 활동", "진로 탐색", "공부 습관",
+                    "봉사 활동", "자격증 준비", "운동", "독서", "멘토링"],
         }
         
+        # 수정: 직업별 fallback이 없을 경우 count개만큼 생성
         return fallback_map.get(occupation, [f"관심분야{i+1}" for i in range(count)])
+
     
     # ============================================
     # 🎯 핵심 기능 2: 영역별 키워드 생성
@@ -355,16 +362,18 @@ if __name__ == "__main__":
     
     helper = GPT4oHelper()
     
-    # 테스트 1: 영역 추천
-    print("\n[테스트 1] 직업별 영역 추천")
-    result = helper.suggest_areas("교사")
+    # 수정: 10개 영역 추천 테스트
+    print("\n[테스트 1] 직업별 영역 추천 (10개)")
+    result = helper.suggest_areas("교사", count=10)
     print(f"상태: {result['status']}")
+    print(f"영역 개수: {len(result['areas'])}")
     print(f"영역: {result['areas']}")
     print(f"메시지: {result['message']}")
+
     
     # 테스트 2: 키워드 생성
-    print("\n[테스트 2] 영역별 키워드 생성")
-    keywords = helper.generate_keywords("교사", result['areas'][:3])
+    print("\n[테스트 2] 영역별 키워드 생성 (5개 영역만)")
+    keywords = helper.generate_keywords("교사", result['areas'][:5])
     for area, kws in keywords.items():
         print(f"  {area}: {', '.join(kws)}")
     
@@ -379,7 +388,7 @@ if __name__ == "__main__":
     print(f"이유: {classify_result['reasoning']}")
     
     print("\n" + "="*60)
-    print("🤖 GPT-4o Helper 수정 테스트 완료")
+    print("🤖 GPT-4o Helper 테스트 완료")
     print("="*60)
 
 
@@ -507,7 +516,7 @@ if __name__ == "__main__":
     INFO:__main__:✅ GPT-4o 클라이언트 초기화 성공
 
     [테스트 1] 직업별 영역 추천
-    INFO:httpx:HTTP Request: POST https://mlapi.run/0e6857e3-a90b-4c99-93ac-1f9f887a193e/v1/chat/completions "HTTP/1.1 200 OK"
+    INFO:httpx:HTTP Request: POST **** "HTTP/1.1 200 OK"
     INFO:__main__:🔍 CLEANED RESPONSE: ```json
     {
     "areas": ["교과목 교육", "학생 평가", "수업 계획", "학급 관리", "부모 소통"]
@@ -520,7 +529,7 @@ if __name__ == "__main__":
     메시지: 기본 추천값 (GPT 파싱 실패)
 
     [테스트 2] 영역별 키워드 생성
-    INFO:httpx:HTTP Request: POST https://mlapi.run/0e6857e3-a90b-4c99-93ac-1f9f887a193e/v1/chat/completions "HTTP/1.1 200 OK"
+    INFO:httpx:HTTP Request: POST **** "HTTP/1.1 200 OK"
     INFO:__main__:🔍 CLEANED RESPONSE: ```json
     {
     "학생 평가": ["성취도", "평가 기준", "피드백", "객관성", "개별화"],
@@ -535,7 +544,7 @@ if __name__ == "__main__":
     학급 운영: 학급 운영_키워드1, 학급 운영_키워드2, 학급 운영_키워드3
 
     [테스트 3] 텍스트 분류
-    INFO:httpx:HTTP Request: POST https://mlapi.run/0e6857e3-a90b-4c99-93ac-1f9f887a193e/v1/chat/completions "HTTP/1.1 200 OK"
+    INFO:httpx:HTTP Request: POST **** "HTTP/1.1 200 OK"
     INFO:__main__:🔍 CLEANED RESPONSE: ```json
     {
     "category": "Projects",
@@ -565,7 +574,7 @@ if __name__ == "__main__":
     INFO:__main__:✅ GPT-4o 클라이언트 초기화 성공
 
     [테스트 1] 직업별 영역 추천
-    INFO:httpx:HTTP Request: POST https://mlapi.run/0e6857e3-a90b-4c99-93ac-1f9f887a193e/v1/chat/completions "HTTP/1.1 200 OK"
+    INFO:httpx:HTTP Request: POST **** "HTTP/1.1 200 OK"
     INFO:__main__:🔍 CLEANED RESPONSE: {
     "areas": ["수업 계획", "학생 평가", "교실 관리", "상담 지도", "교과 연구"]
     }
@@ -576,7 +585,7 @@ if __name__ == "__main__":
     메시지: 교사의 핵심 영역 5개 추천됨
 
     [테스트 2] 영역별 키워드 생성
-    INFO:httpx:HTTP Request: POST https://mlapi.run/0e6857e3-a90b-4c99-93ac-1f9f887a193e/v1/chat/completions "HTTP/1.1 200 OK"
+    INFO:httpx:HTTP Request: POST **** "HTTP/1.1 200 OK"
     INFO:__main__:🔍 CLEANED RESPONSE: {
     "수업 계획": ["학습 목표", "교재 선정", "시간 배분", "교육 자료", "수업 진행"],
     "학생 평가": ["시험", "과제", "참여도", "피드백", "성장 분석"],
@@ -589,7 +598,7 @@ if __name__ == "__main__":
     교실 관리: 규칙 설정, 환경 조성, 학생 참여, 문제 해결, 안전 관리
 
     [테스트 3] 텍스트 분류
-    INFO:httpx:HTTP Request: POST https://mlapi.run/0e6857e3-a90b-4c99-93ac-1f9f887a193e/v1/chat/completions "HTTP/1.1 200 OK"
+    INFO:httpx:HTTP Request: POST **** "HTTP/1.1 200 OK"
     INFO:__main__:🔍 CLEANED RESPONSE: {
     "category": "Projects",
     "confidence": 0.9,
@@ -639,8 +648,130 @@ if __name__ == "__main__":
 """
 
 
+"""test_result_6 → ⭕️ (선택 영역 10개로 늘림)
+
+    python -m backend.services.gpt_helper
+
+    ============================================================
+    🤖 GPT-4o Helper 테스트
+    ============================================================
+    INFO:__main__:✅ GPT-4o 클라이언트 초기화 성공
+
+    [테스트 1] 직업별 영역 추천 (10개)
+    INFO:httpx:HTTP Request: POST **** "HTTP/1.1 200 OK"
+    INFO:__main__:🔍 CLEANED RESPONSE: {
+    "areas": [
+        "학생 성취도 평가",
+        "수업 계획 및 준비",
+        "교실 환경 관리",
+        "학부모 소통",
+        "교육 자료 개발",
+        "학생 상담 및 지도",
+        "학교 행사 참여",
+        "전문성 개발",
+        "학급 운영 및 관리",
+        "평가 및 성적 관리"
+    ]
+    }
+    INFO:__main__:📏 RESPONSE LENGTH: 184
+    INFO:__main__:✅ GPT-4o 영역 추천 성공: 교사 → 10개
+    상태: success
+    영역 개수: 10
+    영역: ['학생 성취도 평가', '수업 계획 및 준비', '교실 환경 관리', '학부모 소통', '교육 자료 개발', '학생 상담 및 지도', '학교 행사 참여', '전문성 개발', '학급 운영 및 관리', '평가 및 성적 관리']
+    메시지: 교사의 핵심 영역 10개 추천됨
+
+    [테스트 2] 영역별 키워드 생성 (5개 영역만)
+    INFO:httpx:HTTP Request: POST **** "HTTP/1.1 200 OK"
+    INFO:__main__:🔍 CLEANED RESPONSE: {
+        "학생 성취도 평가": ["평가 기준", "성적 분석", "피드백 제공", "진단 평가", "향상 계획"],
+        "수업 계획 및 준비": ["교육 목표", "교수 전략", "교재 선정", "수업 일정", "활동 설계"],
+        "교실 환경 관리": ["교실 규칙", "학습 분위기", "자원 배치", "학생 참여", "안전 관리"],
+        "학부모 소통"
+    INFO:__main__:📏 RESPONSE LENGTH: 317
+    INFO:__main__:✅ 키워드 생성 성공: 5개 영역
+    학생 성취도 평가: 평가 기준, 성적 분석, 피드백 제공, 진단 평가, 향상 계획
+    수업 계획 및 준비: 교육 목표, 교수 전략, 교재 선정, 수업 일정, 활동 설계
+    교실 환경 관리: 교실 규칙, 학습 분위기, 자원 배치, 학생 참여, 안전 관리
+    학부모 소통: 정기 회의, 성과 공유, 의견 수렴, 커뮤니케이션 채널, 신뢰 구축
+    교육 자료 개발: 콘텐츠 연구, 자료 설계, 미디어 활용, 맞춤형 자료, 참고 문헌
+
+    [테스트 3] 텍스트 분류
+    INFO:httpx:HTTP Request: POST **** "HTTP/1.1 200 OK"
+    INFO:__main__:🔍 CLEANED RESPONSE: {
+        "category": "Projects",
+        "confidence": 0.9,
+        "reasoning": "수업 계획서는 특정한 목표를 달성하기 위한 계획을 포함하는 문서로, 프로젝트 성격을 띤다. 따라서 '2025년 수업 계획서 작성'은 프로젝트와 관련된 것으로 볼 수 있다."
+    }
+    INFO:__main__:📏 RESPONSE LENGTH: 163
+    카테고리: Projects
+    신뢰도: 0.9
+    이유: 수업 계획서는 특정한 목표를 달성하기 위한 계획을 포함하는 문서로, 프로젝트 성격을 띤다. 따라서 '2025년 수업 계획서 작성'은 프로젝트와 관련된 것으로 볼 수 있다.
+
+    ============================================================
+    🤖 GPT-4o Helper 테스트 완료
+
+"""
 
 
 
+"""test_result_7 → ⭕️ 서버 테스트
 
+    ➀ - `python -m backend.main`
+    
+    ✅ ModelConfig loaded from backend.config
+    INFO:__main__:✅ api_router 등록 완료
+    INFO:__main__:✅ classifier_router 등록 완료
+    INFO:__main__:✅ onboarding_router 등록 완료
+    INFO:__main__:🚀 FlowNote API 시작...
+    INFO:__main__:📍 http://localhost:8000
+    INFO:__main__:📚 문서: http://localhost:8000/docs
+    INFO:     Started server process [63487]
+    INFO:     Waiting for application startup.
+    INFO:     Application startup complete.
+    INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+    INFO:backend.routes.onboarding_routes:[SuggestAreas] user_id: test, occupation: teacher
+    INFO:httpx:HTTP Request: POST **** "HTTP/1.1 200 OK"
+    INFO:backend.services.gpt_helper:🔍 CLEANED RESPONSE: {
+    "areas": [
+        "학생 성적 관리",
+        "수업 계획 및 준비",
+        "교실 환경 유지",
+        "학부모 소통",
+        "학생 상담 및 지도",
+        "교과 과정 개발",
+        "평가 및 피드백 제공",
+        "교사 협업 및 회의",
+        "전문성 개발",
+        "교육 자료 관리"
+    ]
+    }
+    INFO:backend.services.gpt_helper:📏 RESPONSE LENGTH: 184
+    INFO:backend.services.gpt_helper:✅ GPT-4o 영역 추천 성공: teacher → 10개
+    INFO:backend.routes.onboarding_routes:[SuggestAreas] GPT-4o suggested areas: ['학생 성적 관리', '수업 계획 및 준비', '교실 환경 유지', '학부모 소통', '학생 상담 및 지도', '교과 과정 개발', '평가 및 피드백 제공', '교사 협업 및 회의', '전문성 개발', '교육 자료 관리']
+    INFO:     127.0.0.1:64613 - "GET /api/onboarding/suggest-areas?user_id=test&occupation=teacher HTTP/1.1" 200 OK
+    
+    
+    
+    ➁ - `curl "http://localhost:8000/api/onboarding/suggest-areas?user_id=test&occupation=teacher"`
+    
+    {
+        "status":"success",
+        "user_id":"test",
+        "occupation":"teacher",
+        "suggested_areas":[
+            "학생 성적 관리",
+            "수업 계획 및 준비",
+            "교실 환경 유지",
+            "학부모 소통",
+            "학생 상담 및 지도",
+            "교과 과정 개발",
+            "평가 및 피드백 제공",
+            "교사 협업 및 회의",
+            "전문성 개발",
+            "교육 자료 관리"
+            ],
+        "message":"Step 2: 아래 영역 중 관심있는 것을 선택하세요",
+        "next_step":"/api/onboarding/save-context (POST with selected_areas)"
+    }
 
+"""
