@@ -114,6 +114,7 @@ test_*.pdf
 # backend 백업 
 backend/classifier/prompts/backup_*
 backend/classifier/prompts/backup_20251107/
+backend/classifier/prompts/bacoup_20251107_2/
 
 # StreamLit 캐시
 .streamlit/
@@ -135,6 +136,19 @@ tests/test_classifier_routes.py
 tests/test_classify_cli.py
 tests/test_frontend.js
 tests/test_results.txt
+tests/data/
+tests/outputs/
+tests/outputs/step_01_upload_20251104_235032.json
+tests/outputs/step_02_classification_20251104_235032.json
+tests/outputs/step_03_conflict_detection_20251104_235032.json
+tests/outputs/step_04_conflict_resolution_20251104_235032.json
+tests/outputs/step_05_dashboard_20251104_235032.json
+tests/outputs/test_results_complete_20251104_235032.json
+
+tests/test_api_e2e_complete2.py
+tests/test_context_injector.py
+tests/test_integration_onboarding_classification.py
+tests/test_prompt_conflict.py
 
 # 업로드된 임시 파일
 uploaded_files/
@@ -143,3 +157,6 @@ tests/outputs/
 .pytest_cache/
 __pycache__/
 *.pyc
+
+
+#
