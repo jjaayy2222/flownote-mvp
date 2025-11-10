@@ -82,8 +82,11 @@ data/exports/
 data/uploads/
 data/db/
 data/faiss/
+data/log/
 data/metadata.json
 data/search_history.json
+data/log/20251110_175629_LangChain_Setup_Guide.md.json
+data/log/20251110_175548_react_tutorial.md.json
 
 # 하지만 새로운 CSV/JSON은 커밋!
 # data/users/users_profiles.csv
