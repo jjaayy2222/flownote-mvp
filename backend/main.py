@@ -51,7 +51,8 @@ app.add_middleware(
 app.include_router(api_router)
 logger.info("✅ api_router 등록 완료")
 
-app.include_router(classifier_router, prefix="/api/classify") 
+#app.include_router(classifier_router, prefix="/api/classify") 
+app.include_router(classifier_router, prefix="/api/classifier")
 logger.info("✅ classifier_router 등록 완료")
 
 app.include_router(onboarding_router, prefix="/api/onboarding")
