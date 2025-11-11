@@ -770,6 +770,7 @@ async def classify_file(
         import json
         from pathlib import Path
         import csv
+        import time
 
         # === 초기 상태값 보장 ===
         csv_saved = False
@@ -779,7 +780,7 @@ async def classify_file(
         csv_log_result = None
         json_filename = None
         areas_list = None
-
+        
         # ============================================================
         # Step 1: 파일 읽기 + Form 데이터 파싱
         # ============================================================
