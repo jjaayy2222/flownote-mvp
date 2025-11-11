@@ -1,4 +1,4 @@
-# streamlit/test_ui6.py
+# streamlit/test_ui7.py
 
 """
 FlowNote 통합 UI - 온보딩 플로우 추가

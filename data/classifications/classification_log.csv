@@ -38,3 +38,61 @@ timestamp,user_id,filename,ai_prediction,user_selected,confidence,keyword_tags,u
 2025-11-10T15:18:26.496512+00:00,user_70b69600,react_tutorial.md,Resources,0.0,기타
 2025-11-11T01:24:07.307564,user_2ee2b560,react_tutorial.md,Resources,,0.0,pending
 2025-11-10T16:24:07.308657+00:00,user_2ee2b560,react_tutorial.md,Resources,0.0,"코드,품질,관리,시스템 안정성,성능 최적화"
+2025-11-11T02:40:33.271987,user_f46d2427,Tag_Extraction_and_Async_Processing_Troubleshooting_Guide.md,Resources,,0.0,pending
+2025-11-10T17:40:33.278116+00:00,user_f46d2427,Tag_Extraction_and_Async_Processing_Troubleshooting_Guide.md,Resources,0.0,"코드,품질,관리,API,최적화"
+2025-11-11T02:43:00.684781,user_f46d2427,Tag_Extraction_and_Async_Processing_Troubleshooting_Guide.md,Resources,,0.0,pending
+2025-11-10T17:43:00.686308+00:00,user_f46d2427,Tag_Extraction_and_Async_Processing_Troubleshooting_Guide.md,Resources,0.0,"성능 최적화,API 설계,코드 품질,개발 문서화"
+2025-11-11T02:44:50.428757,user_f46d2427,Tag_Extraction_and_Async_Processing_Troubleshooting_Guide.md,Resources,,0.0,pending
+2025-11-10T17:44:50.430388+00:00,user_f46d2427,Tag_Extraction_and_Async_Processing_Troubleshooting_Guide.md,Resources,0.0,"성능 최적화,API 설계,기술 역량,코드 품질,문서화"
+2025-11-11T02:47:37.935306,user_508782e7,Tag_Extraction_and_Async_Processing_Troubleshooting_Guide.md,Resources,,0.0,pending
+2025-11-10T17:47:37.936797+00:00,user_508782e7,Tag_Extraction_and_Async_Processing_Troubleshooting_Guide.md,Resources,0.0,"코드,품질,관리,성능,API"
+2025-11-11T11:59:27.942374,user_c07c462b,Tag_Extraction_and_Async_Processing_Troubleshooting_Guide.md,Resources,,0.0,pending
+2025-11-11T02:59:27.943479+00:00,user_c07c462b,Tag_Extraction_and_Async_Processing_Troubleshooting_Guide.md,Resources,0.0,"코드,품질,관리,API,성능"
+2025-11-11T12:00:24.004719,user_c07c462b,LangChain Learning Focus.md,Resources,,0.0,pending
+2025-11-11T03:00:24.005778+00:00,user_c07c462b,LangChain Learning Focus.md,Resources,0.0,"코드,품질,관리,API,성능"
+2025-11-11T12:00:58.812253,user_c07c462b,프로젝트-FlowNote_MVP_개발.md,Resources,,0.0,pending
+2025-11-11T03:00:58.813324+00:00,user_c07c462b,프로젝트-FlowNote_MVP_개발.md,Resources,0.0,"코드,품질,관리,API,성능"
+2025-11-11T12:01:44.998678,user_c07c462b,Project-FlowNote_MVP.md,Resources,,0.0,pending
+2025-11-11T03:01:44.999717+00:00,user_c07c462b,Project-FlowNote_MVP.md,Resources,0.0,"코드,품질,관리,성능,API"
+2025-11-11T12:02:28.354125,user_c07c462b,README.md,Resources,,0.0,pending
+2025-11-11T03:02:28.355227+00:00,user_c07c462b,README.md,Resources,0.0,"코드,품질,관리,API,성능"
+2025-11-11T12:03:23.001714,user_c07c462b,API_Router_Connection_Troubleshooting_Guide.md,Resources,,0.0,pending
+2025-11-11T03:03:23.002691+00:00,user_c07c462b,API_Router_Connection_Troubleshooting_Guide.md,Resources,0.0,"코드,품질,관리,API,성능"
+2025-11-11T12:04:54.538375,user_c07c462b,Flownote_Classification_Pipeline_Complete_Error_Resolution_Guide.md,Resources,,0.0,pending
+2025-11-11T03:04:54.539492+00:00,user_c07c462b,Flownote_Classification_Pipeline_Complete_Error_Resolution_Guide.md,Resources,0.0,"코드,품질,관리,성능,안정성"
+2025-11-11T12:22:16.124671,user_2168323c,API_router_connection_troubleshooting_guide.pdf,Resources,,0.0,pending
+2025-11-11T03:22:16.125791+00:00,user_2168323c,API_router_connection_troubleshooting_guide.pdf,Resources,0.0,"코드,품질,관리,테스트,리팩토링"
+2025-11-11T12:42:03.562755,user_544ca039,Tag_Extraction_and_Async_Processing_Troubleshooting_Guide.md,Resources,,0.0,pending
+2025-11-11T03:42:03.564092+00:00,user_544ca039,Tag_Extraction_and_Async_Processing_Troubleshooting_Guide.md,Resources,0.0,"API,설계,관리,성능,안정성"
+2025-11-11T12:42:34.484322,user_544ca039,Project_Structure_Reorganization.md,Resources,,0.0,pending
+2025-11-11T03:42:34.484613+00:00,user_544ca039,Project_Structure_Reorganization.md,Resources,0.0,"API,설계,관리,성능,최적화"
+2025-11-11T16:05:07.134134,user_cd674eb4,API_Router_Connection_Troubleshooting_Guide.md,Resources,,0.0,pending
+2025-11-11T07:05:07.135230+00:00,user_cd674eb4,API_Router_Connection_Troubleshooting_Guide.md,Resources,0.0,"코드,품질,API,성능,관리"
+2025-11-11T16:05:35.250766,user_cd674eb4,Streamlit_Deployment_Troubleshooting.md,Resources,,0.0,pending
+2025-11-11T07:05:35.251328+00:00,user_cd674eb4,Streamlit_Deployment_Troubleshooting.md,Resources,0.0,"코드,품질,관리,API,성능 최적화"
+2025-11-11T16:06:25.115250,user_cd674eb4,file-upload.md,Resources,,0.0,pending
+2025-11-11T07:06:25.116398+00:00,user_cd674eb4,file-upload.md,Resources,0.0,"코드,품질,관리,성능,최적화"
+2025-11-11T16:06:28.286600,user_cd674eb4,file-upload.md,Resources,,0.0,pending
+2025-11-11T07:06:28.286882+00:00,user_cd674eb4,file-upload.md,Resources,0.0,"API,설계,관리,성능,최적화"
+2025-11-11T16:07:03.922922,user_cd674eb4,프로젝트-FlowNote_MVP_개발.md,Resources,,0.0,pending
+2025-11-11T07:07:03.924025+00:00,user_cd674eb4,프로젝트-FlowNote_MVP_개발.md,Resources,0.0,"코드,품질,관리,API,성능"
+2025-11-11T16:07:34.653991,user_cd674eb4,Project-FlowNote_MVP.md,Resources,,0.0,pending
+2025-11-11T07:07:34.654287+00:00,user_cd674eb4,Project-FlowNote_MVP.md,Resources,0.0,"코드,품질,관리,API,설계"
+2025-11-11T16:08:01.181248,user_cd674eb4,2025가계부1월.pdf,Resources,,0.0,pending
+2025-11-11T07:08:01.182343+00:00,user_cd674eb4,2025가계부1월.pdf,Resources,0.0,"코드,품질,관리,API,성능"
+2025-11-11T16:08:31.475515,user_cd674eb4,ABC프로젝트.pdf,Resources,,0.0,pending
+2025-11-11T07:08:31.475795+00:00,user_cd674eb4,ABC프로젝트.pdf,Resources,0.0,"코드,품질,관리,API,성능"
+2025-11-11T16:09:08.200147,user_cd674eb4,2022.2학기 진도계획.xlsx - 2022.2학기 학사일정 및 수업횟수.pdf,Resources,,0.0,pending
+2025-11-11T07:09:08.201251+00:00,user_cd674eb4,2022.2학기 진도계획.xlsx - 2022.2학기 학사일정 및 수업횟수.pdf,Resources,0.0,"API,설계,관리,성능,최적화"
+2025-11-11T16:09:46.433224,user_cd674eb4,사업소득 명세서_이재이_20250531.pdf,Resources,,0.0,pending
+2025-11-11T07:09:46.433521+00:00,user_cd674eb4,사업소득 명세서_이재이_20250531.pdf,Resources,0.0,"코드,품질,관리,API,성능"
+2025-11-11T16:10:13.612490,user_cd674eb4,2025-ICT-프로젝트-sample.pdf,Resources,,0.0,pending
+2025-11-11T07:10:13.613689+00:00,user_cd674eb4,2025-ICT-프로젝트-sample.pdf,Resources,0.0,"코드,품질,관리,API,설계"
+2025-11-11T16:10:39.395735,user_cd674eb4,월별시간표_수강생.pdf,Resources,,0.0,pending
+2025-11-11T07:10:39.396161+00:00,user_cd674eb4,월별시간표_수강생.pdf,Resources,0.0,"코드,품질,관리,테스트,API"
+2025-11-11T16:11:54.445220,user_cd674eb4,Chat_Summary_v1.md,Resources,,0.0,pending
+2025-11-11T07:11:54.446609+00:00,user_cd674eb4,Chat_Summary_v1.md,Resources,0.0,"API,설계,관리,성능,최적화"
+2025-11-11T16:12:11.328752,user_cd674eb4,Chat_Summary_v1.md,Resources,,0.0,pending
+2025-11-11T07:12:11.330052+00:00,user_cd674eb4,Chat_Summary_v1.md,Resources,0.0,"코드,품질,리뷰,테스트,리팩토링"
+2025-11-11T16:12:29.454451,user_cd674eb4,Chat_Summary_v1.txt,Resources,,0.0,pending
+2025-11-11T07:12:29.454751+00:00,user_cd674eb4,Chat_Summary_v1.txt,Resources,0.0,"코드,품질,테스트,리팩토링,API"
