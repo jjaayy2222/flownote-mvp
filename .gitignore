@@ -83,18 +83,14 @@ data/uploads/
 data/db/
 data/faiss/
 data/log/
+data/users/users_profiles.csv
+data/context/user_context_mapping.json
+data/classifications/classification_log.csv
 data/metadata.json
 data/search_history.json
-data/classifications/classification_log.csv
-data/context/user_context_mapping.json
-data/users/users_profiles.csv
 data/log/20251110_175629_LangChain_Setup_Guide.md.json
 data/log/20251110_175548_react_tutorial.md.json
 
-# 하지만 새로운 CSV/JSON은 커밋!
-# data/users/users_profiles.csv
-# data/context/user_context_mapping.json
-# data/classifications/classification_log.csv
 
 # 마크다운/PDF 문서 (테스트용)
 *.md~
@@ -167,4 +163,17 @@ __pycache__/
 *.pyc
 
 
-#
+# 깃 브랜치 히스토리
+branches_backup.txt
+git_history_backup.txt
+
+
+# 백업 파일들
+*_backup.txt
+*_backup*.txt
+*.bak
+
+
+# 백업 디렉토리
+backups/
+*.backup/
