@@ -1,0 +1,49 @@
+{
+  "status": "success",
+  "dashboard_data": {
+    "total_files": 4,
+    "classified_files": 4,
+    "files": [
+      {
+        "file_id": "uuid-project_flownote.md",
+        "filename": "project_flownote.md",
+        "para_category": "Projects",
+        "confidence": 0.95,
+        "status": "processed"
+      },
+      {
+        "file_id": "uuid-area_development.md",
+        "filename": "area_development.md",
+        "para_category": "Areas",
+        "confidence": 0.92,
+        "status": "processed"
+      },
+      {
+        "file_id": "uuid-resource_docs.md",
+        "filename": "resource_docs.md",
+        "para_category": "Resources",
+        "confidence": 0.9,
+        "status": "processed"
+      },
+      {
+        "file_id": "uuid-archive_old.md",
+        "filename": "archive_old.md",
+        "para_category": "Archives",
+        "confidence": 0.88,
+        "status": "processed"
+      }
+    ],
+    "conflicts": {
+      "total": 0,
+      "resolved": 0,
+      "pending": 0
+    },
+    "statistics": {
+      "projects_count": 1,
+      "areas_count": 1,
+      "resources_count": 1,
+      "archives_count": 1,
+      "total_confidence_avg": 0.91
+    }
+  }
+}
