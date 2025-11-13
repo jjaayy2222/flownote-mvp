@@ -1,0 +1,1442 @@
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python test_api_all_endpoints.py
+🚀 Testing ALL Backend API Files
+
+======================================================================
+🧪 Testing: backend/api/routes.py
+✅ routes.py loaded successfully
+
+🧪 Testing: backend/api/models.py
+✅ models.py exists (import check: cannot import name 'DashboardModel' from 'backend.api.models' (/Users/jay/ICT-projects/flownote-mvp/backend/api/models/__init__.py))
+
+🧪 Testing: backend/api/endpoints/dashboard.py
+✅ dashboard.py endpoint loaded
+
+🧪 Testing: GET /dashboard/status
+✅ MetadataAggregator loaded successfully
+✅ Status: ready
+
+🧪 Testing: GET /dashboard/metrics
+✅ Metrics loaded: ['file_statistics', 'para_breakdown', 'keyword_categories']
+
+🧪 Testing: GET /dashboard/keywords
+✅ Keywords count: 5
+
+🧪 Testing: backend/api/endpoints/classify.py
+✅ classify.py endpoint loaded
+
+🧪 Testing: backend/api/endpoints/search.py
+✅ search.py endpoint loaded
+
+🧪 Testing: backend/api/endpoints/metadata.py
+✅ metadata.py endpoint loaded
+
+🧪 Testing: Full Integration
+   ✅ backend/api/routes.py
+   ✅ backend/api/models.py
+   ✅ backend/api/endpoints/dashboard.py
+   ✅ backend/api/endpoints/classify.py
+   ✅ backend/api/endpoints/search.py
+   ✅ backend/api/endpoints/metadata.py
+✅ All 6 files loaded and integrated!
+
+======================================================================
+✅ All Backend API Files Successfully Tested!
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_api_all_endpoints.py -v -s
+============================================== test session starts ==============================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collected 10 items                                                                                              
+
+test_api_all_endpoints.py::TestAllBackendAPIFiles::test_routes_py_import 🧪 Testing: backend/api/routes.py
+✅ routes.py loaded successfully
+PASSED
+test_api_all_endpoints.py::TestAllBackendAPIFiles::test_models_py_import 🧪 Testing: backend/api/models.py
+✅ models.py exists (import check: cannot import name 'DashboardModel' from 'backend.api.models' (/Users/jay/ICT-projects/flownote-mvp/backend/api/models/__init__.py))
+PASSED
+test_api_all_endpoints.py::TestAllBackendAPIFiles::test_dashboard_endpoint_import 🧪 Testing: backend/api/endpoints/dashboard.py
+✅ dashboard.py endpoint loaded
+PASSED
+test_api_all_endpoints.py::TestAllBackendAPIFiles::test_dashboard_status_endpoint 🧪 Testing: GET /dashboard/status
+✅ MetadataAggregator loaded successfully
+✅ Status: ready
+PASSED
+test_api_all_endpoints.py::TestAllBackendAPIFiles::test_dashboard_metrics_endpoint 🧪 Testing: GET /dashboard/metrics
+✅ Metrics loaded: ['file_statistics', 'para_breakdown', 'keyword_categories']
+PASSED
+test_api_all_endpoints.py::TestAllBackendAPIFiles::test_dashboard_keywords_endpoint 🧪 Testing: GET /dashboard/keywords
+✅ Keywords count: 5
+PASSED
+test_api_all_endpoints.py::TestAllBackendAPIFiles::test_classify_endpoint_import 🧪 Testing: backend/api/endpoints/classify.py
+✅ classify.py endpoint loaded
+PASSED
+test_api_all_endpoints.py::TestAllBackendAPIFiles::test_search_endpoint_import 🧪 Testing: backend/api/endpoints/search.py
+✅ search.py endpoint loaded
+PASSED
+test_api_all_endpoints.py::TestAllBackendAPIFiles::test_metadata_endpoint_import 🧪 Testing: backend/api/endpoints/metadata.py
+✅ metadata.py endpoint loaded
+PASSED
+test_api_all_endpoints.py::TestAllBackendAPIFiles::test_all_files_integration 🧪 Testing: Full Integration
+   ✅ backend/api/routes.py
+   ✅ backend/api/models.py
+   ✅ backend/api/endpoints/dashboard.py
+   ✅ backend/api/endpoints/classify.py
+   ✅ backend/api/endpoints/search.py
+   ✅ backend/api/endpoints/metadata.py
+✅ All 6 files loaded and integrated!
+PASSED
+
+=============================================== warnings summary ================================================
+../backend/api/models/conflict_models.py:54
+  /Users/jay/ICT-projects/flownote-mvp/backend/api/models/conflict_models.py:54: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ConflictDetail(BaseModel):
+
+../backend/api/models/conflict_models.py:80
+  /Users/jay/ICT-projects/flownote-mvp/backend/api/models/conflict_models.py:80: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ConflictRecord(BaseModel):
+
+../backend/api/models/conflict_models.py:130
+  /Users/jay/ICT-projects/flownote-mvp/backend/api/models/conflict_models.py:130: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ResolutionStrategy(BaseModel):
+
+../backend/api/models/conflict_models.py:161
+  /Users/jay/ICT-projects/flownote-mvp/backend/api/models/conflict_models.py:161: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ConflictResolution(BaseModel):
+
+../backend/api/models/conflict_models.py:200
+  /Users/jay/ICT-projects/flownote-mvp/backend/api/models/conflict_models.py:200: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ConflictReport(BaseModel):
+
+../backend/api/models/conflict_models.py:267
+  /Users/jay/ICT-projects/flownote-mvp/backend/api/models/conflict_models.py:267: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class DetectConflictRequest(BaseModel):
+
+../backend/api/models/conflict_models.py:290
+  /Users/jay/ICT-projects/flownote-mvp/backend/api/models/conflict_models.py:290: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ResolveConflictRequest(BaseModel):
+
+../backend/api/models/conflict_models.py:318
+  /Users/jay/ICT-projects/flownote-mvp/backend/api/models/conflict_models.py:318: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ConflictDetectResponse(BaseModel):
+
+../backend/api/models/conflict_models.py:340
+  /Users/jay/ICT-projects/flownote-mvp/backend/api/models/conflict_models.py:340: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ConflictResolveResponse(BaseModel):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================================== 10 passed, 9 warnings in 0.24s =========================================
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_dashboard.py -v -s
+============================================ test session starts =============================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collected 0 items                                                                                            
+
+=========================================== no tests ran in 0.00s ============================================
+ERROR: file or directory not found: test_dashboard.py
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_api_e2e_complete.py -v -s
+============================================ test session starts =============================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collecting ... ✅ 개선된 E2E 테스트 파일 생성 완료!
+📁 파일 위치: /tmp/test_api_e2e_improved.py
+📊 코드 라인: 9 줄
+
+======================================================================
+주요 기능:
+======================================================================
+
+✅ 결과 저장 기능
+    └─ tests/outputs/ 디렉토리에 자동 저장
+    └─ 각 단계별 결과: step_01_upload_*.json
+    └─ 통합 결과: test_results_complete_*.json
+
+✅ 타임스탬프 기반 파일명
+    └─ YYYYMMDD_HHMMSS 형식
+    └─ 여러 번 실행 시에도 파일 덮어쓰기 방지
+
+✅ 결과 요약 출력
+    └─ 테스트 완료 시 요약 정보 출력
+    └─ 저장된 파일 경로 표시
+
+✅ Dashboard용 데이터 구조
+    └─ JSON 형식으로 UI 생성 가능
+    └─ 파일 목록, 분류, 충돌, 통계 포함
+
+collected 6 items                                                                                            
+
+test_api_e2e_complete.py::TestEndToEndWorkflow::test_01_file_upload \n📤 Step 1: 파일 업로드 테스트...
+✅ 업로드 완료: project_flownote.md
+✅ 업로드 완료: area_development.md
+✅ 업로드 완료: resource_docs.md
+✅ 업로드 완료: archive_old.md
+✅ 저장됨: /Users/jay/ICT-projects/flownote-mvp/tests/outputs/step_01_upload_20251113_202717.json
+PASSED
+test_api_e2e_complete.py::TestEndToEndWorkflow::test_02_file_classification \n📊 Step 2: 파일 분류 테스트...
+✅ 분류 완료: project_flownote.md → Projects (신뢰도: 0.95)
+✅ 분류 완료: area_development.md → Areas (신뢰도: 0.92)
+✅ 분류 완료: resource_docs.md → Resources (신뢰도: 0.9)
+✅ 분류 완료: archive_old.md → Archives (신뢰도: 0.88)
+✅ 저장됨: /Users/jay/ICT-projects/flownote-mvp/tests/outputs/step_02_classification_20251113_202717.json
+PASSED
+test_api_e2e_complete.py::TestEndToEndWorkflow::test_03_conflict_detection \n⚠️  Step 3: 충돌 감지 테스트...
+✅ 충돌 감지 완료: 0개 충돌 발견
+✅ 저장됨: /Users/jay/ICT-projects/flownote-mvp/tests/outputs/step_03_conflict_detection_20251113_202717.json
+PASSED
+test_api_e2e_complete.py::TestEndToEndWorkflow::test_04_conflict_resolution \n🔧 Step 4: 충돌 해결 테스트...
+✅ 충돌 해결 완료: 모든 충돌이 해결됨
+✅ 저장됨: /Users/jay/ICT-projects/flownote-mvp/tests/outputs/step_04_conflict_resolution_20251113_202717.json
+PASSED
+test_api_e2e_complete.py::TestEndToEndWorkflow::test_05_dashboard_integration \n📋 Step 5: Dashboard 조회 테스트...
+✅ Dashboard 조회 완료
+   - 총 파일: 4
+   - 분류된 파일: 4
+   - 평균 신뢰도: 0.91
+✅ 저장됨: /Users/jay/ICT-projects/flownote-mvp/tests/outputs/step_05_dashboard_20251113_202717.json
+PASSED
+test_api_e2e_complete.py::TestEndToEndWorkflow::test_00_complete_e2e_workflow \n======================================================================
+🚀 E2E 워크플로우 통합 테스트 시작
+======================================================================
+\n📤 Step 1: 파일 업로드 테스트...
+✅ 업로드 완료: project_flownote.md
+✅ 업로드 완료: area_development.md
+✅ 업로드 완료: resource_docs.md
+✅ 업로드 완료: archive_old.md
+✅ 저장됨: /Users/jay/ICT-projects/flownote-mvp/tests/outputs/step_01_upload_20251113_202717.json
+\n📊 Step 2: 파일 분류 테스트...
+✅ 분류 완료: project_flownote.md → Projects (신뢰도: 0.95)
+✅ 분류 완료: area_development.md → Areas (신뢰도: 0.92)
+✅ 분류 완료: resource_docs.md → Resources (신뢰도: 0.9)
+✅ 분류 완료: archive_old.md → Archives (신뢰도: 0.88)
+✅ 저장됨: /Users/jay/ICT-projects/flownote-mvp/tests/outputs/step_02_classification_20251113_202717.json
+\n⚠️  Step 3: 충돌 감지 테스트...
+✅ 충돌 감지 완료: 0개 충돌 발견
+✅ 저장됨: /Users/jay/ICT-projects/flownote-mvp/tests/outputs/step_03_conflict_detection_20251113_202717.json
+\n🔧 Step 4: 충돌 해결 테스트...
+✅ 충돌 해결 완료: 모든 충돌이 해결됨
+✅ 저장됨: /Users/jay/ICT-projects/flownote-mvp/tests/outputs/step_04_conflict_resolution_20251113_202717.json
+\n📋 Step 5: Dashboard 조회 테스트...
+✅ Dashboard 조회 완료
+   - 총 파일: 4
+   - 분류된 파일: 4
+   - 평균 신뢰도: 0.91
+✅ 저장됨: /Users/jay/ICT-projects/flownote-mvp/tests/outputs/step_05_dashboard_20251113_202717.json
+\n📊 최종 결과 저장됨: /Users/jay/ICT-projects/flownote-mvp/tests/outputs/test_results_complete_20251113_202717.json
+\n======================================================================
+📋 테스트 결과 요약
+======================================================================
+실행 시간: 20251113_202717
+결과 저장 위치: /Users/jay/ICT-projects/flownote-mvp/tests/outputs
+\n테스트 단계별 결과:
+  step_01_upload: ✅ 성공
+  step_02_classification: ✅ 성공
+  step_03_conflict_detection: ✅ 성공
+  step_04_conflict_resolution: ✅ 성공
+  step_05_dashboard: ✅ 성공
+======================================================================
+\n✅ E2E 워크플로우 완료 - 모든 테스트 성공!
+======================================================================
+PASSED
+
+============================================= 6 passed in 0.21s ==============================================
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_api_e2e_complete2.py -v -s
+============================================ test session starts =============================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collected 1 item                                                                                             
+
+test_api_e2e_complete2.py::test_complete_workflow FAILED
+
+================================================== FAILURES ==================================================
+___________________________________________ test_complete_workflow ___________________________________________
+
+    def test_complete_workflow():
+        # 1. 온보딩
+        onboarding_response = requests.post(
+            "http://localhost:8000/api/onboarding/initialize",
+            json={
+                "name": "Jay",
+                "occupation": "AI Engineer",
+                "areas": ["Python", "AI/ML", "Backend"],
+                "projects": ["FlowNote"]
+            }
+        )
+>       user_id = onboarding_response.json()["user_id"]
+E       KeyError: 'user_id'
+
+test_api_e2e_complete2.py:40: KeyError
+========================================== short test summary info ===========================================
+FAILED test_api_e2e_complete2.py::test_complete_workflow - KeyError: 'user_id'
+============================================= 1 failed in 0.28s ==============================================
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_api_e2e.py -v -s
+============================================ test session starts =============================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collected 4 items                                                                                            
+
+test_api_e2e.py::test_api_health PASSED
+test_api_e2e.py::test_classification_flow PASSED
+test_api_e2e.py::test_metadata_public PASSED
+test_api_e2e.py::test_dashboard_integration PASSED
+
+============================================= 4 passed in 0.01s ==============================================
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_api_e2e.py -v -s
+============================================ test session starts =============================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collected 4 items                                                                                            
+
+test_api_e2e.py::test_api_health PASSED
+test_api_e2e.py::test_classification_flow PASSED
+test_api_e2e.py::test_metadata_public PASSED
+test_api_e2e.py::test_dashboard_integration PASSED
+
+============================================= 4 passed in 0.01s ==============================================
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_chunking_embedding.py -v -s
+============================================ test session starts =============================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collected 0 items / 1 error                                                                                  
+
+=================================================== ERRORS ===================================================
+________________________________ ERROR collecting test_chunking_embedding.py _________________________________
+ImportError while importing test module '/Users/jay/ICT-projects/flownote-mvp/tests/test_chunking_embedding.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../../../.pyenv/versions/3.11.10/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+test_chunking_embedding.py:16: in <module>
+    from backend.chunking import chunk_text, chunk_with_metadata
+E   ImportError: cannot import name 'chunk_text' from 'backend.chunking' (/Users/jay/ICT-projects/flownote-mvp/backend/chunking.py)
+========================================== short test summary info ===========================================
+ERROR test_chunking_embedding.py
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+============================================== 1 error in 0.11s ==============================================
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python test_chunking_embedding.py
+Traceback (most recent call last):
+  File "/Users/jay/ICT-projects/flownote-mvp/tests/test_chunking_embedding.py", line 16, in <module>
+    from backend.chunking import chunk_text, chunk_with_metadata
+ImportError: cannot import name 'chunk_text' from 'backend.chunking' (/Users/jay/ICT-projects/flownote-mvp/backend/chunking.py)
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python -m test_chunking_embedding
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/jay/ICT-projects/flownote-mvp/tests/test_chunking_embedding.py", line 16, in <module>
+    from backend.chunking import chunk_text, chunk_with_metadata
+ImportError: cannot import name 'chunk_text' from 'backend.chunking' (/Users/jay/ICT-projects/flownote-mvp/backend/chunking.py)
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_classification_flow.py -v -s
+============================================ test session starts =============================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collected 5 items                                                                                            
+
+test_classification_flow.py::test_1_keyword_classifier 
+============================================================
+테스트 1: KeywordClassifier 단독 테스트
+============================================================
+
+📝 텍스트: 프로젝트 완성하기
+  ✅ Tags: ['기타']
+  ✅ Confidence: 0.0
+  ✅ Is Fallback: False
+
+📝 텍스트: 회의 준비
+  ✅ Tags: ['기타']
+  ✅ Confidence: 0.0
+  ✅ Is Fallback: False
+
+📝 텍스트: 건강 관리 계획
+  ✅ Tags: ['기타']
+  ✅ Confidence: 0.0
+  ✅ Is Fallback: False
+
+✅ 테스트 1 통과!
+PASSED
+test_classification_flow.py::test_2_conflict_service 
+============================================================
+테스트 2: ConflictService 테스트
+============================================================
+✅ ModelConfig loaded from backend.config
+
+📊 분류 결과:
+  - PARA: None
+  - Keywords: []
+  - Final: None
+  - Snapshot: error_20251113_203108
+FAILED
+test_classification_flow.py::test_3_db_storage 
+============================================================
+테스트 3: DB 저장 테스트
+============================================================
+✅ conflict_flag 컬럼 추가 완료
+✅ resolution_method 컬럼 추가 완료
+✅ snapshot_id 컬럼 추가 완료
+✅ 분류 결과 저장 완료: file_id=1, snapshot_id=test_snapshot_123
+
+✅ DB 저장 성공: file_id=1
+✅ 총 1개 분류 결과 저장됨
+
+마지막 저장 결과:
+  - Filename: test_20251113_203108.txt
+  - Category: Projects
+  - Keywords: 업무,프로젝트
+  - Snapshot: test_snapshot_123
+
+✅ 테스트 3 통과!
+PASSED
+test_classification_flow.py::test_4_classification_log 
+============================================================
+테스트 4: classification_log 기록 테스트
+============================================================
+✅ [CSV LOG] classification_log.csv 기록 완료: test_file.txt
+
+✅ 로그 기록 결과: {'status': 'success'}
+✅ 로그 파일 총 2줄
+
+마지막 줄:
+  2025-11-13T20:31:08.755071,test_user,test_file.txt,Projects,,0.9,pending
+
+✅ 테스트 4 통과!
+PASSED
+test_classification_flow.py::test_5_api_endpoint 
+============================================================
+테스트 5: API 엔드포인트 테스트 (curl 명령어)
+============================================================
+
+서버가 실행 중이어야 합니다!
+실행 명령어:
+  uvicorn backend.main:app --reload --port 8000
+
+테스트 curl 명령어:
+
+curl -X POST "http://127.0.0.1:8000/api/classify/keywords" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "영어 공부하기",
+    "user_id": "test_user_3",
+    "file_id": "test_file_003"
+  }' | jq '.'
+    
+
+확인 사항:
+  1. keyword_tags가 비어있지 않은가?
+  2. confidence가 0이 아닌가?
+  3. category가 제대로 설정되었나?
+
+✅ 테스트 5 준비 완료! (수동 실행 필요)
+PASSED
+
+================================================== FAILURES ==================================================
+__________________________________________ test_2_conflict_service ___________________________________________
+
+    def test_2_conflict_service():
+        """테스트 2: ConflictService 테스트"""
+        print("\n" + "="*60)
+        print("테스트 2: ConflictService 테스트")
+        print("="*60)
+    
+        from backend.services.conflict_service import ConflictService
+    
+        service = ConflictService()
+    
+        # async 제거
+        result = service.classify_text("프로젝트 완성하기")
+    
+        print(f"\n📊 분류 결과:")
+        print(f"  - PARA: {result.get('para_result', {}).get('category')}")
+        print(f"  - Keywords: {result.get('keyword_result', {}).get('tags', [])}")
+        print(f"  - Final: {result.get('conflict_result', {}).get('final_category')}")
+        print(f"  - Snapshot: {result.get('snapshot_id')}")
+    
+        # keyword_tags 확인
+        keyword_tags = result.get('keyword_result', {}).get('tags', [])
+>       assert len(keyword_tags) > 0, "❌ keyword_tags가 비어있음!"
+E       AssertionError: ❌ keyword_tags가 비어있음!
+E       assert 0 > 0
+E        +  where 0 = len([])
+
+test_classification_flow.py:76: AssertionError
+--------------------------------------------- Captured log call ----------------------------------------------
+ERROR    backend.services.conflict_service:conflict_service.py:128 ❌ 분류 오류: 'coroutine' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jay/ICT-projects/flownote-mvp/backend/services/conflict_service.py", line 84, in classify_text
+    logger.info(f"  ✅ PARA: {para_result.get('category')}")
+                              ^^^^^^^^^^^^^^^
+AttributeError: 'coroutine' object has no attribute 'get'
+============================================== warnings summary ==============================================
+../backend/api/models/conflict_models.py:54
+  /Users/jay/ICT-projects/flownote-mvp/backend/api/models/conflict_models.py:54: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ConflictDetail(BaseModel):
+
+../backend/api/models/conflict_models.py:80
+  /Users/jay/ICT-projects/flownote-mvp/backend/api/models/conflict_models.py:80: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ConflictRecord(BaseModel):
+
+../backend/api/models/conflict_models.py:130
+  /Users/jay/ICT-projects/flownote-mvp/backend/api/models/conflict_models.py:130: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ResolutionStrategy(BaseModel):
+
+../backend/api/models/conflict_models.py:161
+  /Users/jay/ICT-projects/flownote-mvp/backend/api/models/conflict_models.py:161: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ConflictResolution(BaseModel):
+
+../backend/api/models/conflict_models.py:200
+  /Users/jay/ICT-projects/flownote-mvp/backend/api/models/conflict_models.py:200: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ConflictReport(BaseModel):
+
+../backend/api/models/conflict_models.py:267
+  /Users/jay/ICT-projects/flownote-mvp/backend/api/models/conflict_models.py:267: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class DetectConflictRequest(BaseModel):
+
+../backend/api/models/conflict_models.py:290
+  /Users/jay/ICT-projects/flownote-mvp/backend/api/models/conflict_models.py:290: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ResolveConflictRequest(BaseModel):
+
+../backend/api/models/conflict_models.py:318
+  /Users/jay/ICT-projects/flownote-mvp/backend/api/models/conflict_models.py:318: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ConflictDetectResponse(BaseModel):
+
+../backend/api/models/conflict_models.py:340
+  /Users/jay/ICT-projects/flownote-mvp/backend/api/models/conflict_models.py:340: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ConflictResolveResponse(BaseModel):
+
+test_classification_flow.py::test_2_conflict_service
+  /Users/jay/.pyenv/versions/3.11.10/envs/myenv/lib/python3.11/site-packages/_pytest/stash.py:108: RuntimeWarning: coroutine 'run_para_agent' was never awaited
+    del self._storage[key]
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+========================================== short test summary info ===========================================
+FAILED test_classification_flow.py::test_2_conflict_service - AssertionError: ❌ keyword_tags가 비어있음!
+================================= 1 failed, 4 passed, 10 warnings in 16.26s ==================================
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python -m test_classification_flow
+
+============================================================
+테스트 1: KeywordClassifier 단독 테스트
+============================================================
+INFO:backend.classifier.keyword_classifier:✅ ModelConfig loaded from backend.config
+INFO:backend.classifier.keyword_classifier:✅ KeywordClassifier LLM 초기화 성공
+INFO:backend.classifier.keyword_classifier:[70b9e39e] ✅ Chain 생성 성공 (프롬프트 파일 로드 완료)
+INFO:backend.classifier.keyword_classifier:✅ KeywordClassifier initialized (ID: 70b9e39e, Time: 20:31:57)
+INFO:backend.classifier.keyword_classifier:🔍 [70b9e39e] CLASSIFY 시작: text_len=9, has_context=False
+INFO:backend.classifier.keyword_classifier:[70b9e39e] 🔍 Calling LLM (sync)...
+INFO:httpx:HTTP Request: POST https://mlapi.run/40cc17ae-a89b-4f12-a7d6-13293180fc87/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:backend.classifier.keyword_classifier:[70b9e39e] ✅ 분류 완료 (sync):
+INFO:backend.classifier.keyword_classifier:[70b9e39e]   - Tags: ['기타']
+
+📝 텍스트: 프로젝트 완성하기
+  ✅ Tags: ['기타']
+  ✅ Confidence: 0.0
+  ✅ Is Fallback: False
+INFO:backend.classifier.keyword_classifier:✅ KeywordClassifier LLM 초기화 성공
+INFO:backend.classifier.keyword_classifier:[987bfcf0] ✅ Chain 생성 성공 (프롬프트 파일 로드 완료)
+INFO:backend.classifier.keyword_classifier:✅ KeywordClassifier initialized (ID: 987bfcf0, Time: 20:32:02)
+INFO:backend.classifier.keyword_classifier:🔍 [987bfcf0] CLASSIFY 시작: text_len=5, has_context=False
+INFO:backend.classifier.keyword_classifier:[987bfcf0] 🔍 Calling LLM (sync)...
+INFO:httpx:HTTP Request: POST https://mlapi.run/40cc17ae-a89b-4f12-a7d6-13293180fc87/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:backend.classifier.keyword_classifier:[987bfcf0] ✅ 분류 완료 (sync):
+INFO:backend.classifier.keyword_classifier:[987bfcf0]   - Tags: ['기타']
+
+📝 텍스트: 회의 준비
+  ✅ Tags: ['기타']
+  ✅ Confidence: 0.0
+  ✅ Is Fallback: False
+INFO:backend.classifier.keyword_classifier:✅ KeywordClassifier LLM 초기화 성공
+INFO:backend.classifier.keyword_classifier:[43d21051] ✅ Chain 생성 성공 (프롬프트 파일 로드 완료)
+INFO:backend.classifier.keyword_classifier:✅ KeywordClassifier initialized (ID: 43d21051, Time: 20:32:07)
+INFO:backend.classifier.keyword_classifier:🔍 [43d21051] CLASSIFY 시작: text_len=8, has_context=False
+INFO:backend.classifier.keyword_classifier:[43d21051] 🔍 Calling LLM (sync)...
+INFO:httpx:HTTP Request: POST https://mlapi.run/40cc17ae-a89b-4f12-a7d6-13293180fc87/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:backend.classifier.keyword_classifier:[43d21051] ✅ 분류 완료 (sync):
+INFO:backend.classifier.keyword_classifier:[43d21051]   - Tags: ['기타']
+
+📝 텍스트: 건강 관리 계획
+  ✅ Tags: ['기타']
+  ✅ Confidence: 0.0
+  ✅ Is Fallback: False
+
+✅ 테스트 1 통과!
+
+============================================================
+테스트 2: ConflictService 테스트
+============================================================
+✅ ModelConfig loaded from backend.config
+INFO:backend.services.conflict_service:✅ ConflictService 초기화 완료
+INFO:backend.services.conflict_service:✅ ConflictService 초기화 완료
+INFO:backend.services.conflict_service:📝 통합 분류 시작: 프로젝트 완성하기...
+INFO:backend.services.conflict_service:1. PARA 분류 실행...
+ERROR:backend.services.conflict_service:❌ 분류 오류: 'coroutine' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jay/ICT-projects/flownote-mvp/backend/services/conflict_service.py", line 84, in classify_text
+    logger.info(f"  ✅ PARA: {para_result.get('category')}")
+                              ^^^^^^^^^^^^^^^
+AttributeError: 'coroutine' object has no attribute 'get'
+/Users/jay/ICT-projects/flownote-mvp/tests/test_classification_flow.py:66: RuntimeWarning: coroutine 'run_para_agent' was never awaited
+  result = service.classify_text("프로젝트 완성하기")
+RuntimeWarning: Enable tracemalloc to get the object allocation traceback
+
+📊 분류 결과:
+  - PARA: None
+  - Keywords: []
+  - Final: None
+  - Snapshot: error_20251113_203211
+
+❌ 테스트 실패: ❌ keyword_tags가 비어있음!
+Traceback (most recent call last):
+  File "/Users/jay/ICT-projects/flownote-mvp/tests/test_classification_flow.py", line 196, in <module>
+    test_2_conflict_service()
+  File "/Users/jay/ICT-projects/flownote-mvp/tests/test_classification_flow.py", line 76, in test_2_conflict_service
+    assert len(keyword_tags) > 0, "❌ keyword_tags가 비어있음!"
+           ^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ❌ keyword_tags가 비어있음!
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_compatibility.py -v -s
+============================================ test session starts =============================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collecting ... ✅ ModelConfig loaded from backend.config
+collected 0 items                                                                                            
+
+============================================== warnings summary ==============================================
+test_compatibility.py:30
+  /Users/jay/ICT-projects/flownote-mvp/tests/test_compatibility.py:30: PytestCollectionWarning: cannot collect test class 'TestIntegration' because it has a __init__ constructor (from: test_compatibility.py)
+    class TestIntegration:
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================================= 1 warning in 0.62s =============================================
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python -m test_compatibility
+✅ ModelConfig loaded from backend.config
+
+======================================================================
+🎯 Integration Tests - 전체 시스템 검증
+======================================================================
+INFO:backend.classifier.para_classifier:PARAClassifier initialized (LangChain: True)
+INFO:backend.classifier.keyword_classifier:✅ KeywordClassifier LLM 초기화 성공
+INFO:backend.classifier.keyword_classifier:[2a181658] ✅ Chain 생성 성공 (프롬프트 파일 로드 완료)
+INFO:backend.classifier.keyword_classifier:✅ KeywordClassifier initialized (ID: 2a181658, Time: 20:34:06)
+
+🔷 Step 1: PARA Classification Prompts
+INFO:httpx:HTTP Request: POST https://mlapi.run/40cc17ae-a89b-4f12-a7d6-13293180fc87/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:backend.classifier.langchain_integration:분류 완료: Projects (confidence: 95.00%, metadata: False)
+   ✅ Category: Projects
+
+🔷 Step 2: PARAClassifier Module
+INFO:httpx:HTTP Request: POST https://mlapi.run/40cc17ae-a89b-4f12-a7d6-13293180fc87/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:backend.classifier.langchain_integration:분류 완료: Projects (confidence: 95.00%, metadata: False)
+INFO:backend.classifier.para_classifier:Classified 'unknown' as 'Projects' (confidence: 95.00%)
+   ✅ Para Classifier 작동: Projects
+
+🔷 Step 3: KeywordClassifier Module
+   ✅ KeywordClassifier 검증
+
+🔷 Step 4: ParallelProcessor (Metadata)
+INFO:httpx:HTTP Request: POST https://mlapi.run/40cc17ae-a89b-4f12-a7d6-13293180fc87/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:backend.classifier.langchain_integration:분류 완료: Projects (confidence: 95.00%, metadata: False)
+INFO:httpx:HTTP Request: POST https://mlapi.run/40cc17ae-a89b-4f12-a7d6-13293180fc87/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:backend.classifier.langchain_integration:메타데이터 분류 완료: Projects (confidence: 92.00%)
+INFO:backend.services.parallel_processor:✅ 병렬 분류 완료 (5.77초)
+   ✅ ParallelProcessor 작동
+      - Text Result: Projects
+      - Meta Result: Projects
+
+🔷 Step 5: LangGraph Agent (StateGraph)
+   ❌ Step 5 실패: 'coroutine' object has no attribute 'get'
+/Users/jay/ICT-projects/flownote-mvp/tests/test_compatibility.py:205: RuntimeWarning: coroutine 'run_para_agent' was never awaited
+  print(f"   ❌ Step 5 실패: {str(e)}")
+RuntimeWarning: Enable tracemalloc to get the object allocation traceback
+
+======================================================================
+
+🔷 FULL PIPELINE: Step 1 → Step 5
+======================================================================
+
+Test 1: 충분한 텍스트
+----------------------------------------------------------------------
+   ❌ Full Pipeline 실패: 'coroutine' object has no attribute 'get'
+/Users/jay/ICT-projects/flownote-mvp/tests/test_compatibility.py:212: RuntimeWarning: coroutine 'run_para_agent' was never awaited
+  print(f"   ❌ Full Pipeline 실패: {str(e)}")
+RuntimeWarning: Enable tracemalloc to get the object allocation traceback
+
+======================================================================
+📊 Step별 검증: 4/5 통과
+======================================================================
+
+⚠️ 1개 Step에 문제가 있습니다
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_conflict_resolver.py -v -s
+================================================ test session starts ================================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collected 3 items                                                                                                   
+
+test_conflict_resolver.py::test_clear_winner_para PASSED: Test 1 - Clear winner (PARA)
+PASSED
+test_conflict_resolver.py::test_requires_user_review PASSED: Test 2 - Requires user review
+PASSED
+test_conflict_resolver.py::test_keyword_wins PASSED: Test 3 - Keyword wins
+PASSED
+
+================================================= 3 passed in 0.01s =================================================
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python -m test_conflict_resolver
+Not ready: No module named 'backend'
+Not ready: No module named 'backend'
+Not ready: No module named 'backend'
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python test_conflict_resolver.py
+Not ready: No module named 'backend'
+Not ready: No module named 'backend'
+Not ready: No module named 'backend'
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_context_injector.py -v -s
+================================================ test session starts ================================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collected 1 item                                                                                                    
+
+test_context_injector.py::test_context_injector FAILED
+
+===================================================== FAILURES ======================================================
+_______________________________________________ test_context_injector _______________________________________________
+
+    def test_context_injector():
+    
+        injector = ContextInjector()
+    
+        # 1. 사용자 맥락 주입
+>       enriched = injector.enrich_with_context(        # <-- 오류 발생
+            text="Python 개발",
+            user_id="test_user"
+        )
+E       AttributeError: 'ContextInjector' object has no attribute 'enrich_with_context'
+
+test_context_injector.py:36: AttributeError
+============================================== short test summary info ==============================================
+FAILED test_context_injector.py::test_context_injector - AttributeError: 'ContextInjector' object has no attribute 'enrich_with_context'
+================================================= 1 failed in 1.14s =================================================
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python -m test_context_injector
+-> tests/tests_phase_0/outputs/
+-> tests/tests_phase_0/outputs/step_01_upload_20251113_202717.json
+-> tests/tests_phase_0/outputs/step_02_classification_20251113_202717.json
+-> tests/tests_phase_0/outputs/step_03_conflict_detection_20251113_202717.json
+-> tests/tests_phase_0/outputs/step_04_conflict_resolution_20251113_202717.json
+-> tests/tests_phase_0/outputs/step_05_dashboard_20251113_202717.json
+-> tests/tests_phase_0/outputs/test_results_complete_20251113_202717.json
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_faiss.py -v -s
+================================================== test session starts ===================================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collected 0 items / 1 error                                                                                              
+
+========================================================= ERRORS =========================================================
+_____________________________________________ ERROR collecting test_faiss.py _____________________________________________
+ImportError while importing test module '/Users/jay/ICT-projects/flownote-mvp/tests/test_faiss.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../../../.pyenv/versions/3.11.10/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+test_faiss.py:16: in <module>
+    from backend.chunking import chunk_with_metadata
+E   ImportError: cannot import name 'chunk_with_metadata' from 'backend.chunking' (/Users/jay/ICT-projects/flownote-mvp/backend/chunking.py)
+================================================ short test summary info =================================================
+ERROR test_faiss.py
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+==================================================== 1 error in 0.11s ====================================================
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python -m test_faiss  
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/jay/ICT-projects/flownote-mvp/tests/test_faiss.py", line 16, in <module>
+    from backend.chunking import chunk_with_metadata
+ImportError: cannot import name 'chunk_with_metadata' from 'backend.chunking' (/Users/jay/ICT-projects/flownote-mvp/backend/chunking.py)
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python test_faiss.py
+Traceback (most recent call last):
+  File "/Users/jay/ICT-projects/flownote-mvp/tests/test_faiss.py", line 16, in <module>
+    from backend.chunking import chunk_with_metadata
+ImportError: cannot import name 'chunk_with_metadata' from 'backend.chunking' (/Users/jay/ICT-projects/flownote-mvp/backend/chunking.py)
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_gpt41_connection.py -v -s
+==================================================== test session starts ====================================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collected 1 item                                                                                                            
+
+test_gpt41_connection.py::test_gpt41_connection 
+==================================================
+🔧 GPT-4.1 API Connection Test
+==================================================
+
+📋 Configuration:
+  API Key: ❌ Not set
+  Base URL: ❌ Not set
+  Model: ❌ Not set
+
+❌ Missing configuration in .env file
+
+💡 Required in .env:
+   GPT4.1_API_KEY=your_key_here
+   GPT4.1_BASE_URL=your_base_url_here
+   GPT4.1_MODEL=openai/gpt-4.1
+PASSED
+
+===================================================== warnings summary ======================================================
+test_gpt41_connection.py::test_gpt41_connection
+  /Users/jay/.pyenv/versions/3.11.10/envs/myenv/lib/python3.11/site-packages/_pytest/python.py:163: PytestReturnNotNoneWarning: Expected None, but test_gpt41_connection.py::test_gpt41_connection returned False, which will be an error in a future version of pytest.  Did you mean to use `assert` instead of `return`?
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=============================================== 1 passed, 1 warning in 0.31s ================================================
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python -m test_gpt41_connection
+
+🚀================================================🚀
+   GPT-4.1 Vision API Connection Test
+🚀================================================🚀
+
+==================================================
+🔧 GPT-4.1 API Connection Test
+==================================================
+
+📋 Configuration:
+  API Key: ❌ Not set
+  Base URL: ❌ Not set
+  Model: ❌ Not set
+
+❌ Missing configuration in .env file
+
+💡 Required in .env:
+   GPT4.1_API_KEY=your_key_here
+   GPT4.1_BASE_URL=your_base_url_here
+   GPT4.1_MODEL=openai/gpt-4.1
+
+==================================================
+💔 Test Result: FAIL
+
+👉 Fix .env file and try again
+==================================================
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python test_gpt41.connetion.py
+/Users/jay/.pyenv/versions/myenv/bin/python: can't open file '/Users/jay/ICT-projects/flownote-mvp/tests/test_gpt41.connetion.py': [Errno 2] No such file or directory
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_integration_onboarding_classification.py -v -s
+==================================================== test session starts ====================================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collected 1 item                                                                                                            
+
+test_integration_onboarding_classification.py::test_onboarding_to_classification FAILED
+
+========================================================= FAILURES ==========================================================
+_____________________________________________ test_onboarding_to_classification _____________________________________________
+
+    def test_onboarding_to_classification():
+        # 1. 온보딩
+        response = requests.post("http://localhost:8000/api/onboarding/initialize", json={
+            "name": "TestUser",
+            "occupation": "Developer",
+            "areas": ["Python", "AI"],
+            "projects": ["FlowNote"]
+        })
+>       user_id = response.json()["user_id"]        # <-- 여기에서부터 에러 발생
+E       KeyError: 'user_id'
+
+test_integration_onboarding_classification.py:24: KeyError
+================================================== short test summary info ==================================================
+FAILED test_integration_onboarding_classification.py::test_onboarding_to_classification - KeyError: 'user_id'
+===================================================== 1 failed in 0.88s =====================================================
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python -m test_integration_onboarding_classification
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python test_integration_onboarding_classification.py
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_metadata_integration.py -v -s
+============================================== test session starts ===============================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collected 3 items                                                                                                
+
+test_metadata_integration.py::test_metadata_with_auto_resolution PASSED: Metadata with auto resolution
+PASSED
+test_metadata_integration.py::test_metadata_with_conflict PASSED: Metadata with conflict
+PASSED
+test_metadata_integration.py::test_statistics PASSED: Statistics generation
+PASSED
+
+=============================================== 3 passed in 0.01s ================================================
+
+
+=============================================== 3 passed in 0.01s ================================================
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python -m test_metadata_integration
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/jay/ICT-projects/flownote-mvp/tests/test_metadata_integration.py", line 4, in <module>
+    from backend.classifier.conflict_resolver import ConflictResolver, ClassificationResult
+ModuleNotFoundError: No module named 'backend'
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python test_metadata_integration.py
+Traceback (most recent call last):
+  File "/Users/jay/ICT-projects/flownote-mvp/tests/test_metadata_integration.py", line 4, in <module>
+    from backend.classifier.conflict_resolver import ConflictResolver, ClassificationResult
+ModuleNotFoundError: No module named 'backend'
+
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_new_models.py -v -s
+============================================== test session starts ===============================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collecting ... ==================================================
+새 API 모델 테스트
+==================================================
+
+1. Text-Embedding-3-Large 테스트
+--------------------------------------------------
+✅ 임베딩 성공!
+   - 모델: text-embedding-3-large
+   - 벡터 차원: 3072
+   - 토큰 사용: 16
+
+2. Claude-4-Sonnet 테스트
+--------------------------------------------------
+✅ 응답 성공!
+   - 모델: anthropic/claude-sonnet-4
+   - 응답: FlowNote에 대한 구체적인 정보가 부족하여 정확한 설명을 드리기 어렵습니다만, 일반적으로 FlowNote는 워크플로우 기반의 노트 작성 및 문서 관리 도구로 추정됩니다.
+
+더 정확한 설명을 
+   - 토큰 사용: 129
+
+3. Claude-3.5-Haiku 테스트
+--------------------------------------------------
+❌ 에러: The api_key client option must be set either by passing api_key to the client or by setting the OPENAI_API_KEY environment variable
+
+==================================================
+테스트 완료!
+==================================================
+collected 0 items                                                                                                
+
+============================================= no tests ran in 6.75s ==============================================
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python -m test_new_models
+==================================================
+새 API 모델 테스트
+==================================================
+
+1. Text-Embedding-3-Large 테스트
+--------------------------------------------------
+✅ 임베딩 성공!
+   - 모델: text-embedding-3-large
+   - 벡터 차원: 3072
+   - 토큰 사용: 16
+
+2. Claude-4-Sonnet 테스트
+--------------------------------------------------
+✅ 응답 성공!
+   - 모델: anthropic/claude-sonnet-4
+   - 응답: FlowNote에 대한 구체적인 정보가 부족하여 정확한 설명을 드리기 어렵습니다만, 일반적으로 이런 이름의 서비스는 업무 흐름과 노트 기능을 결합한 생산성 도구일 가능성이 높습니다.
+
+더
+   - 토큰 사용: 129
+
+3. Claude-3.5-Haiku 테스트
+--------------------------------------------------
+❌ 에러: The api_key client option must be set either by passing api_key to the client or by setting the OPENAI_API_KEY environment variable
+
+==================================================
+테스트 완료!
+==================================================
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python test_new_models.py
+==================================================
+새 API 모델 테스트
+==================================================
+
+1. Text-Embedding-3-Large 테스트
+--------------------------------------------------
+✅ 임베딩 성공!
+   - 모델: text-embedding-3-large
+   - 벡터 차원: 3072
+   - 토큰 사용: 16
+
+2. Claude-4-Sonnet 테스트
+--------------------------------------------------
+✅ 응답 성공!
+   - 모델: anthropic/claude-sonnet-4
+   - 응답: FlowNote는 사용자가 자연스럽고 직관적인 방식으로 아이디어를 기록하고 정리할 수 있도록 설계된 노트 작성 도구입니다.
+   - 토큰 사용: 96
+
+3. Claude-3.5-Haiku 테스트
+--------------------------------------------------
+❌ 에러: The api_key client option must be set either by passing api_key to the client or by setting the OPENAI_API_KEY environment variable
+
+==================================================
+테스트 완료!
+==================================================
+
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_para_agent.py -v -s
+============================================== test session starts ===============================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collecting ... ✅ ModelConfig loaded from backend.config
+collected 3 items                                                                                                
+
+test_para_agent.py::test_para_agent_flow 
+======================================================================
+🚀 PARA Agent 테스트 시작
+======================================================================
+
+
+Test 1: 충분한 텍스트 (정상 경로)
+----------------------------------------------------------------------
+📝 Input Text: 이번 프로젝트는 새로운 대시보드 기능을 개발하는 것입니다. 사용자 인터페이스를 개선하고 성...
+📋 Metadata: {'author': 'jay', 'date': '2025-11-02', 'priority': 'high'}
+
+✅ Result:
+❌ TEST FAILED - 에러 발생: 'coroutine' object has no attribute 'get'
+
+Test 2: 짧은 텍스트 (재분석 경로)
+----------------------------------------------------------------------
+📝 Input Text: 기획
+📋 Metadata: {'author': 'jay', 'date': '2025-11-02', 'category': 'project', 'department': 'product'}
+
+✅ Result:
+❌ TEST FAILED - 에러 발생: 'coroutine' object has no attribute 'get'
+
+Test 3: 중간 길이 텍스트
+----------------------------------------------------------------------
+📝 Input Text: 다음 분기의 마케팅 전략을 계획해야 합니다
+📋 Metadata: {'author': 'marketing_team', 'date': '2025-11-02'}
+
+✅ Result:
+❌ TEST FAILED - 에러 발생: 'coroutine' object has no attribute 'get'
+
+Test 4: 매우 짧은 텍스트 (재분석 필요)
+----------------------------------------------------------------------
+📝 Input Text: 아
+📋 Metadata: {'author': 'jay', 'date': '2025-11-02', 'type': 'resource'}
+
+✅ Result:
+❌ TEST FAILED - 에러 발생: 'coroutine' object has no attribute 'get'
+
+Test 5: 빈 메타데이터
+----------------------------------------------------------------------
+📝 Input Text: 이 문서는 학습 자료입니다. 파이썬 프로그래밍에 대한 기초 개념을 설명합니다.
+📋 Metadata: {}
+
+✅ Result:
+❌ TEST FAILED - 에러 발생: 'coroutine' object has no attribute 'get'
+
+======================================================================
+📊 테스트 결과: 0 통과, 5 실패
+======================================================================
+PASSED
+test_para_agent.py::test_graph_structure 
+======================================================================
+📐 Graph 구조 검증
+======================================================================
+
+✅ Graph 생성 성공
+   - Type: <class 'langgraph.graph.state.CompiledStateGraph'>
+✅ Graph 컴파일 완료
+PASSED
+test_para_agent.py::test_path_routing 
+======================================================================
+🔀 경로 라우팅 테스트
+======================================================================
+
+1️⃣ 정상 경로 (텍스트 충분):
+FAILED
+
+==================================================== FAILURES ====================================================
+_______________________________________________ test_path_routing ________________________________________________
+
+    def test_path_routing():
+        """정상/재분석 경로 분기 테스트"""
+        print("\n" + "="*70)
+        print("🔀 경로 라우팅 테스트")
+        print("="*70 + "\n")
+    
+        # 정상 경로 테스트
+        print("1️⃣ 정상 경로 (텍스트 충분):")
+        text_normal = "프로젝트 기획 문서입니다. 매우 상세한 내용이 포함되어 있습니다."
+        result_normal = run_para_agent(text=text_normal, metadata={})
+>       print(f"   ✅ 완료: {result_normal.get('category', 'N/A')}")
+E       AttributeError: 'coroutine' object has no attribute 'get'
+
+test_para_agent.py:148: AttributeError
+================================================ warnings summary ================================================
+test_para_agent.py::test_para_agent_flow
+  /Users/jay/ICT-projects/flownote-mvp/tests/test_para_agent.py:94: RuntimeWarning: coroutine 'run_para_agent' was never awaited
+    result = run_para_agent(text=text, metadata=metadata)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+test_para_agent.py::test_para_agent_flow
+  /Users/jay/.pyenv/versions/3.11.10/envs/myenv/lib/python3.11/site-packages/_pytest/python.py:159: RuntimeWarning: coroutine 'run_para_agent' was never awaited
+    result = testfunction(**testargs)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+test_para_agent.py::test_para_agent_flow
+  /Users/jay/.pyenv/versions/3.11.10/envs/myenv/lib/python3.11/site-packages/_pytest/python.py:163: PytestReturnNotNoneWarning: Expected None, but test_para_agent.py::test_para_agent_flow returned (0, 5), which will be an error in a future version of pytest.  Did you mean to use `assert` instead of `return`?
+    warnings.warn(
+
+test_para_agent.py::test_graph_structure
+  /Users/jay/.pyenv/versions/3.11.10/envs/myenv/lib/python3.11/site-packages/_pytest/python.py:163: PytestReturnNotNoneWarning: Expected None, but test_para_agent.py::test_graph_structure returned True, which will be an error in a future version of pytest.  Did you mean to use `assert` instead of `return`?
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================================ short test summary info =============================================
+FAILED test_para_agent.py::test_path_routing - AttributeError: 'coroutine' object has no attribute 'get'
+==================================== 1 failed, 2 passed, 4 warnings in 0.69s =====================================
+sys:1: RuntimeWarning: coroutine 'run_para_agent' was never awaited
+
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python -m test_para_agent
+✅ ModelConfig loaded from backend.config
+
+🎯 LangGraph PARA Agent 통합 테스트
+
+
+======================================================================
+📐 Graph 구조 검증
+======================================================================
+
+✅ Graph 생성 성공
+   - Type: <class 'langgraph.graph.state.CompiledStateGraph'>
+✅ Graph 컴파일 완료
+
+======================================================================
+🔀 경로 라우팅 테스트
+======================================================================
+
+1️⃣ 정상 경로 (텍스트 충분):
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/jay/ICT-projects/flownote-mvp/tests/test_para_agent.py", line 187, in <module>
+    main()
+  File "/Users/jay/ICT-projects/flownote-mvp/tests/test_para_agent.py", line 169, in main
+    test_path_routing()
+  File "/Users/jay/ICT-projects/flownote-mvp/tests/test_para_agent.py", line 148, in test_path_routing
+    print(f"   ✅ 완료: {result_normal.get('category', 'N/A')}")
+                         ^^^^^^^^^^^^^^^^^
+AttributeError: 'coroutine' object has no attribute 'get'
+sys:1: RuntimeWarning: coroutine 'run_para_agent' was never awaited
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python test_para_agent.py
+✅ ModelConfig loaded from backend.config
+
+🎯 LangGraph PARA Agent 통합 테스트
+
+
+======================================================================
+📐 Graph 구조 검증
+======================================================================
+
+✅ Graph 생성 성공
+   - Type: <class 'langgraph.graph.state.CompiledStateGraph'>
+✅ Graph 컴파일 완료
+
+======================================================================
+🔀 경로 라우팅 테스트
+======================================================================
+
+1️⃣ 정상 경로 (텍스트 충분):
+Traceback (most recent call last):
+  File "/Users/jay/ICT-projects/flownote-mvp/tests/test_para_agent.py", line 187, in <module>
+    main()
+  File "/Users/jay/ICT-projects/flownote-mvp/tests/test_para_agent.py", line 169, in main
+    test_path_routing()
+  File "/Users/jay/ICT-projects/flownote-mvp/tests/test_para_agent.py", line 148, in test_path_routing
+    print(f"   ✅ 완료: {result_normal.get('category', 'N/A')}")
+                         ^^^^^^^^^^^^^^^^^
+AttributeError: 'coroutine' object has no attribute 'get'
+sys:1: RuntimeWarning: coroutine 'run_para_agent' was never awaited
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_para_classifier.py -v -s
+============================================== test session starts ===============================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collecting ... ✅ ModelConfig loaded from backend.config
+collected 1 item                                                                                                 
+
+test_para_classifier.py::test_classifier ==================================================
+PARA 분류 테스트
+==================================================
+FAILED
+
+==================================================== FAILURES ====================================================
+________________________________________________ test_classifier _________________________________________________
+
+    def test_classifier():
+        """간단한 테스트"""
+    
+        classifier = PARAClassifier()
+    
+        # 테스트 파일들
+        test_files = [
+            {
+                "filename": "프로젝트_제안서.pdf",
+                "content": "2025년 신규 프로젝트 제안서. 마감: 11월 15일"
+            },
+            {
+                "filename": "Python_학습노트.md",
+                "content": "파이썬 문법 정리. 지속적으로 업데이트 중."
+            },
+            {
+                "filename": "AI_논문_모음.pdf",
+                "content": "참고용 AI 관련 논문 모음집"
+            },
+            {
+                "filename": "2024_완료_프로젝트.pdf",
+                "content": "2024년에 완료된 프로젝트 최종 보고서"
+            }
+        ]
+    
+        print("=" * 50)
+        print("PARA 분류 테스트")
+        print("=" * 50)
+    
+        for test_file in test_files:
+>           result = classifier.classify(
+                test_file["filename"],
+                test_file["content"]
+            )
+E           AttributeError: 'PARAClassifier' object has no attribute 'classify'
+
+test_para_classifier.py:42: AttributeError
+============================================ short test summary info =============================================
+FAILED test_para_classifier.py::test_classifier - AttributeError: 'PARAClassifier' object has no attribute 'classify'
+=============================================== 1 failed in 0.65s ================================================
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python -m test_para_classifier
+✅ ModelConfig loaded from backend.config
+==================================================
+PARA 분류 테스트
+==================================================
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/jay/ICT-projects/flownote-mvp/tests/test_para_classifier.py", line 54, in <module>
+    test_classifier()
+  File "/Users/jay/ICT-projects/flownote-mvp/tests/test_para_classifier.py", line 42, in test_classifier
+    result = classifier.classify(
+             ^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PARAClassifier' object has no attribute 'classify'
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python test_para_classifier.py 
+✅ ModelConfig loaded from backend.config
+==================================================
+PARA 분류 테스트
+==================================================
+Traceback (most recent call last):
+  File "/Users/jay/ICT-projects/flownote-mvp/tests/test_para_classifier.py", line 54, in <module>
+    test_classifier()
+  File "/Users/jay/ICT-projects/flownote-mvp/tests/test_para_classifier.py", line 42, in test_classifier
+    result = classifier.classify(
+             ^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PARAClassifier' object has no attribute 'classify'
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_prompt_conflict.py -v -s
+============================================== test session starts ===============================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collecting ... ✅ ModelConfig loaded from backend.config
+collected 1 item                                                                                                 
+
+test_prompt_conflict.py::test_prompt_conflict FAILED
+
+==================================================== FAILURES ====================================================
+______________________________________________ test_prompt_conflict ______________________________________________
+
+    def test_prompt_conflict():
+        # 1. 충돌 상황 생성
+        response = requests.post("http://localhost:8000/api/classify", json={
+            "text": "Python 튜토리얼",  # 애매한 케이스
+            "user_id": "test_user"
+        })
+        result = response.json()
+    
+        # 2. 충돌 해결 검증
+>       assert "conflict_details" in result, "충돌 정보 없음"
+E       AssertionError: 충돌 정보 없음
+E       assert 'conflict_details' in {'detail': 'Not Found'}
+
+test_prompt_conflict.py:28: AssertionError
+============================================ short test summary info =============================================
+FAILED test_prompt_conflict.py::test_prompt_conflict - AssertionError: 충돌 정보 없음
+=============================================== 1 failed in 0.68s ================================================
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python -m test_prompt_conflict 
+✅ ModelConfig loaded from backend.config
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python test_prompt_conflict.py
+✅ ModelConfig loaded from backend.config
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_validators.py -v -s
+============================================== test session starts ===============================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collecting ... ❌ API 키 검증 실패: ❌ config 파일 임포트 실패: cannot import name 'EMBEDDING_API_KEY' from 'backend.config' (/Users/jay/ICT-projects/flownote-mvp/backend/config.py)
+collected 0 items                                                                                                
+
+============================================= no tests ran in 0.27s ==============================================
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python -m test_validators
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/jay/ICT-projects/flownote-mvp/tests/test_validators.py", line 2, in <module>
+    from backend.validators import APIKeyValidator
+ModuleNotFoundError: No module named 'backend'
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python test_validators.py
+Traceback (most recent call last):
+  File "/Users/jay/ICT-projects/flownote-mvp/tests/test_validators.py", line 2, in <module>
+    from backend.validators import APIKeyValidator
+ModuleNotFoundError: No module named 'backend'
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ pytest test_vision_helper.py -v -s
+============================================== test session starts ===============================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp/tests
+plugins: anyio-4.11.0, langsmith-0.4.37
+collected 8 items                                                                                                
+
+test_vision_helper.py::TestVisionCodeGenerator::test_generator_initialization ✅ Generator 초기화 성공!
+PASSED
+test_vision_helper.py::TestVisionCodeGenerator::test_model_name_is_gpt41 ✅ 사용 모델: openai/gpt-4.1
+PASSED
+test_vision_helper.py::TestVisionCodeGenerator::test_encode_image_file_not_found ✅ 파일 없음 에러 처리 완벽!
+PASSED
+test_vision_helper.py::TestVisionCodeGenerator::test_encode_image_with_valid_file ✅ 이미지 인코딩 성공! (크기: 82484 bytes)
+PASSED
+test_vision_helper.py::TestVisionCodeGenerator::test_generate_streamlit_code_file_not_found ✅ 에러 처리 반환값 완벽!
+PASSED
+test_vision_helper.py::TestVisionCodeGenerator::test_generate_streamlit_code_response_structure ✅ 응답 구조 완벽!
+PASSED
+test_vision_helper.py::TestVisionCodeGenerator::test_extract_streamlit_components ✅ 컴포넌트 추출 완벽! ['st.button', 'st.slider', 'st.text_input', 'st.title']
+PASSED
+test_vision_helper.py::TestVisionCodeGenerator::test_generate_from_url_response_structure ⚠️ URL 기반 테스트는 API 비용으로 인해 스킵됨 (필요시 수동 실행)
+PASSED
+
+===================================================== 8 passed in 21.89s ======================================================
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python -m test_vision_helper
+
+============================================================
+🔥 VisionCodeGenerator 기본 테스트 시작!
+============================================================
+
+[1️⃣] Generator 초기화...
+✅ 성공! 모델: openai/gpt-4.1
+
+[2️⃣] 파일 없음 에러 처리 테스트...
+✅ 성공! 에러 메시지: 이미지 파일을 찾을 수 없습니다: fake.png
+
+[3️⃣] 컴포넌트 추출 테스트...
+✅ 성공! 추출된 컴포넌트: ['st.button', 'st.slider']
+
+[4️⃣] 테스트 이미지 확인...
+✅ 테스트 이미지 존재: /Users/jay/ICT-projects/flownote-mvp/tests/test_images/test.png
+   → 실제 API 테스트 가능!
+
+============================================================
+🎉 기본 테스트 완료!
+============================================================
+
+
+(myenv) ➜  tests git:(refactor-v4-phase-1-baseline) ✗ python test_vision_helper.py
+
+============================================================
+🔥 VisionCodeGenerator 기본 테스트 시작!
+============================================================
+
+[1️⃣] Generator 초기화...
+✅ 성공! 모델: openai/gpt-4.1
+
+[2️⃣] 파일 없음 에러 처리 테스트...
+✅ 성공! 에러 메시지: 이미지 파일을 찾을 수 없습니다: fake.png
+
+[3️⃣] 컴포넌트 추출 테스트...
+✅ 성공! 추출된 컴포넌트: ['st.button', 'st.slider']
+
+[4️⃣] 테스트 이미지 확인...
+✅ 테스트 이미지 존재: /Users/jay/ICT-projects/flownote-mvp/tests/test_images/test.png
+   → 실제 API 테스트 가능!
+
+============================================================
+🎉 기본 테스트 완료!
+============================================================

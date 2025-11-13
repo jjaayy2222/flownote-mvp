@@ -1,0 +1,30 @@
+{
+  "status": "success",
+  "total_files": 4,
+  "uploaded_files": [
+    {
+      "filename": "project_flownote.md",
+      "file_id": "uuid-project_flownote.md",
+      "size": 375,
+      "status": "uploaded"
+    },
+    {
+      "filename": "area_development.md",
+      "file_id": "uuid-area_development.md",
+      "size": 265,
+      "status": "uploaded"
+    },
+    {
+      "filename": "resource_docs.md",
+      "file_id": "uuid-resource_docs.md",
+      "size": 344,
+      "status": "uploaded"
+    },
+    {
+      "filename": "archive_old.md",
+      "file_id": "uuid-archive_old.md",
+      "size": 357,
+      "status": "uploaded"
+    }
+  ]
+}
