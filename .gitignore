@@ -139,6 +139,8 @@ tests/test_api.py
 tests/test_api_server.py
 tests/test_classifier_routes.py
 tests/test_classify_cli.py
+tests/test_para_agent.py
+tests/test_compatibility.py
 tests/test_frontend.js
 tests/test_results.txt
 tests/data/
