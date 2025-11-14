@@ -1,0 +1,34 @@
+backend/classifier/para_agent.py:async def run_para_agent(text: str, metadata: dict = None) -> dict:
+backend/classifier/keyword_classifier.py:    async def aclassify(self, text: str, user_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+backend/classifier/keyword_classifier.py:    async def async_test():
+backend/api/endpoints/metadata.py:async def get_metadata(file_id: str):
+backend/api/endpoints/classify.py:async def classify_file(file: UploadFile = File(...)):
+backend/api/endpoints/dashboard.py:async def get_dashboard_status():
+backend/api/endpoints/dashboard.py:async def get_metrics():
+backend/api/endpoints/dashboard.py:async def get_top_keywords(top_n: int = 10):
+backend/api/endpoints/search.py:async def search_files(q: str):
+backend/main.py:async def health():
+backend/main.py:async def root():
+backend/routes/classifier_routes.py:async def classify_text_endpoint(request: ClassificationRequest):
+backend/routes/classifier_routes.py:async def classify_metadata_endpoint(request: MetadataClassifyRequest):
+backend/routes/classifier_routes.py:async def hybrid_classify_endpoint(request: HybridClassifyRequest):
+backend/routes/classifier_routes.py:async def parallel_classify_endpoint(request: ParallelClassifyRequest):
+backend/routes/classifier_routes.py:async def classify_para(request: ClassificationRequest):
+backend/routes/classifier_routes.py:async def classify_keywords(request: ClassificationRequest):
+backend/routes/classifier_routes.py:async def classify_text(request: ClassifyRequest):
+backend/routes/classifier_routes.py:async def classify_file(
+backend/routes/api_routes.py:async def classify_file(file: UploadFile = File(...)):
+backend/routes/api_routes.py:async def save_classification(request: SaveClassificationRequest):
+backend/routes/api_routes.py:async def get_saved_files():
+backend/routes/api_routes.py:async def get_metadata(file_id: str):
+backend/routes/api_routes.py:async def health():
+backend/routes/conflict_routes.py:async def classify_text(request: ClassifyRequest):
+backend/routes/conflict_routes.py:async def get_snapshots():
+backend/routes/conflict_routes.py:async def resolve_conflicts(conflicts: List[ConflictRecord]) -> ConflictReport:
+backend/routes/onboarding_routes.py:async def onboarding_step1(input_data: Step1Input):
+backend/routes/onboarding_routes.py:async def suggest_areas(user_id: str = Query(...), occupation: str = Query(...)):
+backend/routes/onboarding_routes.py:async def save_context(input_data: Step2Input):
+backend/routes/onboarding_routes.py:async def get_onboarding_status(user_id: str):
+backend/routes/onboarding_routes.py:async def onboarding_step2(
+backend/routes/onboarding_routes.py:async def onboarding_step3(user_id: str, goals: str):
+backend/routes/onboarding_routes.py:async def onboarding_step4(user_id: str, areas: str):
