@@ -1,0 +1,15 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp
+plugins: anyio-4.11.0, langsmith-0.4.37, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 5 items
+
+tests/test_classification_flow.py::test_1_keyword_classifier PASSED      [ 20%]
+tests/test_classification_flow.py::test_2_conflict_service PASSED        [ 40%]
+tests/test_classification_flow.py::test_3_db_storage PASSED              [ 60%]
+tests/test_classification_flow.py::test_4_classification_log PASSED      [ 80%]
+tests/test_classification_flow.py::test_5_api_endpoint PASSED            [100%]
+
+======================== 5 passed, 9 warnings in 32.05s ========================
