@@ -132,14 +132,18 @@ web_ui/package-lock.json
 
 # 테스트 불필요 파일들
 # tests/tests_phase_0/
+tests/test_imports.py
 tests/conftest.py
 tests/para_agent2.py
 tests/test_all_categories.py
 tests/test_api.py
 tests/test_api_server.py
+tests/test_chunking_embedding_.py
 tests/test_classifier_routes.py
 tests/test_classify_cli.py
+tests/test_faiss_.py
 tests/test_para_agent.py
+tests/test_para_classifier_.py
 tests/test_compatibility.py
 tests/test_frontend.js
 tests/test_results.txt
