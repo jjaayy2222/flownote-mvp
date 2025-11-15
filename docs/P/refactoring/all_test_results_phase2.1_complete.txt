@@ -1,0 +1,85 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp
+configfile: pytest.ini
+plugins: anyio-4.11.0, langsmith-0.4.37, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 55 items
+
+tests/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_routes_py_import PASSED [  1%]
+tests/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_models_py_import PASSED [  3%]
+tests/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_dashboard_endpoint_import PASSED [  5%]
+tests/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_dashboard_status_endpoint PASSED [  7%]
+tests/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_dashboard_metrics_endpoint PASSED [  9%]
+tests/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_dashboard_keywords_endpoint PASSED [ 10%]
+tests/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_classify_endpoint_import PASSED [ 12%]
+tests/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_search_endpoint_import PASSED [ 14%]
+tests/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_metadata_endpoint_import PASSED [ 16%]
+tests/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_all_files_integration PASSED [ 18%]
+tests/test_api_dashboard.py::TestDashboardEndpoints::test_status_endpoint PASSED [ 20%]
+tests/test_api_dashboard.py::TestDashboardEndpoints::test_metrics_endpoint PASSED [ 21%]
+tests/test_api_dashboard.py::TestDashboardEndpoints::test_keywords_endpoint PASSED [ 23%]
+tests/test_api_dashboard.py::TestDashboardEndpoints::test_keywords_with_custom_params PASSED [ 25%]
+tests/test_api_e2e.py::test_api_health PASSED                            [ 27%]
+tests/test_api_e2e.py::test_classification_flow PASSED                   [ 29%]
+tests/test_api_e2e.py::test_metadata_public PASSED                       [ 30%]
+tests/test_api_e2e.py::test_dashboard_integration PASSED                 [ 32%]
+tests/test_api_e2e_complete.py::TestEndToEndWorkflow::test_01_file_upload PASSED [ 34%]
+tests/test_api_e2e_complete.py::TestEndToEndWorkflow::test_02_file_classification PASSED [ 36%]
+tests/test_api_e2e_complete.py::TestEndToEndWorkflow::test_03_conflict_detection PASSED [ 38%]
+tests/test_api_e2e_complete.py::TestEndToEndWorkflow::test_04_conflict_resolution PASSED [ 40%]
+tests/test_api_e2e_complete.py::TestEndToEndWorkflow::test_05_dashboard_integration PASSED [ 41%]
+tests/test_api_e2e_complete.py::TestEndToEndWorkflow::test_00_complete_e2e_workflow PASSED [ 43%]
+tests/test_chunking_embedding_.py::test_full_pipeline PASSED             [ 45%]
+tests/test_classification_flow.py::test_1_keyword_classifier PASSED      [ 47%]
+tests/test_classification_flow.py::test_2_conflict_service PASSED        [ 49%]
+tests/test_classification_flow.py::test_3_db_storage PASSED              [ 50%]
+tests/test_classification_flow.py::test_4_classification_log PASSED      [ 52%]
+tests/test_classification_flow.py::test_5_api_endpoint PASSED            [ 54%]
+tests/test_conflict_resolver.py::test_clear_winner_para PASSED           [ 56%]
+tests/test_conflict_resolver.py::test_requires_user_review PASSED        [ 58%]
+tests/test_conflict_resolver.py::test_keyword_wins PASSED                [ 60%]
+tests/test_context_injector.py::test_context_injector PASSED             [ 61%]
+tests/test_faiss_.py::test_search_pipeline PASSED                        [ 63%]
+tests/test_gpt41_connection.py::test_gpt41_connection PASSED             [ 65%]
+tests/test_imports.py::test_backend_models_import PASSED                 [ 67%]
+tests/test_imports.py::test_backend_api_models_import PASSED             [ 69%]
+tests/test_imports.py::test_backend_api_init_import PASSED               [ 70%]
+tests/test_imports.py::test_classifier_routes_import PASSED              [ 72%]
+tests/test_imports.py::test_metadata_import PASSED                       [ 74%]
+tests/test_integration_onboarding_classification.py::test_onboarding_to_classification_file_flow PASSED [ 76%]
+tests/test_metadata_integration.py::test_metadata_with_auto_resolution PASSED [ 78%]
+tests/test_metadata_integration.py::test_metadata_with_conflict PASSED   [ 80%]
+tests/test_metadata_integration.py::test_statistics PASSED               [ 81%]
+tests/test_para_classifier_.py::test_classifier PASSED                   [ 83%]
+tests/test_prompt_conflict.py::test_prompt_conflict PASSED               [ 85%]
+tests/test_vision_helper.py::TestVisionCodeGenerator::test_generator_initialization PASSED [ 87%]
+tests/test_vision_helper.py::TestVisionCodeGenerator::test_model_name_is_gpt41 PASSED [ 89%]
+tests/test_vision_helper.py::TestVisionCodeGenerator::test_encode_image_file_not_found PASSED [ 90%]
+tests/test_vision_helper.py::TestVisionCodeGenerator::test_encode_image_with_valid_file PASSED [ 92%]
+tests/test_vision_helper.py::TestVisionCodeGenerator::test_generate_streamlit_code_file_not_found PASSED [ 94%]
+tests/test_vision_helper.py::TestVisionCodeGenerator::test_generate_streamlit_code_response_structure PASSED [ 96%]
+tests/test_vision_helper.py::TestVisionCodeGenerator::test_extract_streamlit_components PASSED [ 98%]
+tests/test_vision_helper.py::TestVisionCodeGenerator::test_generate_from_url_response_structure PASSED [100%]
+
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+tests/test_gpt41_connection.py::test_gpt41_connection
+  /Users/jay/.pyenv/versions/3.11.10/envs/myenv/lib/python3.11/site-packages/_pytest/python.py:163: PytestReturnNotNoneWarning: Expected None, but tests/test_gpt41_connection.py::test_gpt41_connection returned False, which will be an error in a future version of pytest.  Did you mean to use `assert` instead of `return`?
+    warnings.warn(
+
+tests/test_imports.py::test_classifier_routes_import
+  /Users/jay/ICT-projects/flownote-mvp/backend/routes/api_models.py:19: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class MetadataResponse(BaseModel):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================== 55 passed, 5 warnings in 97.55s (0:01:37) ===================
