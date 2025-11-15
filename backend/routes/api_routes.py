@@ -1,4 +1,4 @@
-# backend/routes/api_routes.py (수정 버전)
+# backend/routes/api_routes.py - 마이그레이션
 
 """
 FastAPI 라우터: 통합 버전
@@ -7,7 +7,7 @@ FastAPI 라우터: 통합 버전
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from backend.routes.api_models import ClassifyResponse
-#from backend.classifier.para_agent_wrapper import run_para_agent_sync
+from backend.models.classification import SaveClassificationRequest
 from backend.classifier.para_agent import run_para_agent
 from backend.metadata import FileMetadata
 from backend.chunking import TextChunker
@@ -22,10 +22,6 @@ metadata_manager = FileMetadata()
 chunker = TextChunker(chunk_size=500, chunk_overlap=50)
 SAVED_CLASSIFICATIONS = {}
 
-# ✅ Request 모델 추가
-class SaveClassificationRequest(BaseModel):
-    file_id: str
-    classification: dict
 
 
 @api_router.post("/classify/file")
