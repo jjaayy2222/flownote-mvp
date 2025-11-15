@@ -9,7 +9,7 @@
 
 import asyncio
 import logging
-from typing import Dict, Any, Optional
+from typing import Awaitable, Dict, Any, Optional
 from datetime import datetime
 import uuid
 
@@ -48,9 +48,10 @@ class ConflictService:
         #self.snapshots = {}
         #self.keyword_classifier = KeywordClassifier()
         self.snapshot_manager = SnapshotManager()
+        self.keyword_classifier = KeywordClassifier()
         logger.info("✅ ConflictService 초기화 완료")
     
-    def classify_text(
+    async def classify_text(
         self, 
         text: str,
         para_result: Optional[Dict[str, Any]] = None,
@@ -77,23 +78,35 @@ class ConflictService:
         try:
             logger.info(f"📝 통합 분류 시작: {text[:50]}...")
             
+            
             # 1. PARA 분류 (이미 있으면 재사용)
             if para_result is None:
                 logger.info("1. PARA 분류 실행...")
-                para_result = run_para_agent(text)      # 임시로 동기 방식 처리 
+                para_result = await run_para_agent(text)
                 logger.info(f"  ✅ PARA: {para_result.get('category')}")
             
-            # 2. Keyword 분류 (매번 새로운 키워드!)
+            
+            # 2. Keyword 분류 
             if keyword_result is None:
                 logger.info("2. Keyword 분류 실행...")
-                # ✅ 매번 새 인스턴스!
-                keyword_classifier = KeywordClassifier()
-                keyword_result = keyword_classifier.classify(text, user_context)
-                logger.info(f"  ✅ 새 키워드: {keyword_result.get('tags', [])}")
+                # KeywordClassifier가 async 지원하면 aclassify 사용
+                if hasattr(self.keyword_classifier, 'aclassify'):
+                    keyword_result = await self.keyword_classifier.aclassify(
+                        text, user_context
+                    )
+                else:
+                    # sync 버전 사용
+                    keyword_result = await asyncio.to_thread(
+                        self.keyword_classifier.classify,
+                        text, user_context
+                    )
+                logger.info(f"   ✅ 키워드: {keyword_result.get('tags', [])}")
+            
             
             # 3. Conflict Resolution
             logger.info("3. Conflict Resolution 실행...")
-            conflict_result = self._resolve_conflict(
+            
+            conflict_result = await self._resolve_conflict_async(
                 para_result=para_result,
                 keyword_result=keyword_result,
                 text=text
@@ -135,7 +148,7 @@ class ConflictService:
                 'status': 'error'
             }
 
-    def _resolve_conflict(
+    async def _resolve_conflict_async(
         self,
         para_result: Dict[str, Any],
         keyword_result: Dict[str, Any],
@@ -165,17 +178,28 @@ class ConflictService:
             
             # ConflictResolver로 해결
             resolver = ConflictResolver()
-            conflict_result = resolver.resolve(para_obj, keyword_obj)
+            
+            
+            
+            # resolve_async가 있으면 사용, 없으면 sync 버전을 async로 실행
+            if hasattr(resolver, 'resolve_async'):
+                conflict_result = await resolver.resolve_async(para_obj, keyword_obj)
+            else:
+                conflict_result = await asyncio.to_thread(
+                    resolver.resolve,
+                    para_obj, keyword_obj
+                )
             
             return conflict_result
+
 
         except Exception as e:
             logger.error(f"❌ 충돌 해결 실패: {e}")
             # Fallback
             return {
-                'final_category': para_result.get('category', 'Projects'),
-                'keyword_tags': keyword_result.get('tags', ['기타']),
-                'confidence': para_result.get('confidence', 0.8),
+                'final_category': await para_result.get('category', 'Projects'),
+                'keyword_tags': await keyword_result.get('tags', ['기타']),
+                'confidence': await para_result.get('confidence', 0.8),
                 'conflict_detected': False,
                 'resolution_method': 'simple_merge',
                 'requires_review': False,

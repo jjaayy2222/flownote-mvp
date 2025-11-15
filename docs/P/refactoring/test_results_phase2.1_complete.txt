@@ -1,0 +1,114 @@
+(myenv) ➜  flownote-mvp git:(refactor-v4-phase-2-models) ✗ pytest tests/test_api_all_endpoints.py -v
+================================ test session starts ================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp
+configfile: pytest.ini
+plugins: anyio-4.11.0, langsmith-0.4.37, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 10 items                                                                  
+
+tests/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_routes_py_import PASSED [ 10%]
+tests/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_models_py_import PASSED [ 20%]
+tests/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_dashboard_endpoint_import PASSED [ 30%]
+tests/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_dashboard_status_endpoint PASSED [ 40%]
+tests/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_dashboard_metrics_endpoint PASSED [ 50%]
+tests/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_dashboard_keywords_endpoint PASSED [ 60%]
+tests/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_classify_endpoint_import PASSED [ 70%]
+tests/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_search_endpoint_import PASSED [ 80%]
+tests/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_metadata_endpoint_import PASSED [ 90%]
+tests/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_all_files_integration PASSED [100%]
+
+================================ 10 passed in 0.27s =================================
+(myenv) ➜  flownote-mvp git:(refactor-v4-phase-2-models) ✗ pytest tests/test_classification_flow.py -v
+================================ test session starts ================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp
+configfile: pytest.ini
+plugins: anyio-4.11.0, langsmith-0.4.37, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 5 items                                                                   
+
+tests/test_classification_flow.py::test_1_keyword_classifier PASSED           [ 20%]
+tests/test_classification_flow.py::test_2_conflict_service PASSED             [ 40%]
+tests/test_classification_flow.py::test_3_db_storage PASSED                   [ 60%]
+tests/test_classification_flow.py::test_4_classification_log PASSED           [ 80%]
+tests/test_classification_flow.py::test_5_api_endpoint PASSED                 [100%]
+
+================================ 5 passed in 52.74s =================================
+(myenv) ➜  flownote-mvp git:(refactor-v4-phase-2-models) ✗ pytest tests/test_conflict_resolver.py -v
+================================ test session starts ================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp
+configfile: pytest.ini
+plugins: anyio-4.11.0, langsmith-0.4.37, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 3 items                                                                   
+
+tests/test_conflict_resolver.py::test_clear_winner_para PASSED                [ 33%]
+tests/test_conflict_resolver.py::test_requires_user_review PASSED             [ 66%]
+tests/test_conflict_resolver.py::test_keyword_wins PASSED                     [100%]
+
+================================= 3 passed in 0.02s =================================
+(myenv) ➜  flownote-mvp git:(refactor-v4-phase-2-models) ✗ pytest tests/test_chunking_embedding.py -v
+================================ test session starts ================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp
+configfile: pytest.ini
+plugins: anyio-4.11.0, langsmith-0.4.37, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 1 item                                                                    
+
+tests/test_chunking_embedding.py::test_full_pipeline PASSED                   [100%]
+
+================================= 1 passed in 1.59s =================================
+(myenv) ➜  flownote-mvp git:(refactor-v4-phase-2-models) ✗ pytest tests/test_para_classifier.py -v
+================================ test session starts ================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp
+configfile: pytest.ini
+plugins: anyio-4.11.0, langsmith-0.4.37, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 1 item                                                                    
+
+tests/test_para_classifier.py::test_classifier PASSED                         [100%]
+
+================================ 1 passed in 25.85s =================================
+(myenv) ➜  flownote-mvp git:(refactor-v4-phase-2-models) ✗ pytest tests/test_faiss.py -v
+================================ test session starts ================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp
+configfile: pytest.ini
+plugins: anyio-4.11.0, langsmith-0.4.37, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 1 item                                                                    
+
+tests/test_faiss.py::test_search_pipeline PASSED                              [100%]
+
+================================= warnings summary ==================================
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== 1 passed, 3 warnings in 2.61s ===========================
+
+
+(myenv) ➜  flownote-mvp git:(refactor-v4-phase-2-models) ✗ cat docs/P/refactoring/test_results_phase2.1_complete.txt | grep -E "passed|failed"
+================================ 10 passed in 0.27s =================================
+================================ 5 passed in 52.74s =================================
+================================= 3 passed in 0.02s =================================
+================================= 1 passed in 1.59s =================================
+================================ 1 passed in 25.85s =================================
+=========================== 1 passed, 3 warnings in 2.61s ===========================
+(myenv) ➜  flownote-mvp git:(refactor-v4-phase-2-models) ✗ 

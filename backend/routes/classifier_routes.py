@@ -41,6 +41,16 @@ from backend.metadata import FileMetadata
 from backend.classifier.keyword_classifier import KeywordClassifier
 from backend.data_manager import DataManager
 from backend.database.metadata_schema import ClassificationMetadataExtender
+# 모델 임포트
+from backend.models.classification import (
+    ClassifyRequest,
+    ClassifyResponse,
+    ClassificationRequest,
+    ClassificationResponse,
+    MetadataClassifyRequest,
+    HybridClassifyRequest,
+    ParallelClassifyRequest
+)
 
 
 import logging
@@ -55,78 +65,6 @@ router = APIRouter()                    # API Router 추가
 # ============ 싱글톤 인스턴스 ============
 # 요청마다 재사용하지 않음
 injector = get_context_injector()
-
-
-
-# ============ 요청 스키마들 ============
-
-class ClassificationRequest(BaseModel):
-    """텍스트 분류 요청"""
-    text: str                       # 분류할 텍스트
-    filename: str = "unknown"       # 선택사항
-    user_id: Optional[str] = None   # 맥락 주입용 / 사용자 컨텍스트용
-    
-
-class ClassificationResponse(BaseModel):
-    """분류 응답"""
-    category: str
-    confidence: float
-    status: str = "success"
-    # <--- 나머지 필드들
-
-# 수정: 새 프롬프트에 맞춘 ClassifyRequest (user_context 필드 추가!)
-class ClassifyRequest(BaseModel):
-    """텍스트 분류 요청 (새 프롬프트 버전)"""
-    text: str                               # 필수: 분류할 텍스트
-    # 기존 필드들
-    user_id: Optional[str] = None
-    file_id: Optional[str] = None
-    # 새 필드들 (프롬프트 {occupation}, {areas}, {interests} 대응)
-    occupation: Optional[str] = None        # 직업
-    areas: Optional[List[str]] = []         # 책임 영역
-    interests: Optional[List[str]] = []     # 관심사
-
-class ClassifyResponse(BaseModel):
-    """분류 응답 (새 프롬프트 버전)"""
-    category: str                           # 최종 카테고리
-    confidence: float                       # 신뢰도
-    # 기존 필드들 
-    snapshot_id: Optional[str] = None   
-    conflict_detected: bool = False
-    requires_review: bool = False
-    user_profile: dict = {}
-    context_injected: bool = False
-    
-    # 새 필드들 (keyword_classifier 출력 반영)
-    keyword_tags: List[str]                 # 키워드 태그 (매번 새로 생성)
-    reasoning: str                          # 분류 이유 (프롬프트 reasoning)
-    
-    # 사용자 맥락 관련 (프롬프트 반영)
-    user_context: Dict[str, Any] = {}       # 전달된 user_context 
-    user_context_matched: bool = False      # 맥락 매칭 여부
-    user_areas: Optional[List[str]] = []    # 사용된 영역
-
-
-
-class MetadataClassifyRequest(BaseModel):
-    """메타데이터 분류 요청"""
-    metadata: Dict
-    user_id: Optional[str] = None
-
-
-class HybridClassifyRequest(BaseModel): 
-    """하이브리드 분류 요청"""
-    text: str
-    metadata: Dict
-    user_id: Optional[str] = None
-
-
-class ParallelClassifyRequest(BaseModel):
-    """병렬 분류 요청 (텍스트 + 메타데이터)"""
-    text: str
-    metadata: Dict
-    filename: str = "unknown"
-    user_id: Optional[str] = None
 
 
 # ============ API 엔드포인트 ============

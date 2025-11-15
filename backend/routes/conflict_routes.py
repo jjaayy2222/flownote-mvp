@@ -18,23 +18,15 @@ from backend.classifier.para_agent import run_para_agent_sync
 from backend.api.models import ConflictRecord, ConflictReport
 from backend.api.endpoints.conflict_resolver_agent import resolve_conflicts_sync
 from backend.services.conflict_service import ConflictService, KeywordClassifier
-from backend.routes.api_models import ClassifyRequest, ClassifyResponse, MetadataResponse, ErrorResponse
+from backend.routes.api_models import ClassifyResponse, MetadataResponse, ErrorResponse
+# 모델 임포트
+from backend.models import ClassifyRequest, ClassifyResponse
 
 logger = logging.getLogger(__name__)
 
 #router = APIRouter(prefix="/api/classify", tags=["classification"])
 router = APIRouter()
 
-class ClassifyRequest(BaseModel):
-    text: str
-
-class ClassifyResponse(BaseModel):
-    #text: str
-    para_result: dict
-    #keyword_result: dict
-    conflict_result: dict
-    snapshot_id: str
-    #metadata: dict
 
 @router.post("/classify", response_model=ClassifyResponse)
 async def classify_text(request: ClassifyRequest):

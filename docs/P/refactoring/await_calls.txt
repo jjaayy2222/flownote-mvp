@@ -1,0 +1,13 @@
+backend/classifier/para_agent.py:    result = await agent.ainvoke(initial_state)
+backend/classifier/keyword_classifier.py:            response = await self.chain.ainvoke(prompt_vars)
+backend/classifier/keyword_classifier.py:            result = await classifier2.aclassify(text, user_context=user_context)
+backend/routes/classifier_routes.py:            para_result = await run_para_agent(
+backend/routes/classifier_routes.py:        keyword_result = await keyword_classifier.aclassify(    # 비동기 aclassify!
+backend/routes/classifier_routes.py:        content = await file.read()
+backend/routes/classifier_routes.py:            para_result = await run_para_agent(
+backend/routes/classifier_routes.py:        keyword_result = await keyword_classifier.aclassify(
+backend/routes/api_routes.py:        content = await file.read()
+backend/routes/api_routes.py:            para_result = await run_para_agent(
+backend/routes/api_routes.py:    await response(scope, receive, sender)
+backend/routes/conflict_routes.py:    result = await asyncio.to_thread(resolve_conflicts_sync, conflicts)
+backend/services/conflict_service.py:            # conflict_result = await self._resolve_conflict_async(para_result, keyword_result, text)

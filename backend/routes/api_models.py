@@ -4,50 +4,16 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 
-# ============================================
-# Request Models
-# ============================================
-
-class ClassifyRequest(BaseModel):
-    """분류 요청"""
-    text: str = Field(..., min_length=1, description="분류할 텍스트")
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "text": "프로젝트 완성하기"
-            }
-        }
+# 모델 임포트
+from backend.models import (
+    ClassifyRequest,
+    ClassifyResponse,)
 
 
 # ============================================
 # Response Models (conflict_resolver 반환값 기반)
 # ============================================
 
-class ClassifyResponse(BaseModel):
-    """분류 결과"""
-    final_category: str = Field(..., description="최종 카테고리")
-    para_category: str = Field(..., description="PARA 카테고리")
-    keyword_tags: List[str] = Field(default_factory=list, description="키워드 태그")
-    confidence: float = Field(..., ge=0.0, le=1.0, description="신뢰도")
-    confidence_gap: float = Field(..., description="신뢰도 차이")
-    conflict_detected: bool = Field(..., description="충돌 감지")
-    resolution_method: str = Field(..., description="해결 방법")
-    requires_review: bool = Field(..., description="사용자 검토 필요")
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "final_category": "Projects",
-                "para_category": "Projects",
-                "keyword_tags": ["업무", "프로젝트"],
-                "confidence": 0.9,
-                "confidence_gap": 0.15,
-                "conflict_detected": False,
-                "resolution_method": "auto_by_confidence",
-                "requires_review": False
-            }
-        }
 
 
 class MetadataResponse(BaseModel):

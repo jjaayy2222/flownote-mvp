@@ -38,6 +38,7 @@ class Step1Input(BaseModel):
     occupation: str             # 직업
     name: str = "Anonymous"     # 이름 (기본값: Anonymous)
 
+
 class Step2Input(BaseModel):
     """Step 2: 영역 선택"""
     user_id: str
@@ -47,10 +48,11 @@ class Step2Input(BaseModel):
 class OnboardingStatus(BaseModel):
     """온보딩 상태"""
     user_id: str
+    #name: str
     occupation: str
     areas: List[str]
+    #projects: List[str]
     is_completed: bool
-
 
 # =====================
 # 🚀 API 엔드포인트
@@ -59,6 +61,7 @@ class OnboardingStatus(BaseModel):
 # =====================================
 # 📌 Step 1: 직업 입력 → GPT-4o 영역 추천
 # =====================================
+
 @router.post("/step1", response_model=dict)
 async def onboarding_step1(input_data: Step1Input):
     """

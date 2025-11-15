@@ -31,6 +31,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+.pytest_cache/
 
 # 가상환경
 myenv/
@@ -62,6 +63,7 @@ htmlcov/
 *.db
 *.sqlite
 *.sqlite3
+.devcontainer
 
 # 로그 파일
 *.log
@@ -129,13 +131,20 @@ web_ui/package.json
 web_ui/package-lock.json
 
 # 테스트 불필요 파일들
+# tests/tests_phase_0/
+tests/test_imports.py
 tests/conftest.py
 tests/para_agent2.py
 tests/test_all_categories.py
 tests/test_api.py
 tests/test_api_server.py
+tests/test_chunking_embedding_.py
 tests/test_classifier_routes.py
 tests/test_classify_cli.py
+tests/test_faiss_.py
+tests/test_para_agent.py
+tests/test_para_classifier_.py
+tests/test_compatibility.py
 tests/test_frontend.js
 tests/test_results.txt
 tests/data/
@@ -147,6 +156,7 @@ tests/outputs/step_04_conflict_resolution_20251104_235032.json
 tests/outputs/step_05_dashboard_20251104_235032.json
 tests/outputs/test_results_complete_20251104_235032.json
 
+tests/test_all_models.py
 tests/test_api_e2e_complete2.py
 tests/test_context_injector.py
 tests/test_integration_onboarding_classification.py
@@ -156,6 +166,7 @@ tests/test_ui8.py
 
 # 업로드된 임시 파일
 uploaded_files/
+
 # Test outputs
 tests/outputs/
 .pytest_cache/
