@@ -1,21 +1,33 @@
-# backend/api/models.py
+# backend/api/models.py - 마이그레이션
 
-"""Pydantic Models for API"""
+"""
+Classification models for API layer
+"""
 
-from pydantic import BaseModel
-from typing import Optional, List
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
+from backend.models import (
+    ClassifyRequest,
+    ClassifyResponse,
+    FileMetadata,
+    FileMetadataInput,
+    ClassifyBatchResponse,
+    SaveClassificationRequest,
+    SearchRequest
+    )
 
-class FileMetadata(BaseModel):
-    file_id: str
-    filename: str
-    category: str
-    para_class: str
-    created_at: Optional[str] = None
 
-class SaveClassificationRequest(BaseModel):
-    file_id: str
-    classification: dict
 
-class SearchRequest(BaseModel):
-    query: str
-    filters: Optional[dict] = None
+__all__ = [
+    # Classification
+    "ClassifyRequest",
+    "ClassifyResponse",
+    "FileMetadataInput",
+    "ClassifyBatchRequest",
+    "ClassifyBatchResponse",
+    
+    # File Management
+    "FileMetadata",
+    "SaveClassificationRequest",
+    "SearchRequest",
+]
