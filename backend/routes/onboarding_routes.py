@@ -1,9 +1,9 @@
 # backend/routes/onboarding_routes.py
 
 """
-🚀 Onboarding 라우트: GPT-4o 연동
-- Step 1: occupation 기반 영역 추천 (GPT-4o 사용)
-- Save Context: 선택된 영역 저장 (간소화)
+Onboarding Routes
+
+사용자 온보딩 플로우 관련 API 엔드포인트
 """
 
 import uuid
@@ -18,6 +18,13 @@ from backend.data_manager import DataManager
 from backend.classifier.context_injector import get_context_injector 
 from backend.services.gpt_helper import get_gpt_helper      # 싱클톤 함수 호출
 from backend.services.gpt_helper import GPT4oHelper         # 클래스 호출
+# 클래스 마이그레이션 임포트 
+from backend.models import (
+    Step1Input,
+    Step2Input,
+    OnboardingStatus,
+)
+
 
 # API Router
 router = APIRouter(tags=["onboarding"])  
@@ -28,35 +35,6 @@ gpt_helper = get_gpt_helper()           # 싱글톤
 
 logger = logging.getLogger(__name__)
 
-
-# =====================================
-# 📌 Pydantic Models (요청/응답 모델)
-# =====================================
-
-class Step1Input(BaseModel):
-    """Step 1 요청 모델: 사용자 직업 입력"""
-    occupation: str             # 직업
-    name: str = "Anonymous"     # 이름 (기본값: Anonymous)
-
-
-class Step2Input(BaseModel):
-    """Step 2: 영역 선택"""
-    user_id: str
-    selected_areas: List[str]
-
-
-class OnboardingStatus(BaseModel):
-    """온보딩 상태"""
-    user_id: str
-    #name: str
-    occupation: str
-    areas: List[str]
-    #projects: List[str]
-    is_completed: bool
-
-# =====================
-# 🚀 API 엔드포인트
-# =====================
 
 # =====================================
 # 📌 Step 1: 직업 입력 → GPT-4o 영역 추천
