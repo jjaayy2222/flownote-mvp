@@ -2,29 +2,45 @@
 
 """
 FastAPI 라우터: 통합 버전
+
+DEPRECATED: 이 파일은 Phase 3에서 삭제 예정입니다.
+backend/api/endpoints/로 이동되었습니다.
 """
 
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
-from backend.routes.api_models import ClassifyResponse
-from backend.models.classification import SaveClassificationRequest
+# 통합 모델 마이그레이션 임포트 
+from backend.models.classification import (
+    ClassifyResponse,
+    SaveClassificationRequest,)
+from backend.models.common import(
+    SearchRequest,
+    SuccessResponse,
+    ErrorResponse,
+)
+
 from backend.classifier.para_agent import run_para_agent
 from backend.metadata import FileMetadata
 from backend.chunking import TextChunker
 import logging
 from datetime import datetime
+from typing import Dict
 import uuid
 
 logger = logging.getLogger(__name__)
 
-api_router = APIRouter(prefix="/api", tags=["classification"])
+# api_router = APIRouter(prefix="/api", tags=["classification"])
+router = APIRouter(prefix="/api", tags=["api"])
+
 metadata_manager = FileMetadata()
+
 chunker = TextChunker(chunk_size=500, chunk_overlap=50)
+
 SAVED_CLASSIFICATIONS = {}
 
 
 
-@api_router.post("/classify/file")
+@router.post("/classify/file")
 async def classify_file(file: UploadFile = File(...)):
     """파일 분류 - LangGraph 기반!!!"""
     try:
@@ -113,7 +129,7 @@ async def classify_file(file: UploadFile = File(...)):
 
 
 # ✅ 엔드포인트 수정 (POST body 사용)
-@api_router.post("/save-classification")
+@router.post("/save-classification", response_model=SuccessResponse)
 async def save_classification(request: SaveClassificationRequest):
     """분류 결과 저장"""
     try:
@@ -130,13 +146,13 @@ async def save_classification(request: SaveClassificationRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@api_router.get("/saved-files")
+@router.get("/saved-files")
 async def get_saved_files():
     """저장된 파일 목록"""
     return SAVED_CLASSIFICATIONS
 
 
-@api_router.get("/metadata/{file_id}")
+@router.get("/metadata/{file_id}", response_model=Dict)
 async def get_metadata(file_id: str):
     """파일 메타데이터 조회"""
     try:
@@ -148,7 +164,7 @@ async def get_metadata(file_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@api_router.get("/health")
+@router.get("/health")
 async def health():
     """헬스 체크"""
     return {"status": "ok", "timestamp": datetime.now().isoformat()}
