@@ -3,53 +3,79 @@
 """
 통합 모델 패키지 (backend.models)
 
+- Classification: 분류 관련 모델
+- User: 사용자 관련 모델
+- Common: 공통 모델
 - 분류 관련 Pydantic 모델만 re-export
 - 다른 패키지(backend.api.* 등)는 여기서 import 하지 않음
 """
 
+# Classification (Phase 2.1에서 추가됨)
 from .classification import (
-    # 요청 모델
     ClassifyRequest,
+    ClassifyResponse,
     ClassificationRequest,
+    ClassificationResponse,
     MetadataClassifyRequest,
     HybridClassifyRequest,
     ParallelClassifyRequest,
-
-    # 응답 모델
-    ClassifyResponse,
-    ClassificationResponse,
+    FileMetadata as ClassificationFileMetadata,  # 이름 충돌 방지
+    FileMetadataInput,
     ClassifyBatchRequest,
     ClassifyBatchResponse,
+    SaveClassificationRequest as ClassificationSaveRequest,  # 이름 충돌 방지
+    SearchRequest as ClassificationSearchRequest,  # 이름 충돌 방지
+)
 
-    # 파일 메타데이터 (Pydantic 버전)
+# User (Phase 2.2에서 추가됨)
+from .user import (
+    Step1Input,
+    Step2Input,
+    OnboardingStatus,
+    UserProfile,
+    UserContext,
+)
+
+# Common (Phase 2.2에서 추가됨)
+from .common import (
+    ErrorResponse,
+    SuccessResponse,
     FileMetadata,
-    FileMetadataInput,
-
-    # API 전용 요청 모델
+    MetadataResponse,
     SaveClassificationRequest,
     SearchRequest,
 )
 
 
+
 __all__ = [
-    # 요청
+    # Classification
     "ClassifyRequest",
+    "ClassifyResponse",
     "ClassificationRequest",
+    "ClassificationResponse",
     "MetadataClassifyRequest",
     "HybridClassifyRequest",
     "ParallelClassifyRequest",
-
-    # 응답
-    "ClassifyResponse",
-    "ClassificationResponse",
+    "ClassificationFileMetadata",
+    "FileMetadataInput",
     "ClassifyBatchRequest",
     "ClassifyBatchResponse",
-
-    # 메타데이터
+    "ClassificationSaveRequest",
+    "ClassificationSearchRequest",
+    
+    # User
+    "Step1Input",
+    "Step2Input",
+    "OnboardingStatus",
+    "UserProfile",
+    "UserContext",
+    
+    # Common
+    "ErrorResponse",
+    "SuccessResponse",
     "FileMetadata",
-    "FileMetadataInput",
-
-    # API 전용
+    "MetadataResponse",
     "SaveClassificationRequest",
     "SearchRequest",
 ]
