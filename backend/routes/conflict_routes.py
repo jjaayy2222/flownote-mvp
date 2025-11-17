@@ -18,9 +18,18 @@ from backend.classifier.para_agent import run_para_agent_sync
 from backend.api.models import ConflictRecord, ConflictReport
 from backend.api.endpoints.conflict_resolver_agent import resolve_conflicts_sync
 from backend.services.conflict_service import ConflictService, KeywordClassifier
-from backend.routes.api_models import ClassifyResponse, MetadataResponse, ErrorResponse
-# 모델 임포트
-from backend.models import ClassifyRequest, ClassifyResponse
+
+# 통합 모델 마이그레이션 임포트 
+from backend.models.classification import (
+    ClassifyResponse,
+    ClassifyRequest,
+    SaveClassificationRequest,)
+from backend.models.common import(
+    SearchRequest,
+    SuccessResponse,
+    ErrorResponse,
+    MetadataResponse,
+)
 
 logger = logging.getLogger(__name__)
 

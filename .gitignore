@@ -47,6 +47,7 @@ env/
 *.swo
 *.sublime-workspace
 *.sublime-project
+.vscode/settings.json
 
 # OS
 .DS_Store
@@ -188,3 +189,6 @@ git_history_backup.txt
 # 백업 디렉토리
 backups/
 *.backup/
+
+
+
