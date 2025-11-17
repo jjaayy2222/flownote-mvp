@@ -159,3 +159,10 @@ class SearchRequest(BaseModel):
     
     query: str = Field(..., description="검색 쿼리")
     filters: Optional[Dict[str, Any]] = Field(None, description="검색 필터")
+
+
+class ErrorResponse(BaseModel):
+    """에러 응답"""
+    error: str
+    detail: Optional[str] = None
+    timestamp: datetime = Field(default_factory=datetime.now)
