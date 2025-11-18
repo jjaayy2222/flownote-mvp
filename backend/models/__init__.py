@@ -27,7 +27,7 @@ from .classification import (
     ClassifyBatchResponse,
     SaveClassificationRequest as ClassificationSaveRequest,  # 이름 충돌 방지
     SearchRequest as ClassificationSearchRequest,  # 이름 충돌 방지
-    PARAClassificationOutput
+    PARAClassificationOutput,
 )
 
 # User (Phase 2.2에서 추가됨)
