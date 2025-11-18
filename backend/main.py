@@ -12,7 +12,7 @@ from datetime import datetime
 import uuid
 
 # 현재 구조 그대로 import
-from backend.routes.api_routes import api_router
+from backend.routes.api_routes import router
 from backend.routes.classifier_routes import router as classifier_router
 from backend.routes.onboarding_routes import router as onboarding_router
 from backend.metadata import FileMetadata
@@ -48,7 +48,7 @@ app.add_middleware(
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 # ✅ 라우터 등록 (prefix 없이!!)
-app.include_router(api_router)
+app.include_router(router)
 logger.info("✅ api_router 등록 완료")
 
 #app.include_router(classifier_router, prefix="/api/classify") 
