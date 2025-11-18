@@ -42,6 +42,7 @@ from .user import (
 from .common import (
     ErrorResponse,
     SuccessResponse,
+    HealthCheckResponse,
     FileMetadata,
     MetadataResponse,
     SaveClassificationRequest,
@@ -96,6 +97,7 @@ __all__ = [
     # Common
     "ErrorResponse",
     "SuccessResponse",
+    "HealthCheckResponse",
     "FileMetadata",
     "MetadataResponse",
     "SaveClassificationRequest",

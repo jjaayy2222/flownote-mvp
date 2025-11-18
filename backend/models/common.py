@@ -65,6 +65,25 @@ class SuccessResponse(BaseModel):
     )
 
 
+class HealthCheckResponse(BaseModel):
+    """
+    헬스 체크 응답
+    
+    서버 상태 확인 응답
+    """
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "status": "healthy",
+                "timestamp": "2025-11-17T12:00:00"
+            }
+        }
+    )
+    
+    status: str = Field(default="healthy", description="서버 상태")
+    timestamp: str = Field(..., description="타임스탬프")
+
+
 class FileMetadata(BaseModel):
     """
     파일 메타데이터
@@ -166,6 +185,7 @@ class SearchRequest(BaseModel):
 __all__ = [
     "ErrorResponse",
     "SuccessResponse",
+    "HealthCheckResponse",
     "FileMetadata",
     "MetadataResponse",
     "SaveClassificationRequest",
