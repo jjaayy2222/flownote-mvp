@@ -64,6 +64,7 @@ class SuccessResponse(BaseModel):
         description="응답 시각"
     )
 
+
 class FileMetadata(BaseModel):
     """
     파일 메타데이터
@@ -161,8 +162,12 @@ class SearchRequest(BaseModel):
     filters: Optional[Dict[str, Any]] = Field(None, description="검색 필터")
 
 
-class ErrorResponse(BaseModel):
-    """에러 응답"""
-    error: str
-    detail: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.now)
+
+__all__ = [
+    "ErrorResponse",
+    "SuccessResponse",
+    "FileMetadata",
+    "MetadataResponse",
+    "SaveClassificationRequest",
+    "SearchRequest",
+]
