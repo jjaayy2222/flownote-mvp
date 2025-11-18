@@ -15,7 +15,6 @@ from typing import List
 
 
 from backend.classifier.para_agent import run_para_agent_sync
-from backend.api.models import ConflictRecord, ConflictReport
 from backend.api.endpoints.conflict_resolver_agent import resolve_conflicts_sync
 from backend.services.conflict_service import ConflictService, KeywordClassifier
 
@@ -29,6 +28,10 @@ from backend.models.common import(
     SuccessResponse,
     ErrorResponse,
     MetadataResponse,
+)
+from backend.models.conflict import (
+    ConflictRecord,
+    ConflictReport
 )
 
 logger = logging.getLogger(__name__)

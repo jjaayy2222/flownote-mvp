@@ -16,14 +16,17 @@ import json
 import logging
 
 from backend.config import ModelConfig
-from backend.api.models import (
+
+# 모델 통합 마이그레이션 임포트
+from backend.models import (
     ConflictRecord,
     ConflictReport,
     ConflictType,
+    ConflictResolution,
     ResolutionMethod,
     ResolutionStatus,
-    ConflictResolution,
     ResolutionStrategy,
+    
 )
 
 logger = logging.getLogger(__name__)
@@ -280,9 +283,9 @@ def generate_report_node(state: ConflictResolutionState) -> ConflictResolutionSt
     
     total = len(conflicts)
     resolved = len([r for r in resolutions 
-                   if r.status == ResolutionStatus.RESOLVED])
+                    if r.status == ResolutionStatus.RESOLVED])
     pending = len([r for r in resolutions 
-                  if r.status == ResolutionStatus.PENDING_REVIEW])
+                    if r.status == ResolutionStatus.PENDING_REVIEW])
     
     resolution_rate = (resolved / total) if total > 0 else 0.0
     

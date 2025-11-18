@@ -2,7 +2,7 @@
 
 from difflib import SequenceMatcher
 from typing import List
-from backend.api.models import ConflictRecord, ConflictReport, ConflictType
+from backend.models import ConflictRecord, ConflictReport, ConflictType
 
 class ConflictDetector:
     def __init__(self, data_source: str = "mock"):
