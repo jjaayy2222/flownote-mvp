@@ -3,11 +3,13 @@
 """
 통합 모델 패키지 (backend.models)
 
-- Classification: 분류 관련 모델
-- User: 사용자 관련 모델
-- Common: 공통 모델
-- 분류 관련 Pydantic 모델만 re-export
-- 다른 패키지(backend.api.* 등)는 여기서 import 하지 않음
+    - Classification: 분류 관련 모델
+    - User: 사용자 관련 모델
+    - Common: 공통 모델
+    - Conflict: 충돌 감지 및 해결 모델 (NEW!)
+
+    - 분류 관련 Pydantic 모델만 re-export
+    - 다른 패키지(backend.api.* 등)는 여기서 import 하지 않음
 """
 
 # Classification (Phase 2.1에서 추가됨)
@@ -46,6 +48,26 @@ from .common import (
     SearchRequest,
 )
 
+# Conflict (Phase 2.3 - NEW!)
+from .conflict import (
+    # Enums
+    ConflictType,
+    ResolutionMethod,
+    ResolutionStatus,
+    # Core Models
+    ConflictDetail,
+    ConflictRecord,
+    ResolutionStrategy,
+    ConflictResolution,
+    ConflictReport,
+    # API Models
+    DetectConflictRequest,
+    ResolveConflictRequest,
+    ConflictDetectResponse,
+    ConflictResolveResponse,
+)
+
+
 
 
 __all__ = [
@@ -78,4 +100,18 @@ __all__ = [
     "MetadataResponse",
     "SaveClassificationRequest",
     "SearchRequest",
+    
+    # Conflict
+    "ConflictType",
+    "ResolutionMethod",
+    "ResolutionStatus",
+    "ConflictDetail",
+    "ConflictRecord",
+    "ResolutionStrategy",
+    "ConflictResolution",
+    "ConflictReport",
+    "DetectConflictRequest",
+    "ResolveConflictRequest",
+    "ConflictDetectResponse",
+    "ConflictResolveResponse",
 ]
