@@ -14,17 +14,18 @@ from datetime import datetime
 from typing import List
 import json
 import os
-from backend.data_manager import DataManager
-from backend.classifier.context_injector import get_context_injector 
-from backend.services.gpt_helper import get_gpt_helper      # 싱클톤 함수 호출
-from backend.services.gpt_helper import GPT4oHelper         # 클래스 호출
+
 # 클래스 마이그레이션 임포트 
-from backend.models import (
+from backend.models.user import (
     Step1Input,
     Step2Input,
     OnboardingStatus,
 )
 
+from backend.data_manager import DataManager
+from backend.classifier.context_injector import get_context_injector 
+from backend.services.gpt_helper import get_gpt_helper      # 싱클톤 함수 호출
+from backend.services.gpt_helper import GPT4oHelper         # 클래스 호출
 
 # API Router
 router = APIRouter(tags=["onboarding"])  
