@@ -15,7 +15,7 @@ import uuid
 from backend.routes.api_routes import router
 from backend.routes.classifier_routes import router as classifier_router
 from backend.routes.onboarding_routes import router as onboarding_router
-from backend.metadata import FileMetadata
+from backend.models import FileMetadata, HealthCheckResponse
 
 
 # 로깅 설정
@@ -60,24 +60,16 @@ logger.info("✅ onboarding_router 등록 완료")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 요청 모델
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-class HealthCheckResponse(BaseModel):
-    status: str
-    timestamp: str
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 헬스체크
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-@app.get("/health")
+@app.get("/health", response_model=HealthCheckResponse)
 async def health():
     """서버 상태 확인"""
-    return {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat()
-    }
+    return HealthCheckResponse(
+        status="✅ API Server is running",
+        timestamp=datetime.now().isoformat()
+    )
 
 
 @app.get("/")
@@ -108,6 +100,3 @@ if __name__ == "__main__":
         log_level="info"
     )
 
-
-
-#
