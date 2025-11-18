@@ -190,3 +190,48 @@ class SearchRequest(BaseModel):
     filters: Optional[Dict[str, Any]] = Field(None, description="필터")
 
 
+# ============================================
+# LangChain 통합 모델
+# ============================================
+
+class PARAClassificationOutput(BaseModel):
+    """
+    PARA 분류 결과 스키마 (LangChain 통합)
+    
+    LangChain 기반 분류 시 사용하는 출력 형식
+    """
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "category": "Projects",
+                "confidence": 0.92,
+                "reasoning": "명확한 목표와 기한이 있음",
+                "detected_cues": ["프로젝트", "MVP", "완성"]
+            }
+        }
+    )
+    
+    category: str = Field(..., description="PARA 카테고리 (Projects/Areas/Resources/Archives)")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="신뢰도 점수")
+    reasoning: str = Field(..., description="분류 이유 (한국어)")
+    detected_cues: List[str] = Field(default_factory=list, description="감지된 키워드 목록")
+
+
+
+__all__ = [
+        "ClassifyRequest",
+    "ClassifyResponse",
+    "ClassificationRequest",
+    "ClassificationResponse",
+    "MetadataClassifyRequest",
+    "HybridClassifyRequest",
+    "ParallelClassifyRequest",
+    "ClassificationFileMetadata",
+    "FileMetadataInput",
+    "ClassifyBatchRequest",
+    "ClassifyBatchResponse",
+    "ClassificationSaveRequest",
+    "ClassificationSearchRequest",
+    "PARAClassificationOutput",
+]
+

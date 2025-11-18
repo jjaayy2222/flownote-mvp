@@ -36,6 +36,9 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel, Field
 
+# 통합 모델 마이그레이션 임포트
+from backend.models import PARAClassificationOutput
+
 # 3. config import (3단계 fallback)
 try:
     # 1번째 시도: 절대 import
@@ -56,14 +59,6 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
-
-
-class PARAClassificationOutput(BaseModel):
-    """PARA 분류 결과 스키마"""
-    category: str = Field(description="PARA 카테고리 (Projects/Areas/Resources/Archives)")
-    confidence: float = Field(description="신뢰도 점수 (0.0-1.0)")
-    reasoning: str = Field(description="분류 이유 (한국어)")
-    detected_cues: List[str] = Field(description="감지된 키워드 목록")
 
 
 def escape_json_braces_complete(content: str) -> str:
