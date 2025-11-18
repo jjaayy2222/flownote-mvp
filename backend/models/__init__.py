@@ -87,7 +87,7 @@ __all__ = [
     "ClassifyBatchResponse",
     "ClassificationSaveRequest",
     "ClassificationSearchRequest",
-    "PARAClassificationOutput"
+    "PARAClassificationOutput",
     
     # User
     "Step1Input",
