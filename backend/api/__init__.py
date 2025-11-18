@@ -4,13 +4,7 @@
 API Models Package
 """
 
-"""
-backend/api/__init__.py
-"""
-
-# ==========================================
-# 1. Models import
-# ==========================================
+# Models import (backend.models에서 직접)
 from backend.models import (
     # Classification models
     ClassifyRequest,
@@ -20,7 +14,6 @@ from backend.models import (
     ParallelClassifyRequest,
     ClassifyResponse,
     ClassificationResponse,
-    #FileMetadata,
     FileMetadataInput,
     ClassifyBatchRequest,
     ClassifyBatchResponse,
@@ -28,11 +21,8 @@ from backend.models import (
     SearchRequest,
 )
 
-
-# ==========================================
-# 2. Conflict models import (올바른 경로!)
-# ==========================================
-from .models.conflict_models import (  
+# Conflict models (backend.models에서 직접)
+from backend.models import (
     ConflictType,
     ResolutionMethod,
     ResolutionStatus,
@@ -47,6 +37,7 @@ from .models.conflict_models import (
     ConflictResolveResponse,
 )
 
+
 __all__ = [
     # Classification
     "ClassifyRequest",
@@ -56,7 +47,6 @@ __all__ = [
     "ParallelClassifyRequest",
     "ClassifyResponse",
     "ClassificationResponse",
-    #"FileMetadata",
     "FileMetadataInput",
     "ClassifyBatchRequest",
     "ClassifyBatchResponse",
