@@ -2,13 +2,13 @@
 
 """
 API Models Package
+
+DEPRECATED: Conflict 모델들이 backend.models.conflict로 이동되었습니다.
 """
 
-# ==========================================
-# 1. Models import (올바른 경로!)
-# ==========================================
+
+# Classification models
 from backend.models.classification import (
-    # Classification models
     ClassifyRequest,
     ClassifyResponse,
     FileMetadataInput,
@@ -18,10 +18,8 @@ from backend.models.classification import (
     SearchRequest,
 )
 
-# ==========================================
-# 2. Conflict models import (올바른 경로!)
-# ==========================================
-from .conflict_models import (
+# Conflict models (re-export from backend.models)
+from backend.models.conflict import (
     ConflictType,
     ResolutionMethod,
     ResolutionStatus,
@@ -45,7 +43,8 @@ __all__ = [
     "ClassifyBatchResponse",
     "SaveClassificationRequest",
     "SearchRequest",
-    # Conflict
+    
+    # Conflict (re-export)
     "ConflictType",
     "ResolutionMethod",
     "ResolutionStatus",
