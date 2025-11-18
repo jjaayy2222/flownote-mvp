@@ -27,6 +27,7 @@ from .classification import (
     ClassifyBatchResponse,
     SaveClassificationRequest as ClassificationSaveRequest,  # 이름 충돌 방지
     SearchRequest as ClassificationSearchRequest,  # 이름 충돌 방지
+    PARAClassificationOutput
 )
 
 # User (Phase 2.2에서 추가됨)
@@ -86,6 +87,7 @@ __all__ = [
     "ClassifyBatchResponse",
     "ClassificationSaveRequest",
     "ClassificationSearchRequest",
+    "PARAClassificationOutput"
     
     # User
     "Step1Input",
