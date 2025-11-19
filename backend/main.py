@@ -48,16 +48,19 @@ app.add_middleware(
 # 라우터 등록
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-# 라우터 등록 (prefix 없이!!)
-logger.info("✅ api_router 등록 완료")
+# 라우터 등록
+logger.info("✅ 기본_router 등록 완료")
 
-app.include_router(classifier_router, prefix="/api/classifier", tags=["classifier"])
+# classifier_router
+app.include_router(classifier_router, prefix="/classifier", tags=["classifier"])
 logger.info("✅ classifier_router 등록 완료")
 
-app.include_router(onboarding_router, prefix="/api/onboarding", tags=["onboarding"])
+# onboarding_router
+app.include_router(onboarding_router, prefix="/onboarding", tags=["onboarding"])
 logger.info("✅ onboarding_router 등록 완료")
 
-app.include_router(conflict_router, prefix="/api/conflict", tags=["conflict"])
+# conflict_router
+app.include_router(conflict_router, prefix="/conflict", tags=["conflict"])
 logger.info("✅ conflict_router 등록 완료")
 
 
@@ -114,10 +117,10 @@ if __name__ == "__main__":
     logger.info("📚 문서: http://localhost:8000/docs")
 
     uvicorn.run(
-        app,
+        #app,
         "backend.main:app", 
         host="0.0.0.0", 
         port=8000, 
-        log_level="info", 
+        #log_level="info", 
         reload=True
         )
