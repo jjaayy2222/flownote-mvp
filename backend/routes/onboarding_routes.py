@@ -6,20 +6,24 @@ Onboarding Routes
 사용자 온보딩 플로우 관련 API 엔드포인트
 """
 
+import os
+import json
 import uuid
 import logging
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
 from datetime import datetime
 from typing import List
-import json
-import os
+
+from fastapi import FastAPI
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 # 클래스 마이그레이션 임포트 
 from backend.models.user import (
     Step1Input,
     Step2Input,
     OnboardingStatus,
+    UserProfile,
+    UserContext    
 )
 
 from backend.data_manager import DataManager
@@ -28,11 +32,13 @@ from backend.services.gpt_helper import get_gpt_helper      # 싱클톤 함수 �
 from backend.services.gpt_helper import GPT4oHelper         # 클래스 호출
 
 # API Router
-router = APIRouter(tags=["onboarding"])  
+router = APIRouter()
 
 # 인스턴스 생성
 data_manager = DataManager()
+
 gpt_helper = get_gpt_helper()           # 싱글톤
+
 
 logger = logging.getLogger(__name__)
 
@@ -224,6 +230,7 @@ async def onboarding_step3(user_id: str, goals: str):
     
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
 
 @router.post("/step4")
 async def onboarding_step4(user_id: str, areas: str):

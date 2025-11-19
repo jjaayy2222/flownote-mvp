@@ -35,7 +35,7 @@ from backend.models.conflict import (
 
 logger = logging.getLogger(__name__)
 
-#router = APIRouter(prefix="/api/classify", tags=["classification"])
+
 router = APIRouter()
 
 
@@ -87,7 +87,7 @@ async def classify_text(request: ClassifyRequest):
         # Step 3: 충돌 해결
         # ============================================================
         conflict_service = ConflictService()
-        conflict_result = conflict_service.resolve_conflict(
+        conflict_result = conflict_service._resolve_conflict_async(
             para_result=para_result,
             keyword_result=keyword_result,
             text=request.text
