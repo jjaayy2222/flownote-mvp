@@ -8,14 +8,15 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
-# 현재 구조 그대로 import
-from backend.routes.api_routes import router
+# 마이그레이션 모델 임포트
+from backend.models import (HealthCheckResponse, FileMetadata)
+
+from backend.routes.conflict_routes import router as conflict_router
 from backend.routes.classifier_routes import router as classifier_router
 from backend.routes.onboarding_routes import router as onboarding_router
-from backend.models import FileMetadata, HealthCheckResponse
 
 
 # 로깅 설정
@@ -29,13 +30,13 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="FlowNote API",
     description="PARA Classification + Conflict Resolution API",
-    version="3.0.0"
+    version="4.0.0",
 )
 
 # CORS 미들웨어 추가
 app.add_middleware(
     CORSMiddleware,
-    #allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],  # 명시적으로
+    # allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],  # 명시적으로
     # allow_origins=["http://localhost:3000"],  # React
     allow_origins=["*"],
     allow_credentials=True,
@@ -43,43 +44,62 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 라우터 등록 (각각 따로!)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 라우터 등록
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-# ✅ 라우터 등록 (prefix 없이!!)
-app.include_router(router)
+# 라우터 등록 (prefix 없이!!)
 logger.info("✅ api_router 등록 완료")
 
-#app.include_router(classifier_router, prefix="/api/classify") 
-app.include_router(classifier_router, prefix="/api/classifier")
+app.include_router(classifier_router, prefix="/api/classifier", tags=["classifier"])
 logger.info("✅ classifier_router 등록 완료")
 
-app.include_router(onboarding_router, prefix="/api/onboarding")
+app.include_router(onboarding_router, prefix="/api/onboarding", tags=["onboarding"])
 logger.info("✅ onboarding_router 등록 완료")
 
+app.include_router(conflict_router, prefix="/api/conflict", tags=["conflict"])
+logger.info("✅ conflict_router 등록 완료")
+
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 헬스체크
+# Health Check & Root
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-@app.get("/health", response_model=HealthCheckResponse)
+@app.get("/health", response_model=HealthCheckResponse, tags=["System"])
 async def health():
-    """서버 상태 확인"""
+    """
+    서버 상태 확인
+    
+    Returns:
+        HealthCheckResponse: 서버 상태 정보
+    """
     return HealthCheckResponse(
-        status="✅ API Server is running",
-        timestamp=datetime.now().isoformat()
+        status="healthy",
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        version="4.0.0"
     )
 
 
-@app.get("/")
+@app.get("/", tags=["System"])
 async def root():
-    """루트 엔드포인트"""
+    """
+    루트 엔드포인트
+    
+    Returns:
+        dict: API 정보
+    """
     return {
-        "message": "FlowNote API v3.0.0",
+        "name": "FlowNote API",
+        "version": "4.0.0",
         "docs": "/docs",
-        "health": "/health"
+        "health": "/health",
+        "routes": {
+            "classification": "/classify",
+            "conflict": "/conflicts",
+            "onboarding": "/onboarding"
+        }
     }
+
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -88,15 +108,16 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    
+
     logger.info("🚀 FlowNote API 시작...")
     logger.info("📍 http://localhost:8000")
     logger.info("📚 문서: http://localhost:8000/docs")
-    
+
     uvicorn.run(
         app,
-        host="0.0.0.0",
-        port=8000,
-        log_level="info"
-    )
-
+        "backend.main:app", 
+        host="0.0.0.0", 
+        port=8000, 
+        log_level="info", 
+        reload=True
+        )

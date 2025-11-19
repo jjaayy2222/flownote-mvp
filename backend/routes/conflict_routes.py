@@ -10,7 +10,6 @@ import datetime
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from backend.services.conflict_service import conflict_service
 from typing import List
 
 
@@ -162,13 +161,6 @@ async def classify_text(request: ClassifyRequest):
     except Exception as e:
         logger.error(f"❌ 분류 실패: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"분류 실패: {str(e)}")
-
-
-@router.get("/snapshots")
-async def get_snapshots():
-    """저장된 스냅샷 조회"""
-    return {"snapshots": conflict_service.get_snapshots()}
-
 
 @router.post("/resolve")
 async def resolve_conflicts(conflicts: List[ConflictRecord]) -> ConflictReport:

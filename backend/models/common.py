@@ -67,21 +67,23 @@ class SuccessResponse(BaseModel):
 
 class HealthCheckResponse(BaseModel):
     """
-    헬스 체크 응답
+    Health Check 응답
     
-    서버 상태 확인 응답
+    서버 상태 확인 엔드포인트의 응답 형식
     """
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "status": "healthy",
-                "timestamp": "2025-11-17T12:00:00"
+                "timestamp": "2025-11-17T12:00:00",
+                "version": "4.0.0"
             }
         }
     )
     
-    status: str = Field(default="healthy", description="서버 상태")
-    timestamp: str = Field(..., description="타임스탬프")
+    status: str = Field(..., description="서버 상태 (healthy/unhealthy)")
+    timestamp: str = Field(..., description="체크 시각")
+    version: Optional[str] = Field("4.0.0", description="API 버전")
 
 
 class FileMetadata(BaseModel):
