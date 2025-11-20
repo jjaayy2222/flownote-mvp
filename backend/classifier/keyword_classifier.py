@@ -18,10 +18,10 @@ import logging
 import os
 import sys
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import time
 from datetime import datetime
-import uuid  
+import uuid
 
 from pathlib import Path
 from dotenv import load_dotenv
@@ -61,17 +61,21 @@ from langchain_core.output_parsers import StrOutputParser
 
 try:
     from backend.config import ModelConfig
+
     logger_msg = "✅ ModelConfig loaded from backend.config"
 except ImportError:
     try:
         from config import ModelConfig
+
         logger_msg = "✅ ModelConfig loaded from config"
     except ImportError:
         logger_msg = "⚠️  Using os.getenv fallback"
+
         class ModelConfig:
             GPT4O_MINI_API_KEY = os.getenv("GPT4O_MINI_API_KEY")
             GPT4O_MINI_BASE_URL = os.getenv("GPT4O_MINI_BASE_URL")
             GPT4O_MINI_MODEL = os.getenv("GPT4O_MINI_MODEL", "gpt-4o-mini")
+
 
 logger = logging.getLogger(__name__)
 logger.info(logger_msg)
@@ -81,10 +85,11 @@ logger.info(logger_msg)
 # 5. KeywordClassifier 클래스
 # ============================================================
 
+
 class KeywordClassifier:
     """
     키워드 기반 분류기 (LLM 기반 - GPT-4o-mini)
-    
+
     ✅ 특징:
     - 비동기/동기 메서드 모두 지원
     - 사용자 컨텍스트 완전 지원
@@ -94,28 +99,29 @@ class KeywordClassifier:
 
     def __init__(self):
         """KeywordClassifier 초기화"""
-        
+
         # 고유 ID로 인스턴스 추적
         self.instance_id = str(uuid.uuid4())[:8]
-        self.created_at = datetime.now().strftime('%H:%M:%S')
-        
+        self.created_at = datetime.now().strftime("%H:%M:%S")
+
         self.llm = None
         self.chain = None
         self._initialize_llm()
         self._load_prompt()
-        
-        logger.info(f"✅ KeywordClassifier initialized (ID: {self.instance_id}, Time: {self.created_at})")
 
+        logger.info(
+            f"✅ KeywordClassifier initialized (ID: {self.instance_id}, Time: {self.created_at})"
+        )
 
     def _initialize_llm(self):
         """LLM 초기화 - 캐싱 없음"""
         try:
             # 매번 새로 연결하기
             api_key = ModelConfig.GPT4O_MINI_API_KEY
-            
+
             if not api_key:
                 raise ValueError("❌ GPT4O_MINI_API_KEY not set")
-            
+
             self.llm = ChatOpenAI(
                 api_key=api_key,
                 base_url=ModelConfig.GPT4O_MINI_BASE_URL,
@@ -123,171 +129,209 @@ class KeywordClassifier:
                 temperature=0.7,
                 max_tokens=600,
             )
-                        
+
             logger.info("✅ KeywordClassifier LLM 초기화 성공")
-            
+
         except Exception as e:
             logger.error(f"❌ LLM 초기화 실패: {e}")
             self.llm = None
 
-
     def _load_prompt(self):
         """프롬프트 파일 로드 및 Chain 생성
-        
+
         - 프롬프트 파일 그대로 사용하기
         - 템플릿 변수 모두 전달하기
         """
         try:
-            prompt_path = CLASSIFIER_DIR / "prompts" / "keyword_classification_prompt.txt"
-            
+            prompt_path = (
+                CLASSIFIER_DIR / "prompts" / "keyword_classification_prompt.txt"
+            )
+
             if not prompt_path.exists():
                 raise FileNotFoundError(f"프롬프트 파일 없음: {prompt_path}")
-            
+
             with open(prompt_path, "r", encoding="utf-8") as f:
                 template_content = f.read()
-            
+
             # 프롬프트 그대로 사용 (변수 이스케이프 처리)
             escaped_content = self._escape_prompt_braces(template_content)
-            
+
             # ChatPromptTemplate 생성
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", "You are a keyword extraction and classification expert. Always respond with valid JSON only."),
-                ("user", escaped_content)
-            ])
-            
+            prompt = ChatPromptTemplate.from_messages(
+                [
+                    (
+                        "system",
+                        "You are a keyword extraction and classification expert. Always respond with valid JSON only.",
+                    ),
+                    ("user", escaped_content),
+                ]
+            )
+
             # Chain 생성: Prompt → LLM → StrOutputParser
             if self.llm:
                 self.chain = prompt | self.llm | StrOutputParser()
-                logger.info(f"[{self.instance_id}] ✅ Chain 생성 성공 (프롬프트 파일 로드 완료)")
+                logger.info(
+                    f"[{self.instance_id}] ✅ Chain 생성 성공 (프롬프트 파일 로드 완료)"
+                )
             else:
-                logger.warning(f"[{self.instance_id}] ⚠️  LLM 미초기화로 Chain 생성 불가")
+                logger.warning(
+                    f"[{self.instance_id}] ⚠️  LLM 미초기화로 Chain 생성 불가"
+                )
         except Exception as e:
             logger.error(f"❌ 프롬프트 로드 실패: {e}")
             self.chain = None
 
-
     def _escape_prompt_braces(self, content: str) -> str:
         """
         프롬프트의 중괄호 이스케이프
-        
+
         - {text}, {occupation}, {areas}, {interests}, {context_keywords} 변수 유지
         - 나머지 {}는 {{ }}로 이스케이프
         """
         # 템플릿 변수 목록
-        template_vars = ['{text}', '{occupation}', '{areas}', '{interests}', '{context_keywords}']
-        
+        template_vars = [
+            "{text}",
+            "{occupation}",
+            "{areas}",
+            "{interests}",
+            "{context_keywords}",
+        ]
+
         lines = []
-        
-        for line in content.split('\n'):
-            
+
+        for line in content.split("\n"):
+
             # 템플릿 변수가 있는 라인은 그대로 유지
             if any(var in line for var in template_vars):
                 lines.append(line)
             else:
                 # 나머지 라인의 { } 를 {{ }} 로 변환
                 # 단, 이미 이스케이프된 {{ }} 는 건드리지 않음
-                escaped_line = line.replace('{', '{{').replace('}', '}}')
+                escaped_line = line.replace("{", "{{").replace("}", "}}")
                 # {{{{ → {{ 로 중복 이스케이프 방지
-                escaped_line = escaped_line.replace('{{{{', '{{').replace('}}}}', '}}')
+                escaped_line = escaped_line.replace("{{{{", "{{").replace("}}}}", "}}")
                 lines.append(escaped_line)
-        
-        return '\n'.join(lines)
+
+        return "\n".join(lines)
 
     # 추가
     def _prepare_prompt_variables(
-        self, 
-        text: str, 
-        user_context: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+        self, text: str, user_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, str]:
         """프롬프트 템플릿 변수 준비
 
-            - 모든 변수를 문자열로 변환해서 전달!
+        - 모든 변수를 문자열로 변환해서 전달!
         """
         # 기본값 설정
         occupation = "일반 사용자"
         areas = []
         interests = []
         context_keywords = {}
-        
+
         # 사용자 컨텍스트에서 추출
         if user_context:
-            occupation = user_context.get('occupation', '일반 사용자')
-            areas = user_context.get('areas', [])
-            interests = user_context.get('interests', [])
-            
+            occupation = user_context.get("occupation", "일반 사용자")
+            areas = user_context.get("areas", [])
+            interests = user_context.get("interests", [])
+
             # context_keywords 생성 (areas 기반)
             for area in areas:
                 context_keywords[area] = [area, f"{area} 관련", f"{area} 업무"]
-        
+
         # 모든 변수를 문자열로 변환하기
         return {
-            "text": str(text[:1000]),                               # 최대 1000자
+            "text": str(text[:1000]),  # 최대 1000자
             "occupation": str(occupation),
-            "areas": ", ".join(areas) if areas else "없음",          # 리스트 → 문자열
+            "areas": ", ".join(areas) if areas else "없음",  # 리스트 → 문자열
             "interests": ", ".join(interests) if interests else "없음",
-            "context_keywords": json.dumps(context_keywords, ensure_ascii=False)  # dict → JSON 문자열
+            "context_keywords": json.dumps(
+                context_keywords, ensure_ascii=False
+            ),  # dict → JSON 문자열
         }
 
     # ============================================================
     # 비동기 메서드 (FastAPI에서 사용!)
     # ============================================================
-    async def aclassify(self, text: str, user_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def aclassify(
+        self, text: str, user_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """텍스트 분류 (비동기 버전)
-        
+
         - 모든 프롬프트 변수 전달 (context_keywords 포함!)
         - 비동기 LLM 호출
         - 구조화된 출력 파싱 (JSON)
         - 견고한 에러 핸들링
         """
         start_time = time.time()
-        
+
         # 빈 텍스트 확인
         if not text or not text.strip():
             logger.warning(f"[{self.instance_id}] ⚠️  빈 텍스트 입력")
             return self._create_empty_response()
-        
+
         # Chain 미초기화 확인
         if self.chain is None:
             logger.warning(f"[{self.instance_id}] ⚠️  Chain 미초기화, Fallback")
             return self._fallback_classify(text)
-        
+
         try:
             # Step 1: 사용자 컨텍스트에서 키워드 생성
             context_keywords = []
             if user_context:
                 # areas에서 키워드 추출
-                if user_context.get('areas'):
-                    context_keywords.extend(user_context['areas'])
+                if user_context.get("areas"):
+                    context_keywords.extend(user_context["areas"])
                 # interests에서 키워드 추출
-                if user_context.get('interests'):
-                    context_keywords.extend(user_context['interests'])
-            
+                if user_context.get("interests"):
+                    context_keywords.extend(user_context["interests"])
+
             # 중복 제거 및 문자열 변환
             context_keywords = list(set(context_keywords)) if context_keywords else []
-            context_keywords_str = ", ".join(context_keywords) if context_keywords else "없음"
-            
+            context_keywords_str = (
+                ", ".join(context_keywords) if context_keywords else "없음"
+            )
+
             # Step 2: 프롬프트 변수 준비 (모든 필수 변수 포함!)
             prompt_vars = {
                 "text": text,
-                "occupation": user_context.get("occupation", "일반 사용자") if user_context else "일반 사용자",
-                "areas": ", ".join(user_context.get("areas", [])) if user_context and user_context.get("areas") else "없음",
-                "interests": ", ".join(user_context.get("interests", [])) if user_context and user_context.get("interests") else "없음",
-                "context_keywords": context_keywords_str  # ✅ 누락된 변수 추가!
+                "occupation": (
+                    user_context.get("occupation", "일반 사용자")
+                    if user_context
+                    else "일반 사용자"
+                ),
+                "areas": (
+                    ", ".join(user_context.get("areas", []))
+                    if user_context and user_context.get("areas")
+                    else "없음"
+                ),
+                "interests": (
+                    ", ".join(user_context.get("interests", []))
+                    if user_context and user_context.get("interests")
+                    else "없음"
+                ),
+                "context_keywords": context_keywords_str,  # ✅ 누락된 변수 추가!
             }
-            
+
             logger.info(f"[{self.instance_id}] 🔍 Calling LLM (async)...")
             logger.info(f"[{self.instance_id}]   - Text length: {len(text)}")
-            logger.info(f"[{self.instance_id}]   - Occupation: {prompt_vars['occupation']}")
+            logger.info(
+                f"[{self.instance_id}]   - Occupation: {prompt_vars['occupation']}"
+            )
             logger.info(f"[{self.instance_id}]   - Areas: {prompt_vars['areas']}")
-            logger.info(f"[{self.instance_id}]   - Context Keywords: {prompt_vars['context_keywords']}")
-            
+            logger.info(
+                f"[{self.instance_id}]   - Context Keywords: {prompt_vars['context_keywords']}"
+            )
+
             # Step 3: 비동기 LLM 호출
             response = await self.chain.ainvoke(prompt_vars)
-            
+
             # Step 4: 응답 타입 확인 및 로깅
             logger.info(f"[{self.instance_id}] 📦 RAW LLM Response:")
             logger.info(f"[{self.instance_id}]   - Type: {type(response)}")
-            logger.info(f"[{self.instance_id}]   - Content preview: {str(response)[:200]}")
-            
+            logger.info(
+                f"[{self.instance_id}]   - Content preview: {str(response)[:200]}"
+            )
+
             # Step 5: 응답 파싱 (타입에 따라 분기)
             if isinstance(response, dict):
                 # 이미 dict 형태로 파싱된 경우 (StructuredOutputParser 사용 시)
@@ -301,30 +345,40 @@ class KeywordClassifier:
                 response_text = str(response)
                 json_text = self._extract_json_from_response(response_text)
                 result = json.loads(json_text)
-            
+
             # Step 6: tags 필드 검증 및 정규화
-            raw_tags = result.get('tags', [])
-            logger.info(f"[{self.instance_id}] 📦 Extracted tags: {raw_tags} (type: {type(raw_tags)})")
-            
+            raw_tags = result.get("tags", [])
+            logger.info(
+                f"[{self.instance_id}] 📦 Extracted tags: {raw_tags} (type: {type(raw_tags)})"
+            )
+
             if not raw_tags:
-                #logger.warning(f"[{self.instance_id}] ⚠️  tags 없음, 기본값 설정")
+                # logger.warning(f"[{self.instance_id}] ⚠️  tags 없음, 기본값 설정")
                 # 태그 없으면 텍스트에서 강제 추출
-                logger.warning(f"[{self.instance_id}] ⚠️  LLM이 빈 태그 반환, 강제 추출 시도")
+                logger.warning(
+                    f"[{self.instance_id}] ⚠️  LLM이 빈 태그 반환, 강제 추출 시도"
+                )
                 raw_tags = self._extract_fallback_tags(text, user_context)
-                
+
                 # 타입 검증
                 if isinstance(raw_tags, str):
-                    raw_tags = [tag.strip() for tag in raw_tags.split(",") if tag.strip()]
-                
+                    raw_tags = [
+                        tag.strip() for tag in raw_tags.split(",") if tag.strip()
+                    ]
+
                 # 최소 1개 보장
-                final_tags = [str(tag).strip() for tag in raw_tags if tag and str(tag).strip()]
+                final_tags = [
+                    str(tag).strip() for tag in raw_tags if tag and str(tag).strip()
+                ]
                 if not final_tags:
                     final_tags = self._extract_fallback_tags(text, user_context)
-                
+
                 logger.info(f"[{self.instance_id}] ✅ 강제 추출 완료: (async):")
                 logger.info(f"[{self.instance_id}]   - Tags: {final_tags}")
-                logger.info(f"[{self.instance_id}]   - Confidence: {result.get('confidence', 0.0)}")
-                
+                logger.info(
+                    f"[{self.instance_id}]   - Confidence: {result.get('confidence', 0.0)}"
+                )
+
                 return {
                     "tags": final_tags,
                     "confidence": result.get("confidence", 0.0),
@@ -332,84 +386,101 @@ class KeywordClassifier:
                     "reasoning": result.get("reasoning", ""),
                     "user_context_matched": result.get("user_context_matched", False),
                     "processing_time": f"{time.time() - start_time:.2f}s",
-                    "instance_id": self.instance_id
+                    "instance_id": self.instance_id,
                 }
-                
+
             elif isinstance(raw_tags, str):
                 # 문자열인 경우 리스트로 변환
-                if ',' in raw_tags:
-                    tags = [tag.strip() for tag in raw_tags.split(',') if tag.strip()]
+                if "," in raw_tags:
+                    tags = [tag.strip() for tag in raw_tags.split(",") if tag.strip()]
                 else:
                     tags = [raw_tags.strip()] if raw_tags.strip() else ["기타"]
                 logger.info(f"[{self.instance_id}] 🔄 문자열 → 리스트 변환: {tags}")
-                
+
             elif isinstance(raw_tags, list):
                 # 리스트 검증 및 정리
-                tags = [str(tag).strip() for tag in raw_tags if tag and str(tag).strip()]
+                tags = [
+                    str(tag).strip() for tag in raw_tags if tag and str(tag).strip()
+                ]
                 if not tags:
                     tags = ["기타"]
                 logger.info(f"[{self.instance_id}] ✅ 리스트 검증 완료: {len(tags)}개")
             else:
-                logger.warning(f"[{self.instance_id}] ⚠️  예상치 못한 타입: {type(raw_tags)}")
+                logger.warning(
+                    f"[{self.instance_id}] ⚠️  예상치 못한 타입: {type(raw_tags)}"
+                )
                 tags = ["기타"]
-            
+
             # Step 7: confidence 검증
-            confidence = result.get('confidence', 0.5)
+            confidence = result.get("confidence", 0.5)
             try:
                 confidence = float(confidence)
                 # 0~1 범위로 제한
                 confidence = max(0.0, min(1.0, confidence))
             except (ValueError, TypeError):
-                logger.warning(f"[{self.instance_id}] ⚠️  잘못된 confidence 값: {confidence}")
+                logger.warning(
+                    f"[{self.instance_id}] ⚠️  잘못된 confidence 값: {confidence}"
+                )
                 confidence = 0.5
-            
+
             # Step 8: 사용자 컨텍스트 매칭 확인
             user_context_matched = False
-            if user_context and user_context.get('areas'):
-                matched_areas = [area for area in user_context['areas'] 
-                            if any(area.lower() in tag.lower() for tag in tags)]
+            if user_context and user_context.get("areas"):
+                matched_areas = [
+                    area
+                    for area in user_context["areas"]
+                    if any(area.lower() in tag.lower() for tag in tags)
+                ]
                 user_context_matched = len(matched_areas) > 0
-            
+
             # Step 9: 최종 결과 조립
             processing_time = round(time.time() - start_time, 2)
-            
+
             final_result = {
                 "tags": tags,
                 "confidence": confidence,
                 "user_context_matched": user_context_matched,
-                "user_areas": user_context.get('areas', []) if user_context else [],
+                "user_areas": user_context.get("areas", []) if user_context else [],
                 "instance_id": self.instance_id,
-                "processing_time": f"{processing_time}s"
+                "processing_time": f"{processing_time}s",
             }
-            
+
             logger.info(f"[{self.instance_id}] ✅ 분류 완료 (async):")
             logger.info(f"[{self.instance_id}]   - Tags: {tags[:5]}")  # 처음 5개만 표시
             logger.info(f"[{self.instance_id}]   - Confidence: {confidence}")
             logger.info(f"[{self.instance_id}]   - Time: {processing_time}s")
-            
+
             return final_result
-            
+
         except json.JSONDecodeError as e:
             logger.error(f"[{self.instance_id}] ❌ JSON 파싱 실패: {e}")
-            logger.error(f"[{self.instance_id}]   - Response preview: {str(response)[:500] if 'response' in locals() else 'N/A'}")
-            return self._fallback_classify(text)
-        
-        except Exception as e:
-            logger.error(f"[{self.instance_id}] ❌ 분류 오류 (async): {type(e).__name__}: {e}", exc_info=True)
+            logger.error(
+                f"[{self.instance_id}]   - Response preview: {str(response)[:500] if 'response' in locals() else 'N/A'}"
+            )
             return self._fallback_classify(text)
 
+        except Exception as e:
+            logger.error(
+                f"[{self.instance_id}] ❌ 분류 오류 (async): {type(e).__name__}: {e}",
+                exc_info=True,
+            )
+            return self._fallback_classify(text)
 
     # ============================================================
     # 동기 메서드 (테스트용)
     # ============================================================
-    def classify(self, text: str, user_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """ 키워드 분류 (동기 버전)"""
-        
+    def classify(
+        self, text: str, user_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """키워드 분류 (동기 버전)"""
+
         start_time = datetime.now()
-        
+
         # 로그로 호출 추적
-        logger.info(f"🔍 [{self.instance_id}] CLASSIFY 시작: text_len={len(text)}, has_context={bool(user_context)}")
-        
+        logger.info(
+            f"🔍 [{self.instance_id}] CLASSIFY 시작: text_len={len(text)}, has_context={bool(user_context)}"
+        )
+
         # 빈 텍스트 확인
         if not text or not text.strip():
             logger.warning(f"[{self.instance_id}] ⚠️  빈 텍스트 입력")
@@ -420,121 +491,125 @@ class KeywordClassifier:
             logger.warning(f"[{self.instance_id}] ⚠️  Chain 미초기화, Fallback")
             return self._fallback_classify(text)
 
-        try:            
+        try:
             # 프롬프트 변수 준비
             prompt_vars = self._prepare_prompt_variables(text, user_context)
             logger.info(f"[{self.instance_id}] 🔍 Calling LLM (sync)...")
-            
+
             # 동기 호출
             response_text = self.chain.invoke(prompt_vars)
-            
+
             json_text = self._extract_json_from_response(response_text)
             result = json.loads(json_text)
-            
+
             # tags 보장
-            if 'tags' not in result or not result['tags']:
-                result['tags'] = ['기타']
-            
-            if 'confidence' not in result:
-                result['confidence'] = 0.5
-            
-            result['user_context_matched'] = bool(user_context and user_context.get('areas'))
-            result['user_areas'] = user_context.get('areas', []) if user_context else []
-            
+            if "tags" not in result or not result["tags"]:
+                result["tags"] = ["기타"]
+
+            if "confidence" not in result:
+                result["confidence"] = 0.5
+
+            result["user_context_matched"] = bool(
+                user_context and user_context.get("areas")
+            )
+            result["user_areas"] = user_context.get("areas", []) if user_context else []
+
             elapsed = (datetime.now() - start_time).total_seconds()
-            result['processing_time'] = f"{elapsed:.2f}s"
-            result['instance_id'] = self.instance_id
-            
+            result["processing_time"] = f"{elapsed:.2f}s"
+            result["instance_id"] = self.instance_id
+
             logger.info(f"[{self.instance_id}] ✅ 분류 완료 (sync):")
             logger.info(f"[{self.instance_id}]   - Tags: {result.get('tags', [])}")
-                        
+
             return result
-            
+
         except Exception as e:
             logger.error(f"[{self.instance_id}] ❌ 분류 오류 (sync): {e}")
             return self._fallback_classify(text)
 
-
     def _extract_json_from_response(self, response_text: str) -> str:
         """LLM 응답에서 JSON 추출"""
         response_text = response_text.strip()
-        
+
         # Step 1: ```json ... ``` 형식
         if "```json" in response_text:
-            match = re.search(r'```json\s*(.*?)\s*```', response_text, re.DOTALL)
+            match = re.search(r"```json\s*(.*?)\s*```", response_text, re.DOTALL)
             if match:
                 return match.group(1).strip()
-        
+
         # Step 2: ``` ... ``` 형식
         if "```" in response_text:
-            match = re.search(r'```\s*(.*?)\s*```', response_text, re.DOTALL)
+            match = re.search(r"```\s*(.*?)\s*```", response_text, re.DOTALL)
             if match:
                 return match.group(1).strip()
-        
+
         # Step 3: { ... } JSON 객체 찾기
-        match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        match = re.search(r"\{.*\}", response_text, re.DOTALL)
         if match:
             return match.group(0)
-        
+
         # Step 4: 실패 - 전체 반환
         logger.warning(f"[{self.instance_id}] ⚠️  JSON 포맷 찾기 실패")
         return response_text
 
-
     def _fallback_classify(self, text: str) -> Dict[str, Any]:
         """Fallback 분류 (LLM 실패 시)
-    
+
         간단한 키워드 매칭으로 대체
         """
-        
+
         logger.info(f"[{self.instance_id}] 🔄 Fallback 분류 시작...")
-        
+
         try:
             # 텍스트 정규화
             normalized_text = text.lower()
 
             # 기본 키워드 사전 (예시)
             keyword_dict = {
-            "개발": ["개발", "코드", "프로그래밍", "api", "버그", "디버깅"],
-            "디자인": ["디자인", "ui", "ux", "figma", "색상", "레이아웃"],
-            "회의": ["회의", "미팅", "논의", "결정", "안건"],
-            "기획": ["기획", "전략", "계획", "목표", "방향성"],
-            "마케팅": ["마케팅", "광고", "홍보", "캠페인", "고객"],
-            "데이터": ["데이터", "분석", "통계", "차트", "지표"],
+                "개발": ["개발", "코드", "프로그래밍", "api", "버그", "디버깅"],
+                "디자인": ["디자인", "ui", "ux", "figma", "색상", "레이아웃"],
+                "회의": ["회의", "미팅", "논의", "결정", "안건"],
+                "기획": ["기획", "전략", "계획", "목표", "방향성"],
+                "마케팅": ["마케팅", "광고", "홍보", "캠페인", "고객"],
+                "데이터": ["데이터", "분석", "통계", "차트", "지표"],
             }
 
             # 키워드 매칭
             matched_dict = {}
-        
+
             for category, keywords in keyword_dict.items():
                 match_count = sum(1 for kw in keywords if kw in normalized_text)
                 if match_count > 0:
                     matched_dict[category] = match_count
-            
+
             # 점수 기준 정렬 및 상위 3개 선택
             if matched_dict:
-                sorted_categories = sorted(matched_dict.items(), key=lambda x: x[1], reverse=True)
-                tags = [cat for cat, _ in sorted_categories[:3]]    # 수정: dict_keys 슬라이싱 오류 해결
-                confidence = 0.3                                    # Fallback이므로 낮은 신뢰도
+                sorted_categories = sorted(
+                    matched_dict.items(), key=lambda x: x[1], reverse=True
+                )
+                tags = [
+                    cat for cat, _ in sorted_categories[:3]
+                ]  # 수정: dict_keys 슬라이싱 오류 해결
+                confidence = 0.3  # Fallback이므로 낮은 신뢰도
             else:
                 tags = ["기타"]
                 confidence = 0.1
-            
+
             logger.info(f"[{self.instance_id}] 🔄 Fallback 분류: {tags}")
-            
+
             return {
-                "tags": tags,                           # 항상 존재
-                "confidence": confidence,               # 신뢰도
+                "tags": tags,  # 항상 존재
+                "confidence": confidence,  # 신뢰도
                 "user_context_matched": False,
                 "user_areas": [],
                 "matched_keywords": matched_dict,
                 "instance_id": self.instance_id,
                 "processing_time": "0.0s",
                 "method": "fallback",
-                #"para_hints": {},
-                #"is_fallback": True,
+                # "para_hints": {},
+                # "is_fallback": True,
             }
-        
+
         except Exception as e:
             logger.error(f"[{self.instance_id}] ❌ Fallback 분류 실패: {e}")
             return {
@@ -544,9 +619,49 @@ class KeywordClassifier:
                 "user_areas": [],
                 "instance_id": self.instance_id,
                 "processing_time": "0.0s",
-                "error": str(e)
+                "error": str(e),
             }
 
+    def _extract_fallback_tags(
+        self, text: str, user_context: Optional[Dict[str, Any]] = None
+    ) -> List[str]:
+        """텍스트에서 태그 강제 추출 (Fallback)"""
+        try:
+            found_tags = []
+
+            # 1. 사용자 컨텍스트 활용
+            if user_context:
+                areas = user_context.get("areas", [])
+                interests = user_context.get("interests", [])
+
+                # 텍스트에 포함된 area/interest 찾기
+                for item in areas + interests:
+                    if item and str(item) in text:
+                        found_tags.append(str(item))
+
+            # 2. 기본 키워드 매칭
+            keyword_dict = {
+                "개발": ["개발", "코드", "프로그래밍", "api", "버그", "디버깅"],
+                "디자인": ["디자인", "ui", "ux", "figma", "색상", "레이아웃"],
+                "회의": ["회의", "미팅", "논의", "결정", "안건"],
+                "기획": ["기획", "전략", "계획", "목표", "방향성"],
+                "마케팅": ["마케팅", "광고", "홍보", "캠페인", "고객"],
+                "데이터": ["데이터", "분석", "통계", "차트", "지표"],
+            }
+
+            normalized_text = text.lower()
+            for category, keywords in keyword_dict.items():
+                if any(kw in normalized_text for kw in keywords):
+                    found_tags.append(category)
+
+            # 중복 제거
+            found_tags = list(set(found_tags))
+
+            return found_tags if found_tags else ["기타"]
+
+        except Exception as e:
+            logger.warning(f"[{self.instance_id}] ⚠️ 태그 강제 추출 실패: {e}")
+            return ["기타"]
 
     def _create_empty_response(self) -> Dict[str, Any]:
         """빈 응답"""
@@ -560,9 +675,8 @@ class KeywordClassifier:
             "user_areas": [],
             "instance_id": self.instance_id,
             "processing_time": "0.0s",
-            "error": "empty_input"
+            "error": "empty_input",
         }
-
 
     def get_statistics(self) -> Dict[str, Any]:
         """분류기 통계"""
@@ -582,35 +696,34 @@ class KeywordClassifier:
 
 if __name__ == "__main__":
     import asyncio
-    
+
     logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s"
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
     )
-    
-    print("\n" + "="*70)
+
+    print("\n" + "=" * 70)
     print("KeywordClassifier 테스트 (프롬프트 파일 그대로 사용!)")
-    print("="*70)
-    
+    print("=" * 70)
+
     # 동기 테스트
     classifier1 = KeywordClassifier()
-    
+
     test_texts = [
         "오늘 회의가 있고, 저녁에 스터디 모임이 있습니다.",
         "일기를 쓰면서 오늘 하루를 돌아봅니다.",
         "오늘 헬스장에 가서 운동했습니다.",
     ]
-    
+
     user_context = {
         "occupation": "소프트웨어 엔지니어",
         "areas": ["코드 품질 관리", "기술 역량 개발"],
-        "interests": ["AI", "백엔드 개발"]
+        "interests": ["AI", "백엔드 개발"],
     }
-    
-    print("\n" + "="*70)
+
+    print("\n" + "=" * 70)
     print("동기 테스트 (사용자 컨텍스트 포함)")
-    print("="*70)
-    
+    print("=" * 70)
+
     for i, text in enumerate(test_texts, 1):
         print(f"\n📝 테스트 {i}: {text}")
         result = classifier1.classify(text, user_context=user_context)
@@ -620,13 +733,13 @@ if __name__ == "__main__":
         print(f"👤 User matched: {result.get('user_context_matched')}")
 
     # 비동기 테스트
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("비동기 테스트")
-    print("="*70)
-    
+    print("=" * 70)
+
     async def async_test():
         classifier2 = KeywordClassifier()  # 새 인스턴스!
-        
+
         for i, text in enumerate(test_texts, 1):
             print(f"\n📝 비동기 테스트 {i}: {text}")
             result = await classifier2.aclassify(text, user_context=user_context)
@@ -635,7 +748,7 @@ if __name__ == "__main__":
             print(f"🆔 Instance: {result.get('instance_id')}")
             print(f"⏱️  Time: {result.get('processing_time')}")
             print(f"👤 User areas: {result.get('user_areas')}")
-    
+
     asyncio.run(async_test())
 
 ##############################################################################
@@ -975,7 +1088,6 @@ if __name__ == "__main__":
 """
 
 
-
 """test_result_6 → ⭕️ 
 
     python -m backend.classifier.keyword_classifier
@@ -1080,8 +1192,6 @@ if __name__ == "__main__":
     👤 User areas: ['코드 품질 관리', '기술 역량 개발']
 
 """
-
-
 
 
 """test_result_7 → ⭕️ 

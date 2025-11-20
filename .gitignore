@@ -133,6 +133,7 @@ web_ui/package-lock.json
 
 # 테스트 불필요 파일들
 # tests/tests_phase_0/
+tests/verify_refactor.py
 tests/test_imports.py
 tests/conftest.py
 tests/para_agent2.py
@@ -191,6 +192,6 @@ git_history_backup.txt
 backups/
 *.backup/
 
-# 임시
-docs/P/refactoring/phase3/test_results_phase3.txt
 
+# 임시
+docs/P/refactoring/test_results_phase3.txt
