@@ -12,9 +12,6 @@ import logging
 from backend.services.classification_service import ClassificationService
 from backend.services.onboarding_service import OnboardingService
 
-# 로깅 설정 (CLI에서는 간단하게 출력)
-logging.basicConfig(level=logging.WARNING)
-
 
 class FlowNoteCLI:
     """FlowNote CLI - MCP 통합 시뮬레이션"""
@@ -60,7 +57,7 @@ class FlowNoteCLI:
             result = await self.classification_service.classify(
                 text=text,
                 user_id=user_id,
-                file_id=path_obj.name,
+                file_id=str(path_obj.resolve()),
                 occupation=user_context.get("occupation"),
                 areas=user_context.get("areas"),
             )
@@ -139,4 +136,6 @@ async def main():
 
 
 if __name__ == "__main__":
+    # 로깅 설정 (CLI 실행 시에만 적용)
+    logging.basicConfig(level=logging.WARNING)
     asyncio.run(main())
