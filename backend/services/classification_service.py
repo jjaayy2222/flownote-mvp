@@ -8,12 +8,18 @@
 """
 
 import logging
+import json
+import csv
+from pathlib import Path
+from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 # 모델 및 의존성 임포트
 from backend.models import ClassifyResponse
 from backend.services.conflict_service import ConflictService
 from backend.data_manager import DataManager
+from backend.classifier.para_agent import run_para_agent
+from backend.classifier.keyword_classifier import KeywordClassifier
 
 # 추후 Step 3에서 실제 로직 구현 시 필요한 임포트들
 # from backend.classifier.para_agent import run_para_agent
@@ -139,9 +145,6 @@ class ClassificationService:
 
     async def _run_para_classification(self, text: str, metadata: dict) -> dict:
         """PARA 분류 실행"""
-        from backend.classifier.para_agent import run_para_agent
-        from datetime import datetime
-
         try:
             result = await run_para_agent(text=text, metadata=metadata)
             logger.info(f"✅ PARA: {result.get('category')}")
@@ -156,8 +159,6 @@ class ClassificationService:
 
     async def _extract_keywords(self, text: str, user_context: dict) -> dict:
         """키워드 추출"""
-        from backend.classifier.keyword_classifier import KeywordClassifier
-
         classifier = KeywordClassifier()  # 매번 새 인스턴스 (상태 없음)
         result = await classifier.aclassify(text=text, user_context=user_context)
 
@@ -194,11 +195,70 @@ class ClassificationService:
         confidence: float,
         snapshot_id: str,
     ) -> dict:
-        """결과 저장 (CSV + JSON) (Private)"""
-        # TODO: [Step 4] 상세 구현 예정
-        # 현재는 로그만 남김
-        return {
-            "csv_saved": False,
-            "json_saved": False,
-            "message": "Step 4에서 구현 예정",
-        }
+        """결과 저장 (CSV + JSON)"""
+        try:
+            # 경로 설정 (프로젝트 루트 기준)
+            PROJECT_ROOT = Path(__file__).parent.parent.parent
+            LOG_DIR = PROJECT_ROOT / "data" / "log"
+            CSV_DIR = PROJECT_ROOT / "data" / "classifications"
+
+            LOG_DIR.mkdir(parents=True, exist_ok=True)
+            CSV_DIR.mkdir(parents=True, exist_ok=True)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+
+            # 1. CSV 로그
+            csv_path = CSV_DIR / "classification_log.csv"
+            file_exists = csv_path.exists() and csv_path.stat().st_size > 0
+
+            with open(csv_path, "a", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(
+                    f,
+                    fieldnames=[
+                        "timestamp",
+                        "user_id",
+                        "file_id",
+                        "category",
+                        "confidence",
+                        "keyword_tags",
+                    ],
+                )
+                if not file_exists:
+                    writer.writeheader()
+                writer.writerow(
+                    {
+                        "timestamp": datetime.now().isoformat(),
+                        "user_id": user_id,
+                        "file_id": file_id,
+                        "category": final_category,
+                        "confidence": round(confidence, 3),
+                        "keyword_tags": ",".join(keyword_tags),
+                    }
+                )
+
+            # 2. JSON 로그
+            json_path = LOG_DIR / f"classification_{timestamp}.json"
+            json_data = {
+                "timestamp": timestamp,
+                "user_id": user_id,
+                "file_id": file_id,
+                "category": final_category,
+                "keyword_tags": keyword_tags,
+                "confidence": confidence,
+                "snapshot_id": snapshot_id,
+            }
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(json_data, f, ensure_ascii=False, indent=2)
+
+            logger.info(f"✅ 로그 저장: CSV + JSON")
+
+            return {
+                "csv_saved": True,
+                "json_saved": True,
+                "csv_path": str(csv_path),
+                "json_path": json_path.name,
+            }
+
+        except Exception as e:
+            logger.warning(f"⚠️ 로그 저장 실패 (무시 가능): {e}")
+            return {"error": str(e)}
