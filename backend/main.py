@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 import uuid
 
 # 마이그레이션 모델 임포트
-from backend.models import (HealthCheckResponse, FileMetadata)
+from backend.models import HealthCheckResponse, FileMetadata
 
 from backend.routes.conflict_routes import router as conflict_router
 from backend.routes.classifier_routes import router as classifier_router
@@ -61,25 +61,26 @@ logger.info("✅ onboarding_router 등록 완료")
 
 # conflict_router
 app.include_router(conflict_router, prefix="/conflict", tags=["conflict"])
-logger.info("✅ conflict_router 등록 완료")
+logger.info("✅ conflict_router 등록 완료 (resolve 전용)")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Health Check & Root
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+
 @app.get("/health", response_model=HealthCheckResponse, tags=["System"])
 async def health():
     """
     서버 상태 확인
-    
+
     Returns:
         HealthCheckResponse: 서버 상태 정보
     """
     return HealthCheckResponse(
         status="healthy",
         timestamp=datetime.now(timezone.utc).isoformat(),
-        version="4.0.0"
+        version="4.0.0",
     )
 
 
@@ -87,7 +88,7 @@ async def health():
 async def root():
     """
     루트 엔드포인트
-    
+
     Returns:
         dict: API 정보
     """
@@ -99,10 +100,9 @@ async def root():
         "routes": {
             "classification": "/classify",
             "conflict": "/conflicts",
-            "onboarding": "/onboarding"
-        }
+            "onboarding": "/onboarding",
+        },
     }
-
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -117,10 +117,10 @@ if __name__ == "__main__":
     logger.info("📚 문서: http://localhost:8000/docs")
 
     uvicorn.run(
-        #app,
-        "backend.main:app", 
-        host="0.0.0.0", 
-        port=8000, 
-        #log_level="info", 
-        reload=True
-        )
+        # app,
+        "backend.main:app",
+        host="0.0.0.0",
+        port=8000,
+        # log_level="info",
+        reload=True,
+    )
