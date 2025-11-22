@@ -159,6 +159,12 @@ flownote-mvp/
 │   ├── search_history.py               # 검색 히스토리
 │   ├── data_manager.py                 # 데이터 관리
 │   ├── export.py                       # 마크다운 내보내기
+│   ├── cli.py                          # CLI Interface (MCP 준비) ✨ NEW
+│   │
+│   ├── services/                       # 비즈니스 로직 (Service Layer) ✨ NEW
+│   │   ├── classification_service.py
+│   │   ├── onboarding_service.py
+│   │   └── conflict_service.py
 │   │
 │   ├── classifier/
 │   │   ├── para_classifier.py          # PARA 분류 로직
@@ -290,6 +296,17 @@ streamlit run streamlit/pages/dashboard.py
 2. `Tab 5: 메타데이터` - 상세 정보 확인
 3. `Dashboard 페이지` - 실시간 대시보드
 
+### 6.5 **Step 5: CLI 사용 (New!)**
+터미널에서 직접 파일을 분류할 수 있습니다. (MCP 통합 준비)
+
+```bash
+# 단일 파일 분류
+python -m backend.cli classify "path/to/file.txt" [user_id]
+
+# 디렉토리 일괄 분류
+python -m backend.cli batch "path/to/directory" [user_id]
+```
+
 ---
 
 ## 7. 📈 개발 히스토리
@@ -323,7 +340,7 @@ streamlit run streamlit/pages/dashboard.py
 
 ## 8. 🗺️ 로드맵
 
-### ✅ 완료된 기능 (v3.5)
+### ✅ 완료된 기능 (v4.0)
 - [x] 스마트 온보딩 (GPT-4o 영역 추천)
 - [x] AI 기반 PARA 자동 분류
 - [x] 맥락 반영 분류 (사용자 직업/관심)
@@ -332,10 +349,12 @@ streamlit run streamlit/pages/dashboard.py
 - [x] 메타데이터 관리
 - [x] 검색 히스토리
 - [x] 마크다운 내보내기
+- [x] Service Layer 리팩토링 (Thin Router) ✨
+- [x] CLI 인터페이스 (MCP 준비) ✨
 
-### 🚧 진행 중 (v4.0, ~11월 말)
+### 🚧 진행 중 (v5.0, ~12월)
+- [ ] MCP 서버 구현 (Claude Desktop 연동)
 - [ ] 분류 정확도 개선 (Few-shot learning)
-- [ ] 배치 처리 기능
 - [ ] 에러 처리 강화
 - [ ] 태그 자동 생성
 - [ ] 유사 문서 추천
