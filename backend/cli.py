@@ -37,6 +37,14 @@ class FlowNoteCLI:
             with open(file_path, "r", encoding="utf-8") as f:
                 text = f.read()
 
+            # 보안: 절대 경로 노출 방지를 위해 해시값 사용
+            import hashlib
+
+            file_hash = hashlib.md5(
+                f"{path_obj.name}_{text[:100]}".encode()
+            ).hexdigest()[:8]
+            safe_file_id = f"{path_obj.name}_{file_hash}"
+
             # 사용자 컨텍스트 가져오기
             user_context = {}
             if user_id:
@@ -57,7 +65,7 @@ class FlowNoteCLI:
             result = await self.classification_service.classify(
                 text=text,
                 user_id=user_id,
-                file_id=str(path_obj.resolve()),
+                file_id=safe_file_id,
                 occupation=user_context.get("occupation"),
                 areas=user_context.get("areas"),
             )
