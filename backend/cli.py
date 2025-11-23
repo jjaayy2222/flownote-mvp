@@ -33,16 +33,32 @@ class FlowNoteCLI:
                 print(f"❌ 파일을 찾을 수 없습니다: {file_path}")
                 return None
 
-            # 파일 읽기
-            with open(file_path, "r", encoding="utf-8") as f:
-                text = f.read()
+            if not path_obj.is_file():
+                print(f"❌ 파일이 아닙니다: {file_path}")
+                return None
 
-            # 보안: 절대 경로 노출 방지를 위해 해시값 사용
+            # 파일 읽기 (인코딩 에러 처리)
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    text = f.read()
+            except UnicodeDecodeError:
+                print(
+                    f"❌ 텍스트 파일이 아니거나 인코딩을 지원하지 않습니다: {file_path}"
+                )
+                return None
+            except Exception as e:
+                print(f"❌ 파일 읽기 오류: {e}")
+                return None
+
+            # 보안: 절대 경로 노출 방지를 위해 해시값 사용 (SHA256)
             import hashlib
 
-            file_hash = hashlib.md5(
-                f"{path_obj.name}_{text[:100]}".encode()
-            ).hexdigest()[:8]
+            # 파일 내용 + 파일명 조합으로 고유성 확보
+            content_preview = text[:100]  # 처음 100자만 해시에 사용
+            hash_input = f"{path_obj.name}_{content_preview}".encode("utf-8")
+            file_hash = hashlib.sha256(hash_input).hexdigest()[
+                :12
+            ]  # 12자리로 충돌 최소화
             safe_file_id = f"{path_obj.name}_{file_hash}"
 
             # 사용자 컨텍스트 가져오기
