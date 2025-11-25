@@ -133,6 +133,8 @@ web_ui/package-lock.json
 
 # 테스트 불필요 파일들
 # tests/tests_phase_0/
+tests/
+tests/__init__.py
 tests/test_conflict_cases_scenarios/
 tests/test_conflict_cases_scenarios/test_conflict_cases_scenarios_runner.md
 tests/verify_refactor.py
