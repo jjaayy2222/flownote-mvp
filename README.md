@@ -234,7 +234,43 @@ flownote-mvp/
 
 ---
 
-## 5. 🚀 설치 및 실행
+## 5. 🧪 테스트 및 품질 관리
+
+FlowNote는 엄격한 테스트와 품질 관리를 통해 안정성을 보장합니다.
+
+### 5.1 테스트 실행
+
+```bash
+# 전체 테스트 실행
+pytest
+
+# 커버리지 리포트 생성
+pytest --cov=backend --cov-report=term-missing
+```
+
+### 5.2 테스트 커버리지 (Phase 5 Step 2 기준)
+
+| 모듈 | 커버리지 | 비고 |
+|------|----------|------|
+| **전체** | **51%** | 목표: 80% |
+| `utils.py` | 100% | 유틸리티 함수 |
+| `parallel_processor.py` | 100% | 병렬 처리 |
+| `classification_service.py` | 89% | 핵심 로직 |
+| `onboarding_service.py` | 72% | 사용자 관리 |
+
+### 5.3 CI/CD 파이프라인
+
+GitHub Actions를 통해 코드가 푸시될 때마다 자동으로 다음 작업이 수행됩니다:
+1. **환경 설정**: Python 3.11
+2. **의존성 설치**: `requirements.txt`, `requirements-dev.txt`
+3. **테스트 실행**: `pytest`
+4. **커버리지 리포팅**: Codecov 업로드
+
+[![codecov](https://codecov.io/gh/jjaayy2222/flownote-mvp/graph/badge.svg?token=YOUR_TOKEN)](https://codecov.io/gh/jjaayy2222/flownote-mvp)
+
+---
+
+## 6. 🚀 설치 및 실행
 
 ### 5.1 사전 요구사항
 - **Python**: 3.11+
