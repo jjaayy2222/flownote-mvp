@@ -28,6 +28,13 @@ jobs:
         if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
         
     - name: Run tests with pytest
+      env:
+        GPT4O_MINI_API_KEY: "mock-key"
+        GPT4O_API_KEY: "mock-key"
+        EMBEDDING_API_KEY: "mock-key"
+        GPT41_API_KEY: "mock-key"
+        CLAUDE_4_SONNET_API_KEY: "mock-key"
+        CLAUDE_35_HAIKU_API_KEY: "mock-key"
       run: |
         pytest --cov=backend --cov-report=xml --cov-report=term
         
