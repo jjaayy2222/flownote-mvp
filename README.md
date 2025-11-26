@@ -16,6 +16,13 @@
 
 <br>
 
+<p align="center">
+  <img src="https://github.com/jjaayy2222/flownote-mvp/actions/workflows/ci.yml/badge.svg" alt="CI" />
+  <img src="https://codecov.io/gh/jjaayy2222/flownote-mvp/branch/main/graph/badge.svg" alt="codecov" />
+</p>
+
+<br>
+
 ---
 
 ## 📖 목차
@@ -26,10 +33,14 @@
 4. [프로젝트 구조](#4-프로젝트-구조)
 5. [설치 및 실행](#5-설치-및-실행)
 6. [사용 방법](#6-사용-방법)
-7. [개발 히스토리](#7-개발-히스토리)
-8. [로드맵](#8-로드맵)
-9. [FAQ](#9-faq)
-10. [기여하기](#10-기여하기)
+7. [테스팅](#7-테스팅)
+8. [개발 히스토리](#8-개발-히스토리)
+9. [로드맵](#9-로드맵)
+10. [FAQ](#10-faq)
+11. [기여하기](#11-기여하기)
+12. [라이선스](#12-라이선스)
+13. [개발자](#13-개발자)
+14. [감사의 말](#14-감사의-말)
 
 ---
 
@@ -309,7 +320,54 @@ python -m backend.cli batch "path/to/directory" [user_id]
 
 ---
 
-## 7. 📈 개발 히스토리
+## 7. 🧪 테스팅
+
+### 7.1 테스트 실행 방법
+
+프로젝트의 모든 테스트를 실행하려면 다음 단계를 따라주세요:
+
+```bash
+# 1. 가상환경 활성화 (이미 활성화되어 있다면 건너뛰기)
+source venv/bin/activate
+
+# 2. 개발용 의존성 설치 (pytest, pytest-cov, codecov 등)
+pip install -r requirements-dev.txt
+
+# 3. 테스트 실행
+pytest
+
+# 또는 상세한 출력으로 실행
+pytest -vv --tb=short
+
+# 특정 디렉토리의 테스트만 실행
+pytest tests/unit/          # 단위 테스트만
+pytest tests/integration/   # 통합 테스트만
+```
+
+### 7.2 커버리지 확인 방법
+
+코드 커버리지를 확인하려면 다음과 같이 실행하세요:
+
+```bash
+# 터미널에서 커버리지 보고서 확인
+pytest --cov=backend --cov-report=term-missing
+
+# HTML 보고서 생성 (브라우저에서 확인 가능)
+pytest --cov=backend --cov-report=html
+# → htmlcov/index.html 파일이 생성됩니다
+
+# XML 보고서 생성 (CI/CD용)
+pytest --cov=backend --cov-report=xml --cov-report=term
+```
+
+### 7.3 커버리지 목표
+- **프로젝트 전체 커버리지 목표**: 80%
+- **패치 커버리지 목표**: 70%
+- **커버리지 제외 항목**: tests/, streamlit/, temp/, backups/
+
+---
+
+## 8. 📈 개발 히스토리
 
 ### Issue별 개발 진행도
 
