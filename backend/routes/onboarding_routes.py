@@ -36,6 +36,12 @@ router = APIRouter()
 onboarding_service = OnboardingService()
 
 
+# 헬퍼 함수: 서비스 에러 처리 헬퍼
+def handle_service_error(result):
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result["message"])
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 📌 Section 1: 사용자 프로필 생성
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -59,8 +65,7 @@ async def onboarding_step1(input_data: Step1Input):
         occupation=input_data.occupation, name=input_data.name
     )
 
-    if result["status"] == "error":
-        raise HTTPException(status_code=400, detail=result["message"])
+    handle_service_error(result)
 
     # 다음 단계 안내 추가 (기존 응답 호환성 유지)
     result["next_step"] = (
@@ -91,8 +96,7 @@ async def suggest_areas(user_id: str = Query(...), occupation: str = Query(...))
     """
     result = onboarding_service.suggest_areas(user_id, occupation)
 
-    if result["status"] == "error":
-        raise HTTPException(status_code=400, detail=result["message"])
+    handle_service_error(result)
 
     return result
 
@@ -120,8 +124,7 @@ async def save_context(input_data: Step2Input):
         user_id=input_data.user_id, selected_areas=input_data.selected_areas
     )
 
-    if result["status"] == "error":
-        raise HTTPException(status_code=400, detail=result["message"])
+    handle_service_error(result)
 
     return result
 
