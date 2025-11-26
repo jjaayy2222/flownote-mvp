@@ -149,8 +149,8 @@ async def classify_file_main(
         if areas:
             try:
                 areas_list = json.loads(areas)
-            except json.JSONDecodeError:
-                logger.warning("Invalid JSON format for areas")
+            except json.JSONDecodeError as exc:
+                logger.warning("Invalid JSON format for areas: %s", exc)
                 areas_list = []
 
         interests_list = []

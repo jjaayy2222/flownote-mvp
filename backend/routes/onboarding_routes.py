@@ -15,6 +15,7 @@ Refactored:
 """
 
 import logging
+from typing import Dict, Any
 from fastapi import APIRouter, HTTPException, Query
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -37,9 +38,21 @@ onboarding_service = OnboardingService()
 
 
 # 헬퍼 함수: 서비스 에러 처리 헬퍼
-def handle_service_error(result):
-    if result["status"] == "error":
-        raise HTTPException(status_code=400, detail=result["message"])
+def handle_service_error(result: Dict[str, Any]) -> None:
+    """
+    서비스 결과에서 에러를 확인하고 HTTPException을 발생시킵니다.
+
+    Args:
+        result: 서비스 메서드의 반환 dict (status, message 필드 포함)
+
+    Raises:
+        HTTPException: result["status"]가 "error"인 경우 400 에러 발생
+    """
+    if result.get("status") == "error":
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("message", "요청 처리 중 오류가 발생했습니다."),
+        )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
