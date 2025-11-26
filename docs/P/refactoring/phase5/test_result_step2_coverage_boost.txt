@@ -1,0 +1,185 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp
+configfile: pytest.ini
+plugins: anyio-4.11.0, langsmith-0.4.37, asyncio-1.3.0, cov-7.0.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 93 items
+
+tests/e2e/test_api_e2e.py::test_api_health PASSED                        [  1%]
+tests/e2e/test_api_e2e.py::test_classification_flow PASSED               [  2%]
+tests/e2e/test_api_e2e.py::test_metadata_public PASSED                   [  3%]
+tests/e2e/test_api_e2e.py::test_dashboard_integration PASSED             [  4%]
+tests/e2e/test_api_e2e_complete.py::TestEndToEndWorkflow::test_01_file_upload PASSED [  5%]
+tests/e2e/test_api_e2e_complete.py::TestEndToEndWorkflow::test_02_file_classification PASSED [  6%]
+tests/e2e/test_api_e2e_complete.py::TestEndToEndWorkflow::test_03_conflict_detection PASSED [  7%]
+tests/e2e/test_api_e2e_complete.py::TestEndToEndWorkflow::test_04_conflict_resolution PASSED [  8%]
+tests/e2e/test_api_e2e_complete.py::TestEndToEndWorkflow::test_05_dashboard_integration PASSED [  9%]
+tests/e2e/test_api_e2e_complete.py::TestEndToEndWorkflow::test_00_complete_e2e_workflow PASSED [ 10%]
+tests/e2e/test_full_flow.py::test_full_onboarding_and_classification_flow PASSED [ 11%]
+tests/integration/routes/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_routes_py_import PASSED [ 12%]
+tests/integration/routes/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_models_py_import PASSED [ 13%]
+tests/integration/routes/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_dashboard_endpoint_import PASSED [ 15%]
+tests/integration/routes/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_dashboard_status_endpoint PASSED [ 16%]
+tests/integration/routes/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_dashboard_metrics_endpoint PASSED [ 17%]
+tests/integration/routes/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_dashboard_keywords_endpoint PASSED [ 18%]
+tests/integration/routes/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_classify_endpoint_import PASSED [ 19%]
+tests/integration/routes/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_search_endpoint_import PASSED [ 20%]
+tests/integration/routes/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_metadata_endpoint_import PASSED [ 21%]
+tests/integration/routes/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_all_files_integration PASSED [ 22%]
+tests/integration/routes/test_api_dashboard.py::TestDashboardEndpoints::test_status_endpoint PASSED [ 23%]
+tests/integration/routes/test_api_dashboard.py::TestDashboardEndpoints::test_metrics_endpoint PASSED [ 24%]
+tests/integration/routes/test_api_dashboard.py::TestDashboardEndpoints::test_keywords_endpoint PASSED [ 25%]
+tests/integration/routes/test_api_dashboard.py::TestDashboardEndpoints::test_keywords_with_custom_params PASSED [ 26%]
+tests/integration/services/test_classification_flow.py::test_1_keyword_classifier PASSED [ 27%]
+tests/integration/services/test_classification_flow.py::test_2_conflict_service PASSED [ 29%]
+tests/integration/services/test_classification_flow.py::test_3_db_storage PASSED [ 30%]
+tests/integration/services/test_classification_flow.py::test_4_classification_log PASSED [ 31%]
+tests/integration/services/test_classification_flow.py::test_5_api_endpoint PASSED [ 32%]
+tests/integration/services/test_gpt41_connection.py::test_gpt41_connection PASSED [ 33%]
+tests/integration/services/test_metadata_integration.py::test_metadata_with_auto_resolution PASSED [ 34%]
+tests/integration/services/test_metadata_integration.py::test_metadata_with_conflict PASSED [ 35%]
+tests/integration/services/test_metadata_integration.py::test_statistics PASSED [ 36%]
+tests/integration/services/test_onboarding_classification_flow.py::test_onboarding_to_classification_file_flow PASSED [ 37%]
+tests/integration/services/test_prompt_conflict.py::test_prompt_conflict PASSED [ 38%]
+tests/unit/classifiers/test_conflict_resolver.py::test_clear_winner_para PASSED [ 39%]
+tests/unit/classifiers/test_conflict_resolver.py::test_requires_user_review PASSED [ 40%]
+tests/unit/classifiers/test_conflict_resolver.py::test_keyword_wins PASSED [ 41%]
+tests/unit/classifiers/test_para_classifier.py::test_classifier PASSED   [ 43%]
+tests/unit/models/test_models.py::test_classify_request_validation PASSED [ 44%]
+tests/unit/models/test_models.py::test_classify_response_validation PASSED [ 45%]
+tests/unit/models/test_models.py::test_step1_input_validation PASSED     [ 46%]
+tests/unit/models/test_models.py::test_conflict_record_validation PASSED [ 47%]
+tests/unit/services/test_chunking_embedding.py::test_full_pipeline PASSED [ 48%]
+tests/unit/services/test_classification_service.py::test_classification_service_orchestration PASSED [ 49%]
+tests/unit/services/test_classification_service.py::test_save_results PASSED [ 50%]
+tests/unit/services/test_conflict_service.py::test_classify_text_success PASSED [ 51%]
+tests/unit/services/test_conflict_service.py::test_classify_text_error_handling PASSED [ 52%]
+tests/unit/services/test_context_injector.py::test_context_injector PASSED [ 53%]
+tests/unit/services/test_faiss.py::test_search_pipeline PASSED           [ 54%]
+tests/unit/services/test_gpt_helper.py::test_suggest_areas_success PASSED [ 55%]
+tests/unit/services/test_gpt_helper.py::test_suggest_areas_json_error_fallback PASSED [ 56%]
+tests/unit/services/test_gpt_helper.py::test_generate_keywords_success PASSED [ 58%]
+tests/unit/services/test_gpt_helper.py::test_classify_text_success PASSED [ 59%]
+tests/unit/services/test_gpt_helper.py::test_classify_text_error PASSED  [ 60%]
+tests/unit/services/test_parallel_processor.py::test_classify_parallel_success PASSED [ 61%]
+tests/unit/services/test_parallel_processor.py::test_classify_parallel_error PASSED [ 62%]
+tests/unit/services/test_vision_helper.py::TestVisionCodeGenerator::test_generator_initialization PASSED [ 63%]
+tests/unit/services/test_vision_helper.py::TestVisionCodeGenerator::test_model_name_is_gpt41 PASSED [ 64%]
+tests/unit/services/test_vision_helper.py::TestVisionCodeGenerator::test_encode_image_file_not_found PASSED [ 65%]
+tests/unit/services/test_vision_helper.py::TestVisionCodeGenerator::test_encode_image_with_valid_file SKIPPEDt_images/test.png) [ 66%]
+tests/unit/services/test_vision_helper.py::TestVisionCodeGenerator::test_generate_streamlit_code_file_not_found PASSED [ 67%]
+tests/unit/services/test_vision_helper.py::TestVisionCodeGenerator::test_generate_streamlit_code_response_structure SKIPPEDt_images/test.png) [ 68%]
+tests/unit/services/test_vision_helper.py::TestVisionCodeGenerator::test_extract_streamlit_components PASSED [ 69%]
+tests/unit/services/test_vision_helper.py::TestVisionCodeGenerator::test_generate_from_url_response_structure PASSED [ 70%]
+tests/unit/test_backend_validators.py::TestFileValidator::test_init_default_values PASSED [ 72%]
+tests/unit/test_backend_validators.py::TestFileValidator::test_init_custom_values PASSED [ 73%]
+tests/unit/test_backend_validators.py::TestFileValidator::test_validate_file_size_empty_file PASSED [ 74%]
+tests/unit/test_backend_validators.py::TestFileValidator::test_validate_file_size_too_large PASSED [ 75%]
+tests/unit/test_backend_validators.py::TestFileValidator::test_validate_file_size_valid PASSED [ 76%]
+tests/unit/test_backend_validators.py::TestFileValidator::test_validate_extension_invalid PASSED [ 77%]
+tests/unit/test_backend_validators.py::TestFileValidator::test_validate_extension_valid PASSED [ 78%]
+tests/unit/test_backend_validators.py::TestFileValidator::test_validate_file_not_exists PASSED [ 79%]
+tests/unit/test_backend_validators.py::TestFileValidator::test_validate_file_success PASSED [ 80%]
+tests/unit/test_backend_validators.py::TestQueryValidator::test_init_default_values PASSED [ 81%]
+tests/unit/test_backend_validators.py::TestQueryValidator::test_validate_query_empty PASSED [ 82%]
+tests/unit/test_backend_validators.py::TestQueryValidator::test_validate_query_none PASSED [ 83%]
+tests/unit/test_backend_validators.py::TestQueryValidator::test_validate_query_whitespace_only PASSED [ 84%]
+tests/unit/test_backend_validators.py::TestQueryValidator::test_validate_query_too_short PASSED [ 86%]
+tests/unit/test_backend_validators.py::TestQueryValidator::test_validate_query_too_long PASSED [ 87%]
+tests/unit/test_backend_validators.py::TestQueryValidator::test_validate_query_valid PASSED [ 88%]
+tests/unit/test_imports.py::test_backend_models_import PASSED            [ 89%]
+tests/unit/test_imports.py::test_backend_api_models_import PASSED        [ 90%]
+tests/unit/test_imports.py::test_backend_api_init_import PASSED          [ 91%]
+tests/unit/test_imports.py::test_classifier_routes_import PASSED         [ 92%]
+tests/unit/test_imports.py::test_metadata_import PASSED                  [ 93%]
+tests/unit/test_utils.py::test_count_tokens PASSED                       [ 94%]
+tests/unit/test_utils.py::test_read_file_content PASSED                  [ 95%]
+tests/unit/test_utils.py::test_format_file_size PASSED                   [ 96%]
+tests/unit/test_utils.py::test_estimate_cost PASSED                      [ 97%]
+tests/unit/test_utils.py::test_load_pdf PASSED                           [ 98%]
+tests/unit/test_utils.py::test_save_to_markdown PASSED                   [100%]
+
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+tests/integration/services/test_gpt41_connection.py::test_gpt41_connection
+  /Users/jay/.pyenv/versions/3.11.10/envs/myenv/lib/python3.11/site-packages/_pytest/python.py:163: PytestReturnNotNoneWarning: Expected None, but tests/integration/services/test_gpt41_connection.py::test_gpt41_connection returned False, which will be an error in a future version of pytest.  Did you mean to use `assert` instead of `return`?
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+______________ coverage: platform darwin, python 3.11.10-final-0 _______________
+
+Name                                               Stmts   Miss  Cover   Missing
+--------------------------------------------------------------------------------
+backend/__init__.py                                    1      0   100%
+backend/api/__init__.py                                3      0   100%
+backend/api/endpoints/__init__.py                      4      0   100%
+backend/api/endpoints/classify.py                      5      1    80%   12
+backend/api/endpoints/conflict_resolver.py            71     71     0%   3-197
+backend/api/endpoints/conflict_resolver_agent.py     165    165     0%   9-430
+backend/api/endpoints/dashboard.py                    31      6    81%   19-21, 34, 46, 56
+backend/api/endpoints/metadata.py                      5      1    80%   12
+backend/api/endpoints/search.py                        5      1    80%   12
+backend/api/models.py                                  4      4     0%   7-21
+backend/api/models/__init__.py                         3      0   100%
+backend/api/routes.py                                  6      0   100%
+backend/chunking.py                                   35     13    63%   20, 50-66
+backend/classifier/__init__.py                         2      0   100%
+backend/classifier/conflict_resolver.py               38      2    95%   136, 141
+backend/classifier/context_injector.py               109     62    43%   52-61, 88-91, 99, 104, 109, 114, 120-122, 137-153, 169-201, 207-220, 233-236
+backend/classifier/keyword_classifier.py             309    175    43%   66-77, 123, 135-137, 151, 177-182, 233-239, 269-270, 274-275, 283, 286, 329-453, 456-460, 486-487, 491-492, 502-524, 532-553, 613-615, 629-664, 668, 683, 698-752
+backend/classifier/langchain_integration.py          208    114    45%   47-58, 75-109, 125, 255-261, 290, 297-299, 358-363, 400-460, 466-555
+backend/classifier/metadata_classifier.py             37     37     0%   7-91
+backend/classifier/para_agent.py                      77     28    64%   39-41, 49-54, 62-86, 94-104, 112-124, 155, 170, 175, 181-194
+backend/classifier/para_agent_wrapper.py              21     12    43%   17-32, 43-49
+backend/classifier/para_classifier.py                 83     52    37%   86-87, 99-131, 148-196, 200-204, 208-210, 214, 218, 222-223, 228-249
+backend/classifier/snapshot_manager.py                38     12    68%   27, 69, 73-76, 80-86, 97
+backend/cli.py                                        89     89     0%   6-165
+backend/config.py                                    118     43    64%   29-37, 89, 98-100, 107, 111, 113, 129-131, 138, 140, 147-176, 223, 238-245
+backend/dashboard/__init__.py                          0      0   100%
+backend/dashboard/dashboard_core.py                   13      0   100%
+backend/data_manager.py                              167     80    52%   44-46, 50-51, 55-57, 80, 82, 88-92, 96-99, 110-114, 126-129, 140, 157-158, 181-182, 188-195, 201-204, 225-227, 240-254, 260-270, 291-331
+backend/database/__init__.py                           2      0   100%
+backend/database/connection.py                        96     44    54%   67-69, 73-88, 99-101, 113-115, 119-124, 134-136, 140-145, 155-157, 164-166, 176-178, 183-184, 187, 190
+backend/database/metadata_schema.py                   52     17    67%   24-28, 32-36, 40-44, 48-49, 64, 73, 75, 79-83, 116
+backend/embedding.py                                  33     14    58%   27, 49-70
+backend/exceptions.py                                 12     12     0%   10-43
+backend/export.py                                     28     28     0%   7-68
+backend/faiss_search.py                               78     36    54%   48, 51, 55, 78, 110-111, 123-182
+backend/main.py                                       33      6    82%   95, 113-119
+backend/metadata.py                                   95     60    37%   33-39, 46-47, 111, 123-127, 136-148, 161-229
+backend/models/__init__.py                             5      0   100%
+backend/models/classification.py                      78      0   100%
+backend/models/common.py                              43      0   100%
+backend/models/conflict.py                            81      0   100%
+backend/models/user.py                                32      0   100%
+backend/modules/__init__.py                            3      0   100%
+backend/modules/pdf_helper.py                         26     21    19%   23-44, 57-62
+backend/modules/vision_helper.py                      59     34    42%   65-66, 97-148, 166-167, 211-267, 281-296
+backend/routes/__init__.py                             0      0   100%
+backend/routes/api_models.py                          22     22     0%   18-75
+backend/routes/classifier_routes.py                   40     16    60%   83-96, 131-134, 138-141, 158-160
+backend/routes/conflict_routes.py                     20      8    60%   42-49, 55
+backend/routes/onboarding_routes.py                   32      4    88%   57, 80, 100, 118
+backend/search_history.py                             93     93     0%   9-353
+backend/services/__init__.py                           0      0   100%
+backend/services/classification_service.py            81      9    89%   128-130, 168, 170, 227, 262-264
+backend/services/conflict_service.py                  71     19    73%   25-35, 99, 196-199, 212, 216, 220, 224-225
+backend/services/gpt_helper.py                       130     43    67%   25-29, 57-60, 75, 124-125, 152-153, 194-196, 271-274, 357-392
+backend/services/onboarding_service.py                53     15    72%   58-60, 83, 96-98, 127, 138-140, 162, 180-182
+backend/services/parallel_processor.py                23      0   100%
+backend/utils.py                                      42      0   100%
+backend/validators.py                                 88     32    64%   68-69, 108, 113, 150, 190-229, 240-252
+--------------------------------------------------------------------------------
+TOTAL                                               3098   1501    52%
+================== 91 passed, 2 skipped, 4 warnings in 18.11s ==================

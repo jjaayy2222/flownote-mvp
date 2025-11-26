@@ -29,4 +29,9 @@ jobs:
         
     - name: Run tests with pytest
       run: |
-        pytest
+        pytest --cov=backend --cov-report=xml --cov-report=term
+        
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}

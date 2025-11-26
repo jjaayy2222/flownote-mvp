@@ -1,4 +1,4 @@
-# tests/unit/test_validators.py
+# tests/unit/test_backend_validators.py
 
 import pytest
 import os
@@ -236,5 +236,43 @@ backend/validators.py                                 88     36    59%   68-69, 
 --------------------------------------------------------------------------------
 TOTAL                                               3098   2309    25%
 ============================== 22 passed in 1.33s ==============================
+
+"""
+
+
+"""두번째 수정 후 test_result
+
+tail -30 docs/P/refactoring/phase5/test_result_step2_coverage_boost.txt
+
+backend/exceptions.py                                 12     12     0%   10-43
+backend/export.py                                     28     28     0%   7-68
+backend/faiss_search.py                               78     36    54%   48, 51, 55, 78, 110-111, 123-182
+backend/main.py                                       33      6    82%   95, 113-119
+backend/metadata.py                                   95     60    37%   33-39, 46-47, 111, 123-127, 136-148, 161-229
+backend/models/__init__.py                             5      0   100%
+backend/models/classification.py                      78      0   100%
+backend/models/common.py                              43      0   100%
+backend/models/conflict.py                            81      0   100%
+backend/models/user.py                                32      0   100%
+backend/modules/__init__.py                            3      0   100%
+backend/modules/pdf_helper.py                         26     21    19%   23-44, 57-62
+backend/modules/vision_helper.py                      59     34    42%   65-66, 97-148, 166-167, 211-267, 281-296
+backend/routes/__init__.py                             0      0   100%
+backend/routes/api_models.py                          22     22     0%   18-75
+backend/routes/classifier_routes.py                   40     16    60%   83-96, 131-134, 138-141, 158-160
+backend/routes/conflict_routes.py                     20      8    60%   42-49, 55
+backend/routes/onboarding_routes.py                   32      4    88%   57, 80, 100, 118
+backend/search_history.py                             93     93     0%   9-353
+backend/services/__init__.py                           0      0   100%
+backend/services/classification_service.py            81      9    89%   128-130, 168, 170, 227, 262-264
+backend/services/conflict_service.py                  71     19    73%   25-35, 99, 196-199, 212, 216, 220, 224-225
+backend/services/gpt_helper.py                       130     43    67%   25-29, 57-60, 75, 124-125, 152-153, 194-196, 271-274, 357-392
+backend/services/onboarding_service.py                53     15    72%   58-60, 83, 96-98, 127, 138-140, 162, 180-182
+backend/services/parallel_processor.py                23      0   100%
+backend/utils.py                                      42      0   100%
+backend/validators.py                                 88     32    64%   68-69, 108, 113, 150, 190-229, 240-252
+--------------------------------------------------------------------------------
+TOTAL                                               3098   1501    52%
+================== 91 passed, 2 skipped, 4 warnings in 18.11s ==================
 
 """
