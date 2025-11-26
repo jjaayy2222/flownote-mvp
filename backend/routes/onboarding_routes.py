@@ -44,10 +44,16 @@ onboarding_service = OnboardingService()
 @router.post("/step1", response_model=dict, tags=["Onboarding", "User Setup", "Step 1"])
 async def onboarding_step1(input_data: Step1Input):
     """
-    Step 1: 사용자 직업 입력
+    Step 1: 사용자 직업 입력 및 프로필 생성
 
-    Features:
-    - OnboardingService를 통해 사용자 생성
+    사용자의 이름과 직업을 입력받아 초기 프로필을 생성합니다.
+    생성된 user_id는 이후 단계에서 계속 사용됩니다.
+
+    - **occupation**: 사용자 직업 (예: 개발자, 디자이너)
+    - **name**: 사용자 이름 (선택)
+
+    Returns:
+        dict: 생성된 사용자 정보 (user_id, occupation 등)
     """
     result = onboarding_service.create_user(
         occupation=input_data.occupation, name=input_data.name
@@ -72,7 +78,16 @@ async def onboarding_step1(input_data: Step1Input):
 @router.get("/suggest-areas", tags=["Onboarding", "AI Suggestion", "Step 2"])
 async def suggest_areas(user_id: str = Query(...), occupation: str = Query(...)):
     """
-    Step 2: 직업 기반 영역 추천
+    Step 2: 직업 기반 관심 영역 추천 (AI)
+
+    GPT-4o를 사용하여 입력된 직업에 적합한 PARA Areas(책임 영역)를 추천합니다.
+    사용자는 이 중에서 자신의 관심사를 선택하게 됩니다.
+
+    - **user_id**: 사용자 ID
+    - **occupation**: 직업
+
+    Returns:
+        dict: 추천된 영역 리스트 (suggested_areas)
     """
     result = onboarding_service.suggest_areas(user_id, occupation)
 
@@ -90,7 +105,16 @@ async def suggest_areas(user_id: str = Query(...), occupation: str = Query(...))
 @router.post("/save-context", tags=["Onboarding", "Context", "Step 3"])
 async def save_context(input_data: Step2Input):
     """
-    Step 3: 사용자가 선택한 영역 저장
+    Step 3: 사용자 컨텍스트 저장 및 온보딩 완료
+
+    사용자가 선택한 관심 영역을 저장하고, 이를 바탕으로 분류 컨텍스트를 생성합니다.
+    이 단계가 완료되면 온보딩이 종료됩니다.
+
+    - **user_id**: 사용자 ID
+    - **selected_areas**: 사용자가 선택한 영역 리스트
+
+    Returns:
+        dict: 저장 결과 및 생성된 컨텍스트 키워드
     """
     result = onboarding_service.save_user_context(
         user_id=input_data.user_id, selected_areas=input_data.selected_areas
@@ -110,7 +134,14 @@ async def save_context(input_data: Step2Input):
 @router.get("/status/{user_id}", tags=["Onboarding", "Status"])
 async def get_status(user_id: str):
     """
-    온보딩 완료 여부 확인
+    온보딩 상태 확인
+
+    특정 사용자의 온보딩 완료 여부와 현재 저장된 정보를 조회합니다.
+
+    - **user_id**: 사용자 ID
+
+    Returns:
+        dict: 온보딩 상태 (is_completed, occupation, areas 등)
     """
     result = onboarding_service.get_user_status(user_id)
 
