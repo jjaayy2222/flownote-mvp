@@ -1,0 +1,94 @@
+export PYENV_VERSION=myenv && pytest
+
+<truncated 72 lines>
+tests/unit/services/test_vision_helper.py::TestVisionCodeGenerator::test_generate_streamlit_code_response_structure SKIPPEDt_images/test.png) [ 90%]
+tests/unit/services/test_vision_helper.py::TestVisionCodeGenerator::test_extract_streamlit_components PASSED [ 91%]
+tests/unit/services/test_vision_helper.py::TestVisionCodeGenerator::test_generate_from_url_response_structure PASSED [ 92%]
+tests/unit/test_imports.py::test_backend_models_import PASSED            [ 94%]
+tests/unit/test_imports.py::test_backend_api_models_import PASSED        [ 95%]
+tests/unit/test_imports.py::test_backend_api_init_import PASSED          [ 97%]
+tests/unit/test_imports.py::test_classifier_routes_import PASSED         [ 98%]
+tests/unit/test_imports.py::test_metadata_import PASSED                  [100%]
+
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+tests/integration/services/test_gpt41_connection.py::test_gpt41_connection
+  /Users/jay/.pyenv/versions/3.11.10/envs/myenv/lib/python3.11/site-packages/_pytest/python.py:163: PytestReturnNotNoneWarning: Expected None, but tests/integration/services/test_gpt41_connection.py::test_gpt41_connection returned False, which will be an error in a future version of pytest.  Did you mean to use `assert` instead of `return`?
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+______________ coverage: platform darwin, python 3.11.10-final-0 _______________
+
+Name                                               Stmts   Miss  Cover   Missing
+--------------------------------------------------------------------------------
+backend/__init__.py                                    1      0   100%
+backend/api/__init__.py                                3      0   100%
+backend/api/endpoints/__init__.py                      4      0   100%
+backend/api/endpoints/classify.py                      5      1    80%   12
+backend/api/endpoints/conflict_resolver.py            71     71     0%   3-197
+backend/api/endpoints/conflict_resolver_agent.py     165    165     0%   9-430
+backend/api/endpoints/dashboard.py                    31      6    81%   19-21, 34, 46, 56
+backend/api/endpoints/metadata.py                      5      1    80%   12
+backend/api/endpoints/search.py                        5      1    80%   12
+backend/api/models.py                                  4      4     0%   7-21
+backend/api/models/__init__.py                         3      0   100%
+backend/api/routes.py                                  6      0   100%
+backend/chunking.py                                   35     13    63%   20, 50-66
+backend/classifier/__init__.py                         2      0   100%
+backend/classifier/conflict_resolver.py               38      2    95%   136, 141
+backend/classifier/context_injector.py               109     62    43%   52-61, 88-91, 99, 104, 109, 114, 120-122, 137-153, 169-201, 207-220, 233-236
+backend/classifier/keyword_classifier.py             309    175    43%   66-77, 123, 135-137, 151, 177-182, 233-239, 269-270, 274-275, 283, 286, 329-453, 456-460, 486-487, 491-492, 502-524, 532-553, 613-615, 629-664, 668, 683, 698-752
+backend/classifier/langchain_integration.py          208    114    45%   47-58, 75-109, 125, 255-261, 290, 297-299, 358-363, 400-460, 466-555
+backend/classifier/metadata_classifier.py             37     37     0%   7-91
+backend/classifier/para_agent.py                      77     28    64%   39-41, 49-54, 62-86, 94-104, 112-124, 155, 170, 175, 181-194
+backend/classifier/para_agent_wrapper.py              21     12    43%   17-32, 43-49
+backend/classifier/para_classifier.py                 83     52    37%   86-87, 99-131, 148-196, 200-204, 208-210, 214, 218, 222-223, 228-249
+backend/classifier/snapshot_manager.py                38     12    68%   27, 69, 73-76, 80-86, 97
+backend/cli.py                                        89     89     0%   6-165
+backend/config.py                                    118     43    64%   29-37, 89, 98-100, 107, 111, 113, 129-131, 138, 140, 147-176, 223, 238-245
+backend/dashboard/__init__.py                          0      0   100%
+backend/dashboard/dashboard_core.py                   13      0   100%
+backend/data_manager.py                              167     80    52%   44-46, 50-51, 55-57, 80, 82, 88-92, 96-99, 110-114, 126-129, 140, 157-158, 181-182, 188-195, 201-204, 225-227, 240-254, 260-270, 291-331
+backend/database/__init__.py                           2      0   100%
+backend/database/connection.py                        96     44    54%   67-69, 73-88, 99-101, 113-115, 119-124, 134-136, 140-145, 155-157, 164-166, 176-178, 183-184, 187, 190
+backend/database/metadata_schema.py                   52     17    67%   24-28, 32-36, 40-44, 48-49, 64, 73, 75, 79-83, 116
+backend/embedding.py                                  33     14    58%   27, 49-70
+backend/exceptions.py                                 12     12     0%   10-43
+backend/export.py                                     28     28     0%   7-68
+backend/faiss_search.py                               78     36    54%   48, 51, 55, 78, 110-111, 123-182
+backend/main.py                                       33      6    82%   95, 113-119
+backend/metadata.py                                   95     60    37%   33-39, 46-47, 111, 123-127, 136-148, 161-229
+backend/models/__init__.py                             5      0   100%
+backend/models/classification.py                      78      0   100%
+backend/models/common.py                              43      0   100%
+backend/models/conflict.py                            81      0   100%
+backend/models/user.py                                32      0   100%
+backend/modules/__init__.py                            3      0   100%
+backend/modules/pdf_helper.py                         26     21    19%   23-44, 57-62
+backend/modules/vision_helper.py                      59     34    42%   65-66, 97-148, 166-167, 211-267, 281-296
+backend/routes/__init__.py                             0      0   100%
+backend/routes/api_models.py                          22     22     0%   18-75
+backend/routes/classifier_routes.py                   40     16    60%   83-96, 131-134, 138-141, 158-160
+backend/routes/conflict_routes.py                     20      8    60%   42-49, 55
+backend/routes/onboarding_routes.py                   32      4    88%   57, 80, 100, 118
+backend/search_history.py                             93     93     0%   9-353
+backend/services/__init__.py                           0      0   100%
+backend/services/classification_service.py            81      9    89%   128-130, 168, 170, 227, 262-264
+backend/services/conflict_service.py                  71     19    73%   25-35, 99, 196-199, 212, 216, 220, 224-225
+backend/services/gpt_helper.py                       130     43    67%   25-29, 57-60, 75, 124-125, 152-153, 194-196, 271-274, 357-392
+backend/services/onboarding_service.py                53     15    72%   58-60, 83, 96-98, 127, 138-140, 162, 180-182
+backend/services/parallel_processor.py                23      0   100%
+backend/utils.py                                      42     27    36%   24-26, 31-35, 40-44, 76-90, 103-110
+backend/validators.py                                 88     66    25%   39-41, 53-69, 81-89, 102-115, 131-132, 145-163, 190-229, 240-252
+--------------------------------------------------------------------------------
+TOTAL                                               3098   1562    50%
+================== 69 passed, 2 skipped, 4 warnings in 19.73s ==================
