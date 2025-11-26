@@ -78,7 +78,17 @@ async def classify_text(request: ClassifyRequest):
     """
     메인 텍스트 분류 API
 
-    비즈니스 로직은 ClassificationService에서 처리합니다.
+    PARA 방법론을 기반으로 입력된 텍스트를 분류합니다.
+    사용자의 직업(occupation)과 관심 영역(areas)을 고려하여 개인화된 분류를 수행합니다.
+
+    - **text**: 분류할 텍스트 (필수)
+    - **user_id**: 사용자 식별자 (선택)
+    - **occupation**: 사용자 직업 (선택, 프롬프트 최적화용)
+    - **areas**: 사용자 관심 영역 리스트 (선택, Areas 매칭용)
+    - **interests**: 사용자 관심사 리스트 (선택)
+
+    Returns:
+        ClassifyResponse: 분류 결과 (카테고리, 신뢰도, 근거, 태그 등)
     """
     try:
         # Refactored: Logic moved to ClassificationService
@@ -114,7 +124,16 @@ async def classify_file_main(
     """
     메인 파일 분류 API
 
-    파일 읽기 및 파싱 후 ClassificationService 호출
+    업로드된 파일을 텍스트로 변환한 후 PARA 분류를 수행합니다.
+    현재 지원 형식: .txt, .md, .pdf (텍스트 추출 가능 시)
+
+    - **file**: 업로드할 파일 (Multipart Form)
+    - **user_id**: 사용자 식별자 (Form)
+    - **occupation**: 사용자 직업 (Form)
+    - **areas**: JSON 문자열로 된 관심 영역 리스트 (Form)
+
+    Returns:
+        ClassifyResponse: 분류 결과
     """
     try:
         # Step 1: 파일 읽기
