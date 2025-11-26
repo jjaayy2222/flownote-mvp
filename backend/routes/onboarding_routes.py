@@ -60,7 +60,7 @@ async def onboarding_step1(input_data: Step1Input):
     )
 
     if result["status"] == "error":
-        raise HTTPException(status_code=500, detail=result["message"])
+        raise HTTPException(status_code=400, detail=result["message"])
 
     # 다음 단계 안내 추가 (기존 응답 호환성 유지)
     result["next_step"] = (
@@ -92,7 +92,7 @@ async def suggest_areas(user_id: str = Query(...), occupation: str = Query(...))
     result = onboarding_service.suggest_areas(user_id, occupation)
 
     if result["status"] == "error":
-        raise HTTPException(status_code=500, detail=result["message"])
+        raise HTTPException(status_code=400, detail=result["message"])
 
     return result
 
@@ -121,7 +121,7 @@ async def save_context(input_data: Step2Input):
     )
 
     if result["status"] == "error":
-        raise HTTPException(status_code=500, detail=result["message"])
+        raise HTTPException(status_code=400, detail=result["message"])
 
     return result
 

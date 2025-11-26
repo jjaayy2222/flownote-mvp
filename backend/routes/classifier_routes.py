@@ -149,14 +149,16 @@ async def classify_file_main(
         if areas:
             try:
                 areas_list = json.loads(areas)
-            except:
+            except json.JSONDecodeError:
+                logger.warning(f"Invalid JSON format for areas: {areas}")
                 areas_list = []
 
         interests_list = []
         if interests:
             try:
                 interests_list = json.loads(interests)
-            except:
+            except json.JSONDecodeError:
+                logger.warning(f"Invalid JSON format for interests: {interests}")
                 interests_list = []
 
         # 사용자 ID 결정 (Form > Request State > Anonymous)
