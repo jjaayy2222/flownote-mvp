@@ -29,8 +29,38 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="FlowNote API",
-    description="PARA Classification + Conflict Resolution API",
+    description="""
+    ## FlowNote MVP - AI 기반 PARA 분류 및 충돌 해결 API
+    
+    ### 주요 기능
+    * **온보딩**: 사용자 생성 및 관심 영역 추천
+    * **분류**: PARA 방법론 기반 텍스트 자동 분류
+    * **충돌 해결**: AI 기반 분류 충돌 감지 및 해결
+    
+    ### 엔드포인트
+    * `/classifier` - 파일 및 텍스트 분류
+    * `/onboarding` - 사용자 온보딩
+    * `/conflict` - 충돌 해결
+    * `/health` - 서버 상태 확인
+    
+    ### 테스트 커버리지
+    * 전체 커버리지: 51%
+    * 핵심 서비스: 70%+
+    
+    ### CI/CD
+    * GitHub Actions 자동 테스트
+    * Codecov 커버리지 리포팅
+    """,
     version="4.0.0",
+    contact={
+        "name": "FlowNote Team",
+        "url": "https://github.com/jjaayy2222/flownote-mvp",
+        "email": "your-email@example.com",
+    },
+    license_info={
+        "name": "MIT",
+        "url": "https://opensource.org/licenses/MIT",
+    },
 )
 
 # CORS 미들웨어 추가
