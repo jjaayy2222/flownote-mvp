@@ -15,8 +15,20 @@ Refactored:
 """
 
 import logging
-from typing import Dict, Any
+from typing import TypedDict, Any
 from fastapi import APIRouter, HTTPException, Query
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 타입 정의
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+class ServiceResponse(TypedDict, total=False):
+    """서비스 결과 응답 구조 정의"""
+
+    status: str
+    message: str
+
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 통합 모델 Import
@@ -38,7 +50,7 @@ onboarding_service = OnboardingService()
 
 
 # 헬퍼 함수: 서비스 에러 처리 헬퍼
-def handle_service_error(result: Dict[str, Any]) -> None:
+def handle_service_error(result: ServiceResponse) -> None:
     """
     서비스 결과에서 에러를 확인하고 HTTPException을 발생시킵니다.
 

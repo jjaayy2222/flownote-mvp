@@ -157,8 +157,8 @@ async def classify_file_main(
         if interests:
             try:
                 interests_list = json.loads(interests)
-            except json.JSONDecodeError:
-                logger.warning("Invalid JSON format for interests")
+            except json.JSONDecodeError as exc:
+                logger.warning("Invalid JSON format for interests: %s", exc)
                 interests_list = []
 
         # 사용자 ID 결정 (Form > Request State > Anonymous)
