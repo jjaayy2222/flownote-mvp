@@ -116,7 +116,7 @@ test_*.pdf
 
 # 프로젝트 임시 파일
 .env.backup
-.env.example
+# .env.example  <-- Included!
 
 # backend 백업 
 backend/classifier/prompts/backup_*
@@ -133,46 +133,15 @@ web_ui/src/components/
 web_ui/package.json
 web_ui/package-lock.json
 
-# 테스트 불필요 파일들
-# tests/tests_phase_0/
-tests/
-tests/__init__.py
-tests/test_conflict_cases_scenarios/
-tests/test_conflict_cases_scenarios/test_conflict_cases_scenarios_runner.md
-tests/verify_refactor.py
-tests/test_imports.py
-tests/conftest.py
-tests/para_agent2.py
-tests/test_api_all_endpoints.py
-tests/test_all_categories.py
-tests/test_api.py
-tests/test_api_server.py
-tests/test_chunking_embedding_.py
-tests/test_classification_service_unit.py
-tests/test_classifier_routes.py
-tests/test_classify_cli.py
-tests/test_faiss_.py
-tests/test_para_agent.py
-tests/test_para_classifier_.py
-tests/test_compatibility.py
-tests/test_frontend.js
-tests/test_results.txt
-tests/data/
+# Test outputs only
 tests/outputs/
-tests/outputs/step_01_upload_20251104_235032.json
-tests/outputs/step_02_classification_20251104_235032.json
-tests/outputs/step_03_conflict_detection_20251104_235032.json
-tests/outputs/step_04_conflict_resolution_20251104_235032.json
-tests/outputs/step_05_dashboard_20251104_235032.json
-tests/outputs/test_results_complete_20251104_235032.json
-
-tests/test_all_models.py
-tests/test_api_e2e_complete2.py
-tests/test_context_injector.py
-tests/test_integration_onboarding_classification.py
-tests/test_prompt_conflict.py
-tests/test_classification_flow.py
-tests/test_ui8.py
+tests/tests/outputs/
+tests/tests_phase_0/
+tests/data/
+tests/unit/
+tests/test_results.txt
+tests/*.log
+tests/verify_refactor.py
 
 # 업로드된 임시 파일
 uploaded_files/
@@ -198,7 +167,3 @@ git_history_backup.txt
 # 백업 디렉토리
 backups/
 *.backup/
-
-
-# 임시
-docs/P/refactoring/test_results_phase3.txt
