@@ -1,0 +1,171 @@
+# tests/units/test_utils.py
+
+import pytest
+import os
+from unittest.mock import patch, mock_open, MagicMock
+from backend.utils import (
+    count_tokens,
+    read_file_content,
+    format_file_size,
+    estimate_cost,
+    load_pdf,
+    save_to_markdown,
+)
+
+
+def test_count_tokens():
+    """count_tokens 함수 테스트"""
+    text = "Hello World"
+    # tiktoken이 설치되어 있다고 가정
+    assert count_tokens(text) > 0
+
+    # tiktoken 에러 시 fallback 테스트
+    with patch("tiktoken.encoding_for_model", side_effect=Exception("Error")):
+        assert count_tokens("1234") == 1  # 4 chars // 4 = 1
+
+
+def test_read_file_content():
+    """read_file_content 함수 테스트"""
+    mock_content = "File Content"
+    with patch("builtins.open", mock_open(read_data=mock_content)):
+        assert read_file_content("test.txt") == mock_content
+
+    # 에러 처리 테스트
+    with patch("builtins.open", side_effect=Exception("File not found")):
+        with pytest.raises(Exception) as excinfo:
+            read_file_content("test.txt")
+        assert "파일 읽기 실패" in str(excinfo.value)
+
+
+def test_format_file_size():
+    """format_file_size 함수 테스트"""
+    assert format_file_size(500) == "500.0 B"
+    assert format_file_size(1024) == "1.0 KB"
+    assert format_file_size(1024 * 1024) == "1.0 MB"
+    assert format_file_size(1024 * 1024 * 1024) == "1.0 GB"
+    assert format_file_size(1024 * 1024 * 1024 * 1024) == "1.0 TB"
+
+
+def test_estimate_cost():
+    """estimate_cost 함수 테스트"""
+    assert estimate_cost(1000, 0.001) == 1.0
+
+
+def test_load_pdf():
+    """load_pdf 함수 테스트"""
+    mock_file = MagicMock()
+    mock_pdf_reader = MagicMock()
+    mock_page = MagicMock()
+    mock_page.extract_text.return_value = "PDF Page Content"
+    mock_pdf_reader.pages = [mock_page]
+
+    with patch("pypdf.PdfReader", return_value=mock_pdf_reader):
+        text = load_pdf(mock_file)
+        assert "PDF Page Content" in text
+
+    # 에러 처리 테스트
+    with patch("pypdf.PdfReader", side_effect=Exception("PDF Error")):
+        with pytest.raises(Exception) as excinfo:
+            load_pdf(mock_file)
+        assert "PDF 읽기 실패" in str(excinfo.value)
+
+
+def test_save_to_markdown(tmp_path):
+    """save_to_markdown 함수 테스트"""
+    file_path = tmp_path / "test.md"
+    save_to_markdown("Content", str(file_path), "Title")
+
+    assert file_path.exists()
+    content = file_path.read_text(encoding="utf-8")
+    assert "# Title" in content
+    assert "Content" in content
+
+
+"""수정 후 test_reslut
+
+pytest tests/unit/test_utils.py -vv
+
+============================= test session starts ==============================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+configfile: pytest.ini
+plugins: anyio-4.11.0, langsmith-0.4.37, asyncio-1.3.0, cov-7.0.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 6 items
+
+tests/unit/test_utils.py::test_count_tokens PASSED                       [ 16%]
+tests/unit/test_utils.py::test_read_file_content PASSED                  [ 33%]
+tests/unit/test_utils.py::test_format_file_size PASSED                   [ 50%]
+tests/unit/test_utils.py::test_estimate_cost PASSED                      [ 66%]
+tests/unit/test_utils.py::test_load_pdf PASSED                           [ 83%]
+tests/unit/test_utils.py::test_save_to_markdown PASSED                   [100%]
+
+================================ tests coverage ================================
+______________ coverage: platform darwin, python 3.11.10-final-0 _______________
+
+Name                                               Stmts   Miss  Cover   Missing
+--------------------------------------------------------------------------------
+backend/__init__.py                                    1      0   100%
+backend/api/__init__.py                                3      3     0%   8-41
+backend/api/endpoints/__init__.py                      4      4     0%   5-9
+backend/api/endpoints/classify.py                      5      5     0%   5-12
+backend/api/endpoints/conflict_resolver.py            71     71     0%   3-197
+backend/api/endpoints/conflict_resolver_agent.py     165    165     0%   9-430
+backend/api/endpoints/dashboard.py                    31     31     0%   5-56
+backend/api/endpoints/metadata.py                      5      5     0%   5-12
+backend/api/endpoints/search.py                        5      5     0%   5-12
+backend/api/models.py                                  4      4     0%   7-21
+backend/api/models/__init__.py                         3      3     0%   11-37
+backend/api/routes.py                                  6      6     0%   5-13
+backend/chunking.py                                   35     35     0%   10-124
+backend/classifier/__init__.py                         2      0   100%
+backend/classifier/conflict_resolver.py               38     21    45%   40-42, 68-111, 119, 128-136, 140-150
+backend/classifier/context_injector.py               109    109     0%   7-243
+backend/classifier/keyword_classifier.py             309    230    26%   66-77, 123, 135-137, 151, 177-182, 226-242, 265-467, 477-528, 532-553, 561-615, 629-664, 668, 683, 698-752
+backend/classifier/langchain_integration.py          208    171    18%   47-58, 75-109, 115-133, 147-171, 186-203, 235-272, 281-299, 304-320, 348-374, 400-460, 466-555
+backend/classifier/metadata_classifier.py             37     37     0%   7-91
+backend/classifier/para_agent.py                      77     49    36%   32-41, 49-54, 62-86, 94-104, 112-124, 132-149, 154-170, 175, 181-194
+backend/classifier/para_agent_wrapper.py              21     21     0%   5-111
+backend/classifier/para_classifier.py                 83     83     0%   9-277
+backend/classifier/snapshot_manager.py                38     15    61%   27, 50-65, 69, 73-76, 80-86, 97
+backend/cli.py                                        89     89     0%   6-165
+backend/config.py                                    118     53    55%   29-37, 89, 93-95, 98-100, 107, 111, 113, 128-142, 147-176, 223, 238-245
+backend/dashboard/__init__.py                          0      0   100%
+backend/dashboard/dashboard_core.py                   13     13     0%   3-42
+backend/data_manager.py                              167    132    21%   44-46, 50-51, 55-57, 73-114, 120-129, 135-158, 168-182, 188-195, 201-204, 215-227, 240-254, 260-270, 291-331
+backend/database/__init__.py                           2      2     0%   3-5
+backend/database/connection.py                        96     96     0%   3-202
+backend/database/metadata_schema.py                   52     52     0%   3-144
+backend/embedding.py                                  33     33     0%   10-118
+backend/exceptions.py                                 12     12     0%   10-43
+backend/export.py                                     28     28     0%   7-68
+backend/faiss_search.py                               78     78     0%   9-248
+backend/main.py                                       33      7    79%   80, 95, 113-119
+backend/metadata.py                                   95     95     0%   9-329
+backend/models/__init__.py                             5      0   100%
+backend/models/classification.py                      78      0   100%
+backend/models/common.py                              43      0   100%
+backend/models/conflict.py                            81      0   100%
+backend/models/user.py                                32      0   100%
+backend/modules/__init__.py                            3      3     0%   7-10
+backend/modules/pdf_helper.py                         26     26     0%   9-62
+backend/modules/vision_helper.py                      59     59     0%   11-296
+backend/routes/__init__.py                             0      0   100%
+backend/routes/api_models.py                          22     22     0%   18-75
+backend/routes/classifier_routes.py                   40     25    38%   83-96, 119-160
+backend/routes/conflict_routes.py                     20      8    60%   42-49, 55
+backend/routes/onboarding_routes.py                   32     17    47%   52-64, 77-82, 95-102, 115-120
+backend/search_history.py                             93     93     0%   9-353
+backend/services/__init__.py                           0      0   100%
+backend/services/classification_service.py            81     58    28%   72-130, 135, 148-154, 162-174, 180-187, 199-264
+backend/services/conflict_service.py                  71     48    32%   25-35, 78-143, 161-199, 212, 216, 220, 224-225
+backend/services/gpt_helper.py                       130     89    32%   25-29, 57-60, 74-103, 119-128, 146-196, 209-222, 244-274, 296-327, 357-392
+backend/services/onboarding_service.py                53     39    26%   38-60, 78-98, 113-140, 158-182
+backend/services/parallel_processor.py                23     23     0%   8-72
+backend/utils.py                                      42      0   100%
+backend/validators.py                                 88     88     0%   16-252
+--------------------------------------------------------------------------------
+TOTAL                                               3098   2361    24%
+============================== 6 passed in 1.53s ===============================
+
+"""
