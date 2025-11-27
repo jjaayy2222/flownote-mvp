@@ -1,0 +1,108 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0
+rootdir: /Users/jay/ICT-projects/flownote-mvp
+configfile: pytest.ini
+plugins: anyio-4.11.0, langsmith-0.4.37, asyncio-1.3.0, cov-7.0.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 57 items
+
+tests/e2e/test_api_e2e.py ....                                           [  7%]
+tests/e2e/test_api_e2e_complete.py ......                                [ 17%]
+tests/integration/routes/test_api_all_endpoints.py ..........            [ 35%]
+tests/integration/routes/test_api_dashboard.py ....                      [ 42%]
+tests/integration/services/test_classification_flow.py .....             [ 50%]
+tests/integration/services/test_gpt41_connection.py .                    [ 52%]
+tests/integration/services/test_metadata_integration.py ...              [ 57%]
+tests/integration/services/test_onboarding_classification_flow.py .      [ 59%]
+tests/integration/services/test_prompt_conflict.py .                     [ 61%]
+tests/unit/classifiers/test_conflict_resolver.py ...                     [ 66%]
+tests/unit/classifiers/test_para_classifier.py .                         [ 68%]
+tests/unit/services/test_chunking_embedding.py .                         [ 70%]
+tests/unit/services/test_classification_service.py ..                    [ 73%]
+tests/unit/services/test_context_injector.py .                           [ 75%]
+tests/unit/services/test_faiss.py .                                      [ 77%]
+tests/unit/services/test_vision_helper.py ...s.s..                       [ 91%]
+tests/unit/test_imports.py .....                                         [100%]
+
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+tests/integration/services/test_gpt41_connection.py::test_gpt41_connection
+  /Users/jay/.pyenv/versions/3.11.10/envs/myenv/lib/python3.11/site-packages/_pytest/python.py:163: PytestReturnNotNoneWarning: Expected None, but tests/integration/services/test_gpt41_connection.py::test_gpt41_connection returned False, which will be an error in a future version of pytest.  Did you mean to use `assert` instead of `return`?
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+______________ coverage: platform darwin, python 3.11.10-final-0 _______________
+
+Name                                               Stmts   Miss  Cover
+----------------------------------------------------------------------
+backend/__init__.py                                    1      0   100%
+backend/api/__init__.py                                3      0   100%
+backend/api/endpoints/__init__.py                      4      0   100%
+backend/api/endpoints/classify.py                      5      1    80%
+backend/api/endpoints/conflict_resolver.py            71     71     0%
+backend/api/endpoints/conflict_resolver_agent.py     165    165     0%
+backend/api/endpoints/dashboard.py                    31      6    81%
+backend/api/endpoints/metadata.py                      5      1    80%
+backend/api/endpoints/search.py                        5      1    80%
+backend/api/models.py                                  4      4     0%
+backend/api/models/__init__.py                         3      0   100%
+backend/api/routes.py                                  6      0   100%
+backend/chunking.py                                   35     13    63%
+backend/classifier/__init__.py                         2      0   100%
+backend/classifier/conflict_resolver.py               38      2    95%
+backend/classifier/context_injector.py               109     62    43%
+backend/classifier/keyword_classifier.py             309    175    43%
+backend/classifier/langchain_integration.py          208    137    34%
+backend/classifier/metadata_classifier.py             37     37     0%
+backend/classifier/para_agent.py                      77     28    64%
+backend/classifier/para_agent_wrapper.py              21     12    43%
+backend/classifier/para_classifier.py                 83     52    37%
+backend/classifier/snapshot_manager.py                38     12    68%
+backend/cli.py                                        89     89     0%
+backend/config.py                                    118     43    64%
+backend/dashboard/__init__.py                          0      0   100%
+backend/dashboard/dashboard_core.py                   13      0   100%
+backend/data_manager.py                              167     80    52%
+backend/database/__init__.py                           2      0   100%
+backend/database/connection.py                        96     44    54%
+backend/database/metadata_schema.py                   52     17    67%
+backend/embedding.py                                  33     14    58%
+backend/exceptions.py                                 12     12     0%
+backend/export.py                                     28     28     0%
+backend/faiss_search.py                               78     36    54%
+backend/main.py                                       33      6    82%
+backend/metadata.py                                   95     60    37%
+backend/models/__init__.py                             5      0   100%
+backend/models/classification.py                      78      0   100%
+backend/models/common.py                              43      0   100%
+backend/models/conflict.py                            81      0   100%
+backend/models/user.py                                32      0   100%
+backend/modules/__init__.py                            3      0   100%
+backend/modules/pdf_helper.py                         26     21    19%
+backend/modules/vision_helper.py                      59     34    42%
+backend/routes/__init__.py                             0      0   100%
+backend/routes/api_models.py                          22     22     0%
+backend/routes/classifier_routes.py                   40     16    60%
+backend/routes/conflict_routes.py                     20      8    60%
+backend/routes/onboarding_routes.py                   32      4    88%
+backend/search_history.py                             93     93     0%
+backend/services/__init__.py                           0      0   100%
+backend/services/classification_service.py            81      9    89%
+backend/services/conflict_service.py                  71     23    68%
+backend/services/gpt_helper.py                       130     63    52%
+backend/services/onboarding_service.py                53     15    72%
+backend/services/parallel_processor.py                23     23     0%
+backend/utils.py                                      42     27    36%
+backend/validators.py                                 88     66    25%
+----------------------------------------------------------------------
+TOTAL                                               3098   1632    47%
+================== 55 passed, 2 skipped, 4 warnings in 22.07s ==================

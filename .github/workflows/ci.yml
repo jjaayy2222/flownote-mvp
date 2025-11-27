@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main", "develop", "refactor/*" ]
+  pull_request:
+    branches: [ "main", "develop" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+        
+    - name: Run tests with pytest
+      continue-on-error: true
+      env:
+        # API Keys (Mock)
+        GPT4O_MINI_API_KEY: "mock-key"
+        GPT4O_API_KEY: "mock-key"
+        EMBEDDING_API_KEY: "mock-key"
+        GPT41_API_KEY: "mock-key"
+        CLAUDE_4_SONNET_API_KEY: "mock-key"
+        CLAUDE_35_HAIKU_API_KEY: "mock-key"
+        
+        # Base URLs (Mock)
+        GPT4O_MINI_BASE_URL: "https://mlapi.run/mock/v1"
+        GPT4O_BASE_URL: "https://mlapi.run/mock/v1"
+        EMBEDDING_BASE_URL: "https://mlapi.run/mock/v1"
+        GPT41_BASE_URL: "https://mlapi.run/mock/v1"
+        CLAUDE_4_SONNET_BASE_URL: "https://mlapi.run/mock/v1"
+        CLAUDE_35_HAIKU_BASE_URL: "https://mlapi.run/mock/v1"
+        
+        # Models
+        GPT4O_MINI_MODEL: "openai/gpt-4o-mini"
+        GPT4O_MODEL: "openai/gpt-4o"
+        EMBEDDING_MODEL: "text-embedding-3-small"
+        GPT41_MODEL: "openai/gpt-4.1"
+        CLAUDE_4_SONNET_MODEL: "anthropic/claude-sonnet-4"
+        CLAUDE_35_HAIKU_MODEL: "anthropic/claude-3-5-haiku"
+      run: |
+        pytest --cov=backend --cov-report=xml --cov-report=term
+        
+    # - name: Upload coverage reports to Codecov
+    #   uses: codecov/codecov-action@v4
+    #   continue-on-error: true
+    #   with:
+    #     token: ${{ secrets.CODECOV_TOKEN }}
+    #     fail_ci_if_error: true

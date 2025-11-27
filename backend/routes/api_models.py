@@ -1,63 +1,133 @@
 # backend/routes/api_models.py
 
-from pydantic import BaseModel, Field
-from typing import Optional, List
+"""
+API Models
+
+DEPRECATED: 대부분의 모델이 backend.models로 이동되었습니다.
+이 파일은 conflict 전용 모델만 유지합니다.
+
+Conflict 관련 모델:
+- ConflictDetectionRequest
+- ConflictDetectionResponse
+- ConflictResolutionRequest
+- ConflictResolutionResponse
+"""
+
+
+from pydantic import BaseModel, Field, ConfigDict
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 
+<<<<<<< HEAD
 # 모델 임포트
 from backend.models import (
     ClassifyRequest,
     ClassifyResponse,)
+=======
+# ... (imports)
 
 
-# ============================================
-# Response Models (conflict_resolver 반환값 기반)
-# ============================================
+# ✅ Conflict 전용 모델만 유지
+class ConflictDetectionRequest(BaseModel):
+    """충돌 감지 요청"""
 
+    file_id: str = Field(..., description="파일 ID")
+    text: str = Field(..., description="분류할 텍스트")
+    user_id: Optional[str] = Field(None, description="사용자 ID")
 
-
-class MetadataResponse(BaseModel):
-    """메타데이터 조회"""
-    file_id: str
-    para_category: str
-    keyword_tags: List[str]
-    confidence_score: float
-    conflict_flag: bool
-    manual_override: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
-    
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
-                "file_id": "abc123",
-                "para_category": "Projects",
-                "keyword_tags": ["업무", "프로젝트"],
-                "confidence_score": 0.9,
-                "conflict_flag": False,
-                "manual_override": None,
-                "created_at": "2025-11-04T11:45:00",
-                "updated_at": "2025-11-04T11:45:00"
+                "file_id": "file_12345",
+                "text": "이 문서는 프로젝트 A의 기획안입니다.",
+                "user_id": "user_001",
             }
         }
+    )
+>>>>>>> origin/refactor/v4-backend-cleanup
 
 
-# ============================================
-# Error Models
-# ============================================
+class ConflictDetectionResponse(BaseModel):
+    """충돌 감지 응답"""
 
-class ErrorResponse(BaseModel):
-    """에러 응답"""
-    error: str
-    detail: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.now)
+<<<<<<< HEAD
+=======
+    conflict_detected: bool = Field(..., description="충돌 감지 여부")
+    confidence_gap: Optional[float] = Field(
+        None, description="상위 2개 카테고리의 신뢰도 차이"
+    )
+    categories: List[Dict[str, Any]] = Field(
+        default_factory=list, description="후보 카테고리 목록 (신뢰도 포함)"
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "conflict_detected": True,
+                "confidence_gap": 0.05,
+                "categories": [
+                    {
+                        "category": "Projects",
+                        "confidence": 0.45,
+                        "reason": "프로젝트 관련 키워드 감지",
+                    },
+                    {
+                        "category": "Areas",
+                        "confidence": 0.40,
+                        "reason": "업무 영역과 유사",
+                    },
+                ],
+            }
+        }
+    )
 
 
+class ConflictResolutionRequest(BaseModel):
+    """충돌 해결 요청"""
 
-"""test_result_1 - 간결 버전으로 테스트
+    file_id: str = Field(..., description="파일 ID")
+    selected_category: str = Field(..., description="사용자가 선택한 최종 카테고리")
+    user_id: Optional[str] = Field(None, description="사용자 ID")
 
-    python -c "from backend.routes.api_models import ClassifyRequest, ClassifyResponse; print('✅ Success!')"
-    
-    ✅ Success!
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "file_id": "file_12345",
+                "selected_category": "Projects",
+                "user_id": "user_001",
+            }
+        }
+    )
 
-"""
+
+class ConflictResolutionResponse(BaseModel):
+    """충돌 해결 응답"""
+
+    status: str = Field(default="resolved", description="해결 상태")
+    file_id: str = Field(..., description="파일 ID")
+    final_category: str = Field(..., description="최종 확정된 카테고리")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "status": "resolved",
+                "file_id": "file_12345",
+                "final_category": "Projects",
+            }
+        }
+    )
+>>>>>>> origin/refactor/v4-backend-cleanup
+
+
+__all__ = [
+    # Re-export from backend.models
+    "ErrorResponse",
+    "SuccessResponse",
+    "FileMetadata",
+    "MetadataResponse",
+    # Conflict-specific models
+    "ConflictDetectionRequest",
+    "ConflictDetectionResponse",
+    "ConflictResolutionRequest",
+    "ConflictResolutionResponse",
+]

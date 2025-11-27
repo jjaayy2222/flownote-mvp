@@ -1,0 +1,83 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp
+configfile: pytest.ini
+plugins: anyio-4.11.0, langsmith-0.4.37, asyncio-1.3.0, cov-7.0.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 57 items
+
+tests/e2e/test_api_e2e.py::test_api_health PASSED                        [  1%]
+tests/e2e/test_api_e2e.py::test_classification_flow PASSED               [  3%]
+tests/e2e/test_api_e2e.py::test_metadata_public PASSED                   [  5%]
+tests/e2e/test_api_e2e.py::test_dashboard_integration PASSED             [  7%]
+tests/e2e/test_api_e2e_complete.py::TestEndToEndWorkflow::test_01_file_upload PASSED [  8%]
+tests/e2e/test_api_e2e_complete.py::TestEndToEndWorkflow::test_02_file_classification PASSED [ 10%]
+tests/e2e/test_api_e2e_complete.py::TestEndToEndWorkflow::test_03_conflict_detection PASSED [ 12%]
+tests/e2e/test_api_e2e_complete.py::TestEndToEndWorkflow::test_04_conflict_resolution PASSED [ 14%]
+tests/e2e/test_api_e2e_complete.py::TestEndToEndWorkflow::test_05_dashboard_integration PASSED [ 15%]
+tests/e2e/test_api_e2e_complete.py::TestEndToEndWorkflow::test_00_complete_e2e_workflow PASSED [ 17%]
+tests/integration/routes/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_routes_py_import PASSED [ 19%]
+tests/integration/routes/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_models_py_import PASSED [ 21%]
+tests/integration/routes/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_dashboard_endpoint_import PASSED [ 22%]
+tests/integration/routes/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_dashboard_status_endpoint PASSED [ 24%]
+tests/integration/routes/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_dashboard_metrics_endpoint PASSED [ 26%]
+tests/integration/routes/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_dashboard_keywords_endpoint PASSED [ 28%]
+tests/integration/routes/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_classify_endpoint_import PASSED [ 29%]
+tests/integration/routes/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_search_endpoint_import PASSED [ 31%]
+tests/integration/routes/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_metadata_endpoint_import PASSED [ 33%]
+tests/integration/routes/test_api_all_endpoints.py::TestAllBackendAPIFiles::test_all_files_integration PASSED [ 35%]
+tests/integration/routes/test_api_dashboard.py::TestDashboardEndpoints::test_status_endpoint PASSED [ 36%]
+tests/integration/routes/test_api_dashboard.py::TestDashboardEndpoints::test_metrics_endpoint PASSED [ 38%]
+tests/integration/routes/test_api_dashboard.py::TestDashboardEndpoints::test_keywords_endpoint PASSED [ 40%]
+tests/integration/routes/test_api_dashboard.py::TestDashboardEndpoints::test_keywords_with_custom_params PASSED [ 42%]
+tests/integration/services/test_classification_flow.py::test_1_keyword_classifier PASSED [ 43%]
+tests/integration/services/test_classification_flow.py::test_2_conflict_service PASSED [ 45%]
+tests/integration/services/test_classification_flow.py::test_3_db_storage PASSED [ 47%]
+tests/integration/services/test_classification_flow.py::test_4_classification_log PASSED [ 49%]
+tests/integration/services/test_classification_flow.py::test_5_api_endpoint PASSED [ 50%]
+tests/integration/services/test_gpt41_connection.py::test_gpt41_connection PASSED [ 52%]
+tests/integration/services/test_metadata_integration.py::test_metadata_with_auto_resolution PASSED [ 54%]
+tests/integration/services/test_metadata_integration.py::test_metadata_with_conflict PASSED [ 56%]
+tests/integration/services/test_metadata_integration.py::test_statistics PASSED [ 57%]
+tests/integration/services/test_onboarding_classification_flow.py::test_onboarding_to_classification_file_flow PASSED [ 59%]
+tests/integration/services/test_prompt_conflict.py::test_prompt_conflict PASSED [ 61%]
+tests/unit/classifiers/test_conflict_resolver.py::test_clear_winner_para PASSED [ 63%]
+tests/unit/classifiers/test_conflict_resolver.py::test_requires_user_review PASSED [ 64%]
+tests/unit/classifiers/test_conflict_resolver.py::test_keyword_wins PASSED [ 66%]
+tests/unit/classifiers/test_para_classifier.py::test_classifier PASSED   [ 68%]
+tests/unit/services/test_chunking_embedding.py::test_full_pipeline PASSED [ 70%]
+tests/unit/services/test_classification_service.py::test_classification_service_orchestration PASSED [ 71%]
+tests/unit/services/test_classification_service.py::test_save_results PASSED [ 73%]
+tests/unit/services/test_context_injector.py::test_context_injector PASSED [ 75%]
+tests/unit/services/test_faiss.py::test_search_pipeline PASSED           [ 77%]
+tests/unit/services/test_vision_helper.py::TestVisionCodeGenerator::test_generator_initialization PASSED [ 78%]
+tests/unit/services/test_vision_helper.py::TestVisionCodeGenerator::test_model_name_is_gpt41 PASSED [ 80%]
+tests/unit/services/test_vision_helper.py::TestVisionCodeGenerator::test_encode_image_file_not_found PASSED [ 82%]
+tests/unit/services/test_vision_helper.py::TestVisionCodeGenerator::test_encode_image_with_valid_file SKIPPED [ 84%]
+tests/unit/services/test_vision_helper.py::TestVisionCodeGenerator::test_generate_streamlit_code_file_not_found PASSED [ 85%]
+tests/unit/services/test_vision_helper.py::TestVisionCodeGenerator::test_generate_streamlit_code_response_structure SKIPPED [ 87%]
+tests/unit/services/test_vision_helper.py::TestVisionCodeGenerator::test_extract_streamlit_components PASSED [ 89%]
+tests/unit/services/test_vision_helper.py::TestVisionCodeGenerator::test_generate_from_url_response_structure PASSED [ 91%]
+tests/unit/test_imports.py::test_backend_models_import PASSED            [ 92%]
+tests/unit/test_imports.py::test_backend_api_models_import PASSED        [ 94%]
+tests/unit/test_imports.py::test_backend_api_init_import PASSED          [ 96%]
+tests/unit/test_imports.py::test_classifier_routes_import PASSED         [ 98%]
+tests/unit/test_imports.py::test_metadata_import PASSED                  [100%]
+
+=============================== warnings summary ===============================
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+<frozen importlib._bootstrap>:241
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+
+tests/integration/services/test_gpt41_connection.py::test_gpt41_connection
+  /Users/jay/.pyenv/versions/3.11.10/envs/myenv/lib/python3.11/site-packages/_pytest/python.py:163: PytestReturnNotNoneWarning: Expected None, but tests/integration/services/test_gpt41_connection.py::test_gpt41_connection returned False, which will be an error in a future version of pytest.  Did you mean to use `assert` instead of `return`?
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================== 55 passed, 2 skipped, 4 warnings in 12.01s ==================

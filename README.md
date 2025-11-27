@@ -16,6 +16,13 @@
 
 <br>
 
+<p align="center">
+  <img src="https://github.com/jjaayy2222/flownote-mvp/actions/workflows/ci.yml/badge.svg" alt="CI" />
+  <img src="https://codecov.io/gh/jjaayy2222/flownote-mvp/branch/main/graph/badge.svg" alt="codecov" />
+</p>
+
+<br>
+
 ---
 
 ## 📖 목차
@@ -26,10 +33,14 @@
 4. [프로젝트 구조](#4-프로젝트-구조)
 5. [설치 및 실행](#5-설치-및-실행)
 6. [사용 방법](#6-사용-방법)
-7. [개발 히스토리](#7-개발-히스토리)
-8. [로드맵](#8-로드맵)
-9. [FAQ](#9-faq)
-10. [기여하기](#10-기여하기)
+7. [테스팅](#7-테스팅)
+8. [개발 히스토리](#8-개발-히스토리)
+9. [로드맵](#9-로드맵)
+10. [FAQ](#10-faq)
+11. [기여하기](#11-기여하기)
+12. [라이선스](#12-라이선스)
+13. [개발자](#13-개발자)
+14. [감사의 말](#14-감사의-말)
 
 ---
 
@@ -159,6 +170,12 @@ flownote-mvp/
 │   ├── search_history.py               # 검색 히스토리
 │   ├── data_manager.py                 # 데이터 관리
 │   ├── export.py                       # 마크다운 내보내기
+│   ├── cli.py                          # CLI Interface (MCP 준비) ✨ NEW
+│   │
+│   ├── services/                       # 비즈니스 로직 (Service Layer) ✨ NEW
+│   │   ├── classification_service.py
+│   │   ├── onboarding_service.py
+│   │   └── conflict_service.py
 │   │
 │   ├── classifier/
 │   │   ├── para_classifier.py          # PARA 분류 로직
@@ -217,7 +234,43 @@ flownote-mvp/
 
 ---
 
-## 5. 🚀 설치 및 실행
+## 5. 🧪 테스트 및 품질 관리
+
+FlowNote는 엄격한 테스트와 품질 관리를 통해 안정성을 보장합니다.
+
+### 5.1 테스트 실행
+
+```bash
+# 전체 테스트 실행
+pytest
+
+# 커버리지 리포트 생성
+pytest --cov=backend --cov-report=term-missing
+```
+
+### 5.2 테스트 커버리지 (Phase 5 Step 2 기준)
+
+| 모듈 | 커버리지 | 비고 |
+|------|----------|------|
+| **전체** | **51%** | 목표: 80% |
+| `utils.py` | 100% | 유틸리티 함수 |
+| `parallel_processor.py` | 100% | 병렬 처리 |
+| `classification_service.py` | 89% | 핵심 로직 |
+| `onboarding_service.py` | 72% | 사용자 관리 |
+
+### 5.3 CI/CD 파이프라인
+
+GitHub Actions를 통해 코드가 푸시될 때마다 자동으로 다음 작업이 수행됩니다:
+1. **환경 설정**: Python 3.11
+2. **의존성 설치**: `requirements.txt`, `requirements-dev.txt`
+3. **테스트 실행**: `pytest`
+4. **커버리지 리포팅**: Codecov 업로드
+
+[![codecov](https://codecov.io/gh/jjaayy2222/flownote-mvp/graph/badge.svg?token=YOUR_TOKEN)](https://codecov.io/gh/jjaayy2222/flownote-mvp)
+
+---
+
+## 6. 🚀 설치 및 실행
 
 ### 5.1 사전 요구사항
 - **Python**: 3.11+
@@ -290,9 +343,67 @@ streamlit run streamlit/pages/dashboard.py
 2. `Tab 5: 메타데이터` - 상세 정보 확인
 3. `Dashboard 페이지` - 실시간 대시보드
 
+### 6.5 **Step 5: CLI 사용 (New!)**
+터미널에서 직접 파일을 분류할 수 있습니다. (MCP 통합 준비)
+
+```bash
+# 단일 파일 분류
+python -m backend.cli classify "path/to/file.txt" [user_id]
+
+# 디렉토리 일괄 분류
+python -m backend.cli batch "path/to/directory" [user_id]
+```
+
 ---
 
-## 7. 📈 개발 히스토리
+## 7. 🧪 테스팅
+
+### 7.1 테스트 실행 방법
+
+프로젝트의 모든 테스트를 실행하려면 다음 단계를 따라주세요:
+
+```bash
+# 1. 가상환경 활성화 (이미 활성화되어 있다면 건너뛰기)
+source venv/bin/activate
+
+# 2. 개발용 의존성 설치 (pytest, pytest-cov, codecov 등)
+pip install -r requirements-dev.txt
+
+# 3. 테스트 실행
+pytest
+
+# 또는 상세한 출력으로 실행
+pytest -vv --tb=short
+
+# 특정 디렉토리의 테스트만 실행
+pytest tests/unit/          # 단위 테스트만
+pytest tests/integration/   # 통합 테스트만
+```
+
+### 7.2 커버리지 확인 방법
+
+코드 커버리지를 확인하려면 다음과 같이 실행하세요:
+
+```bash
+# 터미널에서 커버리지 보고서 확인
+pytest --cov=backend --cov-report=term-missing
+
+# HTML 보고서 생성 (브라우저에서 확인 가능)
+pytest --cov=backend --cov-report=html
+# → htmlcov/index.html 파일이 생성됩니다
+
+# XML 보고서 생성 (CI/CD용)
+pytest --cov=backend --cov-report=xml --cov-report=term
+```
+
+### 7.3 커버리지 목표
+- **프로젝트 전체 커버리지 목표**: 80%
+- **패치 커버리지 목표**: 70%
+- **커버리지 제외 항목**: tests/, streamlit/, temp/, backups/
+
+---
+
+## 8. 📈 개발 히스토리
 
 ### Issue별 개발 진행도
 
@@ -323,7 +434,7 @@ streamlit run streamlit/pages/dashboard.py
 
 ## 8. 🗺️ 로드맵
 
-### ✅ 완료된 기능 (v3.5)
+### ✅ 완료된 기능 (v4.0)
 - [x] 스마트 온보딩 (GPT-4o 영역 추천)
 - [x] AI 기반 PARA 자동 분류
 - [x] 맥락 반영 분류 (사용자 직업/관심)
@@ -332,10 +443,12 @@ streamlit run streamlit/pages/dashboard.py
 - [x] 메타데이터 관리
 - [x] 검색 히스토리
 - [x] 마크다운 내보내기
+- [x] Service Layer 리팩토링 (Thin Router) ✨
+- [x] CLI 인터페이스 (MCP 준비) ✨
 
-### 🚧 진행 중 (v4.0, ~11월 말)
+### 🚧 진행 중 (v5.0, ~12월)
+- [ ] MCP 서버 구현 (Claude Desktop 연동)
 - [ ] 분류 정확도 개선 (Few-shot learning)
-- [ ] 배치 처리 기능
 - [ ] 에러 처리 강화
 - [ ] 태그 자동 생성
 - [ ] 유사 문서 추천

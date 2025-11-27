@@ -271,7 +271,7 @@ class DataManager:
 
 
 def save_json_log(
-    self, 
+    # self, 
     user_id: str,
     file_name: str,
     category: str,
