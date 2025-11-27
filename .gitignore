@@ -56,6 +56,7 @@ desktop.ini
 # 테스트 & 커버리지
 .pytest_cache/
 .coverage
+coverage.xml
 htmlcov/
 .tox/
 
@@ -132,6 +133,20 @@ web_ui/package-lock.json
 
 # 테스트 불필요 파일들
 # tests/tests_phase_0/
+
+tests/data/
+tests/outputs/
+tests/tests/outputs/
+tests/unit/tests/outputs/
+tests/unit/__pycache__/
+tests/unit/classifiers/__pycache__/
+tests/unit/models/__pycache__/
+tests/unit/services/__pycache__/
+tests/e2e/__pycache__/
+tests/.pytest_cache/
+tests/__pycache__/
+
+
 tests/test_imports.py
 tests/conftest.py
 tests/para_agent2.py
@@ -147,8 +162,7 @@ tests/test_para_classifier_.py
 tests/test_compatibility.py
 tests/test_frontend.js
 tests/test_results.txt
-tests/data/
-tests/outputs/
+
 tests/outputs/step_01_upload_20251104_235032.json
 tests/outputs/step_02_classification_20251104_235032.json
 tests/outputs/step_03_conflict_detection_20251104_235032.json
