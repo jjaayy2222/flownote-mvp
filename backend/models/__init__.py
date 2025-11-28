@@ -3,31 +3,6 @@
 """
 통합 모델 패키지 (backend.models)
 
-<<<<<<< HEAD
-- 분류 관련 Pydantic 모델만 re-export
-- 다른 패키지(backend.api.* 등)는 여기서 import 하지 않음
-"""
-
-from .classification import (
-    # 요청 모델
-    ClassifyRequest,
-    ClassificationRequest,
-    MetadataClassifyRequest,
-    HybridClassifyRequest,
-    ParallelClassifyRequest,
-
-    # 응답 모델
-    ClassifyResponse,
-    ClassificationResponse,
-    ClassifyBatchRequest,
-    ClassifyBatchResponse,
-
-    # 파일 메타데이터 (Pydantic 버전)
-    FileMetadata,
-    FileMetadataInput,
-
-    # API 전용 요청 모델
-=======
     - Classification: 분류 관련 모델
     - User: 사용자 관련 모델
     - Common: 공통 모델
@@ -71,35 +46,10 @@ from .common import (
     HealthCheckResponse,
     FileMetadata,
     MetadataResponse,
->>>>>>> origin/refactor/v4-backend-cleanup
     SaveClassificationRequest,
     SearchRequest,
 )
 
-<<<<<<< HEAD
-
-__all__ = [
-    # 요청
-    "ClassifyRequest",
-    "ClassificationRequest",
-    "MetadataClassifyRequest",
-    "HybridClassifyRequest",
-    "ParallelClassifyRequest",
-
-    # 응답
-    "ClassifyResponse",
-    "ClassificationResponse",
-    "ClassifyBatchRequest",
-    "ClassifyBatchResponse",
-
-    # 메타데이터
-    "FileMetadata",
-    "FileMetadataInput",
-
-    # API 전용
-    "SaveClassificationRequest",
-    "SearchRequest",
-=======
 # Conflict (Phase 2.3 - NEW!)
 from .conflict import (
     # Enums
@@ -168,5 +118,4 @@ __all__ = [
     "ResolveConflictRequest",
     "ConflictDetectResponse",
     "ConflictResolveResponse",
->>>>>>> origin/refactor/v4-backend-cleanup
 ]
