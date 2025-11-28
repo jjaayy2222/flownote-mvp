@@ -82,7 +82,14 @@ def _perform_file_classification(client, user_id):
             assert "keyword_tags" in result
 
 
-def test_full_onboarding_and_classification_flow(client):
+@patch('backend.services.gpt_helper.GPT4oHelper.suggest_areas')
+def test_full_onboarding_and_classification_flow(mock_suggest, client):
+    # Mock 설정
+    mock_suggest.return_value = {
+        "status": "success",
+        "areas": ["Python", "AI", "Web"],
+        "message": "Mocked response"
+    }
     """
     E2E 테스트: 온보딩 -> 분류 전체 흐름 검증
     """

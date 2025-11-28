@@ -18,7 +18,25 @@ from backend.embedding import EmbeddingGenerator
 from backend.metadata import FileMetadata
 from backend.utils import count_tokens, estimate_cost
 
-def test_full_pipeline():
+from unittest.mock import patch, MagicMock
+
+@patch('backend.config.ModelConfig.get_embedding_model')
+def test_full_pipeline(mock_get_model):
+    # Mock 설정
+    mock_client = MagicMock()
+    mock_get_model.return_value = mock_client
+    
+    # 임베딩 응답 Mock (1536차원)
+    mock_response = MagicMock()
+    mock_embedding = MagicMock()
+    mock_embedding.embedding = [0.1] * 1536
+    
+    # generate_embeddings는 여러 텍스트를 처리하므로, 입력 텍스트 수만큼의 임베딩을 반환하도록 설정해야 함
+    # 여기서는 간단히 항상 3개의 임베딩을 반환하도록 설정 (테스트 코드에서 3개 청크를 사용)
+    mock_response.data = [mock_embedding] * 6 # 6개 청크 (메타데이터 청킹 결과)
+    mock_response.usage.total_tokens = 100
+    
+    mock_client.embeddings.create.return_value = mock_response
     """전체 파이프라인 테스트"""
     
     print("=" * 50)

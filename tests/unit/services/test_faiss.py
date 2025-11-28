@@ -23,7 +23,37 @@ from backend.embedding import EmbeddingGenerator
 from backend.faiss_search import FAISSRetriever
 from backend.utils import count_tokens, estimate_cost
 
-def test_search_pipeline():
+from unittest.mock import patch, MagicMock
+
+@patch('backend.config.ModelConfig.get_embedding_model')
+def test_search_pipeline(mock_get_model):
+    # Mock 설정
+    mock_client = MagicMock()
+    mock_get_model.return_value = mock_client
+    
+    # 임베딩 응답 Mock (1536차원)
+    mock_embedding = MagicMock()
+    mock_embedding.embedding = [0.1] * 1536
+    
+    # 문서 임베딩용 응답 (4개 청크)
+    mock_response_docs = MagicMock()
+    mock_response_docs.data = [mock_embedding] * 4
+    mock_response_docs.usage.total_tokens = 100
+    
+    # 쿼리 임베딩용 응답 (1개 텍스트)
+    mock_response_query = MagicMock()
+    mock_response_query.data = [mock_embedding]
+    mock_response_query.usage.total_tokens = 10
+    
+    # side_effect를 사용하여 호출 상황에 따라 다른 응답 반환
+    def create_side_effect(*args, **kwargs):
+        input_text = kwargs.get('input')
+        # 입력이 리스트이고 길이가 1보다 크면 문서 임베딩으로 간주
+        if isinstance(input_text, list) and len(input_text) > 1:
+            return mock_response_docs
+        return mock_response_query
+
+    mock_client.embeddings.create.side_effect = create_side_effect
     """전체 검색 파이프라인 테스트"""
     
     # 1. Retriever 초기화
