@@ -190,8 +190,6 @@ class SearchRequest(BaseModel):
     filters: Optional[Dict[str, Any]] = Field(None, description="필터")
 
 
-<<<<<<< HEAD
-=======
 # ============================================
 # LangChain 통합 모델
 # ============================================
@@ -237,4 +235,3 @@ __all__ = [
     "PARAClassificationOutput",
 ]
 
->>>>>>> origin/refactor/v4-backend-cleanup

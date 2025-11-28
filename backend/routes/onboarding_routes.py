@@ -45,42 +45,6 @@ logger = logging.getLogger(__name__)
 # Prefix 제거 (main.py에서만 설정)
 router = APIRouter()
 
-<<<<<<< HEAD
-# =====================================
-# 📌 Pydantic Models (요청/응답 모델)
-# =====================================
-
-class Step1Input(BaseModel):
-    """Step 1 요청 모델: 사용자 직업 입력"""
-    occupation: str             # 직업
-    name: str = "Anonymous"     # 이름 (기본값: Anonymous)
-
-
-class Step2Input(BaseModel):
-    """Step 2: 영역 선택"""
-    user_id: str
-    selected_areas: List[str]
-
-
-class OnboardingStatus(BaseModel):
-    """온보딩 상태"""
-    user_id: str
-    #name: str
-    occupation: str
-    areas: List[str]
-    #projects: List[str]
-    is_completed: bool
-
-# =====================
-# 🚀 API 엔드포인트
-# =====================
-
-# =====================================
-# 📌 Step 1: 직업 입력 → GPT-4o 영역 추천
-# =====================================
-
-@router.post("/step1", response_model=dict)
-=======
 # 싱글톤 인스턴스
 onboarding_service = OnboardingService()
 
@@ -109,7 +73,6 @@ def handle_service_error(result: ServiceResponse) -> None:
 
 
 @router.post("/step1", response_model=dict, tags=["Onboarding", "User Setup", "Step 1"])
->>>>>>> origin/refactor/v4-backend-cleanup
 async def onboarding_step1(input_data: Step1Input):
     """
     Step 1: 사용자 직업 입력 및 프로필 생성

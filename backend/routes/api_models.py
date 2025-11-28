@@ -18,12 +18,6 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
-<<<<<<< HEAD
-# 모델 임포트
-from backend.models import (
-    ClassifyRequest,
-    ClassifyResponse,)
-=======
 # ... (imports)
 
 
@@ -44,14 +38,11 @@ class ConflictDetectionRequest(BaseModel):
             }
         }
     )
->>>>>>> origin/refactor/v4-backend-cleanup
 
 
 class ConflictDetectionResponse(BaseModel):
     """충돌 감지 응답"""
 
-<<<<<<< HEAD
-=======
     conflict_detected: bool = Field(..., description="충돌 감지 여부")
     confidence_gap: Optional[float] = Field(
         None, description="상위 2개 카테고리의 신뢰도 차이"
@@ -116,7 +107,6 @@ class ConflictResolutionResponse(BaseModel):
             }
         }
     )
->>>>>>> origin/refactor/v4-backend-cleanup
 
 
 __all__ = [

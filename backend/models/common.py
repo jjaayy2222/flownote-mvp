@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-# backend/models/common.py
-=======
 # backend/models/common.py
 
 
@@ -196,4 +193,3 @@ __all__ = [
     "SaveClassificationRequest",
     "SearchRequest",
 ]
->>>>>>> origin/refactor/v4-backend-cleanup

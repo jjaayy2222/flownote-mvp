@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-# backend/models/user.py
-=======
 # backend/models/user.py
 
 """
@@ -139,4 +136,3 @@ class UserContext(BaseModel):
 
 
 
->>>>>>> origin/refactor/v4-backend-cleanup

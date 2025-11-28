@@ -8,30 +8,15 @@
 
 import logging
 from typing import List
-<<<<<<< HEAD
-
-
-from backend.classifier.para_agent import run_para_agent_sync
-from backend.api.models import ConflictRecord, ConflictReport
-from backend.api.endpoints.conflict_resolver_agent import resolve_conflicts_sync
-from backend.services.conflict_service import ConflictService, KeywordClassifier
-from backend.routes.api_models import ClassifyResponse, MetadataResponse, ErrorResponse
-# 모델 임포트
-from backend.models import ClassifyRequest, ClassifyResponse
-=======
 from fastapi import APIRouter, HTTPException
 from backend.models import ConflictRecord, ConflictReport
 from backend.services.conflict_service import ConflictService
->>>>>>> origin/refactor/v4-backend-cleanup
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-<<<<<<< HEAD
-=======
 conflict_service = ConflictService()
 
->>>>>>> origin/refactor/v4-backend-cleanup
 
 @router.post("/resolve", response_model=ConflictReport, tags=["Conflict", "Resolution"])
 async def resolve_conflicts(conflicts: List[ConflictRecord]):
