@@ -5,7 +5,7 @@ BaseClassifier - 모든 분류기의 추상 클래스
 Async 지원 + 타입 힌팅
 """
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
@@ -16,11 +16,11 @@ class BaseClassifier(ABC):
 
     def __init__(self):
         self.name = self.__class__.__name__
-        self.last_error: Optional[str] = None
+        self.last_error: str | None = None
 
     @abstractmethod
     async def classify(
-        self, text: str, context: Optional[Dict[str, Any]] = None
+        self, text: str, context: dict[str, Any] | None = None
     ) -> Dict[str, Any]:
         """
         분류 수행
@@ -62,8 +62,9 @@ class BaseClassifier(ABC):
             self.last_error = error_msg
             return False, error_msg
 
+        self.last_error = None
         return True, "valid"
 
-    def get_error(self) -> Optional[str]:
+    def get_error(self) -> str | None:
         """마지막 에러 반환"""
         return self.last_error
