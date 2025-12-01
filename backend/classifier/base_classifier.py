@@ -5,7 +5,7 @@ BaseClassifier - 모든 분류기의 추상 클래스
 Async 지원 + 타입 힌팅
 """
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -16,11 +16,11 @@ class BaseClassifier(ABC):
 
     def __init__(self):
         self.name = self.__class__.__name__
-        self.last_error = None
+        self.last_error: Optional[str] = None
 
     @abstractmethod
     async def classify(
-        self, text: str, context: Dict[str, Any] = None
+        self, text: str, context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         분류 수행
@@ -40,7 +40,7 @@ class BaseClassifier(ABC):
         """
         pass
 
-    async def validate_result(
+    def validate_result(
         self, result: Dict[str, Any]
     ) -> Tuple[bool, str]:
         """분류 결과 검증"""
@@ -49,16 +49,21 @@ class BaseClassifier(ABC):
             if field not in result:
                 error_msg = f"Missing required field: {field}"
                 logger.error(error_msg)
+                self.last_error = error_msg
                 return False, error_msg
 
         if not isinstance(result["confidence"], (int, float)):
-            return False, "confidence must be a number"
+            error_msg = "confidence must be a number"
+            self.last_error = error_msg
+            return False, error_msg
 
         if not 0 <= result["confidence"] <= 1:
-            return False, "confidence must be between 0 and 1"
+            error_msg = "confidence must be between 0 and 1"
+            self.last_error = error_msg
+            return False, error_msg
 
         return True, "valid"
 
-    def get_error(self) -> str:
+    def get_error(self) -> Optional[str]:
         """마지막 에러 반환"""
-        return self.last_error or "No error"
+        return self.last_error
