@@ -102,14 +102,18 @@ class ClassificationService:
             )
 
             # Step 6: 결과 저장 (CSV + JSON)
-            log_info = self._save_results(
-                user_id=user_id or "anonymous",
-                file_id=file_id or "unknown",
-                final_category=final_category,
-                keyword_tags=keyword_result.get("tags", []),
-                confidence=inner_conflict_result.get("confidence", 0.0),
-                snapshot_id=para_result.get("snapshot_id", ""),
-            )
+            try:
+                log_info = self._save_results(
+                    user_id=user_id or "anonymous",
+                    file_id=file_id or "unknown",
+                    final_category=final_category,
+                    keyword_tags=keyword_result.get("tags", []),
+                    confidence=inner_conflict_result.get("confidence", 0.0),
+                    snapshot_id=para_result.get("snapshot_id", ""),
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ 로그 저장 실패 (무시됨): {e}")
+                log_info = {"error": str(e)}
 
             # Step 7: 응답 생성
             response = ClassifyResponse(
