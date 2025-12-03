@@ -54,7 +54,7 @@ def _perform_file_classification(client, user_id):
 
         # KeywordClassifier Mocking (인스턴스 메서드)
         with patch(
-            "backend.classifier.keyword_classifier.KeywordClassifier.aclassify",
+            "backend.classifier.keyword.KeywordClassifier.classify",
             new_callable=AsyncMock,
         ) as mock_keyword:
             mock_keyword.return_value = mock_keyword_result

@@ -22,28 +22,29 @@ logger = logging.getLogger(__name__)
 
 
 # 테스트 1: KeywordClassifier 단독 테스트
-def test_1_keyword_classifier():
+@pytest.mark.asyncio
+async def test_1_keyword_classifier():
     """테스트 1: KeywordClassifier 단독 테스트"""
     print("\n" + "=" * 60)
     print("테스트 1: KeywordClassifier 단독 테스트")
     print("=" * 60)
 
-    from backend.classifier.keyword_classifier import KeywordClassifier
+    from backend.classifier.keyword import KeywordClassifier
 
     test_texts = ["프로젝트 완성하기", "회의 준비", "건강 관리 계획"]
 
     for text in test_texts:
         classifier = KeywordClassifier()  # 매번 새 인스턴스
-        result = classifier.classify(text)
+        result = await classifier.classify(text)
 
         print(f"\n📝 텍스트: {text}")
-        print(f"  ✅ Tags: {result.get('tags', [])}")
+        print(f"  ✅ Category: {result.get('category', 'Inbox')}")
         print(f"  ✅ Confidence: {result.get('confidence')}")
-        print(f"  ✅ Is Fallback: {result.get('is_fallback', False)}")
+        print(f"  ✅ Method: {result.get('method', 'unknown')}")
 
-        # tags가 반드시 존재하는지 확인
-        assert "tags" in result, "❌ tags 필드 없음!"
-        assert len(result["tags"]) > 0, "❌ tags가 빈 배열!"
+        # category가 반드시 존재하는지 확인
+        assert "category" in result, "❌ category 필드 없음!"
+        assert result["category"] in ["Projects", "Areas", "Resources", "Archives", "Inbox"], "❌ 잘못된 카테고리!"
 
     print("\n✅ 테스트 1 통과!")
 
@@ -75,7 +76,7 @@ async def test_2_conflict_service():
             }
 
             mock_keyword_instance = MockKeywordClassifier.return_value
-            mock_keyword_instance.aclassify = AsyncMock(
+            mock_keyword_instance.classify = AsyncMock(
                 return_value={
                     "tags": ["python", "coding"],
                     "confidence": 0.8,
