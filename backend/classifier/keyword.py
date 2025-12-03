@@ -50,32 +50,34 @@ class KeywordClassifier(BaseClassifier):
         self, text: str, context: dict[str, Any] | None = None
     ) -> Dict[str, Any]:
         """동기식 분류 로직"""
-        # 1. 기본 규칙 복사
-        current_rules = self.keyword_rules.copy()
+        # 1. 기본 규칙 복사 (리스트까지 새로 생성하여 참조 끊기 - Deep Copy 효과)
+        current_rules = {k: list(v) for k, v in self.keyword_rules.items()}
         
         # 2. Context 반영 (사용자 Areas를 키워드로 추가)
-        user_areas_matched = False
+        user_areas = []
         if context and "areas" in context:
-            for area in context["areas"]:
-                # Areas 카테고리에 사용자 정의 영역 키워드 추가
+            user_areas = [a.lower() for a in context["areas"]]
+            if user_areas:
                 if "Areas" not in current_rules:
                     current_rules["Areas"] = []
-                current_rules["Areas"].append(area.lower())
+                current_rules["Areas"].extend(user_areas)
 
-        scores = {cat: 0 for cat in current_rules.keys()}
-        matched_keywords = {cat: [] for cat in current_rules.keys()}
+        scores = {cat: 0 for cat in current_rules}
+        matched_keywords = {cat: [] for cat in current_rules}
         
         text_lower = text.lower()
+        user_areas_matched = False
         
         # 3. 키워드 매칭
         for category, keywords in current_rules.items():
             for keyword in keywords:
-                if keyword.lower() in text_lower:
+                kw_lower = keyword.lower()
+                if kw_lower in text_lower:
                     scores[category] += 1
                     matched_keywords[category].append(keyword)
                     
                     # 사용자 Context(Areas)와 매칭되었는지 확인
-                    if context and "areas" in context and keyword.lower() in [a.lower() for a in context["areas"]]:
+                    if kw_lower in user_areas:
                         user_areas_matched = True
                         scores[category] += 2  # 가중치 부여
         
