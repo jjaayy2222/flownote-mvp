@@ -91,32 +91,35 @@ class ClassificationService:
             )
 
             # Step 5: 최종 카테고리 결정
+            # ConflictService.classify_text 반환값 구조:
+            # { 'conflict_result': { 'final_category': ..., 'confidence': ... }, ... }
+            inner_conflict_result = conflict_result.get("conflict_result", {})
+            
             final_category = (
-                conflict_result.get("final_category")
+                inner_conflict_result.get("final_category")
                 or para_result.get("category")
                 or "Resources"
             )
 
-            # Step 6: 결과 저장 (CSV + JSON) - Step 4에서 상세 구현
-            # 현재는 기본 정보만 넘김
+            # Step 6: 결과 저장 (CSV + JSON)
             log_info = self._save_results(
                 user_id=user_id or "anonymous",
                 file_id=file_id or "unknown",
                 final_category=final_category,
                 keyword_tags=keyword_result.get("tags", []),
-                confidence=conflict_result.get("confidence", 0.0),
+                confidence=inner_conflict_result.get("confidence", 0.0),
                 snapshot_id=para_result.get("snapshot_id", ""),
             )
 
             # Step 7: 응답 생성
             response = ClassifyResponse(
                 category=final_category,
-                confidence=conflict_result.get("confidence", 0.0),
+                confidence=inner_conflict_result.get("confidence", 0.0),
                 snapshot_id=str(para_result.get("snapshot_id", "")),
-                conflict_detected=conflict_result.get("conflict_detected", False),
-                requires_review=conflict_result.get("requires_review", False),
+                conflict_detected=inner_conflict_result.get("conflict_detected", False),
+                requires_review=inner_conflict_result.get("requires_review", False),
                 keyword_tags=keyword_result.get("tags", []),
-                reasoning=conflict_result.get("reason", ""),
+                reasoning=inner_conflict_result.get("reason", ""),
                 user_context_matched=keyword_result.get("user_context_matched", False),
                 user_areas=areas or [],
                 user_context=user_context,
@@ -164,14 +167,24 @@ class ClassificationService:
         classifier = KeywordClassifier()  # 매번 새 인스턴스 (상태 없음)
         result = await classifier.classify(text=text, context=user_context)
 
-        # 태그 안전 처리
-        tags = result.get("tags", [])
+        # 태그 안전 처리 (metadata.matched_keywords 사용)
+        metadata = result.get("metadata", {})
+        tags = metadata.get("matched_keywords", [])
+        
+        # 이전 버전 호환성 (tags 키가 있는 경우)
+        if not tags and "tags" in result:
+            tags = result["tags"]
+
         if not isinstance(tags, list):
             tags = [str(tags)] if tags else ["기타"]
         elif not tags:
             tags = ["기타"]
 
         result["tags"] = tags
+        
+        # user_context_matched 복사
+        result["user_context_matched"] = metadata.get("user_context_matched", False)
+        
         logger.info(f"✅ Keywords: {tags[:5]}")
         return result
 
