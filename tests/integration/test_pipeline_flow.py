@@ -1,3 +1,5 @@
+# tests/integration/test_pipeline_flow.py
+
 import pytest
 from unittest.mock import AsyncMock, patch
 from backend.services.classification_service import ClassificationService
@@ -128,3 +130,47 @@ async def test_classification_conflict_resolution_flow():
         assert result.confidence > 0.0
         # 로그 정보가 포함되어 있는지 확인
         assert result.log_info["json_saved"] is True
+
+@pytest.mark.asyncio
+async def test_classification_conflict_resolution_parsing():
+    """
+    통합 파이프라인 테스트: ConflictService 결과 파싱 검증
+    
+    목표: ConflictService의 중첩된 결과 구조가 ClassificationService에서 올바르게 파싱되는지 확인
+    """
+    classification_service = ClassificationService()
+    
+    # ConflictService Mocking
+    with patch("backend.services.classification_service.ConflictService") as MockConflictService:
+        mock_instance = MockConflictService.return_value
+        
+        # ConflictService.classify_text가 반환하는 중첩 구조 Mock
+        mock_instance.classify_text = AsyncMock(return_value={
+            "snapshot_id": "snap_mock_123",
+            "timestamp": "2025-12-03T12:00:00",
+            "text": "Conflict text",
+            "conflict_result": {
+                "final_category": "Resources",
+                "confidence": 0.42,
+                "conflict_detected": True,
+                "requires_review": True,
+                "reason": "Mocked conflict reason"
+            },
+            "status": "success"
+        })
+        
+        # ClassificationService 인스턴스에 Mock 주입 (이미 생성된 인스턴스의 속성 교체)
+        classification_service.conflict_service = mock_instance
+        
+        # PARA, Keyword 결과는 중요하지 않음 (ConflictService가 최종 결정하므로)
+        with patch("backend.services.classification_service.run_para_agent", new_callable=AsyncMock) as mock_para:
+            mock_para.return_value = {"category": "Projects", "confidence": 0.5}
+            
+            result = await classification_service.classify(text="Conflict text")
+            
+            # 검증: 중첩된 필드들이 올바르게 매핑되었는지 확인
+            assert result.category == "Resources"
+            assert result.confidence == 0.42
+            assert result.conflict_detected is True
+            assert result.requires_review is True
+            assert result.reasoning == "Mocked conflict reason"
