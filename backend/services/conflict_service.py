@@ -168,8 +168,13 @@ class ConflictService:
                 tags=None
             )
             
+            # Keyword 결과에서 category 우선 사용, 없으면 tags[0] 사용
+            kw_category = keyword_result.get("category")
+            if not kw_category and keyword_result.get("tags"):
+                kw_category = keyword_result.get("tags")[0]
+            
             keyword_obj = ClassificationResult(
-                category=keyword_result.get("tags", ["기타"])[0] if keyword_result.get("tags") else "기타",
+                category=kw_category or "기타",
                 confidence=keyword_result.get("confidence", 0.8),
                 source="keyword",
                 reasoning=keyword_result.get("reasoning", ""),
