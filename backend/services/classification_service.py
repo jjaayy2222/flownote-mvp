@@ -1,3 +1,5 @@
+# backend/services/classification_service.py
+
 """
 분류 비즈니스 로직 서비스 (Skeleton)
 - PARA Agent + Keyword Classifier + Conflict Resolution 오케스트레이션
@@ -19,7 +21,7 @@ from backend.models import ClassifyResponse
 from backend.services.conflict_service import ConflictService
 from backend.data_manager import DataManager
 from backend.classifier.para_agent import run_para_agent
-from backend.classifier.keyword_classifier import KeywordClassifier
+from backend.classifier.keyword import KeywordClassifier
 
 # 추후 Step 3에서 실제 로직 구현 시 필요한 임포트들
 # from backend.classifier.para_agent import run_para_agent
@@ -160,7 +162,7 @@ class ClassificationService:
     async def _extract_keywords(self, text: str, user_context: dict) -> dict:
         """키워드 추출"""
         classifier = KeywordClassifier()  # 매번 새 인스턴스 (상태 없음)
-        result = await classifier.aclassify(text=text, user_context=user_context)
+        result = await classifier.classify(text=text, context=user_context)
 
         # 태그 안전 처리
         tags = result.get("tags", [])

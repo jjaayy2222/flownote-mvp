@@ -8,7 +8,7 @@ from backend.config import ModelConfig
 from backend.classifier.langchain_integration import (
     classify_with_langchain, 
 )
-from backend.classifier.keyword_classifier import KeywordClassifier
+from backend.classifier.keyword import KeywordClassifier
 from backend.classifier.conflict_resolver import (
     ConflictResolver,
     ClassificationResult
