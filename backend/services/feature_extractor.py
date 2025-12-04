@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 # 상수 정의
 _MISSING_DAYS_DEFAULT = 999
+_WORD_TOKEN_PATTERN = r"\b\w+\b"
 
 
 @dataclass
@@ -110,9 +111,7 @@ class FeatureExtractor:
         다국어(CJK 등) 처리나 복잡한 토큰화가 필요한 경우, 이 함수를 확장하거나 
         별도의 NLP 라이브러리를 도입해야 합니다.
         """
-        if not text:
-            return []
-        return re.findall(r"\b\w+\b", text.lower())
+        return [] if not text else re.findall(_WORD_TOKEN_PATTERN, text.lower())
 
     def _analyze_text(self, text: str) -> Dict[str, Any]:
         """텍스트 특징 분석"""
