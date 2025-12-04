@@ -4,14 +4,14 @@
 ConfidenceCalculator - 신뢰도 계산 엔진
 """
 import logging
-from typing import Dict, Any, Optional, List, TypedDict
-from dataclasses import dataclass, field
+from typing import Dict, Any, Optional, List, TypedDict, Literal
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
 
 class AdjustmentDetail(TypedDict):
-    type: str  # 'boost' or 'penalty'
+    type: Literal['boost', 'penalty']
     reason: str
     amount: float
 
