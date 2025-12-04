@@ -94,6 +94,20 @@ def test_extract_temporal_features_default_usage_stats(extractor):
     assert features.access_frequency == pytest.approx(0.0)
     assert features.edit_frequency == pytest.approx(0.0)
 
+def test_extract_temporal_features_negative_counts_clamped_to_zero(extractor):
+    """음수 access/edit count가 0으로 클램핑되는지 테스트 (PR Feedback)"""
+    usage = {
+        "days_since_access": 4,
+        "days_since_edit": 9,
+        "access_count": -10,
+        "edit_count": -5,
+    }
+
+    features = extractor.extract("test", {}, usage)
+
+    assert features.access_frequency == pytest.approx(0.0)
+    assert features.edit_frequency == pytest.approx(0.0)
+
 def test_extract_sentiment(extractor):
     """감정 분석 테스트"""
     # 문장부호가 있어도 잘 동작해야 함 (PR Feedback)
