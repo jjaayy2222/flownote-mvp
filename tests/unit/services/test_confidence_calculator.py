@@ -2,15 +2,34 @@
 
 import pytest
 import logging
-from backend.services.confidence_calculator import ConfidenceCalculator
+from typing import List, Optional
+from backend.services.confidence_calculator import ConfidenceCalculator, AdjustmentDetail
 
 @pytest.fixture
 def calculator():
     return ConfidenceCalculator()
 
-def _has_adjustment_with_reason(adjustments, reason):
-    """Helper: Check if adjustments contain a specific reason"""
-    return any(adj["reason"] == reason for adj in adjustments)
+def _has_adjustment_with_reason(
+    adjustments: List[AdjustmentDetail], 
+    reason: str, 
+    type_: Optional[str] = None
+) -> bool:
+    """
+    Helper: Check if adjustments contain a specific reason and optionally a specific type.
+    
+    Args:
+        adjustments: List of adjustment details
+        reason: The reason to search for
+        type_: Optional type filter ('boost' or 'penalty')
+    
+    Returns:
+        True if matching adjustment found, False otherwise
+    """
+    return any(
+        adj.get("reason") == reason
+        and (type_ is None or adj.get("type") == type_)
+        for adj in adjustments
+    )
 
 def test_calculate_base_score_only(calculator):
     """기본 가중 평균 계산 테스트 (조정 없음)"""
@@ -53,8 +72,12 @@ def test_agreement_boost(calculator):
     
     result = calculator.calculate(scores)
     
-    # 구조화된 adjustments 확인
-    assert _has_adjustment_with_reason(result.details["adjustments"], "Agreement Boost")
+    # 구조화된 adjustments 확인 (type도 검증)
+    assert _has_adjustment_with_reason(
+        result.details["adjustments"], 
+        "Agreement Boost", 
+        type_="boost"
+    )
     assert result.score > result.details["base_score"]
 
 def test_disagreement_penalty(calculator):
@@ -72,7 +95,8 @@ def test_disagreement_penalty(calculator):
     assert all("Disagreement Penalty" not in r for r in result_no_disagreement.reasons)
     assert not _has_adjustment_with_reason(
         result_no_disagreement.details["adjustments"], 
-        "Disagreement Penalty"
+        "Disagreement Penalty",
+        type_="penalty"
     )
     assert result_no_disagreement.score == base_score_no_disagreement
 
@@ -84,7 +108,11 @@ def test_disagreement_penalty(calculator):
     # 차이 0.35 > 0.3 (0.15 * 2) -> Disagreement Penalty (-0.20)
     result = calculator.calculate(scores_valid)
     
-    assert _has_adjustment_with_reason(result.details["adjustments"], "Disagreement Penalty")
+    assert _has_adjustment_with_reason(
+        result.details["adjustments"], 
+        "Disagreement Penalty",
+        type_="penalty"
+    )
     assert result.score < result.details["base_score"]
 
 def test_feature_adjustments(calculator):
@@ -100,22 +128,30 @@ def test_feature_adjustments(calculator):
     
     # Base 0.7 + 0.10 + 0.05 = 0.85
     assert result.score == pytest.approx(0.85)
-    assert _has_adjustment_with_reason(result.details["adjustments"], "High Frequency Boost")
-    assert _has_adjustment_with_reason(result.details["adjustments"], "Recent Edit Boost")
+    assert _has_adjustment_with_reason(
+        result.details["adjustments"], 
+        "High Frequency Boost",
+        type_="boost"
+    )
+    assert _has_adjustment_with_reason(
+        result.details["adjustments"], 
+        "Recent Edit Boost",
+        type_="boost"
+    )
 
-def test_low_info_penalty(calculator):
-    """정보 부족(짧은 텍스트) 페널티"""
+@pytest.mark.parametrize("text_length", [10, 0])
+def test_low_info_penalty(calculator, text_length):
+    """정보 부족(짧은 텍스트) 페널티 - 파라미터화"""
     scores = {"ai": 0.7}
-
-    # Case 1: text_length < 50
-    features_short = {"text_length": 10}
-    result_short = calculator.calculate(scores, features_short)
-    assert _has_adjustment_with_reason(result_short.details["adjustments"], "Low Info Penalty")
+    features = {"text_length": text_length}
     
-    # Case 2: text_length == 0 (Empty)
-    features_empty = {"text_length": 0}
-    result_empty = calculator.calculate(scores, features_empty)
-    assert _has_adjustment_with_reason(result_empty.details["adjustments"], "Low Info Penalty")
+    result = calculator.calculate(scores, features)
+    
+    assert _has_adjustment_with_reason(
+        result.details["adjustments"], 
+        "Low Info Penalty",
+        type_="penalty"
+    )
 
 def test_score_clamping(calculator):
     """점수가 0.0 ~ 1.0 범위를 벗어나지 않도록 클램핑"""
@@ -162,16 +198,19 @@ def test_weights_sum_within_tolerance_no_warning(caplog):
             "human": 0.5,
         }  # Sum = 1.0, within [0.99, 1.01]
 
+    expected_logger_name = "backend.services.confidence_calculator"
+
     with caplog.at_level(logging.WARNING):
         CalculatorWithinTolerance()
 
-    # 가중치 합 관련 경고가 없어야 함
+    # 가중치 합 관련 경고가 없어야 함 (로거 이름으로 필터링)
     weight_warnings = [
         record for record in caplog.records
-        if "weight" in record.getMessage().lower() 
+        if record.name == expected_logger_name
+        and "weight" in record.getMessage().lower() 
         and "sum" in record.getMessage().lower()
     ]
-    assert len(weight_warnings) == 0
+    assert not weight_warnings
 
 def test_weights_sum_outside_tolerance_logs_warning(caplog):
     """가중치 합이 허용 범위 밖일 때 경고 발생"""
@@ -181,13 +220,16 @@ def test_weights_sum_outside_tolerance_logs_warning(caplog):
             "human": 0.3,
         }  # Sum = 1.1, outside [0.99, 1.01]
 
+    expected_logger_name = "backend.services.confidence_calculator"
+
     with caplog.at_level(logging.WARNING):
         CalculatorOutsideTolerance()
 
-    # 가중치 합 관련 경고가 정확히 1개 있어야 함
+    # 가중치 합 관련 경고가 정확히 1개 있어야 함 (로거 이름으로 필터링)
     weight_warnings = [
         record for record in caplog.records
-        if "weight" in record.getMessage().lower() 
+        if record.name == expected_logger_name
+        and "weight" in record.getMessage().lower() 
         and "sum" in record.getMessage().lower()
     ]
     assert len(weight_warnings) == 1
@@ -234,12 +276,12 @@ def test_complex_scenario_multiple_adjustments(calculator):
     adjustments = result.details["adjustments"]
     assert len(adjustments) == 4
     
-    # 각 조정 타입 확인
-    adjustment_types = {adj["reason"]: adj["amount"] for adj in adjustments}
-    assert adjustment_types["Agreement Boost"] == 0.15
-    assert adjustment_types["High Frequency Boost"] == 0.10
-    assert adjustment_types["Recent Edit Boost"] == 0.05
-    assert adjustment_types["Low Info Penalty"] == -0.10
+    # 각 조정 타입 및 금액 확인
+    adjustment_map = {adj["reason"]: (adj["type"], adj["amount"]) for adj in adjustments}
+    assert adjustment_map["Agreement Boost"] == ("boost", 0.15)
+    assert adjustment_map["High Frequency Boost"] == ("boost", 0.10)
+    assert adjustment_map["Recent Edit Boost"] == ("boost", 0.05)
+    assert adjustment_map["Low Info Penalty"] == ("penalty", -0.10)
     
     # 최종 점수: base + 조정 = 0.728 + 0.20 = 0.928
     expected_final = round(expected_base + 0.20, 3)
