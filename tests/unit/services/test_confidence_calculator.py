@@ -1,11 +1,16 @@
 # tests/unit/services/test_confidence_calculator.py
 
 import pytest
+import logging
 from backend.services.confidence_calculator import ConfidenceCalculator
 
 @pytest.fixture
 def calculator():
     return ConfidenceCalculator()
+
+def _has_adjustment_with_reason(adjustments, reason):
+    """Helper: Check if adjustments contain a specific reason"""
+    return any(adj["reason"] == reason for adj in adjustments)
 
 def test_calculate_base_score_only(calculator):
     """기본 가중 평균 계산 테스트 (조정 없음)"""
@@ -49,8 +54,7 @@ def test_agreement_boost(calculator):
     result = calculator.calculate(scores)
     
     # 구조화된 adjustments 확인
-    assert any(adj["type"] == "boost" and adj["reason"] == "Agreement Boost" 
-               for adj in result.details["adjustments"])
+    assert _has_adjustment_with_reason(result.details["adjustments"], "Agreement Boost")
     assert result.score > result.details["base_score"]
 
 def test_disagreement_penalty(calculator):
@@ -63,8 +67,13 @@ def test_disagreement_penalty(calculator):
     result_no_disagreement = calculator.calculate(scores)
     base_score_no_disagreement = result_no_disagreement.details["base_score"]
 
-    # "Disagreement Penalty"가 이유에 포함되지 않아야 하고, 최종 점수는 base_score와 같아야 함
+    # "Disagreement Penalty"가 이유에 포함되지 않아야 하고, structured adjustments에도 포함되지 않아야 하며,
+    # 최종 점수는 base_score와 같아야 함
     assert all("Disagreement Penalty" not in r for r in result_no_disagreement.reasons)
+    assert not _has_adjustment_with_reason(
+        result_no_disagreement.details["adjustments"], 
+        "Disagreement Penalty"
+    )
     assert result_no_disagreement.score == base_score_no_disagreement
 
     # Positive case: both scores above threshold and sufficiently different -> disagreement penalty
@@ -75,8 +84,7 @@ def test_disagreement_penalty(calculator):
     # 차이 0.35 > 0.3 (0.15 * 2) -> Disagreement Penalty (-0.20)
     result = calculator.calculate(scores_valid)
     
-    assert any(adj["type"] == "penalty" and adj["reason"] == "Disagreement Penalty" 
-               for adj in result.details["adjustments"])
+    assert _has_adjustment_with_reason(result.details["adjustments"], "Disagreement Penalty")
     assert result.score < result.details["base_score"]
 
 def test_feature_adjustments(calculator):
@@ -92,22 +100,22 @@ def test_feature_adjustments(calculator):
     
     # Base 0.7 + 0.10 + 0.05 = 0.85
     assert result.score == pytest.approx(0.85)
-    assert any(adj["reason"] == "High Frequency Boost" for adj in result.details["adjustments"])
-    assert any(adj["reason"] == "Recent Edit Boost" for adj in result.details["adjustments"])
+    assert _has_adjustment_with_reason(result.details["adjustments"], "High Frequency Boost")
+    assert _has_adjustment_with_reason(result.details["adjustments"], "Recent Edit Boost")
 
 def test_low_info_penalty(calculator):
     """정보 부족(짧은 텍스트) 페널티"""
     scores = {"ai": 0.7}
-    
+
     # Case 1: text_length < 50
     features_short = {"text_length": 10}
     result_short = calculator.calculate(scores, features_short)
-    assert any(adj["reason"] == "Low Info Penalty" for adj in result_short.details["adjustments"])
+    assert _has_adjustment_with_reason(result_short.details["adjustments"], "Low Info Penalty")
     
     # Case 2: text_length == 0 (Empty)
     features_empty = {"text_length": 0}
     result_empty = calculator.calculate(scores, features_empty)
-    assert any(adj["reason"] == "Low Info Penalty" for adj in result_empty.details["adjustments"])
+    assert _has_adjustment_with_reason(result_empty.details["adjustments"], "Low Info Penalty")
 
 def test_score_clamping(calculator):
     """점수가 0.0 ~ 1.0 범위를 벗어나지 않도록 클램핑"""
@@ -145,6 +153,45 @@ def test_recommend_action(calculator):
     # Manual Review (< 0.60)
     res3 = calculator.calculate({"ai": 0.4})  # Base 0.4 -> Manual Review
     assert res3.action == "manual_review"
+
+def test_weights_sum_within_tolerance_no_warning(caplog):
+    """가중치 합이 허용 범위 내일 때 경고 없음"""
+    class CalculatorWithinTolerance(ConfidenceCalculator):
+        _WEIGHTS = {
+            "ai": 0.5,
+            "human": 0.5,
+        }  # Sum = 1.0, within [0.99, 1.01]
+
+    with caplog.at_level(logging.WARNING):
+        CalculatorWithinTolerance()
+
+    # 가중치 합 관련 경고가 없어야 함
+    weight_warnings = [
+        record for record in caplog.records
+        if "weight" in record.getMessage().lower() 
+        and "sum" in record.getMessage().lower()
+    ]
+    assert len(weight_warnings) == 0
+
+def test_weights_sum_outside_tolerance_logs_warning(caplog):
+    """가중치 합이 허용 범위 밖일 때 경고 발생"""
+    class CalculatorOutsideTolerance(ConfidenceCalculator):
+        _WEIGHTS = {
+            "ai": 0.8,
+            "human": 0.3,
+        }  # Sum = 1.1, outside [0.99, 1.01]
+
+    with caplog.at_level(logging.WARNING):
+        CalculatorOutsideTolerance()
+
+    # 가중치 합 관련 경고가 정확히 1개 있어야 함
+    weight_warnings = [
+        record for record in caplog.records
+        if "weight" in record.getMessage().lower() 
+        and "sum" in record.getMessage().lower()
+    ]
+    assert len(weight_warnings) == 1
+    assert "1.1" in weight_warnings[0].getMessage()
 
 def test_empty_scores(calculator):
     """점수가 없는 경우"""
@@ -198,4 +245,3 @@ def test_complex_scenario_multiple_adjustments(calculator):
     expected_final = round(expected_base + 0.20, 3)
     assert result.score == expected_final
     assert result.action == "auto_apply"
-
