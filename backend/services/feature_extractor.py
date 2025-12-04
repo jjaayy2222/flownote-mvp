@@ -10,6 +10,9 @@ from dataclasses import dataclass, asdict
 
 logger = logging.getLogger(__name__)
 
+# 상수 정의
+_MISSING_DAYS_DEFAULT = 999
+
 
 @dataclass
 class FileFeatures:
@@ -99,6 +102,18 @@ class FeatureExtractor:
             logger.error(f"Feature extraction failed: {str(e)}", exc_info=True)
             return self._default_features()
 
+    def _tokenize_words(self, text: str) -> List[str]:
+        """
+        단어 토큰화 헬퍼 함수
+        
+        Note: 현재는 간단한 정규식(\b\w+\b)을 사용하여 문장부호를 제거하고 단어를 추출합니다.
+        다국어(CJK 등) 처리나 복잡한 토큰화가 필요한 경우, 이 함수를 확장하거나 
+        별도의 NLP 라이브러리를 도입해야 합니다.
+        """
+        if not text:
+            return []
+        return re.findall(r"\b\w+\b", text.lower())
+
     def _analyze_text(self, text: str) -> Dict[str, Any]:
         """텍스트 특징 분석"""
         if not text:
@@ -110,8 +125,7 @@ class FeatureExtractor:
             }
             
         text_clean = text.strip()
-        # 정규식을 사용하여 단어 추출 (문장부호 제거)
-        words = re.findall(r"\b\w+\b", text_clean.lower())
+        words = self._tokenize_words(text_clean)
         word_count = len(words)
         
         return {
@@ -151,17 +165,18 @@ class FeatureExtractor:
 
     def _analyze_temporal(self, usage_stats: Dict) -> Dict[str, Any]:
         """시간 특징 분석"""
-        days_since_access = usage_stats.get("days_since_access", 999)
-        days_since_edit = usage_stats.get("days_since_edit", 999)
+        days_since_access = usage_stats.get("days_since_access", _MISSING_DAYS_DEFAULT)
+        days_since_edit = usage_stats.get("days_since_edit", _MISSING_DAYS_DEFAULT)
         
         # 비정상적인 음수값은 결측치로 간주하여 큰 기본값으로 클램핑
         if days_since_access < 0:
-            days_since_access = 999
+            days_since_access = _MISSING_DAYS_DEFAULT
         if days_since_edit < 0:
-            days_since_edit = 999
+            days_since_edit = _MISSING_DAYS_DEFAULT
             
-        access_count = usage_stats.get("access_count", 0)
-        edit_count = usage_stats.get("edit_count", 0)
+        # 카운트 값도 음수일 수 없으므로 0으로 클램핑
+        access_count = max(0, usage_stats.get("access_count", 0))
+        edit_count = max(0, usage_stats.get("edit_count", 0))
         
         # 0으로 나누기 방지
         access_denom = days_since_access + 1
@@ -193,8 +208,7 @@ class FeatureExtractor:
             }
             
         text_lower = text.lower()
-        # 정규식을 사용하여 단어 추출 (문장부호 제거)
-        words = re.findall(r"\b\w+\b", text_lower)
+        words = self._tokenize_words(text_lower)
         
         # sum() 단순화 (bool -> int 자동 변환 활용)
         positive_count = sum(w in self.sentiment_positive for w in words)
@@ -223,8 +237,8 @@ class FeatureExtractor:
             has_deadline=False,
             has_checklist=False,
             has_code_block=False,
-            days_since_access=999,
-            days_since_edit=999,
+            days_since_access=_MISSING_DAYS_DEFAULT,
+            days_since_edit=_MISSING_DAYS_DEFAULT,
             access_frequency=0.0,
             edit_frequency=0.0,
             reference_count=0,
