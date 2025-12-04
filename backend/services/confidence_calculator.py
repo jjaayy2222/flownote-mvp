@@ -4,10 +4,16 @@
 ConfidenceCalculator - 신뢰도 계산 엔진
 """
 import logging
-from typing import Dict, Any, Optional, List
-from dataclasses import dataclass
+from typing import Dict, Any, Optional, List, TypedDict
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
+
+
+class AdjustmentDetail(TypedDict):
+    type: str  # 'boost' or 'penalty'
+    reason: str
+    amount: float
 
 
 @dataclass
@@ -22,6 +28,30 @@ class ConfidenceResult:
 class ConfidenceCalculator:
     """
     다양한 분류기의 결과와 파일 특성을 종합하여 최종 신뢰도를 계산합니다.
+    
+    가중 평균 기반으로 기본 점수를 계산하고, 파일 특성과 분류기 간 동의 여부에 따라
+    점수를 조정합니다. 최종 점수를 기반으로 액션(자동 적용, 제안, 수동 검토)을 권고합니다.
+    
+    Example:
+        >>> calculator = ConfidenceCalculator()
+        >>> scores = {"ai": 0.9, "rule": 0.85, "keyword": 0.8}
+        >>> features = {
+        ...     "access_frequency": 0.8,
+        ...     "days_since_edit": 3,
+        ...     "text_length": 200
+        ... }
+        >>> result = calculator.calculate(scores, features)
+        >>> print(f"Score: {result.score}, Action: {result.action}")
+        Score: 1.0, Action: auto_apply
+        >>> print(f"Adjustments: {len(result.details['adjustments'])}")
+        Adjustments: 3
+    
+    Attributes:
+        _WEIGHTS: 분류기별 가중치 (합계 1.0)
+        _ADJUSTMENT_FACTORS: 상황별 점수 조정 팩터
+        _THRESHOLDS: 액션 권고 임계값
+        _AGREEMENT_THRESHOLD: 유효 점수 최소값
+        _AGREEMENT_DIFF_LIMIT: 동의 판단 최대 차이
     """
 
     # 분류기별 기본 가중치 (총합 1.0)
@@ -51,6 +81,20 @@ class ConfidenceCalculator:
     _AGREEMENT_THRESHOLD = 0.6      # 유효한 점수로 간주할 최소 점수
     _AGREEMENT_DIFF_LIMIT = 0.15    # 동의로 간주할 최대 점수 차이
 
+    def __init__(self):
+        """
+        ConfidenceCalculator 초기화
+        
+        가중치 합계가 1.0인지 검증합니다.
+        """
+        # 가중치 합 검증 (부동소수점 오차 허용)
+        total_weight = sum(self._WEIGHTS.values())
+        if not (0.99 <= total_weight <= 1.01):
+            logger.warning(
+                f"Classifier weights sum to {total_weight:.4f}, expected 1.0. "
+                f"This may affect score calculations."
+            )
+
     def calculate(
         self,
         scores: Dict[str, float],
@@ -68,12 +112,13 @@ class ConfidenceCalculator:
         """
         features = features or {}
         reasons = []
+        adjustments: List[AdjustmentDetail] = []
 
         # 1. 기본 가중 평균 계산
         base_score = self._calculate_base_score(scores, reasons)
         
         # 2. 신뢰도 조정 (Boost/Penalty)
-        adjusted_score = self._apply_adjustments(base_score, scores, features, reasons)
+        adjusted_score = self._apply_adjustments(base_score, scores, features, reasons, adjustments)
         
         # 3. 최종 점수 클램핑 (0.0 ~ 1.0)
         final_score = max(0.0, min(1.0, adjusted_score))
@@ -88,7 +133,7 @@ class ConfidenceCalculator:
             details={
                 "base_score": round(base_score, 3),
                 "input_scores": scores,
-                "adjustments": [r for r in reasons if "Boost" in r or "Penalty" in r]
+                "adjustments": adjustments
             }
         )
 
@@ -118,50 +163,51 @@ class ConfidenceCalculator:
         current_score: float,
         scores: Dict[str, float],
         features: Dict[str, Any],
-        reasons: List[str]
+        reasons: List[str],
+        adjustments: List[AdjustmentDetail]
     ) -> float:
         """상황에 따른 점수 조정"""
         adjusted_score = current_score
 
+        def add_adjustment(type_: str, reason: str, amount: float):
+            """조정 내역 추가 헬퍼"""
+            nonlocal adjusted_score
+            adjusted_score += amount
+            reasons.append(f"{reason} ({'+' if amount > 0 else ''}{amount})")
+            adjustments.append({"type": type_, "reason": reason, "amount": amount})
+
         # 1. 분류기 간 동의 여부 확인
         if self._check_agreement(scores):
-            boost = self._ADJUSTMENT_FACTORS["agreement_boost"]
-            adjusted_score += boost
-            reasons.append(f"Agreement Boost (+{boost})")
+            add_adjustment("boost", "Agreement Boost", self._ADJUSTMENT_FACTORS["agreement_boost"])
         elif self._check_disagreement(scores):
-            penalty = self._ADJUSTMENT_FACTORS["disagreement_penalty"]
-            adjusted_score += penalty
-            reasons.append(f"Disagreement Penalty ({penalty})")
+            add_adjustment("penalty", "Disagreement Penalty", self._ADJUSTMENT_FACTORS["disagreement_penalty"])
 
         # 2. 파일 사용 빈도 (Frequency)
         # FeatureExtractor의 access_frequency가 0.5 이상이면 자주 사용하는 것으로 간주
         access_freq = features.get("access_frequency", 0.0)
         if access_freq >= 0.5:
-            boost = self._ADJUSTMENT_FACTORS["high_freq_boost"]
-            adjusted_score += boost
-            reasons.append(f"High Frequency Boost (+{boost})")
+            add_adjustment("boost", "High Frequency Boost", self._ADJUSTMENT_FACTORS["high_freq_boost"])
 
         # 3. 최근 수정 여부 (Recency)
         # 7일 이내 수정된 경우
         days_since_edit = features.get("days_since_edit", 999)
         if days_since_edit <= 7:
-            boost = self._ADJUSTMENT_FACTORS["recent_edit_boost"]
-            adjusted_score += boost
-            reasons.append(f"Recent Edit Boost (+{boost})")
+            add_adjustment("boost", "Recent Edit Boost", self._ADJUSTMENT_FACTORS["recent_edit_boost"])
 
         # 4. 정보 부족 (텍스트 길이 등)
-        text_length = features.get("text_length", 0)
-        if text_length > 0 and text_length < 50:
-            penalty = self._ADJUSTMENT_FACTORS["low_info_penalty"]
-            adjusted_score += penalty
-            reasons.append(f"Low Info Penalty ({penalty})")
+        # 텍스트 길이 정보가 명시적으로 제공되고, 50자 미만인 경우 (0 포함)
+        if "text_length" in features:
+            text_length = features["text_length"]
+            if text_length < 50:
+                add_adjustment("penalty", "Low Info Penalty", self._ADJUSTMENT_FACTORS["low_info_penalty"])
 
         return adjusted_score
 
     def _check_agreement(self, scores: Dict[str, float]) -> bool:
         """
         주요 분류기들이 서로 동의하는지 확인
-        조건: 유효한 점수(>0.6)가 2개 이상이고, 그들의 차이가 작을 때(<0.15)
+        조건: 유효한 점수(>={self._AGREEMENT_THRESHOLD})가 2개 이상이고, 
+              그들의 차이가 작을 때(<={self._AGREEMENT_DIFF_LIMIT})
         """
         valid_scores = [s for s in scores.values() if s >= self._AGREEMENT_THRESHOLD]
         
@@ -173,14 +219,15 @@ class ConfidenceCalculator:
     def _check_disagreement(self, scores: Dict[str, float]) -> bool:
         """
         주요 분류기들이 서로 강하게 불일치하는지 확인
-        조건: 유효한 점수(>0.6)가 2개 이상이고, 그들의 차이가 클 때(>0.3)
+        조건: 유효한 점수(>={self._AGREEMENT_THRESHOLD})가 2개 이상이고, 
+              그들의 차이가 클 때(>{self._AGREEMENT_DIFF_LIMIT * 2})
         """
         valid_scores = [s for s in scores.values() if s >= self._AGREEMENT_THRESHOLD]
         
         if len(valid_scores) < 2:
             return False
             
-        # 차이가 0.3(동의 기준의 2배) 이상이면 불일치로 간주
+        # 차이가 동의 기준의 2배 이상이면 불일치로 간주
         return (max(valid_scores) - min(valid_scores)) > (self._AGREEMENT_DIFF_LIMIT * 2)
 
     def _recommend_action(self, score: float) -> str:
