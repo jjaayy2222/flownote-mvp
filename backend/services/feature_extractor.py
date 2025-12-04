@@ -10,9 +10,11 @@ from dataclasses import dataclass, asdict
 
 logger = logging.getLogger(__name__)
 
-# 상수 정의
+# 상수 정의 (컴파일된 정규식)
 _MISSING_DAYS_DEFAULT = 999
-_WORD_TOKEN_PATTERN = r"\b\w+\b"
+_WORD_TOKEN_RE = re.compile(r"\b\w+\b")
+_CHECKLIST_RE = re.compile(r"[-*]\s*\[\s*[xX\s]\s*\]")
+_DEADLINE_RE = re.compile(r"\d{4}-\d{2}-\d{2}|deadline|due date", re.IGNORECASE)
 
 
 @dataclass
@@ -111,7 +113,7 @@ class FeatureExtractor:
         다국어(CJK 등) 처리나 복잡한 토큰화가 필요한 경우, 이 함수를 확장하거나 
         별도의 NLP 라이브러리를 도입해야 합니다.
         """
-        return [] if not text else re.findall(_WORD_TOKEN_PATTERN, text.lower())
+        return _WORD_TOKEN_RE.findall(text.lower()) if text else []
 
     def _analyze_text(self, text: str) -> Dict[str, Any]:
         """텍스트 특징 분석"""
@@ -146,15 +148,15 @@ class FeatureExtractor:
             }
 
         # 체크리스트 패턴: - [ ] 또는 * [x] (다양한 공백 지원)
-        has_checklist = bool(re.search(r'[-*]\s*\[\s*[xX\s]\s*\]', text))
+        has_checklist = bool(_CHECKLIST_RE.search(text))
         
         # 코드 블록: ```
         has_code_block = '```' in text
         
         # 마감일: 메타데이터 또는 텍스트 내 패턴
-        has_deadline = bool(metadata.get("deadline")) or bool(
-            re.search(r'\d{4}-\d{2}-\d{2}|deadline|due date', text.lower())
-        )
+        # _DEADLINE_RE는 IGNORECASE로 컴파일되었으므로 text.lower() 불필요하지만,
+        # 다른 부분과의 일관성을 위해 text 자체를 넘김 (search는 부분 매칭)
+        has_deadline = bool(metadata.get("deadline")) or bool(_DEADLINE_RE.search(text))
         
         return {
             "has_deadline": has_deadline,
