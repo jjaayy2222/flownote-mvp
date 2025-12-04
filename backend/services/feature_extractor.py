@@ -63,13 +63,13 @@ class FeatureExtractor:
             "error", "problem", "wrong", "fail"
         ]
 
-    async def extract(
+    def extract(
         self,
         file_content: str,
         file_metadata: Dict[str, Any],
         usage_stats: Dict[str, Any]
     ) -> FileFeatures:
-        """파일에서 특징 추출"""
+        """파일에서 특징 추출 (Synchronous)"""
         try:
             # 텍스트 분석
             text_features = self._analyze_text(file_content)
@@ -95,7 +95,8 @@ class FeatureExtractor:
             )
 
         except Exception as e:
-            logger.error(f"Feature extraction failed: {str(e)}")
+            # 에러 로깅 강화 (Stack Trace 포함)
+            logger.error(f"Feature extraction failed: {str(e)}", exc_info=True)
             return self._default_features()
 
     def _analyze_text(self, text: str) -> Dict[str, Any]:
@@ -109,7 +110,8 @@ class FeatureExtractor:
             }
             
         text_clean = text.strip()
-        words = text_clean.split()
+        # 정규식을 사용하여 단어 추출 (문장부호 제거)
+        words = re.findall(r"\b\w+\b", text_clean.lower())
         word_count = len(words)
         
         return {
@@ -122,13 +124,15 @@ class FeatureExtractor:
     def _analyze_structure(self, text: str, metadata: Dict) -> Dict[str, Any]:
         """구조 특징 분석"""
         if not text:
+            # 텍스트가 없어도 메타데이터의 deadline은 확인해야 함
+            has_deadline = bool(metadata.get("deadline"))
             return {
-                "has_deadline": False,
+                "has_deadline": has_deadline,
                 "has_checklist": False,
                 "has_code_block": False,
             }
 
-        # 체크리스트 패턴: - [ ] 또는 * [x]
+        # 체크리스트 패턴: - [ ] 또는 * [x] (다양한 공백 지원)
         has_checklist = bool(re.search(r'[-*]\s*\[\s*[xX\s]\s*\]', text))
         
         # 코드 블록: ```
@@ -149,12 +153,19 @@ class FeatureExtractor:
         """시간 특징 분석"""
         days_since_access = usage_stats.get("days_since_access", 999)
         days_since_edit = usage_stats.get("days_since_edit", 999)
+        
+        # 비정상적인 음수값은 결측치로 간주하여 큰 기본값으로 클램핑
+        if days_since_access < 0:
+            days_since_access = 999
+        if days_since_edit < 0:
+            days_since_edit = 999
+            
         access_count = usage_stats.get("access_count", 0)
         edit_count = usage_stats.get("edit_count", 0)
         
         # 0으로 나누기 방지
-        access_denom = days_since_access + 1 if days_since_access >= 0 else 1
-        edit_denom = days_since_edit + 1 if days_since_edit >= 0 else 1
+        access_denom = days_since_access + 1
+        edit_denom = days_since_edit + 1
         
         access_frequency = access_count / access_denom
         edit_frequency = edit_count / edit_denom
@@ -182,10 +193,12 @@ class FeatureExtractor:
             }
             
         text_lower = text.lower()
-        words = text_lower.split()
+        # 정규식을 사용하여 단어 추출 (문장부호 제거)
+        words = re.findall(r"\b\w+\b", text_lower)
         
-        positive_count = sum(1 for w in words if w in self.sentiment_positive)
-        negative_count = sum(1 for w in words if w in self.sentiment_negative)
+        # sum() 단순화 (bool -> int 자동 변환 활용)
+        positive_count = sum(w in self.sentiment_positive for w in words)
+        negative_count = sum(w in self.sentiment_negative for w in words)
         total = positive_count + negative_count
         
         sentiment_score = (positive_count - negative_count) / total if total > 0 else 0.0

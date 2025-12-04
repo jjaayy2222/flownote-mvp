@@ -7,8 +7,7 @@ from backend.services.feature_extractor import FeatureExtractor, FileFeatures
 def extractor():
     return FeatureExtractor()
 
-@pytest.mark.asyncio
-async def test_extract_basic_features(extractor):
+def test_extract_basic_features(extractor):
     """기본 텍스트 및 구조 특징 추출 테스트"""
     content = """
     # Project Plan
@@ -21,7 +20,8 @@ async def test_extract_basic_features(extractor):
     metadata = {"tags": ["work", "important"], "reference_count": 2}
     usage = {"access_count": 10, "days_since_access": 1}
     
-    features = await extractor.extract(content, metadata, usage)
+    # 동기 호출로 변경됨
+    features = extractor.extract(content, metadata, usage)
     
     # 텍스트 분석
     assert features.text_length > 0
@@ -40,18 +40,16 @@ async def test_extract_basic_features(extractor):
     assert "urgent" in features.urgency_indicators
     assert "deadline" in features.urgency_indicators
 
-@pytest.mark.asyncio
-async def test_extract_empty_content(extractor):
+def test_extract_empty_content(extractor):
     """빈 콘텐츠 처리 테스트"""
-    features = await extractor.extract("", {}, {})
+    features = extractor.extract("", {}, {})
     
     assert features.text_length == 0
     assert features.word_count == 0
     assert features.has_checklist is False
     assert features.sentiment_score == 0.0
 
-@pytest.mark.asyncio
-async def test_extract_temporal_features(extractor):
+def test_extract_temporal_features(extractor):
     """시간 특징 계산 테스트"""
     usage = {
         "access_count": 10,
@@ -60,26 +58,42 @@ async def test_extract_temporal_features(extractor):
         "days_since_edit": 9     # 빈도 = 5 / 10 = 0.5
     }
     
-    features = await extractor.extract("test", {}, usage)
+    features = extractor.extract("test", {}, usage)
     
     assert features.days_since_access == 4
     assert features.access_frequency == 2.0
     assert features.edit_frequency == 0.5
 
-@pytest.mark.asyncio
-async def test_extract_sentiment(extractor):
-    """감정 분석 테스트"""
-    positive_text = "Great job! Success is near."
-    negative_text = "This is a terrible bug and failure."
+def test_extract_temporal_features_negative_values(extractor):
+    """시간 특징 음수 값 처리 테스트 (PR Feedback)"""
+    usage = {
+        "access_count": 10,
+        "days_since_access": -5,  # 음수 -> 999로 처리
+        "edit_count": 5,
+        "days_since_edit": -1     # 음수 -> 999로 처리
+    }
     
-    pos_features = await extractor.extract(positive_text, {}, {})
-    neg_features = await extractor.extract(negative_text, {}, {})
+    features = extractor.extract("test", {}, usage)
+    
+    assert features.days_since_access == 999
+    assert features.days_since_edit == 999
+    # 빈도 계산 시 분모가 1000이 되므로 매우 작은 값
+    assert features.access_frequency == 0.01  # 10 / 1000
+    assert features.edit_frequency == 0.005   # 5 / 1000
+
+def test_extract_sentiment(extractor):
+    """감정 분석 테스트"""
+    # 문장부호가 있어도 잘 동작해야 함 (PR Feedback)
+    positive_text = "Great job! Success is near."
+    negative_text = "This is a terrible bug, and failure."
+    
+    pos_features = extractor.extract(positive_text, {}, {})
+    neg_features = extractor.extract(negative_text, {}, {})
     
     assert pos_features.sentiment_score > 0
     assert neg_features.sentiment_score < 0
 
-@pytest.mark.asyncio
-async def test_extract_code_block(extractor):
+def test_extract_code_block(extractor):
     """코드 블록 감지 테스트"""
     content = """
     Here is some code:
@@ -87,11 +101,43 @@ async def test_extract_code_block(extractor):
     print("Hello")
     ```
     """
-    features = await extractor.extract(content, {}, {})
+    features = extractor.extract(content, {}, {})
     assert features.has_code_block is True
 
+def test_extract_deadline_from_metadata(extractor):
+    """메타데이터의 deadline 필드로 마감 기한 감지 테스트 (PR Feedback)"""
+    content = """
+    # Random Notes
+    This document does not mention any due dates or deadlines in the text.
+    """
+    metadata = {"deadline": "2025-12-31"}
+    usage = {}
 
-"""test_result
+    features = extractor.extract(
+        file_content=content,
+        file_metadata=metadata,
+        usage_stats=usage,
+    )
+
+    assert features.has_deadline is True
+
+@pytest.mark.parametrize(
+    "content, expected_checklist",
+    [
+        ("- [ ] item 1\n- [x] item 2", True),
+        ("* [ ] item 1\n* [x] item 2", True),
+        ("-   [X] item with spaces", True),
+        ("No checklist here", False),
+    ],
+)
+def test_extract_checklist_regex_variations(extractor, content, expected_checklist):
+    """체크리스트 정규식 변형 패턴 테스트 (PR Feedback)"""
+    features = extractor.extract(content, {}, {})
+    assert features.has_checklist == expected_checklist
+
+
+
+"""test_result_2
 
     pytest tests/unit/services/test_feature_extractor.py -v
     
@@ -101,13 +147,19 @@ async def test_extract_code_block(extractor):
     configfile: pytest.ini
     plugins: anyio-4.11.0, langsmith-0.4.37, asyncio-1.3.0, cov-7.0.0
     asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
-    collecting ... collected 5 items
+    collecting ... collected 11 items
 
-    tests/unit/services/test_feature_extractor.py::test_extract_basic_features PASSED [ 20%]
-    tests/unit/services/test_feature_extractor.py::test_extract_empty_content PASSED [ 40%]
-    tests/unit/services/test_feature_extractor.py::test_extract_temporal_features PASSED [ 60%]
-    tests/unit/services/test_feature_extractor.py::test_extract_sentiment PASSED [ 80%]
-    tests/unit/services/test_feature_extractor.py::test_extract_code_block PASSED [100%]
+    tests/unit/services/test_feature_extractor.py::test_extract_basic_features PASSED [  9%]
+    tests/unit/services/test_feature_extractor.py::test_extract_empty_content PASSED [ 18%]
+    tests/unit/services/test_feature_extractor.py::test_extract_temporal_features PASSED [ 27%]
+    tests/unit/services/test_feature_extractor.py::test_extract_temporal_features_negative_values PASSED [ 36%]
+    tests/unit/services/test_feature_extractor.py::test_extract_sentiment PASSED [ 45%]
+    tests/unit/services/test_feature_extractor.py::test_extract_code_block PASSED [ 54%]
+    tests/unit/services/test_feature_extractor.py::test_extract_deadline_from_metadata PASSED [ 63%]
+    tests/unit/services/test_feature_extractor.py::test_extract_checklist_regex_variations[- [ ] item 1\n- [x] item 2-True] PASSED [ 72%]
+    tests/unit/services/test_feature_extractor.py::test_extract_checklist_regex_variations[* [ ] item 1\n* [x] item 2-True] PASSED [ 81%]
+    tests/unit/services/test_feature_extractor.py::test_extract_checklist_regex_variations[-   [X] item with spaces-True] PASSED [ 90%]
+    tests/unit/services/test_feature_extractor.py::test_extract_checklist_regex_variations[No checklist here-False] PASSED [100%]
 
     ================================ tests coverage ================================
     ______________ coverage: platform darwin, python 3.11.10-final-0 _______________
@@ -169,14 +221,15 @@ async def test_extract_code_block(extractor):
     backend/services/__init__.py                           1      0   100%
     backend/services/classification_service.py            90     67    26%   74-139, 144, 157-163, 171-193, 199-206, 218-283
     backend/services/conflict_service.py                  74     51    31%   25-35, 78-143, 161-204, 217, 221, 225, 229-230
-    backend/services/feature_extractor.py                 79      5    94%   42, 95-97, 203
+    backend/services/feature_extractor.py                 84      5    94%   42, 95-98, 216
     backend/services/gpt_helper.py                       130     89    32%   25-29, 57-60, 74-103, 119-128, 146-196, 209-222, 244-274, 296-327, 357-392
     backend/services/onboarding_service.py                53     39    26%   38-60, 78-98, 113-140, 158-182
     backend/services/parallel_processor.py                23     23     0%   8-72
     backend/utils.py                                      42     42     0%   9-110
     backend/validators.py                                 88     88     0%   16-252
     --------------------------------------------------------------------------------
-    TOTAL                                               2972   2252    24%
-    ============================== 5 passed in 1.50s ===============================
+    TOTAL                                               2977   2252    24%
+    ============================== 11 passed in 0.46s ==============================
+
 
 """
