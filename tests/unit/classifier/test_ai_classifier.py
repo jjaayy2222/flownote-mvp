@@ -2,6 +2,7 @@
 
 import pytest
 import json
+import datetime
 from unittest.mock import MagicMock
 from backend.classifier.ai_classifier import AIClassifier
 from backend.services.gpt_helper import GPT4oHelper
@@ -35,6 +36,7 @@ async def test_classify_success(classifier, mock_gpt_helper):
     assert result["confidence"] == 0.9
     assert result["reasoning"] == "This is a project related text"
     assert "keywords" in result
+    assert result["method"] == "ai"
 
 
 @pytest.mark.asyncio
@@ -45,6 +47,7 @@ async def test_classify_empty_text(classifier):
     assert result["category"] == "Unclassified"
     assert result["confidence"] == 0.0
     assert "Input text is empty" in result["reasoning"]
+    assert result["method"] == "ai"
 
 
 @pytest.mark.asyncio
@@ -57,6 +60,7 @@ async def test_classify_json_parsing_error(classifier, mock_gpt_helper):
     assert result["category"] == "Unclassified"
     assert result["confidence"] == 0.0
     assert "JSON parsing failed" in result["reasoning"]
+    assert result["method"] == "ai"
 
 
 @pytest.mark.asyncio
@@ -70,11 +74,12 @@ async def test_classify_api_error(classifier, mock_gpt_helper):
     assert result["category"] == "Unclassified"
     assert result["confidence"] == 0.0
     assert "API Error" in result["reasoning"]
+    assert result["method"] == "ai"
 
 
 @pytest.mark.asyncio
 async def test_classify_markdown_json(classifier, mock_gpt_helper):
-    """마크다운 코드 블록으로 감싸진 JSON 응답 처리"""
+    """마크다운 코드 블록으로 감싸진 JSON 응답 처리 (정규식 기반)"""
     json_str = json.dumps(
         {
             "category": "Areas",
@@ -83,13 +88,17 @@ async def test_classify_markdown_json(classifier, mock_gpt_helper):
             "keywords": ["health"],
         }
     )
-    markdown_response = f"```json\n{json_str}\n```"
+    # 앞뒤로 이상한 텍스트가 있어도 정규식으로 추출 가능해야 함
+    markdown_response = (
+        f"Sure! Here is the JSON:\n```json\n{json_str}\n```\nHope this helps."
+    )
     mock_gpt_helper._call.return_value = markdown_response
 
     result = await classifier.classify("Daily workout")
 
     assert result["category"] == "Areas"
     assert result["confidence"] == 0.8
+    assert result["method"] == "ai"
 
 
 @pytest.mark.asyncio
@@ -104,3 +113,43 @@ async def test_classify_with_context(classifier, mock_gpt_helper):
     call_args = mock_gpt_helper._call.call_args
     assert "Context:" in call_args.kwargs["prompt"]
     assert "note.md" in call_args.kwargs["prompt"]
+
+
+@pytest.mark.asyncio
+async def test_classify_with_non_serializable_context(classifier, mock_gpt_helper):
+    """직렬화 불가능한 객체가 포함된 컨텍스트 처리 (default=str)"""
+    mock_gpt_helper._call.return_value = '{"category": "Resources"}'
+    # datetime 객체는 기본적으로 JSON 직렬화 불가
+    context = {"timestamp": datetime.datetime.now(), "meta": "data"}
+
+    # 에러 없이 정상 실행되어야 함
+    await classifier.classify("some text", context=context)
+
+    call_args = mock_gpt_helper._call.call_args
+    # datetime 객체가 문자열로 변환되어 포함되었는지 확인
+    assert "timestamp" in call_args.kwargs["prompt"]
+
+
+@pytest.mark.asyncio
+async def test_classify_validation_failure(classifier, mock_gpt_helper):
+    """validate_result가 실패할 경우"""
+    # 정상적으로 파싱되지만, validate_result에서 실패하도록 mock
+    mock_gpt_helper._call.return_value = json.dumps(
+        {
+            "category": "Projects",
+            "confidence": 0.9,
+        }
+    )
+
+    # validate_result 메서드 Mocking (AIClassifier 인스턴스의 메서드)
+    # validate_result는 BaseClassifier의 메서드이므로 상속받음
+    classifier.validate_result = MagicMock(
+        return_value=(False, "Simulated validation error")
+    )
+
+    result = await classifier.classify("test")
+
+    assert result["category"] == "Unclassified"
+    assert "Validation failed" in result["reasoning"]
+    assert "Simulated validation error" in result["reasoning"]
+    assert result["method"] == "ai"
