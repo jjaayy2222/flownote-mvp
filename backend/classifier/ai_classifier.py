@@ -6,6 +6,7 @@ AIClassifier - LLM 기반 분류기
 import logging
 import json
 import asyncio
+import re
 from typing import Dict, Any, Optional
 
 from backend.classifier.base_classifier import BaseClassifier
@@ -79,9 +80,8 @@ class AIClassifier(BaseClassifier):
 
             if context:
                 # 컨텍스트가 있으면 프롬프트에 추가 (예: 최근 작업 내역 등)
-                user_message += (
-                    f"\n\nContext:\n{json.dumps(context, ensure_ascii=False)}"
-                )
+                # default=str 로 설정하여 datetime, 커스텀 객체 등 비직렬화 객체가 있어도 안전하게 처리
+                user_message += f"\n\nContext:\n{json.dumps(context, ensure_ascii=False, default=str)}"
 
             # GPT 호출 (동기 메서드를 비동기로 래핑)
             # _call 메서드는 내부 메서드지만, 유연한 프롬프트 제어를 위해 사용
@@ -115,21 +115,30 @@ class AIClassifier(BaseClassifier):
     def _parse_response(self, response_text: str) -> Dict[str, Any]:
         """GPT 응답 텍스트를 파싱하여 딕셔너리로 변환"""
         try:
-            # 이미 GPT4oHelper._call에서 마크다운 정리는 수행되지만,
-            # 혹시 모를 상황에 대비해 파싱 시도
             text = response_text.strip()
 
+            # JSON 추출 시도 (정규식 사용)
+            # 가장 바깥쪽 중괄호 쌍을 찾음
+            json_match = re.search(r"\{.*\}", text, re.DOTALL)
+            if json_match:
+                text = json_match.group(0)
+
+            data = json.loads(text)
+
+            # Confidence 안전 변환
+            confidence = 0.5
             try:
-                data = json.loads(text)
-            except json.JSONDecodeError:
-                # 2차 시도: 혹시 마크다운이 남아있다면 제거
-                if "```" in text:
-                    text = text.split("```json")[-1].split("```")[0].strip()
-                data = json.loads(text)
+                conf_val = data.get("confidence")
+                if conf_val is not None:
+                    confidence = float(conf_val)
+            except (ValueError, TypeError):
+                logger.warning(
+                    f"Invalid confidence value: {data.get('confidence')}, using default 0.5"
+                )
 
             return {
                 "category": data.get("category", "Resources"),  # 기본값
-                "confidence": float(data.get("confidence", 0.5)),
+                "confidence": confidence,
                 "reasoning": data.get("reason", "No reason provided"),
                 "keywords": data.get("keywords", []),
                 "method": "ai",  # BaseClassifier 필수 필드
