@@ -23,6 +23,7 @@ class HybridClassifier(BaseClassifier):
         self,
         rule_engine: Optional[RuleEngine] = None,
         ai_classifier: Optional[AIClassifier] = None,
+        rule_threshold: float = 0.8,
     ):
         """
         초기화
@@ -30,12 +31,12 @@ class HybridClassifier(BaseClassifier):
         Args:
             rule_engine: 주입된 RuleEngine (없으면 기본 생성)
             ai_classifier: 주입된 AIClassifier (없으면 기본 생성)
+            rule_threshold: 룰 매칭으로 인정할 최소 신뢰도 (기본값 0.8)
         """
         super().__init__()
         self.rule_engine = rule_engine or RuleEngine()
         self.ai_classifier = ai_classifier or AIClassifier()
-        # 룰 매칭으로 인정할 최소 신뢰도 (이 값 이상이면 AI 호출 안 함)
-        self.rule_threshold = 0.8
+        self.rule_threshold = rule_threshold
 
     async def classify(
         self, text: str, context: Optional[Dict[str, Any]] = None
@@ -48,7 +49,9 @@ class HybridClassifier(BaseClassifier):
         3. 아니면 AIClassifier 호출
         """
         if not text or not text.strip():
-            return self._default_result("Input text is empty")
+            return self._default_result(
+                "Input text is empty", method="validation_error"
+            )
 
         # 1. Rule-based Classification (Synchronous)
         try:
@@ -66,7 +69,11 @@ class HybridClassifier(BaseClassifier):
                     "method": "rule",
                 }
         except Exception as e:
-            logger.warning(f"RuleEngine failed, proceeding to AI: {e}")
+            # Rule Engine 실패는 치명적이지 않으므로 경고만 남기고 AI로 진행
+            # 단, 디버깅을 위해 last_error에 기록은 해둠
+            error_msg = f"RuleEngine warning: {e}"
+            logger.warning(f"{error_msg}, proceeding to AI")
+            self.last_error = error_msg
 
         # 2. AI-based Classification (Asynchronous)
         try:
@@ -83,11 +90,14 @@ class HybridClassifier(BaseClassifier):
             self.last_error = str(e)
             return self._default_result(f"Error: {str(e)}")
 
-    def _default_result(self, reason: str) -> Dict[str, Any]:
+    def _default_result(
+        self, reason: str, method: str = "hybrid_error"
+    ) -> Dict[str, Any]:
+        """기본 결과 반환"""
         return {
             "category": "Unclassified",
             "confidence": 0.0,
             "reasoning": reason,
             "keywords": [],
-            "method": "hybrid_error",
+            "method": method,
         }
