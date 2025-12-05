@@ -113,10 +113,10 @@ async def test_classify_threshold_logic(
     mock_rule_engine.evaluate.assert_called_once()
     # Support both positional and keyword calls to `evaluate`
     args, kwargs = mock_rule_engine.evaluate.call_args
-    if args:
-        assert args[0] == test_text
-    else:
+    if "text" in kwargs:
         assert kwargs["text"] == test_text
+    else:
+        assert args[0] == test_text
 
     # 7. Verify Routing & AI Wiring
     if expected_method == "rule":
