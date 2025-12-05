@@ -23,7 +23,9 @@ def mock_ai_classifier():
 @pytest.fixture
 def hybrid_classifier(mock_rule_engine, mock_ai_classifier):
     return HybridClassifier(
-        rule_engine=mock_rule_engine, ai_classifier=mock_ai_classifier
+        rule_engine=mock_rule_engine,
+        ai_classifier=mock_ai_classifier,
+        rule_threshold=0.8,
     )
 
 
@@ -34,9 +36,7 @@ async def test_classify_rule_hit(
     """RuleEngine이 높은 점수로 매칭되면 AI 호출 안 함"""
     # Rule 매칭 성공 설정
     mock_rule_engine.evaluate.return_value = RuleResult(
-        category="Projects",
-        confidence=0.9,
-        matched_rule="project_keyword",  # Corrected field name
+        category="Projects", confidence=0.9, matched_rule="project_keyword"
     )
 
     result = await hybrid_classifier.classify("Finalize project plan")
@@ -48,6 +48,23 @@ async def test_classify_rule_hit(
     assert "project_keyword" in result["reasoning"]
 
     # AIClassifier는 호출되지 않아야 함
+    mock_ai_classifier.classify.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_classify_rule_threshold_boundary(
+    hybrid_classifier, mock_rule_engine, mock_ai_classifier
+):
+    """RuleEngine confidence가 threshold(0.8)와 같을 때도 Rule path 사용"""
+    mock_rule_engine.evaluate.return_value = RuleResult(
+        category="Projects", confidence=0.8, matched_rule="deadline_pattern"
+    )
+
+    result = await hybrid_classifier.classify("Deadline: 2025-12-31")
+
+    # AI 호출 없이 Rule 결과 반환 확인
+    assert result["category"] == "Projects"
+    assert result["method"] == "rule"
     mock_ai_classifier.classify.assert_not_called()
 
 
@@ -82,11 +99,9 @@ async def test_classify_rule_low_confidence(
     hybrid_classifier, mock_rule_engine, mock_ai_classifier
 ):
     """RuleEngine 점수가 낮으면 AI Fallback"""
-    # 점수가 threshold(0.8)보다 낮음
+    # 점수가 threshold(0.8)보다 낮음 (0.79)
     mock_rule_engine.evaluate.return_value = RuleResult(
-        category="Projects",
-        confidence=0.5,
-        matched_rule="possible_project",  # Corrected field name
+        category="Projects", confidence=0.79, matched_rule="possible_project"
     )
 
     mock_ai_classifier.classify.return_value = {
@@ -119,9 +134,14 @@ async def test_classify_rule_error_resilience(
     assert result["category"] == "Areas"
     assert result["method"] == "ai"
 
+    # 에러가 last_error에 기록되었는지 확인
+    assert "Rule Engine Crash" in hybrid_classifier.last_error
+
 
 @pytest.mark.asyncio
 async def test_classify_empty_text(hybrid_classifier):
     """빈 텍스트 처리"""
     result = await hybrid_classifier.classify("")
-    assert result["method"] == "hybrid_error"
+
+    # validation_error로 구분되는지 확인
+    assert result["method"] == "validation_error"
