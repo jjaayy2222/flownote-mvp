@@ -1,3 +1,5 @@
+# tests/unit/classifier/test_hybrid_classifier.py
+
 import pytest
 from unittest.mock import MagicMock, AsyncMock, ANY
 from backend.classifier.hybrid_classifier import HybridClassifier
@@ -109,9 +111,12 @@ async def test_classify_threshold_logic(
     # 6. Verify Wiring (Rule Engine)
     # metadata may occur as None or {}, so check flexible
     mock_rule_engine.evaluate.assert_called_once()
-    # Check only position arg 0 (test_text) to be robust against metadata default changes
-    args, _ = mock_rule_engine.evaluate.call_args
-    assert args[0] == test_text
+    # Support both positional and keyword calls to `evaluate`
+    args, kwargs = mock_rule_engine.evaluate.call_args
+    if "text" in kwargs:
+        assert kwargs["text"] == test_text
+    else:
+        assert args[0] == test_text
 
     # 7. Verify Routing & AI Wiring
     if expected_method == "rule":
