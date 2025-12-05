@@ -50,11 +50,18 @@ def test_init_threshold_validation(mock_rule_engine, mock_ai_classifier):
 @pytest.mark.parametrize(
     "threshold, confidence, expected_method",
     [
+        # Standard Cases
         (0.8, 0.9, "rule"),  # Conf > Threshold -> Rule
         (0.8, 0.8, "rule"),  # Conf == Threshold -> Rule (Boundary Inclusive)
         (0.8, 0.79, "ai"),  # Conf < Threshold -> AI
         (0.5, 0.6, "rule"),  # Low Threshold, Rule Hit
-        (0.5, 0.4, "ai"),  # Low Threshold, still AI fallback
+        (0.5, 0.4, "ai"),  # Low Threshold, Rule Miss -> AI Fallback
+        # Edge Case: Threshold 0.0 (Accept EVERYTHING if rule matches)
+        (0.0, 0.0, "rule"),  # Zero confidence is accepted if rule matched
+        (0.0, 0.1, "rule"),  # Any confidence is accepted
+        # Edge Case: Threshold 1.0 (Strict acceptance)
+        (1.0, 1.0, "rule"),  # Only perfect confidence accepted
+        (1.0, 0.99, "ai"),  # Near perfect rejected -> AI Fallback
     ],
 )
 async def test_classify_threshold_logic(
