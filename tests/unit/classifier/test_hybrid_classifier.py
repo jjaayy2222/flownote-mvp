@@ -48,74 +48,75 @@ def test_init_threshold_validation(mock_rule_engine, mock_ai_classifier):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "threshold, confidence, expected_method",
+    "threshold, rule_matches, rule_confidence, expected_method",
     [
-        # Standard Cases
-        (0.8, 0.9, "rule"),  # Conf > Threshold -> Rule
-        (0.8, 0.8, "rule"),  # Conf == Threshold -> Rule (Boundary Inclusive)
-        (0.8, 0.79, "ai"),  # Conf < Threshold -> AI
-        (0.5, 0.6, "rule"),  # Low Threshold, Rule Hit
-        (0.5, 0.4, "ai"),  # Low Threshold, Rule Miss -> AI Fallback
-        # Edge Case: Threshold 0.0 (Accept EVERYTHING if rule matches)
-        (0.0, 0.0, "rule"),  # Zero confidence is accepted if rule matched
-        (0.0, 0.1, "rule"),  # Any confidence is accepted
-        # Edge Case: Threshold 1.0 (Strict acceptance)
-        (1.0, 1.0, "rule"),  # Only perfect confidence accepted
-        (1.0, 0.99, "ai"),  # Near perfect rejected -> AI Fallback
+        # --- Standard Cases (Rule Matches) ---
+        (0.8, True, 0.9, "rule"),  # Conf > Threshold -> Rule
+        (0.8, True, 0.8, "rule"),  # Conf == Threshold -> Rule (Boundary Inclusive)
+        (0.8, True, 0.79, "ai"),  # Conf < Threshold -> AI
+        # --- Low Threshold Cases (Rule Matches) ---
+        (0.5, True, 0.6, "rule"),  # Conf > Threshold -> Rule
+        (0.5, True, 0.4, "ai"),  # Conf < Threshold -> AI
+        # --- Edge Case: Threshold 0.0 (Accept All Rules) ---
+        (
+            0.0,
+            True,
+            0.0,
+            "rule",
+        ),  # Zero Conf Rule -> Rule (Threshold 0.0 accepts everything)
+        (0.0, True, 0.1, "rule"),  # Any Conf Rule -> Rule
+        # --- Edge Case: Threshold 0.0 BUT NO RULE MATCH (Critical Check) ---
+        (0.0, False, 0.0, "ai"),  # No Rule -> AI (Even if threshold is 0.0)
+        # --- Edge Case: Threshold 1.0 (Strict Acceptance) ---
+        (1.0, True, 1.0, "rule"),  # Only Perfect Conf -> Rule
+        (1.0, True, 0.99, "ai"),  # Near Perfect -> AI Fallback
     ],
 )
 async def test_classify_threshold_logic(
-    mock_rule_engine, mock_ai_classifier, threshold, confidence, expected_method
+    mock_rule_engine,
+    mock_ai_classifier,
+    threshold,
+    rule_matches,
+    rule_confidence,
+    expected_method,
 ):
-    """Threshold와 Confidence 조합에 따른 분류 경로(Rule vs AI) 검증"""
+    """Threshold, Rule Match 여부, Confidence 조합에 따른 분류 경로 상세 검증"""
 
-    # Mock Rule Result
-    mock_rule_engine.evaluate.return_value = RuleResult(
-        category="Projects", confidence=confidence, matched_rule="test_rule"
-    )
+    # 1. Mock Rule Engine Setup
+    if rule_matches:
+        mock_rule_engine.evaluate.return_value = RuleResult(
+            category="Projects", confidence=rule_confidence, matched_rule="test_rule"
+        )
+    else:
+        mock_rule_engine.evaluate.return_value = None
 
-    # Mock AI Result
+    # 2. Mock AI Classifier Setup
     mock_ai_classifier.classify.return_value = {
         "category": "AI-Category",
         "confidence": 0.9,
         "method": "ai",
     }
 
+    # 3. Initialize Classifer
     classifier = HybridClassifier(
         rule_engine=mock_rule_engine,
         ai_classifier=mock_ai_classifier,
         rule_threshold=threshold,
     )
 
+    # 4. Execute
     result = await classifier.classify("test text")
 
+    # 5. Verify Method
     assert result["method"] == expected_method
 
+    # 6. Verify Routing
     if expected_method == "rule":
         assert result["category"] == "Projects"
         mock_ai_classifier.classify.assert_not_called()
     else:
         assert result["category"] == "AI-Category"
         mock_ai_classifier.classify.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_classify_rule_miss(
-    hybrid_classifier, mock_rule_engine, mock_ai_classifier
-):
-    """RuleEngine 매칭 실패(None) 시 무조건 AI Fallback"""
-    mock_rule_engine.evaluate.return_value = None
-
-    mock_ai_classifier.classify.return_value = {
-        "category": "Resources",
-        "confidence": 0.85,
-        "method": "ai",
-    }
-
-    result = await hybrid_classifier.classify("ambiguous text")
-
-    assert result["method"] == "ai"
-    mock_ai_classifier.classify.assert_called_once()
 
 
 @pytest.mark.asyncio
