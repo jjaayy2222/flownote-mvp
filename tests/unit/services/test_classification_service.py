@@ -9,68 +9,78 @@ from backend.models import ClassifyResponse
 @pytest.mark.asyncio
 async def test_classification_service_orchestration():
     # Arrange
-    service = ClassificationService()
-
-    # Mock dependencies
-    # 1. Mock PARA Agent
-    with patch(
-        "backend.services.classification_service.run_para_agent", new_callable=AsyncMock
-    ) as mock_para:
-        mock_para.return_value = {
+    # Mock HybridClassifier
+    mock_hybrid = MagicMock()
+    mock_hybrid.classify = AsyncMock(
+        return_value={
             "category": "Projects",
             "confidence": 0.9,
-            "snapshot_id": "snap_123",
+            "method": "rule",
+            # snapshot_id is handled by service
         }
+    )
 
-        # 2. Mock Keyword Classifier
-        with patch(
-            "backend.services.classification_service.KeywordClassifier"
-        ) as MockKeywordClassifier:
-            mock_keyword_instance = MockKeywordClassifier.return_value
-            mock_keyword_instance.aclassify = AsyncMock(
-                return_value={
-                    "tags": ["python", "coding"],
+    # Inject via constructor (Dependency Injection)
+    service = ClassificationService(hybrid_classifier=mock_hybrid)
+
+    # Mock Keyword Classifier
+    with patch(
+        "backend.services.classification_service.KeywordClassifier"
+    ) as MockKeywordClassifier:
+        mock_keyword_instance = MockKeywordClassifier.return_value
+        # 서비스 코드가 classify를 호출하므로 classify를 모킹
+        mock_keyword_instance.classify = AsyncMock(
+            return_value={
+                "metadata": {
+                    "matched_keywords": ["python", "coding"],
                     "user_context_matched": True,
-                }
-            )
+                },
+                "tags": ["python", "coding"],  # Fallback support
+            }
+        )
 
-            # 3. Mock Conflict Service (already injected in __init__, so we mock the instance attribute)
-            service.conflict_service.classify_text = AsyncMock(
-                return_value={
+        # Mock Conflict Service
+        # 서비스 코드의 기대 구조: result.get("conflict_result") -> inner dict
+        service.conflict_service.classify_text = AsyncMock(
+            return_value={
+                "conflict_result": {
                     "final_category": "Projects",
                     "confidence": 0.95,
                     "conflict_detected": False,
                     "requires_review": False,
                     "reason": "Consistent results",
-                }
+                },
+                # For line 205 logging: logger.info(f"✅ Conflict: {result.get('final_category')}")
+                "final_category": "Projects",
+            }
+        )
+
+        # Mock _save_results to avoid file I/O during orchestration test
+        with patch.object(service, "_save_results") as mock_save:
+            mock_save.return_value = {"csv_saved": True, "json_saved": True}
+
+            # Act
+            response = await service.classify(
+                text="This is a test project about python.",
+                user_id="test_user",
+                occupation="Developer",
+                areas=["Coding"],
+                interests=["AI"],
             )
 
-            # 4. Mock _save_results to avoid file I/O during orchestration test
-            with patch.object(service, "_save_results") as mock_save:
-                mock_save.return_value = {"csv_saved": True, "json_saved": True}
+            # Assert
+            assert isinstance(response, ClassifyResponse)
+            assert response.category == "Projects"
+            assert set(response.keyword_tags) == {"python", "coding"}
+            assert response.confidence == 0.95
+            assert response.user_context["user_id"] == "test_user"
+            assert response.user_context["occupation"] == "Developer"
 
-                # Act
-                response = await service.classify(
-                    text="This is a test project about python.",
-                    user_id="test_user",
-                    occupation="Developer",
-                    areas=["Coding"],
-                    interests=["AI"],
-                )
-
-                # Assert
-                assert isinstance(response, ClassifyResponse)
-                assert response.category == "Projects"
-                assert response.keyword_tags == ["python", "coding"]
-                assert response.confidence == 0.95
-                assert response.user_context["user_id"] == "test_user"
-                assert response.user_context["occupation"] == "Developer"
-
-                # Verify calls
-                mock_para.assert_called_once()
-                mock_keyword_instance.aclassify.assert_called_once()
-                service.conflict_service.classify_text.assert_called_once()
-                mock_save.assert_called_once()
+            # Verify calls
+            service.hybrid_classifier.classify.assert_called_once()
+            mock_keyword_instance.classify.assert_called_once()
+            service.conflict_service.classify_text.assert_called_once()
+            mock_save.assert_called_once()
 
 
 def test_save_results():

@@ -20,7 +20,7 @@ from typing import Dict, Any, List, Optional
 from backend.models import ClassifyResponse
 from backend.services.conflict_service import ConflictService
 from backend.data_manager import DataManager
-from backend.classifier.para_agent import run_para_agent
+from backend.classifier.hybrid_classifier import HybridClassifier
 from backend.classifier.keyword import KeywordClassifier
 
 # 추후 Step 3에서 실제 로직 구현 시 필요한 임포트들
@@ -42,10 +42,11 @@ class ClassificationService:
     5. 결과 저장 및 로깅
     """
 
-    def __init__(self):
+    def __init__(self, hybrid_classifier: Optional[Any] = None):
         # 의존성 주입 (또는 내부 생성)
         self.conflict_service = ConflictService()
         self.data_manager = DataManager()
+        self.hybrid_classifier = hybrid_classifier or HybridClassifier()
         logger.info("✅ ClassificationService initialized")
 
     async def classify(
@@ -94,7 +95,7 @@ class ClassificationService:
             # ConflictService.classify_text 반환값 구조:
             # { 'conflict_result': { 'final_category': ..., 'confidence': ... }, ... }
             inner_conflict_result = conflict_result.get("conflict_result", {})
-            
+
             final_category = (
                 inner_conflict_result.get("final_category")
                 or para_result.get("category")
@@ -153,17 +154,25 @@ class ClassificationService:
         }
 
     async def _run_para_classification(self, text: str, metadata: dict) -> dict:
-        """PARA 분류 실행"""
+        """PARA 분류 실행 (HybridClassifier 위임)"""
         try:
-            result = await run_para_agent(text=text, metadata=metadata)
-            logger.info(f"✅ PARA: {result.get('category')}")
+            result = await self.hybrid_classifier.classify(text, context=metadata)
+
+            # snapshot_id 등 메타데이터 보정
+            if "snapshot_id" not in result:
+                result["snapshot_id"] = f"hybrid_{int(datetime.now().timestamp())}"
+
+            logger.info(
+                f"✅ PARA(Hybrid): {result.get('category')} (method: {result.get('method')})"
+            )
             return result
         except Exception as e:
-            logger.error(f"❌ PARA 실패: {e}")
+            logger.error(f"❌ PARA 실패: {e}", exc_info=True)
             return {
                 "category": "Resources",
                 "confidence": 0.0,
                 "snapshot_id": f"snap_failed_{int(datetime.now().timestamp())}",
+                "method": "error_fallback",
             }
 
     async def _extract_keywords(self, text: str, user_context: dict) -> dict:
@@ -174,7 +183,7 @@ class ClassificationService:
         # 태그 안전 처리 (metadata.matched_keywords 사용)
         metadata = result.get("metadata", {})
         tags = metadata.get("matched_keywords", [])
-        
+
         # 이전 버전 호환성 (tags 키가 있는 경우)
         if not tags and "tags" in result:
             tags = result["tags"]
@@ -185,10 +194,10 @@ class ClassificationService:
             tags = ["기타"]
 
         result["tags"] = tags
-        
+
         # user_context_matched 복사
         result["user_context_matched"] = metadata.get("user_context_matched", False)
-        
+
         logger.info(f"✅ Keywords: {tags[:5]}")
         return result
 
