@@ -29,6 +29,58 @@ def hybrid_classifier(mock_rule_engine, mock_ai_classifier):
     )
 
 
+def test_init_invalid_threshold(mock_rule_engine, mock_ai_classifier):
+    """threshold 범위 검증 테스트"""
+    with pytest.raises(ValueError):
+        HybridClassifier(mock_rule_engine, mock_ai_classifier, rule_threshold=1.5)
+
+    with pytest.raises(ValueError):
+        HybridClassifier(mock_rule_engine, mock_ai_classifier, rule_threshold=-0.1)
+
+
+@pytest.mark.asyncio
+async def test_hybrid_classifier_respects_configurable_rule_threshold(
+    mock_rule_engine, mock_ai_classifier
+):
+    """설정된 threshold에 따라 동작이 달라지는지 검증"""
+    # 동일한 RuleResult (confidence 0.6)
+    mock_rule_engine.evaluate.return_value = RuleResult(
+        category="Projects", confidence=0.6, matched_rule="project_keyword"
+    )
+
+    # AI 응답 설정
+    mock_ai_classifier.classify.return_value = {
+        "category": "AI-Category",
+        "confidence": 0.9,
+        "method": "ai",
+    }
+
+    # Case 1: 낮은 threshold (0.5) -> Rule Hit
+    low_threshold_classifier = HybridClassifier(
+        rule_engine=mock_rule_engine,
+        ai_classifier=mock_ai_classifier,
+        rule_threshold=0.5,
+    )
+    result_low = await low_threshold_classifier.classify("some text")
+    assert result_low["category"] == "Projects"
+    assert result_low["method"] == "rule"
+    mock_ai_classifier.classify.assert_not_called()
+
+    # Mock 초기화
+    mock_ai_classifier.classify.reset_mock()
+
+    # Case 2: 높은 threshold (0.8) -> AI Fallback
+    default_threshold_classifier = HybridClassifier(
+        rule_engine=mock_rule_engine,
+        ai_classifier=mock_ai_classifier,
+        rule_threshold=0.8,
+    )
+    result_default = await default_threshold_classifier.classify("some text")
+    assert result_default["category"] == "AI-Category"
+    assert result_default["method"] == "ai"
+    mock_ai_classifier.classify.assert_called_once()
+
+
 @pytest.mark.asyncio
 async def test_classify_rule_hit(
     hybrid_classifier, mock_rule_engine, mock_ai_classifier

@@ -34,9 +34,17 @@ class HybridClassifier(BaseClassifier):
             rule_threshold: 룰 매칭으로 인정할 최소 신뢰도 (기본값 0.8)
         """
         super().__init__()
+
+        if not (0.0 <= rule_threshold <= 1.0):
+            raise ValueError(
+                f"rule_threshold must be between 0.0 and 1.0, got {rule_threshold}"
+            )
+
         self.rule_engine = rule_engine or RuleEngine()
         self.ai_classifier = ai_classifier or AIClassifier()
         self.rule_threshold = rule_threshold
+        # BaseClassifier에 있지만 명시적으로 초기화
+        self.last_error: Optional[str] = None
 
     async def classify(
         self, text: str, context: Optional[Dict[str, Any]] = None
@@ -70,9 +78,9 @@ class HybridClassifier(BaseClassifier):
                 }
         except Exception as e:
             # Rule Engine 실패는 치명적이지 않으므로 경고만 남기고 AI로 진행
-            # 단, 디버깅을 위해 last_error에 기록은 해둠
+            # 단, 디버깅을 위해 last_error에 기록하고 traceback은 로그로 남김
             error_msg = f"RuleEngine warning: {e}"
-            logger.warning(f"{error_msg}, proceeding to AI")
+            logger.warning(f"{error_msg}, proceeding to AI", exc_info=True)
             self.last_error = error_msg
 
         # 2. AI-based Classification (Asynchronous)
