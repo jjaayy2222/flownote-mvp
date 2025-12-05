@@ -1,7 +1,5 @@
-# tests/unit/classifier/test_hybrid_classifier.py
-
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, ANY
 from backend.classifier.hybrid_classifier import HybridClassifier
 from backend.services.rule_engine import RuleEngine, RuleResult
 from backend.classifier.ai_classifier import AIClassifier
@@ -57,19 +55,16 @@ def test_init_threshold_validation(mock_rule_engine, mock_ai_classifier):
         # --- Low Threshold Cases (Rule Matches) ---
         (0.5, True, 0.6, "rule"),  # Conf > Threshold -> Rule
         (0.5, True, 0.4, "ai"),  # Conf < Threshold -> AI
-        # --- Edge Case: Threshold 0.0 (Accept All Rules) ---
-        (
-            0.0,
-            True,
-            0.0,
-            "rule",
-        ),  # Zero Conf Rule -> Rule (Threshold 0.0 accepts everything)
-        (0.0, True, 0.1, "rule"),  # Any Conf Rule -> Rule
-        # --- Edge Case: Threshold 0.0 BUT NO RULE MATCH (Critical Check) ---
-        (0.0, False, 0.0, "ai"),  # No Rule -> AI (Even if threshold is 0.0)
-        # --- Edge Case: Threshold 1.0 (Strict Acceptance) ---
-        (1.0, True, 1.0, "rule"),  # Only Perfect Conf -> Rule
-        (1.0, True, 0.99, "ai"),  # Near Perfect -> AI Fallback
+        # --- Edge Case: Threshold 0.0 (Accept Match) ---
+        (0.0, True, 0.0, "rule"),  # Zero Conf Rule -> Rule
+        # --- Edge Case: Rule Miss (ALWAYS AI Fallback) ---
+        # Rule 매칭 실패 시 임계값과 상관없이 무조건 AI로 가야 함
+        (0.0, False, 0.0, "ai"),  # No Match at 0.0 -> AI
+        (0.5, False, 0.0, "ai"),  # No Match at 0.5 -> AI
+        (1.0, False, 0.0, "ai"),  # No Match at 1.0 -> AI
+        # --- Edge Case: Threshold 1.0 (Strict) ---
+        (1.0, True, 1.0, "rule"),  # Perfect Conf -> Rule
+        (1.0, True, 0.99, "ai"),  # Near Perfect -> AI
     ],
 )
 async def test_classify_threshold_logic(
@@ -80,7 +75,9 @@ async def test_classify_threshold_logic(
     rule_confidence,
     expected_method,
 ):
-    """Threshold, Rule Match 여부, Confidence 조합에 따른 분류 경로 상세 검증"""
+    """Threshold, Rule Match 여부, Confidence 조합에 따른 분류 경로 및 Wiring 검증"""
+
+    test_text = "test text"
 
     # 1. Mock Rule Engine Setup
     if rule_matches:
@@ -105,18 +102,25 @@ async def test_classify_threshold_logic(
     )
 
     # 4. Execute
-    result = await classifier.classify("test text")
+    result = await classifier.classify(test_text)
 
     # 5. Verify Method
     assert result["method"] == expected_method
 
-    # 6. Verify Routing
+    # 6. Verify Wiring (Rule Engine MUST be called exactly once)
+    # metadata may be None or empty dict depending on implementation detail, but text must be correct.
+    # evaluate signature: (text, metadata=None)
+    mock_rule_engine.evaluate.assert_called_once_with(test_text, metadata=None)
+
+    # 7. Verify Routing
     if expected_method == "rule":
         assert result["category"] == "Projects"
         mock_ai_classifier.classify.assert_not_called()
     else:
         assert result["category"] == "AI-Category"
-        mock_ai_classifier.classify.assert_called_once()
+        # AI Classifier must be awaited call
+        mock_ai_classifier.classify.assert_awaited_once()  # Simple check
+        # Checking arguments if possible (AsyncMock call args are tricky but this is good enough)
 
 
 @pytest.mark.asyncio
