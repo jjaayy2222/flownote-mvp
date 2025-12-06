@@ -78,9 +78,7 @@ class SyncServiceBase(ABC):
         Returns:
             bool: 변경됨(True) / 변경없음(False)
         """
-        if not last_synced_hash:
-            return True
-        return current_hash != last_synced_hash
+        return True if not last_synced_hash else current_hash != last_synced_hash
 
     async def _handle_conflict(self, conflict: SyncConflict) -> bool:
         """
