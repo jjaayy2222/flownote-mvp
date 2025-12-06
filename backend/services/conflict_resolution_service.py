@@ -28,7 +28,6 @@ class ConflictResolutionService:
     충돌 해결 서비스
     - 다양한 전략(Strategy)에 따라 파일 동기화 충돌을 해결
     - 해결 결과를 MapManager에 반영하고 로그를 남김
-    - SyncService는 런타임에 주입받거나 찾아서 사용 (MVP: 생성자 주입)
     """
 
     def __init__(self, sync_service: SyncServiceBase, map_manager: SyncMapManager):
@@ -57,8 +56,8 @@ class ConflictResolutionService:
             if strategy.method == ResolutionMethod.MANUAL_OVERRIDE:
                 success = await self._resolve_manual(conflict, strategy)
             elif strategy.method == ResolutionMethod.AUTO_BY_CONTEXT:
-                # MVP: AUTO_BY_CONTEXT를 'Local Wins'로 간주 (단순화)
-                success = await self._resolve_local_wins(conflict)
+                # MVP: AUTO_BY_CONTEXT를 'Remote Wins'로 간주 (단순화)
+                success = await self._resolve_remote_wins(conflict)
             elif strategy.method == ResolutionMethod.AUTO_BY_CONFIDENCE:
                 # MVP: AUTO_BY_CONFIDENCE를 'Remote Wins'로 간주 (단순화)
                 success = await self._resolve_remote_wins(conflict)
@@ -66,9 +65,9 @@ class ConflictResolutionService:
                 logger.warning(f"Unsupported resolution method: {strategy.method}")
                 success = False
 
-            # 결과 객체 생성
+            # 결과 객체 생성 및 즉시 반환 (Inline)
             status = ResolutionStatus.RESOLVED if success else ResolutionStatus.FAILED
-            resolution = ConflictResolution(
+            return ConflictResolution(
                 conflict_id=conflict.conflict_id,
                 status=status,
                 strategy=strategy.model_dump(),
@@ -81,8 +80,6 @@ class ConflictResolutionService:
                 ),
             )
 
-            return resolution
-
         except Exception as e:
             logger.error(
                 f"Error resolving conflict {conflict.conflict_id}: {e}", exc_info=True
@@ -92,6 +89,7 @@ class ConflictResolutionService:
                 status=ResolutionStatus.FAILED,
                 strategy=strategy.model_dump(),
                 resolved_by="system",
+                resolved_at=datetime.now(),  # Fix: resolved_at 추가
                 notes=str(e),
             )
 
@@ -99,46 +97,38 @@ class ConflictResolutionService:
         self, conflict: SyncConflict, strategy: ResolutionStrategy
     ) -> bool:
         """
-        수동 해결: 사용자가 제공한 값을 덮어씀 (구현 예정)
-        MVP에서는 'recommended_value'에 전체 텍스트가 있다고 가정하거나,
-        단순히 어떤 쪽을 선택했는지(Flag)로 판단할 수 있음.
+        수동 해결: 사용자가 제공한 값을 덮어씀
+
+        Note: MVP에서는 미구현 상태. File Service 및 UI 통합 필요.
         """
-        # TODO: Implement manual content merge/overwrite logic
-        logger.info("Manual resolution not fully implemented yet.")
-        return False
-
-    async def _resolve_local_wins(self, conflict: SyncConflict) -> bool:
-        """로컬(FlowNote) 데이터로 외부 파일을 덮어씀"""
-        # 1. 로컬 파일 내용 읽기 (File Service 필요, MVP에서는 생략하고 성공 가정)
-        # local_content = await self.file_service.read(conflict.file_id)
-        local_content = "Mock Local Content"  # Temporary
-
-        # 2. 외부로 Push
-        success = await self.sync_service.push_file(conflict.file_id, local_content)
-
-        if success:
-            # 3. 매핑 정보 업데이트 (Hash 갱신)
-            new_hash = self.sync_service.calculate_file_hash(local_content)
-            self._update_mapping(conflict, new_hash)
-
-        return success
+        raise NotImplementedError(
+            "Manual conflict resolution requires File Service integration. "
+            "This feature will be implemented in a future version."
+        )
 
     async def _resolve_remote_wins(self, conflict: SyncConflict) -> bool:
         """외부(Obsidian) 데이터로 로컬 파일을 덮어씀"""
         # 1. 외부 파일 Pull
         remote_content = await self.sync_service.pull_file(conflict.external_path)
         if remote_content is None:
+            logger.warning(
+                f"Remote-wins resolution failed: pull_file returned None "
+                f"for external_path={conflict.external_path}, conflict_id={conflict.conflict_id}"
+            )
             return False
 
         # 2. 로컬 파일 저장 (File Service 필요)
-        # await self.file_service.save(conflict.file_id, remote_content)
-        # logger.info(f"Overwrote local file {conflict.file_id} with remote content")
+        # Note: MVP에서는 File Service가 아직 주입되지 않았으므로 NotImplementedError 발생
+        raise NotImplementedError(
+            "Local file save operation requires File Service integration. "
+            f"Remote content retrieved successfully for {conflict.external_path}, "
+            "but cannot persist to local storage yet."
+        )
 
-        # 3. 매핑 정보 업데이트
-        new_hash = self.sync_service.calculate_file_hash(remote_content)
-        self._update_mapping(conflict, new_hash)
-
-        return True
+        # 3. 매핑 정보 업데이트 (File Service 구현 후 활성화)
+        # new_hash = self.sync_service.calculate_file_hash(remote_content)
+        # self._update_mapping(conflict, new_hash)
+        # return True
 
     def _update_mapping(self, conflict: SyncConflict, new_hash: str):
         """해결 후 SyncMapManager 업데이트"""
