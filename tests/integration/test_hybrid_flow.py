@@ -27,10 +27,20 @@ async def test_hybrid_flow_end_to_end_rule_match():
         "backend.services.rule_engine.RuleEngine.evaluate"
     ) as mock_rule_eval, patch.object(service, "_save_results") as mock_save:
 
-        mock_rule_eval.return_value = RuleResult(
-            category="Projects", confidence=0.95, matched_rule="test_integration_rule"
-        )
         mock_save.return_value = {"csv_saved": True, "json_saved": True}
+
+        # Track call order to ensure Rule Short-Circuit (Rule -> No AI)
+        call_order = []
+
+        def rule_hit_side_effect(*args, **kwargs):
+            call_order.append("rule")
+            return RuleResult(
+                category="Projects",
+                confidence=0.95,
+                matched_rule="test_integration_rule",
+            )
+
+        mock_rule_eval.side_effect = rule_hit_side_effect
 
         # Mock AI to ensure it's NOT called
         service.hybrid_classifier.ai_classifier.classify = AsyncMock()
@@ -45,7 +55,9 @@ async def test_hybrid_flow_end_to_end_rule_match():
         assert response.category == "Projects"
         assert response.confidence >= 0.95
 
-        # Verify wiring
+        # Verify wiring matches strict order (Short-circuit)
+        assert call_order == ["rule"], f"Incorrect call order: {call_order}"
+
         service.hybrid_classifier.ai_classifier.classify.assert_not_called()
         mock_save.assert_called_once()
         assert response.log_info.get("csv_saved") is True
