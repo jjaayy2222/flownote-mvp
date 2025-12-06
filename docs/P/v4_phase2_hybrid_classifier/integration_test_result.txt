@@ -70,7 +70,7 @@ backend/routes/conflict_routes.py                     20      8    60%   42-49, 
 backend/routes/onboarding_routes.py                   36     16    56%   63-64, 89-100, 122-126, 148-154, 174-179
 backend/search_history.py                             93     93     0%   9-353
 backend/services/__init__.py                           1      0   100%
-backend/services/classification_service.py            93     16    83%   115-117, 138-140, 169-171, 189, 192, 194, 255, 290-292
+backend/services/classification_service.py            93     35    62%   115-117, 138-140, 169-171, 189, 192, 194, 227-292
 backend/services/confidence_calculator.py             84     84     0%   6-240
 backend/services/conflict_service.py                  74     31    58%   25-35, 84-86, 91-103, 140-143, 174, 191, 201-204, 217, 221, 225, 229-230
 backend/services/feature_extractor.py                 90     90     0%   6-233
@@ -82,5 +82,5 @@ backend/services/rule_engine.py                       45     13    71%   38-40, 
 backend/utils.py                                      42     42     0%   9-110
 backend/validators.py                                 88     88     0%   16-252
 --------------------------------------------------------------------------------
-TOTAL                                               3273   2427    26%
-============================== 2 passed in 0.43s ===============================
+TOTAL                                               3273   2446    25%
+============================== 2 passed in 0.46s ===============================
