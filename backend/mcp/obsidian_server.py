@@ -8,7 +8,7 @@ Watchdog을 사용하여 로컬 Obsidian Vault의 변경 사항을 감지하고 
 import logging
 import asyncio
 from pathlib import Path
-from typing import Optional, List, Callable, Any
+from typing import Optional, List, Callable
 
 import aiofiles
 from watchdog.observers import Observer
@@ -31,27 +31,25 @@ class ObsidianFileWatcher(FileSystemEventHandler):
         # Callback signature: (file_path, event_type)
         self.callback = callback
 
-    def _is_target(self, event):
-        return not event.is_directory and event.src_path.endswith(".md")
+    def _is_md_file(self, path: str) -> bool:
+        """Check if path is a markdown file"""
+        return path.endswith(".md")
 
     def on_modified(self, event):
-        if self._is_target(event):
+        if not event.is_directory and self._is_md_file(event.src_path):
             self.callback(event.src_path, "modified")
 
     def on_created(self, event):
-        if self._is_target(event):
+        if not event.is_directory and self._is_md_file(event.src_path):
             self.callback(event.src_path, "created")
 
     def on_moved(self, event):
-        if self._is_target(event):
-            # dest_path가 md인지도 확인 필요
-            if event.dest_path.endswith(".md"):
-                self.callback(
-                    event.dest_path, "moved"
-                )  # Source path handling needed? MVP: Treat as create at dest
+        # Handle both src and dest being md, or rename to md
+        if not event.is_directory and self._is_md_file(event.dest_path):
+            self.callback(event.dest_path, "moved")
 
     def on_deleted(self, event):
-        if self._is_target(event):
+        if not event.is_directory and self._is_md_file(event.src_path):
             self.callback(event.src_path, "deleted")
 
 
@@ -99,7 +97,6 @@ class ObsidianSyncService(SyncServiceBase):
 
     def start_watching(self):
         """파일 감시 시작 (Background Thread)"""
-        # 경로가 디렉토리인지 추가 검증 (Bug fix)
         if (
             self.is_watching
             or not self.vault_path.exists()
@@ -129,29 +126,37 @@ class ObsidianSyncService(SyncServiceBase):
     def _on_file_change(self, file_path: str, event_type: str):
         """
         Watchdog 콜백 (별도 스레드에서 실행됨)
+        Event Loop에 비동기 작업 스케줄링
         """
         logger.info(f"🔄 File {event_type}: {file_path}")
-        # TODO: Schedule async sync task via run_coroutine_threadsafe
+
+        # Schedule async sync task if loop is available
+        if self.loop and self.loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                self._process_file_change(file_path, event_type), self.loop
+            )
+        else:
+            logger.warning("⚠️ Event loop not available, cannot schedule sync task")
+
+    async def _process_file_change(self, file_path: str, event_type: str):
+        """파일 변경 이벤트 처리 (비동기)"""
+        # TODO: Implement actual sync logic
+        logger.debug(f"Processing {event_type} for {file_path}")
 
     async def sync_all(self) -> List[SyncConflict]:
-        """
-        전체 파일 스캔 및 동기화 (MVP: 단순 스캔)
-        """
+        """전체 파일 스캔 및 동기화 (MVP: 단순 스캔)"""
         if not self.vault_path.exists():
             return []
 
-        conflicts = []
-        # 재귀적으로 md 파일 탐색 (Generator expression directly in loop)
-        for file_path in self.vault_path.rglob("*.md"):
+        # 재귀적으로 md 파일 탐색 (직접 반환)
+        for _ in self.vault_path.rglob("*.md"):
             # TODO: Match with internal DB hash
             pass
 
-        return conflicts
+        return []
 
     async def pull_file(self, external_id: str) -> Optional[str]:
-        """
-        외부 파일 읽기 (external_id = absolute path)
-        """
+        """외부 파일 읽기 (external_id = absolute path)"""
         path = Path(external_id)
         if not path.exists():
             return None
@@ -164,9 +169,7 @@ class ObsidianSyncService(SyncServiceBase):
             return None
 
     async def push_file(self, internal_id: str, content: str) -> bool:
-        """
-        내부 파일을 Vault로 쓰기
-        """
+        """내부 파일을 Vault로 쓰기"""
         filename = internal_id if internal_id.endswith(".md") else f"{internal_id}.md"
         target_path = self.vault_path / filename
 
