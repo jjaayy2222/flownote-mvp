@@ -74,11 +74,17 @@ class SyncMapManager:
         except Exception as e:
             logger.error(f"❌ Failed to load mappings: {e}")
 
-    def _save_mappings(self):
-        """메모리 상의 매핑 데이터를 JSON 파일로 저장 (Lock 밖에서 호출 주의)"""
+    def _save_mappings(self, snapshot: List[ExternalFileMapping]):
+        """
+        메모리 상의 매핑 데이터를 JSON 파일로 저장
+
+        NOTE:
+        - I/O 작업을 수행하므로 반드시 Lock 밖에서 호출해야 함.
+        - 인자로 전달받은 snapshot 데이터를 저장함.
+        """
         try:
             # model_dump 사용 (Pydantic V2)
-            data = [m.model_dump(mode="json") for m in self._mappings.values()]
+            data = [m.model_dump(mode="json") for m in snapshot]
 
             # Atomic Write를 위해 임시 파일 사용이 좋지만, MVP에서는 직접 쓰기
             with open(self.storage_path, "w", encoding="utf-8") as f:
@@ -90,17 +96,18 @@ class SyncMapManager:
     def get_mapping_by_internal_id(
         self, internal_id: str
     ) -> Optional[ExternalFileMapping]:
-        """내부 파일 ID로 매핑 조회 (Thread-safe read not strictly required for dict get, but good practice)"""
-        return self._mappings.get(internal_id)
+        """내부 파일 ID로 매핑 조회 (Thread-safe)"""
+        with self._lock:
+            return self._mappings.get(internal_id)
 
     def get_mapping_by_external_path(
         self, external_path: str
     ) -> Optional[ExternalFileMapping]:
-        """외부 경로로 매핑 조회 (O(1) Lookup)"""
-        internal_id = self._path_index.get(external_path)
-        if internal_id:
-            return self._mappings.get(internal_id)
-        return None
+        """외부 경로로 매핑 조회 (Thread-safe, O(1) Lookup)"""
+        with self._lock:
+            if internal_id := self._path_index.get(external_path):
+                return self._mappings.get(internal_id)
+            return None
 
     def update_mapping(
         self,
@@ -118,18 +125,13 @@ class SyncMapManager:
             if mapping:
                 # Update existing
                 old_path = mapping.external_path
+                # Update Index (Remove old path)
+                if old_path in self._path_index:
+                    del self._path_index[old_path]
 
                 mapping.external_path = external_path
                 mapping.tool_type = tool_type
-                if current_hash:
-                    mapping.last_synced_hash = current_hash
                 mapping.last_synced_at = datetime.now()
-
-                # Update Index (Remove old path, Add new path)
-                if old_path in self._path_index:
-                    del self._path_index[old_path]
-                self._path_index[external_path] = internal_id
-
                 logger.info(f"Updated mapping for {internal_id}")
             else:
                 # Create new
@@ -137,22 +139,31 @@ class SyncMapManager:
                     internal_file_id=internal_id,
                     external_path=external_path,
                     tool_type=tool_type,
-                    last_synced_hash=current_hash,
                     last_synced_at=datetime.now(),
                 )
                 self._mappings[internal_id] = mapping
-                # Add Index
-                self._path_index[external_path] = internal_id
-
                 logger.info(
                     f"Created new mapping for {internal_id} <-> {external_path}"
                 )
 
-            self._save_mappings()
-            return mapping
+            # Common updates (Hoist)
+            if current_hash:
+                mapping.last_synced_hash = current_hash
+
+            # Update Index (Add new path)
+            self._path_index[external_path] = internal_id
+
+            # Create Snapshot inside lock
+            snapshot = list(self._mappings.values())
+
+        # Save outside lock
+        self._save_mappings(snapshot)
+        return mapping
 
     def remove_mapping(self, internal_id: str) -> bool:
         """매핑 삭제 (Thread-safe)"""
+        snapshot = None
+
         with self._lock:
             if internal_id in self._mappings:
                 mapping = self._mappings[internal_id]
@@ -163,7 +174,12 @@ class SyncMapManager:
                 # Remove Mapping
                 del self._mappings[internal_id]
 
-                self._save_mappings()
+                # Create Snapshot
+                snapshot = list(self._mappings.values())
                 logger.info(f"Removed mapping for {internal_id}")
-                return True
-            return False
+
+        if snapshot is not None:
+            self._save_mappings(snapshot)
+            return True
+
+        return False

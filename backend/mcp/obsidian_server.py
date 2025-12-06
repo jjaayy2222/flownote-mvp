@@ -27,16 +27,32 @@ class ObsidianFileWatcher(FileSystemEventHandler):
     Obsidian Vault 파일 변경 감지 핸들러
     """
 
-    def __init__(self, callback: Callable[[str], None]):
+    def __init__(self, callback: Callable[[str, str], None]):
+        # Callback signature: (file_path, event_type)
         self.callback = callback
 
+    def _is_target(self, event):
+        return not event.is_directory and event.src_path.endswith(".md")
+
     def on_modified(self, event):
-        if not event.is_directory and event.src_path.endswith(".md"):
-            self.callback(event.src_path)
+        if self._is_target(event):
+            self.callback(event.src_path, "modified")
 
     def on_created(self, event):
-        if not event.is_directory and event.src_path.endswith(".md"):
-            self.callback(event.src_path)
+        if self._is_target(event):
+            self.callback(event.src_path, "created")
+
+    def on_moved(self, event):
+        if self._is_target(event):
+            # dest_path가 md인지도 확인 필요
+            if event.dest_path.endswith(".md"):
+                self.callback(
+                    event.dest_path, "moved"
+                )  # Source path handling needed? MVP: Treat as create at dest
+
+    def on_deleted(self, event):
+        if self._is_target(event):
+            self.callback(event.src_path, "deleted")
 
 
 class ObsidianSyncService(SyncServiceBase):
@@ -61,7 +77,7 @@ class ObsidianSyncService(SyncServiceBase):
         try:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
-            self.loop = None  # 나중에 start_watching이나 connect에서 할당될 수 있음
+            self.loop = None
 
     async def connect(self) -> bool:
         """Vault 경로 확인 연결 테스트"""
@@ -83,7 +99,15 @@ class ObsidianSyncService(SyncServiceBase):
 
     def start_watching(self):
         """파일 감시 시작 (Background Thread)"""
-        if self.is_watching or not self.vault_path.exists():
+        # 경로가 디렉토리인지 추가 검증 (Bug fix)
+        if (
+            self.is_watching
+            or not self.vault_path.exists()
+            or not self.vault_path.is_dir()
+        ):
+            logger.warning(
+                f"❌ Cannot start watching: Invalid vault path {self.vault_path}"
+            )
             return
 
         # Watchdog 콜백 연결
@@ -102,27 +126,22 @@ class ObsidianSyncService(SyncServiceBase):
             self.is_watching = False
             logger.info("🛑 Stopped watching Obsidian Vault")
 
-    def _on_file_change(self, file_path: str):
+    def _on_file_change(self, file_path: str, event_type: str):
         """
         Watchdog 콜백 (별도 스레드에서 실행됨)
-        주의: Async 함수 직접 호출 불가. loop.call_soon_threadsafe 사용 필요.
         """
-        logger.info(f"🔄 File changed detected: {file_path}")
-
-        # Future: Use run_coroutine_threadsafe to schedule sync task
-        # if self.loop and self.loop.is_running():
-        #     asyncio.run_coroutine_threadsafe(self.process_change(file_path), self.loop)
+        logger.info(f"🔄 File {event_type}: {file_path}")
+        # TODO: Schedule async sync task via run_coroutine_threadsafe
 
     async def sync_all(self) -> List[SyncConflict]:
         """
         전체 파일 스캔 및 동기화 (MVP: 단순 스캔)
         """
-        conflicts = []
         if not self.vault_path.exists():
             return []
 
-        # 재귀적으로 md 파일 탐색
-        # TODO: ThreadPoolExecutor? or just iterate (IO bound but fast for local fs)
+        conflicts = []
+        # 재귀적으로 md 파일 탐색 (Generator expression directly in loop)
         for file_path in self.vault_path.rglob("*.md"):
             # TODO: Match with internal DB hash
             pass
@@ -139,8 +158,7 @@ class ObsidianSyncService(SyncServiceBase):
 
         try:
             async with aiofiles.open(path, mode="r", encoding="utf-8") as f:
-                content = await f.read()
-            return content
+                return await f.read()
         except Exception as e:
             logger.error(f"Failed to pull file {external_id}: {e}")
             return None
@@ -149,7 +167,6 @@ class ObsidianSyncService(SyncServiceBase):
         """
         내부 파일을 Vault로 쓰기
         """
-        # 임시: ID가 파일명이라고 가정 (실제로는 SyncMapManager 조회 필요)
         filename = internal_id if internal_id.endswith(".md") else f"{internal_id}.md"
         target_path = self.vault_path / filename
 
