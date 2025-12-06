@@ -63,7 +63,8 @@ class SyncServiceBase(ABC):
         if content is None:
             return ""
         # 정규화: 줄바꿈 문자 통일 (CRLF -> LF)
-        normalized = content.replace("\r\n", "\n").strip()
+        # 선행/후행 공백 및 마지막 개행도 해시에 포함해 경계 공백 변경도 감지한다.
+        normalized = content.replace("\r\n", "\n")
         return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
     def detect_conflict_by_hash(self, current_hash: str, last_synced_hash: str) -> bool:
@@ -77,9 +78,7 @@ class SyncServiceBase(ABC):
         Returns:
             bool: 변경됨(True) / 변경없음(False)
         """
-        if not last_synced_hash:
-            return True  # 첫 동기화면 무조건 변경으로 간주
-        return current_hash != last_synced_hash
+        return True if not last_synced_hash else current_hash != last_synced_hash
 
     async def _handle_conflict(self, conflict: SyncConflict) -> bool:
         """
