@@ -1,4 +1,5 @@
 # backend/models/conflict.py
+from __future__ import annotations
 
 """
 충돌 감지 및 해결 관련 Pydantic 모델
@@ -314,9 +315,9 @@ __all__ = [
     "ResolveConflictRequest",
     "ConflictDetectResponse",
     "ConflictResolveResponse",
-    "ConflictResolveResponse",
     # Sync Conflict Models (Phase 3)
     "SyncConflict",
+    "SyncConflictType",
     "ConflictResolutionLog",
 ]
 
@@ -324,6 +325,17 @@ __all__ = [
 # ==========================================
 # Sync Conflict Models (Phase 3)
 # ==========================================
+
+
+class SyncConflictType(str, Enum):
+    """
+    동기화 충돌 유형
+    """
+
+    CONTENT_MISMATCH = "content_mismatch"
+    DELETED_REMOTE = "deleted_remote"
+    DELETED_LOCAL = "deleted_local"
+    METADATA_MISMATCH = "metadata_mismatch"
 
 
 class SyncConflict(BaseModel):
@@ -355,7 +367,7 @@ class SyncConflict(BaseModel):
     file_id: str = Field(..., description="내부 파일 ID")
     external_path: str = Field(..., description="외부 파일 경로")
     tool_type: ExternalToolType = Field(..., description="외부 도구 유형")
-    conflict_type: str = Field(..., description="충돌 유형 (content_mismatch 등)")
+    conflict_type: SyncConflictType = Field(..., description="충돌 유형 (Enum)")
     local_hash: Optional[str] = Field(None, description="로컬 파일 해시")
     remote_hash: Optional[str] = Field(None, description="원격 파일 해시")
     detected_at: datetime = Field(default_factory=datetime.now, description="감지 시각")
