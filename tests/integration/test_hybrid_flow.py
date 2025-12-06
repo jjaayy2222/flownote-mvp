@@ -62,9 +62,10 @@ async def test_hybrid_flow_end_to_end_ai_fallback():
     service = ClassificationService()
 
     # Patch RuleEngine (Miss) and _save_results (No I/O)
+    # Capture mock_rule_eval to verify it was attempted
     with patch(
         "backend.services.rule_engine.RuleEngine.evaluate", return_value=None
-    ), patch.object(service, "_save_results") as mock_save:
+    ) as mock_rule_eval, patch.object(service, "_save_results") as mock_save:
 
         mock_save.return_value = {"csv_saved": True, "json_saved": True}
 
@@ -88,5 +89,6 @@ async def test_hybrid_flow_end_to_end_ai_fallback():
         assert response.category == "Areas"
 
         # Verify wiring
+        mock_rule_eval.assert_called_once()  # Verify Rule Engine was attempted first
         service.hybrid_classifier.ai_classifier.classify.assert_called_once()
         mock_save.assert_called_once()
