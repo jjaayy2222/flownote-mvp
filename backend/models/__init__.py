@@ -69,7 +69,14 @@ from .conflict import (
     ConflictResolveResponse,
 )
 
-
+# External Sync (Phase 3 - NEW!)
+from .external_sync import (
+    ExternalToolConnection,
+    ExternalFileMapping,
+    ExternalSyncLog,
+    SyncStatus,
+    ExternalToolType,
+)
 
 
 __all__ = [
@@ -88,14 +95,12 @@ __all__ = [
     "ClassificationSaveRequest",
     "ClassificationSearchRequest",
     "PARAClassificationOutput",
-    
     # User
     "Step1Input",
     "Step2Input",
     "OnboardingStatus",
     "UserProfile",
     "UserContext",
-    
     # Common
     "ErrorResponse",
     "SuccessResponse",
@@ -104,7 +109,6 @@ __all__ = [
     "MetadataResponse",
     "SaveClassificationRequest",
     "SearchRequest",
-    
     # Conflict
     "ConflictType",
     "ResolutionMethod",
@@ -118,4 +122,10 @@ __all__ = [
     "ResolveConflictRequest",
     "ConflictDetectResponse",
     "ConflictResolveResponse",
+    # External Sync (Phase 3 - NEW!)
+    "ExternalToolConnection",
+    "ExternalFileMapping",
+    "ExternalSyncLog",
+    "SyncStatus",
+    "ExternalToolType",
 ]

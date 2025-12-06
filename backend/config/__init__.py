@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 # 1️⃣ 프로젝트 루트 추가
-project_root = Path(__file__).parent.parent 
+project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 
@@ -25,12 +25,25 @@ from openai import OpenAI
 # 3️⃣ Streamlit 배포 환경에서 덮어쓰기
 try:
     import streamlit as st
-    if hasattr(st, 'secrets'):
-        for key in ["EMBEDDING_API_KEY", "EMBEDDING_BASE_URL", "EMBEDDING_MODEL",
-                    "EMBEDDING_LARGE_API_KEY", "EMBEDDING_LARGE_BASE_URL", "EMBEDDING_LARGE_MODEL",
-                    "GPT4O_API_KEY", "GPT4O_BASE_URL", "GPT4O_MODEL",
-                    "GPT4O_MINI_API_KEY", "GPT4O_MINI_BASE_URL", "GPT4O_MINI_MODEL",
-                    "GPT41_API_KEY", "GPT41_BASE_URL", "GPT41_MODEL"]:
+
+    if hasattr(st, "secrets"):
+        for key in [
+            "EMBEDDING_API_KEY",
+            "EMBEDDING_BASE_URL",
+            "EMBEDDING_MODEL",
+            "EMBEDDING_LARGE_API_KEY",
+            "EMBEDDING_LARGE_BASE_URL",
+            "EMBEDDING_LARGE_MODEL",
+            "GPT4O_API_KEY",
+            "GPT4O_BASE_URL",
+            "GPT4O_MODEL",
+            "GPT4O_MINI_API_KEY",
+            "GPT4O_MINI_BASE_URL",
+            "GPT4O_MINI_MODEL",
+            "GPT41_API_KEY",
+            "GPT41_BASE_URL",
+            "GPT41_MODEL",
+        ]:
             if key in st.secrets and key not in os.environ:
                 os.environ[key] = st.secrets[key]
 except:
@@ -42,52 +55,53 @@ except:
 # 모델 설정 클래스
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+
 class ModelConfig:
     """OpenAI 모델 설정 관리 클래스"""
-    
+
     # ===== GPT-4o =====
     GPT4O_API_KEY = os.getenv("GPT4O_API_KEY")
     GPT4O_BASE_URL = os.getenv("GPT4O_BASE_URL")
     GPT4O_MODEL = os.getenv("GPT4O_MODEL", "gpt-4o")
-    
+
     # ===== GPT-4o-mini =====
     GPT4O_MINI_API_KEY = os.getenv("GPT4O_MINI_API_KEY")
     GPT4O_MINI_BASE_URL = os.getenv("GPT4O_MINI_BASE_URL")
     GPT4O_MINI_MODEL = os.getenv("GPT4O_MINI_MODEL", "gpt-4o-mini")
-    
+
     # ===== 🆕 GPT-4.1 (Vision API) =====
     GPT41_API_KEY = os.getenv("GPT41_API_KEY")
     GPT41_BASE_URL = os.getenv("GPT41_BASE_URL")
     GPT41_MODEL = os.getenv("GPT41_MODEL", "gpt-4.1")
-    
+
     # ===== Text-Embedding-3-Small =====
     EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY")
     EMBEDDING_BASE_URL = os.getenv("EMBEDDING_BASE_URL")
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-    
+
     # ===== Text-Embedding-3-Large =====
     EMBEDDING_LARGE_API_KEY = os.getenv("EMBEDDING_LARGE_API_KEY")
     EMBEDDING_LARGE_BASE_URL = os.getenv("EMBEDDING_LARGE_BASE_URL")
     EMBEDDING_LARGE_MODEL = os.getenv("EMBEDDING_LARGE_MODEL", "text-embedding-3-large")
-    
+
     @classmethod
     def get_openai_client(cls, model_name: str) -> OpenAI:
         """
         OpenAI 클라이언트 생성 (범용)
-        
+
         Args:
             model_name: 모델 이름 (예: "gpt-4o-mini", "gpt-4.1", "embedding")
-            
+
         Returns:
             OpenAI: 설정된 클라이언트
-            
+
         Raises:
             ValueError: 지원하지 않는 모델이거나 API 키가 없는 경우
         """
         # Embedding 모델 처리
         if "embedding" in model_name.lower():
             return cls.get_embedding_model(model_name)
-        
+
         # 🆕 GPT-4.1 (Vision API)
         if "4.1" in model_name or "gpt-4.1" in model_name.lower():
             api_key = cls.GPT41_API_KEY
@@ -105,23 +119,23 @@ class ModelConfig:
             model_display = "GPT-4o"
         else:
             raise ValueError(f"지원하지 않는 모델: {model_name}")
-        
+
         # API 키 & Base URL 검증
         if not api_key:
             raise ValueError(f"{model_display} API 키가 설정되지 않았습니다!")
         if not base_url:
             raise ValueError(f"{model_display} BASE URL이 설정되지 않았습니다!")
-        
+
         return OpenAI(base_url=base_url, api_key=api_key)
-    
+
     @classmethod
     def get_embedding_model(cls, model_name: str) -> OpenAI:
         """
         Embedding 모델 클라이언트 생성
-        
+
         Args:
             model_name: 임베딩 모델 이름
-            
+
         Returns:
             OpenAI: 임베딩 클라이언트
         """
@@ -133,46 +147,56 @@ class ModelConfig:
             api_key = cls.EMBEDDING_API_KEY
             base_url = cls.EMBEDDING_BASE_URL
             model_display = "Embedding Small"
-        
+
         if not api_key:
             raise ValueError(f"{model_display} API 키가 설정되지 않았습니다!")
         if not base_url:
             raise ValueError(f"{model_display} BASE URL이 설정되지 않았습니다!")
-        
+
         return OpenAI(base_url=base_url, api_key=api_key)
-    
+
     @classmethod
     def validate_config(cls):
         """모든 모델 설정 검증 및 출력"""
         print("\n🔍 Model Configuration Status:")
         print("=" * 50)
-        
+
         # GPT-4o
         print(f"  GPT-4o:")
         print(f"    Model: {cls.GPT4O_MODEL}")
-        print(f"    Status: {'✅ 설정됨' if cls.GPT4O_API_KEY and cls.GPT4O_BASE_URL else '❌ 없음'}")
-        
+        print(
+            f"    Status: {'✅ 설정됨' if cls.GPT4O_API_KEY and cls.GPT4O_BASE_URL else '❌ 없음'}"
+        )
+
         # GPT-4o-mini
         print(f"\n  GPT-4o-mini:")
         print(f"    Model: {cls.GPT4O_MINI_MODEL}")
-        print(f"    Status: {'✅ 설정됨' if cls.GPT4O_MINI_API_KEY and cls.GPT4O_MINI_BASE_URL else '❌ 없음'}")
-        
+        print(
+            f"    Status: {'✅ 설정됨' if cls.GPT4O_MINI_API_KEY and cls.GPT4O_MINI_BASE_URL else '❌ 없음'}"
+        )
+
         # 🆕 GPT-4.1
         print(f"\n  🆕 GPT-4.1 (Vision API):")
         print(f"    Model: {cls.GPT41_MODEL}")
         print(f"    Base URL: {cls.GPT41_BASE_URL}")
-        print(f"    Status: {'✅ 설정됨' if cls.GPT41_API_KEY and cls.GPT41_BASE_URL else '❌ 없음'}")
-        
+        print(
+            f"    Status: {'✅ 설정됨' if cls.GPT41_API_KEY and cls.GPT41_BASE_URL else '❌ 없음'}"
+        )
+
         # Embedding Small
         print(f"\n  Embedding Small:")
         print(f"    Model: {cls.EMBEDDING_MODEL}")
-        print(f"    Status: {'✅ 설정됨' if cls.EMBEDDING_API_KEY and cls.EMBEDDING_BASE_URL else '❌ 없음'}")
-        
+        print(
+            f"    Status: {'✅ 설정됨' if cls.EMBEDDING_API_KEY and cls.EMBEDDING_BASE_URL else '❌ 없음'}"
+        )
+
         # Embedding Large
         print(f"\n  Embedding Large:")
         print(f"    Model: {cls.EMBEDDING_LARGE_MODEL}")
-        print(f"    Status: {'✅ 설정됨' if cls.EMBEDDING_LARGE_API_KEY and cls.EMBEDDING_LARGE_BASE_URL else '❌ 없음'}")
-        
+        print(
+            f"    Status: {'✅ 설정됨' if cls.EMBEDDING_LARGE_API_KEY and cls.EMBEDDING_LARGE_BASE_URL else '❌ 없음'}"
+        )
+
         print("=" * 50)
 
 
@@ -180,14 +204,15 @@ class ModelConfig:
 # 경로 설정
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+
 class PathConfig:
     """프로젝트 경로 설정"""
-    
-    BASE_DIR = Path(__file__).parent.parent  # 프로젝트 루트
+
+    BASE_DIR = Path(__file__).parent.parent.parent  # 프로젝트 루트
     DATA_DIR = BASE_DIR / "data"
     UPLOAD_DIR = DATA_DIR / "uploads"
     DB_DIR = DATA_DIR / "db"
-    
+
     # 필수 디렉토리 생성
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     DB_DIR.mkdir(parents=True, exist_ok=True)
@@ -197,18 +222,19 @@ class PathConfig:
 # 앱 설정
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+
 class AppConfig:
     """애플리케이션 설정"""
-    
+
     # Streamlit 설정
     PAGE_TITLE = "FlowNote MVP"
     PAGE_ICON = "📚"
     LAYOUT = "wide"
-    
+
     # 파일 업로드 설정
     MAX_FILE_SIZE = 200  # MB
     ALLOWED_EXTENSIONS = ["pdf", "txt", "md", "docx"]
-    
+
     # 검색 설정
     DEFAULT_TOP_K = 5
     SIMILARITY_THRESHOLD = 0.7
@@ -218,9 +244,11 @@ class AppConfig:
 # 🔧 래퍼 함수 & 상수 (직접 임포트용)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+
 def get_embedding_model(model_name: str):
     """래퍼 함수 - 직접 임포트 가능"""
     return ModelConfig.get_embedding_model(model_name)
+
 
 # 📌 app.py에서 사용할 상수들
 EMBEDDING_MODEL = ModelConfig.EMBEDDING_MODEL
@@ -236,14 +264,13 @@ EMBEDDING_COSTS = {
 if __name__ == "__main__":
     # 설정 검증
     ModelConfig.validate_config()
-    
+
     # 경로 확인
     print("\n📁 Path Configuration:")
     print(f"  BASE_DIR: {PathConfig.BASE_DIR}")
     print(f"  DATA_DIR: {PathConfig.DATA_DIR}")
     print(f"  UPLOAD_DIR: {PathConfig.UPLOAD_DIR}")
     print(f"  DB_DIR: {PathConfig.DB_DIR}")
-
 
 
 """result_4 - ❌ Missing configuration in .env file
