@@ -11,17 +11,26 @@ from backend.services.rule_engine import RuleResult
 async def test_hybrid_flow_end_to_end_rule_match():
     """
     [Integration] ClassificationService: Rule Hit Scenario
-    - Context Build -> Hybrid(Rule) -> Keywords -> Conflict -> Save
+
+    Verifies that when the rule engine returns a matching rule, the
+    classification result uses the rule's category and confidence,
+    triggers the save logic, and does NOT invoke the AI classifier.
+
+    Note: This test focuses on the final routing and persistence trigger,
+    not the internal conflict resolution details or actual file I/O.
     """
-    # Initialize Service
     service = ClassificationService()
 
-    # Patch RuleEngine to return a match
-    # Note: We are patching the class method used by the instance inside service
-    with patch("backend.services.rule_engine.RuleEngine.evaluate") as mock_rule_eval:
+    # 1. Patch RuleEngine to return match
+    # 2. Patch _save_results to prevent disk I/O during test
+    with patch(
+        "backend.services.rule_engine.RuleEngine.evaluate"
+    ) as mock_rule_eval, patch.object(service, "_save_results") as mock_save:
+
         mock_rule_eval.return_value = RuleResult(
             category="Projects", confidence=0.95, matched_rule="test_integration_rule"
         )
+        mock_save.return_value = {"csv_saved": True, "json_saved": True}
 
         # Mock AI to ensure it's NOT called
         service.hybrid_classifier.ai_classifier.classify = AsyncMock()
@@ -35,23 +44,30 @@ async def test_hybrid_flow_end_to_end_rule_match():
         # Assert
         assert response.category == "Projects"
         assert response.confidence >= 0.95
-        assert response.log_info.get("csv_saved") is True
 
-        # Verify AI was NOT called
+        # Verify wiring
         service.hybrid_classifier.ai_classifier.classify.assert_not_called()
+        mock_save.assert_called_once()
+        assert response.log_info.get("csv_saved") is True
 
 
 @pytest.mark.asyncio
 async def test_hybrid_flow_end_to_end_ai_fallback():
     """
     [Integration] ClassificationService: Rule Miss -> AI Fallback Scenario
+
+    Verifies that when the rule engine finds no match, the system correctly
+    falls back to the AI classifier and returns its result.
     """
     service = ClassificationService()
 
-    # 1. Rule Miss
-    with patch("backend.services.rule_engine.RuleEngine.evaluate", return_value=None):
+    # Patch RuleEngine (Miss) and _save_results (No I/O)
+    with patch(
+        "backend.services.rule_engine.RuleEngine.evaluate", return_value=None
+    ), patch.object(service, "_save_results") as mock_save:
 
-        # 2. AI Hit
+        mock_save.return_value = {"csv_saved": True, "json_saved": True}
+
         # HybridClassifier expects AI to return dict with category, confidence, method
         service.hybrid_classifier.ai_classifier.classify = AsyncMock(
             return_value={
@@ -70,7 +86,7 @@ async def test_hybrid_flow_end_to_end_ai_fallback():
 
         # Assert
         assert response.category == "Areas"
-        assert response.log_info.get("json_saved") is True
 
-        # Verify AI WAS called
+        # Verify wiring
         service.hybrid_classifier.ai_classifier.classify.assert_called_once()
+        mock_save.assert_called_once()
