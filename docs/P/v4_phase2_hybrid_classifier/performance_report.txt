@@ -1,15 +1,16 @@
 ✅ ModelConfig loaded from backend.config
 🚀 Starting HybridClassifier Performance Benchmark...
+   Iterations: 100, AI Latency: 10.0ms
 --------------------------------------------------
 
-[Scenario 1] Rule Hit (Fast Path)
-  - Total Time (100 req): 0.0872s
-  - Avg Latency: 0.87ms
-  - Throughput: 1147.29 req/s
+[Scenario] Rule Hit (Fast Path)
+  - Total Time (100 req): 0.0344s
+  - Avg Latency: 0.34ms
+  - Throughput: 2909.09 req/s
 
-[Scenario 2] AI Fallback (Simulated 10ms Latency)
-  - Total Time (100 req): 1.1931s
-  - Avg Latency: 11.93ms
-  - Throughput: 83.82 req/s
+[Scenario] AI Fallback (Simulated 10.0ms Latency)
+  - Total Time (100 req): 1.1533s
+  - Avg Latency: 11.53ms
+  - Throughput: 86.71 req/s
 
 ✅ Benchmark Complete.
