@@ -29,7 +29,7 @@ class ObsidianConfig(BaseModel):
         """Vault 경로 유효성 검사"""
         if not self.enabled:
             return True
-        return False if not self.vault_path else Path(self.vault_path).exists()
+        return bool(self.vault_path and Path(self.vault_path).exists())
 
 
 class NotionConfig(BaseModel):
