@@ -6,7 +6,7 @@ Conflict Resolution Service
 """
 
 import logging
-from typing import Optional, Any
+from typing import Optional
 from datetime import datetime
 
 from backend.models.conflict import (
@@ -15,7 +15,6 @@ from backend.models.conflict import (
     ResolutionStrategy,
     ResolutionMethod,
     ResolutionStatus,
-    ConflictResolutionLog,
 )
 from backend.services.sync_service import SyncServiceBase
 from backend.mcp.sync_map_manager import SyncMapManager
@@ -55,17 +54,17 @@ class ConflictResolutionService:
             # 전략에 따른 해결 로직 실행
             if strategy.method == ResolutionMethod.MANUAL_OVERRIDE:
                 success = await self._resolve_manual(conflict, strategy)
-            elif strategy.method == ResolutionMethod.AUTO_BY_CONTEXT:
-                # MVP: AUTO_BY_CONTEXT를 'Remote Wins'로 간주 (단순화)
-                success = await self._resolve_remote_wins(conflict)
-            elif strategy.method == ResolutionMethod.AUTO_BY_CONFIDENCE:
-                # MVP: AUTO_BY_CONFIDENCE를 'Remote Wins'로 간주 (단순화)
+            elif strategy.method in (
+                ResolutionMethod.AUTO_BY_CONTEXT,
+                ResolutionMethod.AUTO_BY_CONFIDENCE,
+            ):
+                # MVP: 두 전략 모두 'Remote Wins'로 간주 (단순화)
                 success = await self._resolve_remote_wins(conflict)
             else:
                 logger.warning(f"Unsupported resolution method: {strategy.method}")
                 success = False
 
-            # 결과 객체 생성 및 즉시 반환 (Inline)
+            # 결과 객체 생성 및 즉시 반환
             status = ResolutionStatus.RESOLVED if success else ResolutionStatus.FAILED
             return ConflictResolution(
                 conflict_id=conflict.conflict_id,
@@ -80,6 +79,19 @@ class ConflictResolutionService:
                 ),
             )
 
+        except NotImplementedError as e:
+            # File Service 미구현으로 인한 예외를 우아하게 처리
+            logger.warning(
+                f"Resolution not yet implemented for {conflict.conflict_id}: {e}"
+            )
+            return ConflictResolution(
+                conflict_id=conflict.conflict_id,
+                status=ResolutionStatus.FAILED,
+                strategy=strategy.model_dump(),
+                resolved_by="system",
+                resolved_at=datetime.now(),
+                notes=f"Not implemented: {str(e)}",
+            )
         except Exception as e:
             logger.error(
                 f"Error resolving conflict {conflict.conflict_id}: {e}", exc_info=True
@@ -89,7 +101,7 @@ class ConflictResolutionService:
                 status=ResolutionStatus.FAILED,
                 strategy=strategy.model_dump(),
                 resolved_by="system",
-                resolved_at=datetime.now(),  # Fix: resolved_at 추가
+                resolved_at=datetime.now(),
                 notes=str(e),
             )
 
@@ -102,8 +114,7 @@ class ConflictResolutionService:
         Note: MVP에서는 미구현 상태. File Service 및 UI 통합 필요.
         """
         raise NotImplementedError(
-            "Manual conflict resolution requires File Service integration. "
-            "This feature will be implemented in a future version."
+            "Manual conflict resolution requires File Service integration."
         )
 
     async def _resolve_remote_wins(self, conflict: SyncConflict) -> bool:
@@ -118,17 +129,10 @@ class ConflictResolutionService:
             return False
 
         # 2. 로컬 파일 저장 (File Service 필요)
-        # Note: MVP에서는 File Service가 아직 주입되지 않았으므로 NotImplementedError 발생
         raise NotImplementedError(
-            "Local file save operation requires File Service integration. "
-            f"Remote content retrieved successfully for {conflict.external_path}, "
-            "but cannot persist to local storage yet."
+            f"Local file save operation requires File Service integration. "
+            f"Remote content retrieved for {conflict.external_path}, but cannot persist locally."
         )
-
-        # 3. 매핑 정보 업데이트 (File Service 구현 후 활성화)
-        # new_hash = self.sync_service.calculate_file_hash(remote_content)
-        # self._update_mapping(conflict, new_hash)
-        # return True
 
     def _update_mapping(self, conflict: SyncConflict, new_hash: str):
         """해결 후 SyncMapManager 업데이트"""
