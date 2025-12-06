@@ -69,14 +69,28 @@ async def test_hybrid_flow_end_to_end_ai_fallback():
 
         mock_save.return_value = {"csv_saved": True, "json_saved": True}
 
-        # HybridClassifier expects AI to return dict with category, confidence, method
-        service.hybrid_classifier.ai_classifier.classify = AsyncMock(
-            return_value={
+        # Track call order to ensure Rule -> AI flow
+        call_order = []
+
+        # Side effect for Rule: record call, return None (Miss)
+        def rule_side_effect(*args, **kwargs):
+            call_order.append("rule")
+            return None
+
+        mock_rule_eval.side_effect = rule_side_effect
+
+        # Side effect for AI: record call, return result
+        async def ai_side_effect(*args, **kwargs):
+            call_order.append("ai")
+            return {
                 "category": "Areas",
                 "confidence": 0.88,
                 "reasoning": "Semantic match for Areas",
                 "method": "ai",
             }
+
+        service.hybrid_classifier.ai_classifier.classify = AsyncMock(
+            side_effect=ai_side_effect
         )
 
         # Act
@@ -88,7 +102,9 @@ async def test_hybrid_flow_end_to_end_ai_fallback():
         # Assert
         assert response.category == "Areas"
 
-        # Verify wiring
-        mock_rule_eval.assert_called_once()  # Verify Rule Engine was attempted first
+        # Verify wiring matches strict order
+        assert call_order == ["rule", "ai"], f"Incorrect call order: {call_order}"
+
+        mock_rule_eval.assert_called_once()
         service.hybrid_classifier.ai_classifier.classify.assert_called_once()
         mock_save.assert_called_once()
