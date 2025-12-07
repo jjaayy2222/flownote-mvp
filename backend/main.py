@@ -17,6 +17,7 @@ from backend.models import HealthCheckResponse, FileMetadata
 from backend.routes.conflict_routes import router as conflict_router
 from backend.routes.classifier_routes import router as classifier_router
 from backend.routes.onboarding_routes import router as onboarding_router
+from backend.api.endpoints.sync import router as sync_router
 
 
 # 로깅 설정
@@ -92,6 +93,10 @@ logger.info("✅ onboarding_router 등록 완료")
 # conflict_router
 app.include_router(conflict_router, prefix="/conflict", tags=["conflict"])
 logger.info("✅ conflict_router 등록 완료 (resolve 전용)")
+
+# sync_router (Phase 3: MCP Integration)
+app.include_router(sync_router)
+logger.info("✅ sync_router 등록 완료 (MCP Sync & Conflict Resolution)")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
