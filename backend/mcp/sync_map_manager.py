@@ -96,6 +96,11 @@ class SyncMapManager:
                 return self._mappings.get(internal_id)
             return None
 
+    def get_total_count(self) -> int:
+        """전체 매핑 개수 조회 (Thread-safe)"""
+        with self._lock:
+            return len(self._mappings)
+
     def update_mapping(
         self,
         internal_id: str,
