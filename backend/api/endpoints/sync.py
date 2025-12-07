@@ -87,13 +87,16 @@ def get_map_manager() -> SyncMapManager:
     return SyncMapManager()
 
 
-@lru_cache
-def get_resolution_service(
-    sync_service: SyncServiceBase = Depends(get_sync_service),
-    map_manager: SyncMapManager = Depends(get_map_manager),
-) -> ConflictResolutionService:
-    """충돌 해결 서비스 싱글톤 (FastAPI Dependency)"""
-    return ConflictResolutionService(sync_service=sync_service, map_manager=map_manager)
+def get_resolution_service() -> ConflictResolutionService:
+    """
+    충돌 해결 서비스 팩토리 (FastAPI Dependency)
+
+    Note: @lru_cache 제거 (Depends와 함께 사용 시 캐시 키 이슈).
+    내부에서 이미 캐시된 서비스들을 직접 호출하여 인스턴스 생성.
+    """
+    return ConflictResolutionService(
+        sync_service=get_sync_service(), map_manager=get_map_manager()
+    )
 
 
 # ==========================================
@@ -110,7 +113,7 @@ async def trigger_sync(
 
     Note: MVP에서는 Obsidian 전체 동기화만 지원합니다.
     """
-    logger.info("Sync trigger requested for Obsidian (全체)")
+    logger.info("Sync trigger requested for Obsidian (전체)")
 
     try:
         # 연결 확인
