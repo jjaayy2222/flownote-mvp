@@ -87,16 +87,17 @@ def get_map_manager() -> SyncMapManager:
     return SyncMapManager()
 
 
-def get_resolution_service() -> ConflictResolutionService:
+def get_resolution_service(
+    sync_service: SyncServiceBase = Depends(get_sync_service),
+    map_manager: SyncMapManager = Depends(get_map_manager),
+) -> ConflictResolutionService:
     """
     충돌 해결 서비스 팩토리 (FastAPI Dependency)
 
-    Note: @lru_cache 제거 (Depends와 함께 사용 시 캐시 키 이슈).
-    내부에서 이미 캐시된 서비스들을 직접 호출하여 인스턴스 생성.
+    Note: @lru_cache 제거 (FastAPI가 요청 단위 캐싱 자동 처리).
+    Depends()로 주입받아 DI 시맨틱 유지 (overrides, async 지원).
     """
-    return ConflictResolutionService(
-        sync_service=get_sync_service(), map_manager=get_map_manager()
-    )
+    return ConflictResolutionService(sync_service=sync_service, map_manager=map_manager)
 
 
 # ==========================================
