@@ -1,4 +1,4 @@
-# tests/integration/test_sync_map_manager.py
+# tests/unit/test_sync_map_manager.py
 
 """
 SyncMapManager Unit Tests
@@ -8,7 +8,7 @@ SyncMapManager Unit Tests
 
 import pytest
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, wait
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_EXCEPTION
 
 from backend.mcp.sync_map_manager import SyncMapManager
 from backend.models.external_sync import ExternalToolType
@@ -178,6 +178,7 @@ def test_sync_map_manager_thread_safe_concurrent_access(map_manager: SyncMapMana
     - 동시에 get_mapping_by_internal_id / get_mapping_by_external_path 호출
     - 예외 없이 일관된 매핑 조회
     - 레이스 컨디션 없음
+    - Timeout으로 교착 상태 방지
     """
     num_workers = 8
     iterations_per_worker = 50
@@ -209,13 +210,21 @@ def test_sync_map_manager_thread_safe_concurrent_access(map_manager: SyncMapMana
             assert by_external.internal_file_id == mapping.internal_file_id
             assert by_external.external_path == mapping.external_path
 
-    # Act: 멀티스레드 실행
+    # Act: 멀티스레드 실행 (Timeout 및 FIRST_EXCEPTION 추가)
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
         futures = [executor.submit(worker, idx) for idx in range(num_workers)]
-        done, not_done = wait(futures)
+        done, not_done = wait(
+            futures,
+            timeout=10,  # 10초 timeout (교착 상태 방지)
+            return_when=FIRST_EXCEPTION,  # 첫 예외 발생 시 즉시 반환
+        )
+
+    # Assert: Timeout 내에 모든 스레드 완료
+    assert (
+        not not_done
+    ), f"일부 worker future가 타임아웃 내에 완료되지 않았습니다. 미완료: {len(not_done)}"
 
     # Assert: 모든 스레드가 예외 없이 완료
-    assert not not_done, "일부 worker future가 완료되지 않았습니다."
     for f in done:
         exc = f.exception()
         assert exc is None, f"worker에서 예외 발생: {exc!r}"
@@ -235,6 +244,7 @@ def test_sync_map_manager_concurrent_update_same_id(map_manager: SyncMapManager)
     - 여러 스레드가 동일 internal_id를 동시에 업데이트
     - 레이스 컨디션 없이 최종 일관성 유지
     - 인덱스 정합성 확인
+    - Timeout으로 교착 상태 방지
     """
     num_workers = 10
     shared_internal_id = "shared-id"
@@ -248,15 +258,24 @@ def test_sync_map_manager_concurrent_update_same_id(map_manager: SyncMapManager)
             current_hash=f"hash-{worker_idx}",
         )
 
-    # Act: 동일 ID에 대한 동시 업데이트
+    # Act: 동일 ID에 대한 동시 업데이트 (Timeout 추가)
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
         futures = [executor.submit(worker, idx) for idx in range(num_workers)]
-        done, not_done = wait(futures)
+        done, not_done = wait(
+            futures,
+            timeout=10,
+            return_when=FIRST_EXCEPTION,
+        )
+
+    # Assert: Timeout 내에 완료
+    assert (
+        not not_done
+    ), f"일부 worker future가 타임아웃 내에 완료되지 않았습니다. 미완료: {len(not_done)}"
 
     # Assert: 예외 없이 완료
-    assert not not_done
     for f in done:
-        assert f.exception() is None
+        exc = f.exception()
+        assert exc is None, f"worker에서 예외 발생: {exc!r}"
 
     # 최종 상태 확인: 하나의 매핑만 존재해야 함
     mapping = map_manager.get_mapping_by_internal_id(shared_internal_id)
