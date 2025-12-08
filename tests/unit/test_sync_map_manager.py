@@ -7,7 +7,7 @@ SyncMapManager Unit Tests
 """
 
 import pytest
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List, Tuple, Set
 from concurrent.futures import ThreadPoolExecutor, wait, ALL_COMPLETED, Future
 
 from backend.mcp.sync_map_manager import SyncMapManager
@@ -186,7 +186,10 @@ def _submit_workers(
 
 
 def _assert_futures_completed(
-    done: set, future_to_worker: FutureWorkerMap, num_workers: int
+    done: Set[Future[None]],
+    future_to_worker: FutureWorkerMap,
+    num_workers: int,
+    not_done_count: int = 0,
 ) -> None:
     """
     Helper: Future 완료 및 예외 검증
@@ -195,14 +198,15 @@ def _assert_futures_completed(
         done: 완료된 Future 집합
         future_to_worker: Future-Worker 매핑
         num_workers: 예상 Worker 개수
+        not_done_count: 완료되지 않은 Future 개수 (디버깅용)
 
     Raises:
         AssertionError: 완료되지 않은 worker가 있거나 예외 발생 시
     """
-    # 모든 worker 완료 확인
+    # 모든 worker 완료 확인 (디버깅을 위해 완료/미완료 수 모두 노출)
     assert (
         len(done) == num_workers
-    ), f"모든 worker가 완료되어야 함. 완료: {len(done)}, 예상: {num_workers}"
+    ), f"Worker 수 불일치: 완료={len(done)}, 예상={num_workers}, 미완료={not_done_count}"
 
     # 각 Future의 예외 검증 (불변 조건 강제)
     for f in done:
@@ -271,7 +275,7 @@ def test_sync_map_manager_thread_safe_concurrent_access(map_manager: SyncMapMana
         )
 
     # Assert: Future 완료 및 예외 검증 (Helper 사용)
-    _assert_futures_completed(done, future_to_worker, num_workers)
+    _assert_futures_completed(done, future_to_worker, num_workers, len(not_done))
 
     # 최종 매핑 개수 검증
     expected_count = num_workers * iterations_per_worker
@@ -314,7 +318,7 @@ def test_sync_map_manager_concurrent_update_same_id(map_manager: SyncMapManager)
         )
 
     # Assert: Future 완료 및 예외 검증 (Helper 사용)
-    _assert_futures_completed(done, future_to_worker, num_workers)
+    _assert_futures_completed(done, future_to_worker, num_workers, len(not_done))
 
     # 최종 상태 확인: 하나의 매핑만 존재해야 함
     mapping = map_manager.get_mapping_by_internal_id(shared_internal_id)
