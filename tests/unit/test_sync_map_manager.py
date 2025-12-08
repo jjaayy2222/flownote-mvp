@@ -203,7 +203,12 @@ def test_sync_map_manager_thread_safe_concurrent_access(map_manager: SyncMapMana
 
     # Act: 멀티스레드 실행 (ALL_COMPLETED로 모든 worker 완료 대기)
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        futures = [executor.submit(worker, idx) for idx in range(num_workers)]
+        # Future와 worker_idx 매핑 (정확한 에러 리포팅)
+        future_to_worker = {
+            executor.submit(worker, idx): idx for idx in range(num_workers)
+        }
+        futures = list(future_to_worker.keys())
+
         done, not_done = wait(
             futures,
             timeout=10,  # 10초 timeout (교착 상태 방지)
@@ -215,10 +220,11 @@ def test_sync_map_manager_thread_safe_concurrent_access(map_manager: SyncMapMana
         len(done) == num_workers
     ), f"모든 worker가 완료되어야 함. 완료: {len(done)}, 미완료: {len(not_done)}"
 
-    # Assert: 예외 없이 완료
-    for idx, f in enumerate(done):
+    # Assert: 예외 없이 완료 (worker_idx로 식별)
+    for f in done:
+        worker_idx = future_to_worker[f]
         exc = f.exception()
-        assert exc is None, f"worker {idx}에서 예외 발생: {exc!r}"
+        assert exc is None, f"worker {worker_idx}에서 예외 발생: {exc!r}"
 
     # 최종 매핑 개수 검증
     expected_count = num_workers * iterations_per_worker
@@ -251,7 +257,12 @@ def test_sync_map_manager_concurrent_update_same_id(map_manager: SyncMapManager)
 
     # Act: 동일 ID에 대한 동시 업데이트 (ALL_COMPLETED)
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        futures = [executor.submit(worker, idx) for idx in range(num_workers)]
+        # Future와 worker_idx 매핑
+        future_to_worker = {
+            executor.submit(worker, idx): idx for idx in range(num_workers)
+        }
+        futures = list(future_to_worker.keys())
+
         done, not_done = wait(
             futures,
             timeout=10,
@@ -263,10 +274,11 @@ def test_sync_map_manager_concurrent_update_same_id(map_manager: SyncMapManager)
         len(done) == num_workers
     ), f"모든 worker가 완료되어야 함. 완료: {len(done)}, 미완료: {len(not_done)}"
 
-    # Assert: 예외 없이 완료
-    for idx, f in enumerate(done):
+    # Assert: 예외 없이 완료 (worker_idx로 식별)
+    for f in done:
+        worker_idx = future_to_worker[f]
         exc = f.exception()
-        assert exc is None, f"worker {idx}에서 예외 발생: {exc!r}"
+        assert exc is None, f"worker {worker_idx}에서 예외 발생: {exc!r}"
 
     # 최종 상태 확인: 하나의 매핑만 존재해야 함
     mapping = map_manager.get_mapping_by_internal_id(shared_internal_id)
