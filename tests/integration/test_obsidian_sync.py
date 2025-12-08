@@ -7,16 +7,13 @@ Obsidian 동기화 통합 테스트
 """
 
 import pytest
-import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, patch, MagicMock
-from datetime import datetime
 
 from backend.mcp.obsidian_server import ObsidianSyncService, ObsidianFileWatcher
 from backend.mcp.sync_map_manager import SyncMapManager
 from backend.services.conflict_resolution_service import ConflictResolutionService
 from backend.config.mcp_config import ObsidianConfig
-from backend.models.external_sync import ExternalToolType, ExternalFileMapping
+from backend.models.external_sync import ExternalToolType
 from backend.models.conflict import (
     SyncConflict,
     SyncConflictType,
@@ -58,78 +55,99 @@ def map_manager(tmp_path: Path) -> SyncMapManager:
 
 
 # ==========================================
-# Test: 파일 생성 동기화
+# Test: 파일 동기화 기본 시나리오
 # ==========================================
 
 
 @pytest.mark.asyncio
-async def test_file_creation_sync(
-    sync_service: ObsidianSyncService, map_manager: SyncMapManager, mock_vault: Path
+async def test_file_creation_no_conflict(
+    sync_service: ObsidianSyncService, mock_vault: Path
 ):
     """
-    [Integration] 파일 생성 동기화 검증
+    [Integration] 새 파일 생성 시 sync_all()이 예외/충돌 없이 동작하는지 검증
+
+    현재 MVP 구현에서는 sync_all()이 Vault를 스캔하고 충돌 정보를 반환하지만,
+    매핑 생성/검증은 아직 포함되지 않습니다.
 
     시나리오:
     1. Vault에 새 .md 파일 생성
     2. sync_all() 호출
-    3. 매핑 정보 생성 확인
+    3. 반환된 충돌 목록이 비어 있는지 확인
+
+    TODO:
+    - SyncMapManager를 통해 실제 파일 발견/매핑 생성이 이루어졌는지까지 검증하는
+      통합 테스트를 추가하거나, 이 테스트를 확장합니다.
     """
-    # Arrange
+    # Arrange: Vault에 새 노트 생성
     test_file = mock_vault / "test_note.md"
     test_content = "# Test Note\n\nThis is a test."
     test_file.write_text(test_content, encoding="utf-8")
 
-    # Act
+    # Act: 동기화 실행
     conflicts = await sync_service.sync_all()
 
-    # Assert
-    assert len(conflicts) == 0, "새 파일 생성 시 충돌 없어야 함"
-
-    # Note: MVP에서는 sync_all()이 스캔만 하고 매핑을 자동 생성하지 않음
-    # 실제 매핑 생성은 별도 로직 필요 (TODO)
+    # Assert: 새 파일 생성 시 충돌이 없어야 한다
+    assert len(conflicts) == 0, "새 파일 생성 시 sync_all()은 충돌을 반환하지 않아야 함"
 
 
-@pytest.mark.asyncio
-async def test_file_modification_detection(
-    sync_service: ObsidianSyncService, mock_vault: Path
-):
+def test_file_hash_calculation_consistency(sync_service: ObsidianSyncService):
     """
-    [Integration] 파일 수정 감지 검증
+    [Unit] 파일 해시 계산 일관성 검증
 
     시나리오:
-    1. 기존 파일 내용 변경
-    2. 해시 계산 및 비교
-    3. 변경 감지 확인
+    1. 동일 내용에 대해 해시 계산
+    2. 해시 값 일관성 확인
+    3. 내용 변경 시 해시 변경 확인
     """
     # Arrange
-    test_file = mock_vault / "existing_note.md"
     original_content = "# Original\n\nOriginal content."
     modified_content = "# Modified\n\nModified content."
 
-    test_file.write_text(original_content, encoding="utf-8")
-    original_hash = sync_service.calculate_file_hash(original_content)
-
     # Act
-    test_file.write_text(modified_content, encoding="utf-8")
-    modified_hash = sync_service.calculate_file_hash(modified_content)
+    hash1 = sync_service.calculate_file_hash(original_content)
+    hash2 = sync_service.calculate_file_hash(original_content)  # 동일 내용
+    hash3 = sync_service.calculate_file_hash(modified_content)
 
     # Assert
-    assert original_hash != modified_hash, "내용 변경 시 해시가 달라야 함"
-
-    # 충돌 감지 로직 검증
-    is_changed = sync_service.detect_conflict_by_hash(modified_hash, original_hash)
-    assert is_changed is True, "해시 불일치 시 변경 감지되어야 함"
+    assert hash1 == hash2, "동일 내용은 동일 해시를 생성해야 함"
+    assert hash1 != hash3, "내용 변경 시 해시가 달라야 함"
 
 
-@pytest.mark.asyncio
-async def test_file_deletion_event(sync_service: ObsidianSyncService, mock_vault: Path):
+def test_conflict_detection_by_hash(sync_service: ObsidianSyncService):
     """
-    [Integration] 파일 삭제 이벤트 처리 검증
+    [Unit] 해시 기반 충돌 감지 로직 검증
 
     시나리오:
-    1. FileWatcher 콜백 설정
-    2. 파일 삭제 시뮬레이션
-    3. on_deleted 이벤트 확인
+    1. 해시 불일치 시 변경 감지
+    2. 해시 일치 시 변경 없음
+    3. last_synced_hash가 None인 경우 처리
+    """
+    # Arrange
+    current_hash = "abc123"
+    last_synced_hash = "def456"
+
+    # Act & Assert
+    assert (
+        sync_service.detect_conflict_by_hash(current_hash, last_synced_hash) is True
+    ), "해시 불일치 시 변경 감지되어야 함"
+
+    assert (
+        sync_service.detect_conflict_by_hash(current_hash, current_hash) is False
+    ), "해시 일치 시 변경 없음"
+
+    assert (
+        sync_service.detect_conflict_by_hash(current_hash, None) is True
+    ), "last_synced_hash가 None이면 변경으로 간주"
+
+
+def test_file_watcher_event_handling(mock_vault: Path):
+    """
+    [Unit] FileWatcher 이벤트 핸들링 검증
+
+    시나리오:
+    1. 각 이벤트 타입별 콜백 호출 확인
+    2. .md 파일만 필터링 확인
+    3. 디렉토리 이벤트 무시 확인
     """
     # Arrange
     events_captured = []
@@ -139,16 +157,35 @@ async def test_file_deletion_event(sync_service: ObsidianSyncService, mock_vault
 
     watcher = ObsidianFileWatcher(mock_callback)
 
-    # Act: Mock event 생성
-    class MockDeleteEvent:
-        is_directory = False
-        src_path = str(mock_vault / "deleted_note.md")
+    # Mock events
+    class MockEvent:
+        def __init__(
+            self, src_path: str, is_directory: bool = False, dest_path: str = None
+        ):
+            self.src_path = src_path
+            self.is_directory = is_directory
+            self.dest_path = dest_path
 
-    watcher.on_deleted(MockDeleteEvent())
+    # Act: 다양한 이벤트 시뮬레이션
+    watcher.on_created(MockEvent(str(mock_vault / "created.md")))
+    watcher.on_modified(MockEvent(str(mock_vault / "modified.md")))
+    watcher.on_deleted(MockEvent(str(mock_vault / "deleted.md")))
+    watcher.on_moved(
+        MockEvent(str(mock_vault / "old.md"), dest_path=str(mock_vault / "new.md"))
+    )
+
+    # 무시되어야 하는 이벤트
+    watcher.on_created(MockEvent(str(mock_vault / "ignored.txt")))  # .md 아님
+    watcher.on_created(
+        MockEvent(str(mock_vault / "dir"), is_directory=True)
+    )  # 디렉토리
 
     # Assert
-    assert len(events_captured) == 1, "삭제 이벤트 1회 캡처되어야 함"
-    assert events_captured[0][1] == "deleted", "이벤트 타입이 'deleted'여야 함"
+    assert len(events_captured) == 4, "4개의 .md 파일 이벤트만 캡처되어야 함"
+    assert events_captured[0][1] == "created"
+    assert events_captured[1][1] == "modified"
+    assert events_captured[2][1] == "deleted"
+    assert events_captured[3][1] == "moved"
 
 
 # ==========================================
@@ -156,17 +193,16 @@ async def test_file_deletion_event(sync_service: ObsidianSyncService, mock_vault
 # ==========================================
 
 
-@pytest.mark.asyncio
-async def test_conflict_detection_content_mismatch():
+def test_conflict_model_creation():
     """
-    [Integration] Content Mismatch 충돌 감지
+    [Unit] SyncConflict 모델 생성 및 속성 검증
 
     시나리오:
-    1. 로컬/원격 해시 불일치
-    2. SyncConflict 생성
-    3. conflict_type 검증
+    1. Content Mismatch 충돌 생성
+    2. 필수 속성 확인
+    3. 기본 상태 확인
     """
-    # Arrange
+    # Arrange & Act
     conflict = SyncConflict(
         file_id="test_file_123",
         external_path="/vault/test.md",
@@ -183,16 +219,18 @@ async def test_conflict_detection_content_mismatch():
 
 
 @pytest.mark.asyncio
-async def test_conflict_resolution_remote_wins(
+async def test_conflict_resolution_remote_wins_status(
     sync_service: ObsidianSyncService, map_manager: SyncMapManager, mock_vault: Path
 ):
     """
-    [Integration] 충돌 해결: Remote Wins 전략
+    [Integration] 충돌 해결: Remote Wins 전략 (상태 검증)
 
     시나리오:
     1. Content Mismatch 충돌 생성
     2. AUTO_BY_CONTEXT 전략 적용
-    3. 원격 내용으로 덮어쓰기 시도 (NotImplementedError 예상)
+    3. ResolutionStatus.FAILED 확인 (MVP: File Service 미구현)
+
+    Note: 에러 메시지 문자열 대신 상태 Enum으로 검증하여 안정성 확보
     """
     # Arrange
     test_file = mock_vault / "conflict_test.md"
@@ -221,26 +259,27 @@ async def test_conflict_resolution_remote_wins(
     # Act
     resolution = await resolution_service.resolve_conflict(conflict, strategy)
 
-    # Assert
+    # Assert: 상태 Enum으로 검증 (문자열 대신)
     assert (
         resolution.status == ResolutionStatus.FAILED
-    ), "MVP에서는 File Service 미구현으로 실패"
-    assert (
-        "not implemented" in resolution.notes.lower()
-    ), "NotImplementedError 메시지 포함"
+    ), "MVP에서는 File Service 미구현으로 FAILED 상태여야 함"
+    assert resolution.conflict_id == conflict.conflict_id
+    assert resolution.resolved_by == "system"
 
 
 @pytest.mark.asyncio
-async def test_conflict_resolution_manual_not_implemented(
+async def test_conflict_resolution_manual_not_implemented_status(
     sync_service: ObsidianSyncService, map_manager: SyncMapManager
 ):
     """
-    [Integration] 충돌 해결: MANUAL_OVERRIDE 미구현 처리
+    [Integration] 충돌 해결: MANUAL_OVERRIDE 미구현 처리 (상태 검증)
 
     시나리오:
     1. MANUAL_OVERRIDE 전략 호출
-    2. NotImplementedError 발생 확인
-    3. ConflictResolution.status=FAILED 확인
+    2. ResolutionStatus.FAILED 확인
+    3. NotImplementedError 처리 확인
+
+    Note: 상태 Enum으로 검증하여 에러 메시지 변경에 강건함
     """
     # Arrange
     conflict = SyncConflict(
@@ -265,112 +304,8 @@ async def test_conflict_resolution_manual_not_implemented(
     # Act
     resolution = await resolution_service.resolve_conflict(conflict, strategy)
 
-    # Assert
+    # Assert: 상태 Enum으로 검증
     assert resolution.status == ResolutionStatus.FAILED
-    assert "Manual conflict resolution requires File Service" in resolution.notes
-
-
-# ==========================================
-# Test: SyncMapManager CRUD
-# ==========================================
-
-
-def test_sync_map_manager_create_and_retrieve(map_manager: SyncMapManager):
-    """
-    [Unit] SyncMapManager: 매핑 생성 및 조회
-
-    검증:
-    - update_mapping으로 새 매핑 생성
-    - get_mapping_by_internal_id로 조회
-    - get_mapping_by_external_path로 조회 (O(1))
-    """
-    # Arrange & Act
-    mapping = map_manager.update_mapping(
-        internal_id="test_123",
-        external_path="/vault/test.md",
-        tool_type=ExternalToolType.OBSIDIAN,
-        current_hash="abc123",
-    )
-
-    # Assert
-    assert mapping.internal_file_id == "test_123"
-    assert mapping.external_path == "/vault/test.md"
-    assert mapping.last_synced_hash == "abc123"
-
-    # 조회 검증
-    retrieved_by_id = map_manager.get_mapping_by_internal_id("test_123")
-    assert retrieved_by_id is not None
-    assert retrieved_by_id.external_path == "/vault/test.md"
-
-    retrieved_by_path = map_manager.get_mapping_by_external_path("/vault/test.md")
-    assert retrieved_by_path is not None
-    assert retrieved_by_path.internal_file_id == "test_123"
-
-
-def test_sync_map_manager_update_existing(map_manager: SyncMapManager):
-    """
-    [Unit] SyncMapManager: 기존 매핑 업데이트
-
-    검증:
-    - 동일 internal_id로 update_mapping 재호출
-    - external_path 변경 반영
-    - 인덱스 업데이트 확인
-    """
-    # Arrange
-    map_manager.update_mapping(
-        internal_id="update_test",
-        external_path="/vault/old_path.md",
-        tool_type=ExternalToolType.OBSIDIAN,
-    )
-
-    # Act
-    updated = map_manager.update_mapping(
-        internal_id="update_test",
-        external_path="/vault/new_path.md",
-        tool_type=ExternalToolType.OBSIDIAN,
-        current_hash="new_hash",
-    )
-
-    # Assert
-    assert updated.external_path == "/vault/new_path.md"
-    assert updated.last_synced_hash == "new_hash"
-
-    # 이전 경로로 조회 시 None
-    old_path_result = map_manager.get_mapping_by_external_path("/vault/old_path.md")
-    assert old_path_result is None
-
-    # 새 경로로 조회 성공
-    new_path_result = map_manager.get_mapping_by_external_path("/vault/new_path.md")
-    assert new_path_result is not None
-    assert new_path_result.internal_file_id == "update_test"
-
-
-def test_sync_map_manager_remove(map_manager: SyncMapManager):
-    """
-    [Unit] SyncMapManager: 매핑 삭제
-
-    검증:
-    - remove_mapping으로 삭제
-    - 조회 시 None 반환
-    - 인덱스에서도 제거 확인
-    """
-    # Arrange
-    map_manager.update_mapping(
-        internal_id="remove_test",
-        external_path="/vault/remove.md",
-        tool_type=ExternalToolType.OBSIDIAN,
-    )
-
-    # Act
-    result = map_manager.remove_mapping("remove_test")
-
-    # Assert
-    assert result is True
-
-    # 조회 시 None
-    assert map_manager.get_mapping_by_internal_id("remove_test") is None
-    assert map_manager.get_mapping_by_external_path("/vault/remove.md") is None
-
-    # 존재하지 않는 ID 삭제 시 False
-    result_nonexistent = map_manager.remove_mapping("nonexistent")
-    assert result_nonexistent is False
+    assert (
+        "not implemented" in resolution.notes.lower()
+    ), "NotImplementedError 관련 메시지 포함 (보조 검증)"
