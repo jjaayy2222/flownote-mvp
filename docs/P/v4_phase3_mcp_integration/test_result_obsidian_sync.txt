@@ -1,0 +1,106 @@
+============================================== test session starts ==============================================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp
+configfile: pytest.ini
+plugins: anyio-4.11.0, langsmith-0.4.37, asyncio-1.3.0, cov-7.0.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 9 items                                                                                               
+
+tests/integration/test_obsidian_sync.py::test_file_creation_sync PASSED                                   [ 11%]
+tests/integration/test_obsidian_sync.py::test_file_modification_detection PASSED                          [ 22%]
+tests/integration/test_obsidian_sync.py::test_file_deletion_event PASSED                                  [ 33%]
+tests/integration/test_obsidian_sync.py::test_conflict_detection_content_mismatch PASSED                  [ 44%]
+tests/integration/test_obsidian_sync.py::test_conflict_resolution_remote_wins PASSED                      [ 55%]
+tests/integration/test_obsidian_sync.py::test_conflict_resolution_manual_not_implemented PASSED           [ 66%]
+tests/integration/test_obsidian_sync.py::test_sync_map_manager_create_and_retrieve PASSED                 [ 77%]
+tests/integration/test_obsidian_sync.py::test_sync_map_manager_update_existing PASSED                     [ 88%]
+tests/integration/test_obsidian_sync.py::test_sync_map_manager_remove PASSED                              [100%]
+
+=============================================== warnings summary ================================================
+backend/models/external_sync.py:41
+  /Users/jay/ICT-projects/flownote-mvp/backend/models/external_sync.py:41: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ExternalToolConnection(BaseModel):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================================ tests coverage =================================================
+_______________________________ coverage: platform darwin, python 3.11.10-final-0 _______________________________
+
+Name                                               Stmts   Miss  Cover   Missing
+--------------------------------------------------------------------------------
+backend/__init__.py                                    1      0   100%
+backend/api/__init__.py                                3      0   100%
+backend/api/endpoints/__init__.py                      4      0   100%
+backend/api/endpoints/classify.py                      5      1    80%   12
+backend/api/endpoints/conflict_resolver.py            71     71     0%   3-197
+backend/api/endpoints/conflict_resolver_agent.py     165    165     0%   9-430
+backend/api/endpoints/dashboard.py                    31     31     0%   5-56
+backend/api/endpoints/metadata.py                      5      1    80%   12
+backend/api/endpoints/search.py                        5      1    80%   12
+backend/api/endpoints/sync.py                         87     46    47%   81, 87, 100, 117-146, 160-178, 194-201, 223-257
+backend/api/models.py                                  4      4     0%   7-21
+backend/api/models/__init__.py                         3      3     0%   11-37
+backend/api/routes.py                                  6      6     0%   5-13
+backend/chunking.py                                   35     35     0%   10-124
+backend/classifier/__init__.py                         2      0   100%
+backend/classifier/ai_classifier.py                   54     38    30%   73-113, 117-148, 152
+backend/classifier/base_classifier.py                 31     19    39%   41, 47-66, 70
+backend/classifier/conflict_resolver.py               38     21    45%   40-42, 68-111, 119, 128-136, 140-150
+backend/classifier/context_injector.py               109    109     0%   7-243
+backend/classifier/hybrid_classifier.py               39     23    41%   39, 59-99, 105
+backend/classifier/keyword.py                         52     40    23%   30-47, 54-94, 108
+backend/classifier/langchain_integration.py          208    171    18%   47-58, 75-109, 115-133, 147-171, 186-203, 235-272, 281-299, 304-320, 348-374, 400-460, 466-555
+backend/classifier/metadata_classifier.py             37     37     0%   7-91
+backend/classifier/para_agent.py                      77     49    36%   32-41, 49-54, 62-86, 94-104, 112-124, 132-149, 154-170, 175, 181-194
+backend/classifier/para_agent_wrapper.py              21     21     0%   5-111
+backend/classifier/para_classifier.py                 83     83     0%   9-277
+backend/classifier/snapshot_manager.py                38     15    61%   27, 50-65, 69, 73-76, 80-86, 97
+backend/cli.py                                        89     89     0%   6-165
+backend/config/__init__.py                           118     53    55%   30-50, 103, 107-109, 112-114, 121, 125, 127, 142-156, 161-200, 250, 266-273
+backend/config/mcp_config.py                          32     14    56%   30-32, 53-67
+backend/dashboard/__init__.py                          0      0   100%
+backend/dashboard/dashboard_core.py                   13     13     0%   3-42
+backend/data_manager.py                              167    132    21%   44-46, 50-51, 55-57, 73-114, 120-129, 135-158, 168-182, 188-195, 201-204, 215-227, 240-254, 260-270, 291-331
+backend/database/__init__.py                           2      2     0%   3-5
+backend/database/connection.py                        96     96     0%   3-202
+backend/database/metadata_schema.py                   52     52     0%   3-144
+backend/embedding.py                                  33     33     0%   10-118
+backend/exceptions.py                                 12     12     0%   10-43
+backend/export.py                                     28     28     0%   7-68
+backend/faiss_search.py                               78     78     0%   9-248
+backend/main.py                                       36      7    81%   115, 130, 148-154
+backend/mcp/obsidian_server.py                       106     54    49%   39-40, 43-44, 48-49, 82-96, 100-116, 120-124, 131-139, 144, 149, 162, 167-169, 173-184
+backend/mcp/sync_map_manager.py                       95     19    80%   51-70, 80-81, 101-102
+backend/metadata.py                                   95     95     0%   9-329
+backend/models/__init__.py                             6      0   100%
+backend/models/classification.py                      78      0   100%
+backend/models/common.py                              43      0   100%
+backend/models/conflict.py                           106      0   100%
+backend/models/external_sync.py                       42      0   100%
+backend/models/user.py                                32      0   100%
+backend/modules/__init__.py                            3      3     0%   7-10
+backend/modules/pdf_helper.py                         26     26     0%   9-62
+backend/modules/vision_helper.py                      59     59     0%   11-296
+backend/routes/__init__.py                             0      0   100%
+backend/routes/api_models.py                          24     24     0%   17-112
+backend/routes/classifier_routes.py                   42     27    36%   93-106, 138-181
+backend/routes/conflict_routes.py                     20      8    60%   42-49, 55
+backend/routes/onboarding_routes.py                   36     16    56%   63-64, 89-100, 122-126, 148-154, 174-179
+backend/search_history.py                             93     93     0%   9-353
+backend/services/__init__.py                           1      0   100%
+backend/services/classification_service.py            93     69    26%   75-140, 145, 158-171, 180-202, 208-215, 227-292
+backend/services/confidence_calculator.py             84     84     0%   6-240
+backend/services/conflict_resolution_service.py       38     10    74%   64-69, 95-99, 125-129, 139
+backend/services/conflict_service.py                  74     51    31%   25-35, 78-143, 161-204, 217, 221, 225, 229-230
+backend/services/feature_extractor.py                 90     90     0%   6-233
+backend/services/file_access_logger.py                65     65     0%   7-146
+backend/services/gpt_helper.py                       130     89    32%   25-29, 57-60, 74-103, 119-128, 146-196, 209-222, 244-274, 296-327, 357-392
+backend/services/onboarding_service.py                53     39    26%   38-60, 78-98, 113-140, 158-182
+backend/services/parallel_processor.py                23     23     0%   8-72
+backend/services/rule_engine.py                       45     13    71%   38-40, 87-88, 108-125
+backend/services/sync_service.py                      34      7    79%   41, 46, 51, 56, 64, 88-93
+backend/utils.py                                      42     42     0%   9-110
+backend/validators.py                                 88     88     0%   16-252
+--------------------------------------------------------------------------------
+TOTAL                                               3736   2693    28%
+========================================= 9 passed, 1 warning in 0.58s ==========================================
