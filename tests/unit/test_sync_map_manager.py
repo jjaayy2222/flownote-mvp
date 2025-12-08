@@ -203,10 +203,17 @@ def _assert_futures_completed(
     Raises:
         AssertionError: 완료되지 않은 worker가 있거나 예외 발생 시
     """
-    # 모든 worker 완료 확인 (디버깅을 위해 완료/미완료 수 모두 노출)
+    # 불변식 검증: done + not_done = num_workers
+    total_futures = len(done) + not_done_count
+    assert total_futures == num_workers, (
+        f"Future 개수 불일치: 완료={len(done)}, 미완료={not_done_count}, "
+        f"합계={total_futures}, 예상={num_workers}"
+    )
+
+    # 모든 worker 완료 확인
     assert (
         len(done) == num_workers
-    ), f"Worker 수 불일치: 완료={len(done)}, 예상={num_workers}, 미완료={not_done_count}"
+    ), f"Worker 미완료: 완료={len(done)}, 예상={num_workers}, 미완료={not_done_count}"
 
     # 각 Future의 예외 검증 (불변 조건 강제)
     for f in done:
