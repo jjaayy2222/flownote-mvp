@@ -271,8 +271,7 @@ Content-Type: application/json
     "method": "AUTO_BY_CONTEXT",
     "recommended_value": null,
     "confidence": 0.9,
-    "reasoning": "Remote wins strategy",
-    "conflict_id": "uuid-1234"
+    "reasoning": "Remote wins strategy"
   }
 }
 ```
@@ -298,8 +297,7 @@ Content-Type: application/json
       "method": "AUTO_BY_CONTEXT",
       "recommended_value": null,
       "confidence": 0.9,
-      "reasoning": "Remote wins strategy",
-      "conflict_id": "uuid-1234"
+      "reasoning": "Remote wins strategy"
     },
     "resolved_by": "system",
     "resolved_at": "2025-12-08T17:05:00Z",
@@ -329,8 +327,7 @@ Content-Type: application/json
       "method": "AUTO_BY_CONTEXT",
       "recommended_value": null,
       "confidence": 0.9,
-      "reasoning": "Remote wins strategy",
-      "conflict_id": "uuid-1234"
+      "reasoning": "Remote wins strategy"
     },
     "resolved_by": "system",
     "resolved_at": "2025-12-08T17:05:00Z",
@@ -350,8 +347,7 @@ curl -X POST http://localhost:8000/api/sync/conflicts/uuid-1234/resolve \
       "method": "AUTO_BY_CONTEXT",
       "recommended_value": null,
       "confidence": 0.9,
-      "reasoning": "Remote wins strategy",
-      "conflict_id": "uuid-1234"
+      "reasoning": "Remote wins strategy"
     }
   }'
 ```
@@ -367,8 +363,7 @@ payload = {
         "method": "AUTO_BY_CONTEXT",
         "recommended_value": None,
         "confidence": 0.9,
-        "reasoning": "Remote wins strategy",
-        "conflict_id": conflict_id
+        "reasoning": "Remote wins strategy"
     }
 }
 
@@ -399,7 +394,7 @@ else:
 ### SyncConflict
 
 ```typescript
-{
+interface SyncConflict {
   conflict_id: string;        // UUID
   file_id: string;
   external_path: string;
@@ -430,12 +425,12 @@ else:
 ### ResolutionStrategy
 
 ```typescript
-{
+interface ResolutionStrategy {
   method: "MANUAL_OVERRIDE" | "AUTO_BY_CONTEXT" | "AUTO_BY_CONFIDENCE" | "VOTING" | "HYBRID";
   recommended_value: string | null;
   confidence: number;         // 0.0 ~ 1.0
   reasoning: string;
-  conflict_id: string;        // UUID
+  // Note: conflict_id는 API 요청 시 포함하지만, 응답에서는 resolution.conflict_id 사용
 }
 ```
 
@@ -451,8 +446,8 @@ else:
 ### ConflictResolution
 
 ```typescript
-{
-  conflict_id: string;        // UUID
+interface ConflictResolution {
+  conflict_id: string;        // UUID (충돌 식별자)
   status: "RESOLVED" | "FAILED";
   strategy: ResolutionStrategy;
   resolved_by: string;        // user_id or 'system'
@@ -493,8 +488,7 @@ for conflict in conflicts['conflicts']:
             "method": "AUTO_BY_CONTEXT",
             "recommended_value": None,
             "confidence": 0.9,
-            "reasoning": "Auto resolution",
-            "conflict_id": conflict_id
+            "reasoning": "Auto resolution"
         }
     }
     
