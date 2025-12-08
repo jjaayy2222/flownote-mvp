@@ -10,7 +10,6 @@ import pytest
 from pathlib import Path
 
 from backend.mcp.obsidian_server import ObsidianSyncService, ObsidianFileWatcher
-from backend.config.mcp_config import ObsidianConfig
 from backend.models.conflict import (
     SyncConflict,
     SyncConflictType,
@@ -19,29 +18,7 @@ from backend.models.conflict import (
 from backend.models.external_sync import ExternalToolType
 
 
-# ==========================================
-# Fixtures
-# ==========================================
-
-
-@pytest.fixture
-def mock_vault(tmp_path: Path) -> Path:
-    """임시 Obsidian Vault 디렉토리 생성"""
-    vault = tmp_path / "test_vault"
-    vault.mkdir()
-    return vault
-
-
-@pytest.fixture
-def obsidian_config(mock_vault: Path) -> ObsidianConfig:
-    """테스트용 Obsidian 설정"""
-    return ObsidianConfig(vault_path=str(mock_vault), sync_interval=300, enabled=True)
-
-
-@pytest.fixture
-def sync_service(obsidian_config: ObsidianConfig) -> ObsidianSyncService:
-    """ObsidianSyncService 인스턴스"""
-    return ObsidianSyncService(obsidian_config)
+# Note: Fixtures는 tests/conftest.py에서 제공됩니다.
 
 
 # ==========================================

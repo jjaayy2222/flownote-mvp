@@ -58,3 +58,40 @@ def sample_user():
 @pytest.fixture
 def sample_text():
     return "오늘 프로젝트 회의가 있습니다. 마감일은 다음주입니다."
+
+
+# ==========================================
+# Obsidian Sync Fixtures (Phase 3)
+# ==========================================
+
+
+@pytest.fixture
+def mock_vault(tmp_path: Path) -> Path:
+    """임시 Obsidian Vault 디렉토리 생성"""
+    vault = tmp_path / "test_vault"
+    vault.mkdir()
+    return vault
+
+
+@pytest.fixture
+def obsidian_config(mock_vault: Path):
+    """테스트용 Obsidian 설정"""
+    from backend.config.mcp_config import ObsidianConfig
+
+    return ObsidianConfig(vault_path=str(mock_vault), sync_interval=300, enabled=True)
+
+
+@pytest.fixture
+def sync_service(obsidian_config):
+    """ObsidianSyncService 인스턴스"""
+    from backend.mcp.obsidian_server import ObsidianSyncService
+
+    return ObsidianSyncService(obsidian_config)
+
+
+@pytest.fixture
+def map_manager(tmp_path: Path):
+    """SyncMapManager 인스턴스 (임시 저장소)"""
+    from backend.mcp.sync_map_manager import SyncMapManager
+
+    return SyncMapManager(storage_dir=str(tmp_path / "mcp"))
