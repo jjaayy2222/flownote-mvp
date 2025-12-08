@@ -163,24 +163,24 @@ def test_sync_map_manager_get_total_count(map_manager: SyncMapManager):
 
 def _submit_workers(
     executor: ThreadPoolExecutor, num_workers: int, worker_func: Callable[[int], None]
-) -> Tuple[List[Future[Any]], Dict[Future[Any], int]]:
+) -> Tuple[List[Future[None]], Dict[Future[None], int]]:
     """
     Helper: Worker 제출 및 Future-Worker 매핑 생성
 
     Args:
         executor: ThreadPoolExecutor 인스턴스
         num_workers: Worker 개수
-        worker_func: Worker 함수 (worker_idx: int를 인자로 받음)
+        worker_func: Worker 함수 (worker_idx: int를 인자로 받고 None 반환)
 
     Returns:
         tuple: (futures 리스트, future_to_worker 딕셔너리)
-            - futures: Future[Any] 객체 리스트
+            - futures: Future[None] 객체 리스트
             - future_to_worker: Future를 worker_idx로 매핑하는 딕셔너리
     """
-    future_to_worker: Dict[Future[Any], int] = {
+    future_to_worker: Dict[Future[None], int] = {
         executor.submit(worker_func, idx): idx for idx in range(num_workers)
     }
-    futures: List[Future[Any]] = list(future_to_worker.keys())
+    futures: List[Future[None]] = list(future_to_worker.keys())
     return futures, future_to_worker
 
 
@@ -241,17 +241,6 @@ def test_sync_map_manager_thread_safe_concurrent_access(map_manager: SyncMapMana
         len(done) == num_workers
     ), f"모든 worker가 완료되어야 함. 완료: {len(done)}, 미완료: {len(not_done)}"
 
-    # 기존 코드 (삭제)
-    # Assert: 예외 없이 완료 (worker_idx로 식별, safe access)
-    for f in done:
-        worker_idx = future_to_worker.get(f)
-        assert (
-            worker_idx is not None
-        ), f"Future {f}에 대한 worker_idx 매핑을 찾을 수 없습니다."
-        exc = f.exception()
-        assert exc is None, f"worker {worker_idx}에서 예외 발생: {exc!r}"
-
-    # 새 코드 (추가)
     # Assert: 예외 없이 완료 (worker_idx로 식별, 불변 조건 강제)
     for f in done:
         try:
@@ -310,12 +299,16 @@ def test_sync_map_manager_concurrent_update_same_id(map_manager: SyncMapManager)
         len(done) == num_workers
     ), f"모든 worker가 완료되어야 함. 완료: {len(done)}, 미완료: {len(not_done)}"
 
-    # Assert: 예외 없이 완료 (worker_idx로 식별, safe access)
+    # Assert: 예외 없이 완료 (worker_idx로 식별, 불변 조건 강제)
     for f in done:
-        worker_idx = future_to_worker.get(f)
-        assert (
-            worker_idx is not None
-        ), f"Future {f}에 대한 worker_idx 매핑을 찾을 수 없습니다."
+        try:
+            worker_idx = future_to_worker[f]
+        except KeyError as e:
+            raise AssertionError(
+                f"Future {f}에 대한 worker_idx 매핑을 찾을 수 없습니다. "
+                f"이는 내부 불변 조건 위반입니다."
+            ) from e
+
         exc = f.exception()
         assert exc is None, f"worker {worker_idx}에서 예외 발생: {exc!r}"
 
