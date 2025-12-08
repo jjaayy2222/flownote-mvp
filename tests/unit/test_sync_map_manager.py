@@ -160,6 +160,25 @@ def test_sync_map_manager_get_total_count(map_manager: SyncMapManager):
 # ==========================================
 
 
+def _submit_workers(executor: ThreadPoolExecutor, num_workers: int, worker_func):
+    """
+    Helper: Worker 제출 및 Future-Worker 매핑 생성
+
+    Args:
+        executor: ThreadPoolExecutor 인스턴스
+        num_workers: Worker 개수
+        worker_func: Worker 함수 (worker_idx를 인자로 받음)
+
+    Returns:
+        tuple: (futures 리스트, future_to_worker 딕셔너리)
+    """
+    future_to_worker = {
+        executor.submit(worker_func, idx): idx for idx in range(num_workers)
+    }
+    futures = list(future_to_worker.keys())
+    return futures, future_to_worker
+
+
 def test_sync_map_manager_thread_safe_concurrent_access(map_manager: SyncMapManager):
     """
     [Concurrency] SyncMapManager: 동시 업데이트 및 조회 시 스레드 세이프 동작
@@ -203,11 +222,8 @@ def test_sync_map_manager_thread_safe_concurrent_access(map_manager: SyncMapMana
 
     # Act: 멀티스레드 실행 (ALL_COMPLETED로 모든 worker 완료 대기)
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        # Future와 worker_idx 매핑 (정확한 에러 리포팅)
-        future_to_worker = {
-            executor.submit(worker, idx): idx for idx in range(num_workers)
-        }
-        futures = list(future_to_worker.keys())
+        # Helper 함수로 Future-Worker 매핑 생성
+        futures, future_to_worker = _submit_workers(executor, num_workers, worker)
 
         done, not_done = wait(
             futures,
@@ -220,9 +236,12 @@ def test_sync_map_manager_thread_safe_concurrent_access(map_manager: SyncMapMana
         len(done) == num_workers
     ), f"모든 worker가 완료되어야 함. 완료: {len(done)}, 미완료: {len(not_done)}"
 
-    # Assert: 예외 없이 완료 (worker_idx로 식별)
+    # Assert: 예외 없이 완료 (worker_idx로 식별, safe access)
     for f in done:
-        worker_idx = future_to_worker[f]
+        worker_idx = future_to_worker.get(f)
+        assert (
+            worker_idx is not None
+        ), f"Future {f}에 대한 worker_idx 매핑을 찾을 수 없습니다."
         exc = f.exception()
         assert exc is None, f"worker {worker_idx}에서 예외 발생: {exc!r}"
 
@@ -257,11 +276,8 @@ def test_sync_map_manager_concurrent_update_same_id(map_manager: SyncMapManager)
 
     # Act: 동일 ID에 대한 동시 업데이트 (ALL_COMPLETED)
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        # Future와 worker_idx 매핑
-        future_to_worker = {
-            executor.submit(worker, idx): idx for idx in range(num_workers)
-        }
-        futures = list(future_to_worker.keys())
+        # Helper 함수로 Future-Worker 매핑 생성
+        futures, future_to_worker = _submit_workers(executor, num_workers, worker)
 
         done, not_done = wait(
             futures,
@@ -274,9 +290,12 @@ def test_sync_map_manager_concurrent_update_same_id(map_manager: SyncMapManager)
         len(done) == num_workers
     ), f"모든 worker가 완료되어야 함. 완료: {len(done)}, 미완료: {len(not_done)}"
 
-    # Assert: 예외 없이 완료 (worker_idx로 식별)
+    # Assert: 예외 없이 완료 (worker_idx로 식별, safe access)
     for f in done:
-        worker_idx = future_to_worker[f]
+        worker_idx = future_to_worker.get(f)
+        assert (
+            worker_idx is not None
+        ), f"Future {f}에 대한 worker_idx 매핑을 찾을 수 없습니다."
         exc = f.exception()
         assert exc is None, f"worker {worker_idx}에서 예외 발생: {exc!r}"
 
