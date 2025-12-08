@@ -189,6 +189,8 @@ else:
 
 ### GET /sync/conflicts
 
+> **⚠️ MVP 제한사항**: DB 저장 없이 **실시간 스캔 결과만 반환**합니다. 매 호출마다 전체 Vault를 스캔하므로 성능 이슈가 있을 수 있습니다.
+
 **설명**: 현재 감지된 충돌 목록을 조회합니다.
 
 **Request**
@@ -243,6 +245,8 @@ for conflict in data['conflicts']:
 ---
 
 ### POST /sync/conflicts/{conflict_id}/resolve
+
+> **⚠️ MVP 제한사항**: 현재 File Service 미구현으로 인해 **모든 해결 시도가 `FAILED` 상태로 반환**됩니다. 실제 파일 쓰기 동작은 Phase 4에서 구현 예정입니다.
 
 **설명**: 특정 충돌을 해결합니다.
 
@@ -361,26 +365,40 @@ else:
 
 ### SyncConflict
 
-```python
+```json
 {
   "conflict_id": "string (UUID)",
   "file_id": "string",
   "external_path": "string",
   "tool_type": "OBSIDIAN",
-  "conflict_type": "CONTENT_MISMATCH | FILE_DELETED | ...",
+  "conflict_type": "CONTENT_MISMATCH | DELETED_REMOTE | DELETED_LOCAL | METADATA_MISMATCH",
   "local_hash": "string | null",
   "remote_hash": "string | null",
-  "status": "PENDING | RESOLVED | FAILED",
+  "status": "PENDING | PENDING_REVIEW | RESOLVED | FAILED",
   "detected_at": "string (ISO 8601)",
   "metadata": "object | null"
 }
 ```
 
+**Enum Values**
+
+- **conflict_type**:
+  - `CONTENT_MISMATCH`: 로컬/원격 내용 불일치
+  - `DELETED_REMOTE`: 원격에서 삭제됨
+  - `DELETED_LOCAL`: 로컬에서 삭제됨
+  - `METADATA_MISMATCH`: 메타데이터 불일치
+
+- **status**:
+  - `PENDING`: 해결 대기 중
+  - `PENDING_REVIEW`: 검토 대기 중
+  - `RESOLVED`: 해결 완료
+  - `FAILED`: 해결 실패
+
 ### ResolutionStrategy
 
-```python
+```json
 {
-  "method": "MANUAL_OVERRIDE | AUTO_BY_CONTEXT | AUTO_BY_CONFIDENCE",
+  "method": "MANUAL_OVERRIDE | AUTO_BY_CONTEXT | AUTO_BY_CONFIDENCE | VOTING | HYBRID",
   "recommended_value": "string | null",
   "confidence": "number (0.0 ~ 1.0)",
   "reasoning": "string",
@@ -388,9 +406,18 @@ else:
 }
 ```
 
+**Enum Values**
+
+- **method**:
+  - `MANUAL_OVERRIDE`: 사용자 수동 선택 (🚧 미구현)
+  - `AUTO_BY_CONTEXT`: 컨텍스트 기반 자동 해결 (✅ MVP: Remote Wins)
+  - `AUTO_BY_CONFIDENCE`: 신뢰도 기반 자동 해결 (✅ MVP: Remote Wins)
+  - `VOTING`: 투표 기반 해결 (🚧 미구현)
+  - `HYBRID`: 하이브리드 해결 (🚧 미구현)
+
 ### ConflictResolution
 
-```python
+```json
 {
   "conflict_id": "string (UUID)",
   "status": "RESOLVED | FAILED",
