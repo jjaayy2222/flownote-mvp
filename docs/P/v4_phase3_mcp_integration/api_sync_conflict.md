@@ -271,7 +271,8 @@ Content-Type: application/json
     "method": "AUTO_BY_CONTEXT",
     "recommended_value": null,
     "confidence": 0.9,
-    "reasoning": "Remote wins strategy"
+    "reasoning": "Remote wins strategy",
+    "conflict_id": "uuid-1234"
   }
 }
 ```
@@ -297,7 +298,8 @@ Content-Type: application/json
       "method": "AUTO_BY_CONTEXT",
       "recommended_value": null,
       "confidence": 0.9,
-      "reasoning": "Remote wins strategy"
+      "reasoning": "Remote wins strategy",
+      "conflict_id": "uuid-1234"
     },
     "resolved_by": "system",
     "resolved_at": "2025-12-08T17:05:00Z",
@@ -327,7 +329,8 @@ Content-Type: application/json
       "method": "AUTO_BY_CONTEXT",
       "recommended_value": null,
       "confidence": 0.9,
-      "reasoning": "Remote wins strategy"
+      "reasoning": "Remote wins strategy",
+      "conflict_id": "uuid-1234"
     },
     "resolved_by": "system",
     "resolved_at": "2025-12-08T17:05:00Z",
@@ -347,7 +350,8 @@ curl -X POST http://localhost:8000/api/sync/conflicts/uuid-1234/resolve \
       "method": "AUTO_BY_CONTEXT",
       "recommended_value": null,
       "confidence": 0.9,
-      "reasoning": "Remote wins strategy"
+      "reasoning": "Remote wins strategy",
+      "conflict_id": "uuid-1234"
     }
   }'
 ```
@@ -363,7 +367,8 @@ payload = {
         "method": "AUTO_BY_CONTEXT",
         "recommended_value": None,
         "confidence": 0.9,
-        "reasoning": "Remote wins strategy"
+        "reasoning": "Remote wins strategy",
+        "conflict_id": conflict_id
     }
 }
 
@@ -424,15 +429,32 @@ interface SyncConflict {
 
 ### ResolutionStrategy
 
+**API 요청 시 사용 (Request)**
+
 ```typescript
+interface ResolutionStrategyRequest {
+  method: "MANUAL_OVERRIDE" | "AUTO_BY_CONTEXT" | "AUTO_BY_CONFIDENCE" | "VOTING" | "HYBRID";
+  recommended_value: string | null;
+  confidence: number;         // 0.0 ~ 1.0
+  reasoning: string;
+  conflict_id: string;        // UUID (해결할 충돌 ID)
+}
+```
+
+**API 응답 시 포함 (Response)**
+
+```typescript
+// ConflictResolution.strategy 필드로 반환
 interface ResolutionStrategy {
   method: "MANUAL_OVERRIDE" | "AUTO_BY_CONTEXT" | "AUTO_BY_CONFIDENCE" | "VOTING" | "HYBRID";
   recommended_value: string | null;
   confidence: number;         // 0.0 ~ 1.0
   reasoning: string;
-  // Note: conflict_id는 API 요청 시 포함하지만, 응답에서는 resolution.conflict_id 사용
+  conflict_id: string;        // UUID (해결된 충돌 ID)
 }
 ```
+
+> **📝 Note**: Request와 Response 모두 동일한 구조를 사용하지만, `conflict_id`는 요청 시 필수이며 응답에도 포함됩니다.
 
 **Enum Values**
 
@@ -488,7 +510,8 @@ for conflict in conflicts['conflicts']:
             "method": "AUTO_BY_CONTEXT",
             "recommended_value": None,
             "confidence": 0.9,
-            "reasoning": "Auto resolution"
+            "reasoning": "Auto resolution",
+            "conflict_id": conflict_id
         }
     }
     
