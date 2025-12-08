@@ -285,7 +285,9 @@ Content-Type: application/json
 | `AUTO_BY_CONTEXT` | 컨텍스트 기반 자동 해결 (MVP: Remote Wins) | ✅ 구현 |
 | `AUTO_BY_CONFIDENCE` | 신뢰도 기반 자동 해결 (MVP: Remote Wins) | ✅ 구현 |
 
-**Response** (200 OK)
+**Response (200 OK) - MVP 현재 상태**
+
+> **⚠️ 중요**: MVP에서는 File Service 미구현으로 **모든 요청이 HTTP 200 OK를 반환하지만, `success: false` 및 `status: "FAILED"`로 응답**합니다.
 
 ```json
 {
@@ -304,6 +306,37 @@ Content-Type: application/json
     "notes": "Not implemented: File Service required"
   },
   "success": false
+}
+```
+
+**MVP 응답 구분 방법**
+
+| 필드 | MVP 값 | 의미 |
+|------|--------|------|
+| HTTP Status | `200 OK` | 요청 처리 성공 (서버 정상) |
+| `success` | `false` | 해결 실패 (구현 제한) |
+| `resolution.status` | `"FAILED"` | 해결 상태 실패 |
+| `resolution.notes` | `"Not implemented: ..."` | 실패 원인 (File Service 미구현) |
+
+**Phase 4 예상 응답 (성공 시)**
+
+```json
+{
+  "resolution": {
+    "conflict_id": "uuid-1234",
+    "status": "RESOLVED",
+    "strategy": {
+      "method": "AUTO_BY_CONTEXT",
+      "recommended_value": null,
+      "confidence": 0.9,
+      "reasoning": "Remote wins strategy",
+      "conflict_id": "uuid-1234"
+    },
+    "resolved_by": "system",
+    "resolved_at": "2025-12-08T17:05:00Z",
+    "notes": "Successfully applied remote version"
+  },
+  "success": true
 }
 ```
 
@@ -365,18 +398,18 @@ else:
 
 ### SyncConflict
 
-```json
+```typescript
 {
-  "conflict_id": "string (UUID)",
-  "file_id": "string",
-  "external_path": "string",
-  "tool_type": "OBSIDIAN",
-  "conflict_type": "CONTENT_MISMATCH | DELETED_REMOTE | DELETED_LOCAL | METADATA_MISMATCH",
-  "local_hash": "string | null",
-  "remote_hash": "string | null",
-  "status": "PENDING | PENDING_REVIEW | RESOLVED | FAILED",
-  "detected_at": "string (ISO 8601)",
-  "metadata": "object | null"
+  conflict_id: string;        // UUID
+  file_id: string;
+  external_path: string;
+  tool_type: "OBSIDIAN";
+  conflict_type: "CONTENT_MISMATCH" | "DELETED_REMOTE" | "DELETED_LOCAL" | "METADATA_MISMATCH";
+  local_hash: string | null;
+  remote_hash: string | null;
+  status: "PENDING" | "PENDING_REVIEW" | "RESOLVED" | "FAILED";
+  detected_at: string;        // ISO 8601
+  metadata?: object | null;
 }
 ```
 
@@ -396,13 +429,13 @@ else:
 
 ### ResolutionStrategy
 
-```json
+```typescript
 {
-  "method": "MANUAL_OVERRIDE | AUTO_BY_CONTEXT | AUTO_BY_CONFIDENCE | VOTING | HYBRID",
-  "recommended_value": "string | null",
-  "confidence": "number (0.0 ~ 1.0)",
-  "reasoning": "string",
-  "conflict_id": "string (UUID)"
+  method: "MANUAL_OVERRIDE" | "AUTO_BY_CONTEXT" | "AUTO_BY_CONFIDENCE" | "VOTING" | "HYBRID";
+  recommended_value: string | null;
+  confidence: number;         // 0.0 ~ 1.0
+  reasoning: string;
+  conflict_id: string;        // UUID
 }
 ```
 
@@ -417,14 +450,14 @@ else:
 
 ### ConflictResolution
 
-```json
+```typescript
 {
-  "conflict_id": "string (UUID)",
-  "status": "RESOLVED | FAILED",
-  "strategy": "ResolutionStrategy",
-  "resolved_by": "string (user_id or 'system')",
-  "resolved_at": "string (ISO 8601)",
-  "notes": "string | null"
+  conflict_id: string;        // UUID
+  status: "RESOLVED" | "FAILED";
+  strategy: ResolutionStrategy;
+  resolved_by: string;        // user_id or 'system'
+  resolved_at: string;        // ISO 8601
+  notes: string | null;
 }
 ```
 
