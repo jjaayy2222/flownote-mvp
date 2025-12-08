@@ -7,14 +7,17 @@ SyncMapManager Unit Tests
 """
 
 import pytest
-from typing import Callable, Dict, List, Tuple, Any
+from typing import Callable, Dict, List, Tuple
 from concurrent.futures import ThreadPoolExecutor, wait, ALL_COMPLETED, Future
 
 from backend.mcp.sync_map_manager import SyncMapManager
 from backend.models.external_sync import ExternalToolType
 
 
-# Note: Fixtures는 tests/conftest.py에서 제공됨
+# Note: Fixtures는 tests/conftest.py에서 제공됩니다.
+
+# Type Aliases
+FutureWorkerMap = Dict[Future[None], int]
 
 
 # ==========================================
@@ -163,7 +166,7 @@ def test_sync_map_manager_get_total_count(map_manager: SyncMapManager):
 
 def _submit_workers(
     executor: ThreadPoolExecutor, num_workers: int, worker_func: Callable[[int], None]
-) -> Tuple[List[Future[None]], Dict[Future[None], int]]:
+) -> Tuple[List[Future[None]], FutureWorkerMap]:
     """
     Helper: Worker 제출 및 Future-Worker 매핑 생성
 
@@ -174,14 +177,45 @@ def _submit_workers(
 
     Returns:
         tuple: (futures 리스트, future_to_worker 딕셔너리)
-            - futures: Future[None] 객체 리스트
-            - future_to_worker: Future를 worker_idx로 매핑하는 딕셔너리
     """
-    future_to_worker: Dict[Future[None], int] = {
+    future_to_worker: FutureWorkerMap = {
         executor.submit(worker_func, idx): idx for idx in range(num_workers)
     }
-    futures: List[Future[None]] = list(future_to_worker.keys())
+    futures = list(future_to_worker.keys())
     return futures, future_to_worker
+
+
+def _assert_futures_completed(
+    done: set, future_to_worker: FutureWorkerMap, num_workers: int
+) -> None:
+    """
+    Helper: Future 완료 및 예외 검증
+
+    Args:
+        done: 완료된 Future 집합
+        future_to_worker: Future-Worker 매핑
+        num_workers: 예상 Worker 개수
+
+    Raises:
+        AssertionError: 완료되지 않은 worker가 있거나 예외 발생 시
+    """
+    # 모든 worker 완료 확인
+    assert (
+        len(done) == num_workers
+    ), f"모든 worker가 완료되어야 함. 완료: {len(done)}, 예상: {num_workers}"
+
+    # 각 Future의 예외 검증 (불변 조건 강제)
+    for f in done:
+        try:
+            worker_idx = future_to_worker[f]
+        except KeyError as e:
+            raise AssertionError(
+                f"Future {f}에 대한 worker_idx 매핑을 찾을 수 없습니다. "
+                f"이는 내부 불변 조건 위반입니다."
+            ) from e
+
+        exc = f.exception()
+        assert exc is None, f"worker {worker_idx}에서 예외 발생: {exc!r}"
 
 
 def test_sync_map_manager_thread_safe_concurrent_access(map_manager: SyncMapManager):
@@ -236,23 +270,8 @@ def test_sync_map_manager_thread_safe_concurrent_access(map_manager: SyncMapMana
             return_when=ALL_COMPLETED,  # 모든 worker 완료 대기
         )
 
-    # Assert: 모든 worker가 완료되었는지 확인
-    assert (
-        len(done) == num_workers
-    ), f"모든 worker가 완료되어야 함. 완료: {len(done)}, 미완료: {len(not_done)}"
-
-    # Assert: 예외 없이 완료 (worker_idx로 식별, 불변 조건 강제)
-    for f in done:
-        try:
-            worker_idx = future_to_worker[f]
-        except KeyError as e:
-            raise AssertionError(
-                f"Future {f}에 대한 worker_idx 매핑을 찾을 수 없습니다. "
-                f"이는 내부 불변 조건 위반입니다."
-            ) from e
-
-        exc = f.exception()
-        assert exc is None, f"worker {worker_idx}에서 예외 발생: {exc!r}"
+    # Assert: Future 완료 및 예외 검증 (Helper 사용)
+    _assert_futures_completed(done, future_to_worker, num_workers)
 
     # 최종 매핑 개수 검증
     expected_count = num_workers * iterations_per_worker
@@ -294,23 +313,8 @@ def test_sync_map_manager_concurrent_update_same_id(map_manager: SyncMapManager)
             return_when=ALL_COMPLETED,
         )
 
-    # Assert: 모든 worker 완료
-    assert (
-        len(done) == num_workers
-    ), f"모든 worker가 완료되어야 함. 완료: {len(done)}, 미완료: {len(not_done)}"
-
-    # Assert: 예외 없이 완료 (worker_idx로 식별, 불변 조건 강제)
-    for f in done:
-        try:
-            worker_idx = future_to_worker[f]
-        except KeyError as e:
-            raise AssertionError(
-                f"Future {f}에 대한 worker_idx 매핑을 찾을 수 없습니다. "
-                f"이는 내부 불변 조건 위반입니다."
-            ) from e
-
-        exc = f.exception()
-        assert exc is None, f"worker {worker_idx}에서 예외 발생: {exc!r}"
+    # Assert: Future 완료 및 예외 검증 (Helper 사용)
+    _assert_futures_completed(done, future_to_worker, num_workers)
 
     # 최종 상태 확인: 하나의 매핑만 존재해야 함
     mapping = map_manager.get_mapping_by_internal_id(shared_internal_id)
