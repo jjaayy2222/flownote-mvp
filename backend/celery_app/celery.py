@@ -12,8 +12,7 @@ app.config_from_object(CeleryConfig)
 
 # 태스크 자동 발견 (Auto-discover Tasks)
 # 'backend.celery_app' 앱 내의 tasks 모듈(패키지)을 자동으로 찾아 로드합니다.
-# backend/celery_app/tasks/__init__.py에서 하위 모듈들을 동적으로 임포트하므로,
-# 새로운 태스크 파일 추가 시 별도 설정 없이 자동 등록됩니다.
+# backend/celery_app/tasks/__init__.py에서 명시적으로 임포트된 태스크들이 등록됩니다.
 app.autodiscover_tasks(["backend.celery_app"])
 
 # Beat Schedule 정의
