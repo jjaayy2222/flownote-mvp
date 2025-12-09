@@ -111,3 +111,6 @@ wordcloud==1.9.4
 xxhash==3.6.0
 zipp==3.23.0
 zstandard==0.25.0
+
+celery[redis]==5.3.4
+flower==2.0.1
