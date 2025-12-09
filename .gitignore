@@ -170,3 +170,7 @@ temp_test_data/
 
 # Agent
 .agent/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
