@@ -1,9 +1,7 @@
-# backend/celery_app/tasks/__init__.py
-
-# 태스크 모듈 명시적 등록
-# autodiscover_tasks가 이 패키지(backend.celery_app.tasks)를 임포트할 때,
-# 아래의 서브 모듈들도 함께 임포트되어 태스크가 등록됩니다.
-# 새로운 태스크 파일을 생성하면 여기에 추가해 주세요.
+# [NOTICE] 태스크 모듈 등록 가이드
+# 새로운 태스크 파일(모듈)을 생성했다면, 반드시 아래 리스트에 추가해야 합니다.
+# Celery의 autodiscover_tasks는 이 파일을 최초 진입점으로 사용하므로,
+# 여기에 명시적으로 임포트되지 않은 모듈의 태스크는 실행되지 않습니다. (Silent Failure 방지)
 
 from . import (
     reclassification,
@@ -11,4 +9,5 @@ from . import (
     reporting,
     monitoring,
     maintenance,
+    # 여기에 새로운 태스크 모듈을 추가하세요. (e.g., my_new_task)
 )
