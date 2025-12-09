@@ -167,3 +167,6 @@ backups/
 
 # Test artifacts
 temp_test_data/
+
+# Agent
+.agent/
