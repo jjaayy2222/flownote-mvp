@@ -1,26 +1,20 @@
 # backend/celery_app/celery.py
 
-import pkgutil
 from celery import Celery
 from celery.schedules import crontab
 from backend.celery_app.config import CeleryConfig
-import backend.celery_app.tasks
 
 # Celery App 초기화
-# 'flownote'는 프로젝트의 고유 이름입니다.
 app = Celery("flownote")
 
-# Config Object로부터 설정 로드
+# 설정 로드
 app.config_from_object(CeleryConfig)
 
-# 태스크 모듈 자동 발견 (Auto-discover Task Modules)
-# backend/celery_app/tasks 패키지 내의 모든 모듈을 동적으로 발견하여 등록합니다.
-# 이를 통해 새로운 태스크 파일이 추가되어도 코드를 수정할 필요가 없습니다.
-task_modules = [
-    f"backend.celery_app.tasks.{name}"
-    for _, name, _ in pkgutil.iter_modules(backend.celery_app.tasks.__path__)
-]
-app.conf.update(include=task_modules)
+# 태스크 자동 발견 (Auto-discover Tasks)
+# 'backend.celery_app' 앱 내의 tasks 모듈(패키지)을 자동으로 찾아 로드합니다.
+# backend/celery_app/tasks/__init__.py에서 하위 모듈들을 동적으로 임포트하므로,
+# 새로운 태스크 파일 추가 시 별도 설정 없이 자동 등록됩니다.
+app.autodiscover_tasks(["backend.celery_app"])
 
 # Beat Schedule 정의
 app.conf.beat_schedule = {
