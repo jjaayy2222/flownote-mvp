@@ -144,3 +144,36 @@ class FileAccessLogger:
         except Exception as e:
             logger.error(f"Failed to get top accessed files: {e}")
             return []
+
+    def get_recent_files(self, days: int = 7) -> List[str]:
+        """
+        최근 N일 이내에 접근된 파일 목록 반환 (중복 제거)
+
+        Args:
+            days: 기간 (일 단위)
+
+        Returns:
+            List[str]: 파일 경로 목록
+        """
+        if not self.log_path.exists():
+            return []
+
+        recent_files = set()
+        cutoff_date = datetime.now().timestamp() - (days * 24 * 60 * 60)
+
+        try:
+            with open(self.log_path, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    try:
+                        # ISO format string to timestamp
+                        log_time = datetime.fromisoformat(row["timestamp"]).timestamp()
+                        if log_time >= cutoff_date:
+                            recent_files.add(row["file_path"])
+                    except ValueError:
+                        continue
+
+            return list(recent_files)
+        except Exception as e:
+            logger.error(f"Failed to get recent files: {e}")
+            return []
