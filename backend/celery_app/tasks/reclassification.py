@@ -17,13 +17,10 @@ from backend.models.automation import (
     AutomationStatus,
     ReclassificationRecord,
 )
-
-# [Refactor] Use config for consistent paths
 from backend.config import PathConfig
 
 logger = logging.getLogger(__name__)
 
-# [Refactor] Using PathConfig for robust path handling
 LOG_DIR = PathConfig.DATA_DIR / "automation_logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 AUTO_LOG_FILE = LOG_DIR / "automation.jsonl"
@@ -58,19 +55,27 @@ def _save_reclassification_records(records: List[ReclassificationRecord]):
         logger.error(f"Failed to save reclassification records: {e}")
 
 
-def _read_file_content(path_obj: Path) -> Optional[str]:
-    """[Refactor] Helper to safely read file content"""
+def _read_file_content(path_obj: Path) -> Tuple[Optional[str], bool]:
+    """
+    Helper to safely read file content.
+    Returns: (content or None, had_error)
+    """
     if not path_obj.exists() or not path_obj.is_file():
-        return None
+        return None, True  # Error: File not found or not a file
+
     try:
         content = path_obj.read_text(encoding="utf-8", errors="ignore")
     except Exception:
-        return None
-    return content if content.strip() else None
+        return None, True  # Error: Read failed
+
+    if not content.strip():
+        return None, False  # Not an error, just empty
+
+    return content, False  # Success
 
 
 def _infer_para_category(path_obj: Path) -> str:
-    """[Refactor] Helper to infer current PARA category from path"""
+    """Helper to infer current PARA category from path"""
     parts = path_obj.parts
     for para in ["Projects", "Areas", "Resources", "Archives", "Inbox"]:
         if para in parts:
@@ -78,20 +83,17 @@ def _infer_para_category(path_obj: Path) -> str:
     return "Unknown"
 
 
-async def _classify_files_async(
+async def _classify_files(
     files: List[str], log_id: str
 ) -> Tuple[List[ReclassificationRecord], ClassificationStats]:
     """
-    [Refactor] Internal async implementation of file classification
-    Separated from the synchronous wrapper to isolate asyncio logic.
+    Internal async implementation of file classification
     """
     try:
         classifier = HybridClassifier()
     except Exception as e:
         logger.error(f"Failed to initialize classifier: {e}")
-        # Return empty stats with error count equal to files count
-        error_stats = ClassificationStats(errors=len(files))
-        return [], error_stats
+        return [], ClassificationStats(errors=len(files))
 
     records = []
     stats = ClassificationStats()
@@ -99,19 +101,14 @@ async def _classify_files_async(
     for file_path in files:
         try:
             path_obj = Path(file_path)
-            content = _read_file_content(path_obj)
+            content, had_error = _read_file_content(path_obj)
+
+            if had_error:
+                stats.errors += 1
+                continue
 
             if content is None:
-                # Content read failed or empty, treat as potential error or skip?
-                # Original logic counted errors on read exception, skips on empty.
-                # Here _read_file_content returns None for both.
-                # Let's count as error only if it was an exception, but helper swallows it.
-                # Simplification: we might just skip stats.errors increment for empty files to match strict original behavior?
-                # Original behavior:
-                # - read error -> stats["errors"] += 1
-                # - empty content -> continue (no error count)
-                # To match this strictly, we would need the helper to distinguish.
-                # But for simplicity, we can just skip here.
+                # empty file, skip without counting as error
                 continue
 
             # 분류 실행
@@ -145,23 +142,13 @@ async def _classify_files_async(
     return records, stats
 
 
-def _classify_files(
-    files: List[str], log_id: str
-) -> Tuple[List[ReclassificationRecord], ClassificationStats]:
-    """
-    [Refactor] Synchronous wrapper for async classification logic.
-    This keeps the Celery task function synchronous and simple.
-    """
-    return asyncio.run(_classify_files_async(files, log_id))
-
-
 def _execute_reclassification(task_id: str, task_name: str, days: int):
     """재분류 로직 공통 실행 함수"""
     start_time = datetime.now()
     log_id = str(uuid.uuid4())
 
     # 1. 로그 초기화
-    # [Refactor] Initialize errors_count explicitly (though default is 0 via Pydantic)
+    # errors_count default is 0 via Pydantic model
     log = AutomationLog(
         log_id=log_id,
         task_type=AutomationTaskType.RECLASSIFICATION,
@@ -169,7 +156,6 @@ def _execute_reclassification(task_id: str, task_name: str, days: int):
         celery_task_id=task_id,
         status=AutomationStatus.RUNNING,
         started_at=start_time,
-        errors_count=0,  # Explicit initialization
     )
 
     try:
@@ -189,13 +175,12 @@ def _execute_reclassification(task_id: str, task_name: str, days: int):
             _save_automation_log(log)
             return "Skipped (No files)"
 
-        # 3. 리팩토링된 동기 래퍼 호출
-        records, stats = _classify_files(target_files, log_id)
+        # 3. 비동기 분류 실행 (Direct call to asyncio.run)
+        records, stats = asyncio.run(_classify_files(target_files, log_id))
 
-        # 4. 결과 업데이트 (Using DataClass)
+        # 4. 결과 업데이트
         log.files_processed = stats.processed
         log.files_updated = stats.updated
-        # [Refactor] Safe error counting
         log.errors_count = stats.errors
 
         log.status = AutomationStatus.COMPLETED
@@ -215,13 +200,10 @@ def _execute_reclassification(task_id: str, task_name: str, days: int):
         log.completed_at = datetime.now()
         log.duration_seconds = (log.completed_at - start_time).total_seconds()
 
-        # [Refactor] Safe increment
-        if log.errors_count is None:
-            log.errors_count = 0
+        # Pydantic default ensures int, safe to increment
         log.errors_count += 1
 
         _save_automation_log(log)
-        # Celery 재시도 로직을 원한다면 여기에 추가 가능
         raise e
 
 
