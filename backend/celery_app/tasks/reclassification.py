@@ -58,20 +58,27 @@ def _save_reclassification_records(records: List[ReclassificationRecord]):
 def _read_file_content(path_obj: Path) -> Tuple[Optional[str], bool]:
     """
     Helper to safely read file content.
-    Returns: (content or None, had_error)
+
+    Returns:
+        (content or None, had_error)
+        - If had_error is True, content is None and an error occurred
+        - If had_error is False and content is None, file was empty
+        - If had_error is False and content is not None, read succeeded
     """
     if not path_obj.exists() or not path_obj.is_file():
-        return None, True  # Error: File not found or not a file
+        logger.warning(f"File not found or not a file: {path_obj}")
+        return None, True
 
     try:
         content = path_obj.read_text(encoding="utf-8", errors="ignore")
-    except Exception:
-        return None, True  # Error: Read failed
+    except Exception as e:
+        logger.error(f"Failed to read file {path_obj}: {e}")
+        return None, True
 
     if not content.strip():
-        return None, False  # Not an error, just empty
+        return None, False
 
-    return content, False  # Success
+    return content, False
 
 
 def _infer_para_category(path_obj: Path) -> str:
@@ -83,11 +90,18 @@ def _infer_para_category(path_obj: Path) -> str:
     return "Unknown"
 
 
-async def _classify_files(
+async def _classify_files_async(
     files: List[str], log_id: str
 ) -> Tuple[List[ReclassificationRecord], ClassificationStats]:
     """
-    Internal async implementation of file classification
+    Async implementation of file classification.
+
+    Args:
+        files: List of file paths to classify
+        log_id: Automation log ID for tracking
+
+    Returns:
+        Tuple of (records, stats)
     """
     try:
         classifier = HybridClassifier()
@@ -108,21 +122,16 @@ async def _classify_files(
                 continue
 
             if content is None:
-                # empty file, skip without counting as error
                 continue
 
-            # 분류 실행
             result = await classifier.classify(content)
             stats.processed += 1
 
-            # 기존 카테고리 추론
             old_category = _infer_para_category(path_obj)
 
-            # 카테고리가 변경되었는지 확인
             if old_category.lower() != result.category.lower():
                 stats.updated += 1
 
-            # 레코드 생성
             record = ReclassificationRecord(
                 record_id=str(uuid.uuid4()),
                 automation_log_id=log_id,
@@ -147,8 +156,6 @@ def _execute_reclassification(task_id: str, task_name: str, days: int):
     start_time = datetime.now()
     log_id = str(uuid.uuid4())
 
-    # 1. 로그 초기화
-    # errors_count default is 0 via Pydantic model
     log = AutomationLog(
         log_id=log_id,
         task_type=AutomationTaskType.RECLASSIFICATION,
@@ -159,7 +166,6 @@ def _execute_reclassification(task_id: str, task_name: str, days: int):
     )
 
     try:
-        # 2. 대상 파일 조회
         access_logger = FileAccessLogger()
         target_files = access_logger.get_recent_files(days=days)
 
@@ -175,10 +181,8 @@ def _execute_reclassification(task_id: str, task_name: str, days: int):
             _save_automation_log(log)
             return "Skipped (No files)"
 
-        # 3. 비동기 분류 실행 (Direct call to asyncio.run)
-        records, stats = asyncio.run(_classify_files(target_files, log_id))
+        records, stats = asyncio.run(_classify_files_async(target_files, log_id))
 
-        # 4. 결과 업데이트
         log.files_processed = stats.processed
         log.files_updated = stats.updated
         log.errors_count = stats.errors
@@ -187,7 +191,6 @@ def _execute_reclassification(task_id: str, task_name: str, days: int):
         log.completed_at = datetime.now()
         log.duration_seconds = (log.completed_at - start_time).total_seconds()
 
-        # 5. 저장
         _save_reclassification_records(records)
         _save_automation_log(log)
 
@@ -199,8 +202,6 @@ def _execute_reclassification(task_id: str, task_name: str, days: int):
         log.details = {"error": str(e)}
         log.completed_at = datetime.now()
         log.duration_seconds = (log.completed_at - start_time).total_seconds()
-
-        # Pydantic default ensures int, safe to increment
         log.errors_count += 1
 
         _save_automation_log(log)
