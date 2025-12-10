@@ -78,6 +78,16 @@ from .external_sync import (
     ExternalToolType,
 )
 
+# Automation (Phase 4 - NEW!)
+from .automation import (
+    AutomationTaskType,
+    AutomationStatus,
+    AutomationRule,
+    AutomationLog,
+    ReclassificationRecord,
+    ArchivingRecord,
+)
+
 
 __all__ = [
     # Classification
@@ -128,4 +138,11 @@ __all__ = [
     "ExternalSyncLog",
     "SyncStatus",
     "ExternalToolType",
+    # Automation (Phase 4 - NEW!)
+    "AutomationTaskType",
+    "AutomationStatus",
+    "AutomationRule",
+    "AutomationLog",
+    "ReclassificationRecord",
+    "ArchivingRecord",
 ]
