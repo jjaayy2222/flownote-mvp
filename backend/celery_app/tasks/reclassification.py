@@ -28,6 +28,15 @@ RECORD_LOG_FILE = LOG_DIR / "reclassification_records.jsonl"
 
 
 @dataclass
+class ReclassificationResult:
+    """개별 파일 재분류 처리 결과"""
+
+    record: Optional[ReclassificationRecord] = None
+    is_error: bool = False
+    is_updated: bool = False
+
+
+@dataclass
 class ClassificationStats:
     """Class to hold classification statistics"""
 
@@ -92,33 +101,29 @@ def _infer_para_category(path_obj: Path) -> str:
 
 async def _reclassify_file(
     file_path: str, log_id: str, classifier: HybridClassifier
-) -> Tuple[Optional[ReclassificationRecord], bool, bool]:
+) -> ReclassificationResult:
     """
     Helper to reclassify a single file.
 
     Returns:
-        (record, is_error, is_updated)
+        ReclassificationResult object
     """
     try:
         path_obj = Path(file_path)
         content, had_error = _read_file_content(path_obj)
 
         if had_error:
-            return None, True, False
+            return ReclassificationResult(is_error=True)
 
         if content is None:
-            return None, False, False
+            return ReclassificationResult()  # Empty, no error, no record
 
         # 비동기 분류 실행
         result = await classifier.classify(content)
-        
+
         # 카테고리 변경 감지
         old_category = _infer_para_category(path_obj)
         is_updated = old_category.lower() != result.category.lower()
-
-        # TODO: 실제 파일 이동 로직 추가 (Automation Level에 따라 결정)
-        # if is_updated:
-        #     _move_file(path_obj, result.category)
 
         record = ReclassificationRecord(
             record_id=str(uuid.uuid4()),
@@ -130,12 +135,13 @@ async def _reclassify_file(
             reason=result.reason,
             processed_at=datetime.now(),
         )
-        # DB 업데이트 Note: 현재는 배치 저장 방식을 사용하므로 여기서는 레코드만 반환
-        return record, False, is_updated
 
-    except Exception as e:
-        logger.error(f"Error classifying file {file_path}: {e}")
-        return None, True, False
+        return ReclassificationResult(record=record, is_updated=is_updated)
+
+    except Exception:
+        # 전체 traceback 로깅
+        logger.exception("Error classifying file %s", file_path)
+        return ReclassificationResult(is_error=True)
 
 
 async def _classify_files_async(
@@ -161,18 +167,16 @@ async def _classify_files_async(
     stats = ClassificationStats()
 
     for file_path in files:
-        record, is_error, is_updated = await _reclassify_file(
-            file_path, log_id, classifier
-        )
+        result = await _reclassify_file(file_path, log_id, classifier)
 
-        if is_error:
+        if result.is_error:
             stats.errors += 1
             continue
 
-        if record:
-            records.append(record)
+        if result.record:
+            records.append(result.record)
             stats.processed += 1
-            if is_updated:
+            if result.is_updated:
                 stats.updated += 1
 
     return records, stats
