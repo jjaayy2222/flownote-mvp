@@ -90,6 +90,54 @@ def _infer_para_category(path_obj: Path) -> str:
     return "Unknown"
 
 
+async def _reclassify_file(
+    file_path: str, log_id: str, classifier: HybridClassifier
+) -> Tuple[Optional[ReclassificationRecord], bool, bool]:
+    """
+    Helper to reclassify a single file.
+
+    Returns:
+        (record, is_error, is_updated)
+    """
+    try:
+        path_obj = Path(file_path)
+        content, had_error = _read_file_content(path_obj)
+
+        if had_error:
+            return None, True, False
+
+        if content is None:
+            return None, False, False
+
+        # 비동기 분류 실행
+        result = await classifier.classify(content)
+        
+        # 카테고리 변경 감지
+        old_category = _infer_para_category(path_obj)
+        is_updated = old_category.lower() != result.category.lower()
+
+        # TODO: 실제 파일 이동 로직 추가 (Automation Level에 따라 결정)
+        # if is_updated:
+        #     _move_file(path_obj, result.category)
+
+        record = ReclassificationRecord(
+            record_id=str(uuid.uuid4()),
+            automation_log_id=log_id,
+            file_path=file_path,
+            old_category=old_category,
+            new_category=result.category,
+            confidence_score=result.confidence,
+            reason=result.reason,
+            processed_at=datetime.now(),
+        )
+        # DB 업데이트 Note: 현재는 배치 저장 방식을 사용하므로 여기서는 레코드만 반환
+        return record, False, is_updated
+
+    except Exception as e:
+        logger.error(f"Error classifying file {file_path}: {e}")
+        return None, True, False
+
+
 async def _classify_files_async(
     files: List[str], log_id: str
 ) -> Tuple[List[ReclassificationRecord], ClassificationStats]:
@@ -113,40 +161,19 @@ async def _classify_files_async(
     stats = ClassificationStats()
 
     for file_path in files:
-        try:
-            path_obj = Path(file_path)
-            content, had_error = _read_file_content(path_obj)
+        record, is_error, is_updated = await _reclassify_file(
+            file_path, log_id, classifier
+        )
 
-            if had_error:
-                stats.errors += 1
-                continue
-
-            if content is None:
-                continue
-
-            result = await classifier.classify(content)
-            stats.processed += 1
-
-            old_category = _infer_para_category(path_obj)
-
-            if old_category.lower() != result.category.lower():
-                stats.updated += 1
-
-            record = ReclassificationRecord(
-                record_id=str(uuid.uuid4()),
-                automation_log_id=log_id,
-                file_path=file_path,
-                old_category=old_category,
-                new_category=result.category,
-                confidence_score=result.confidence,
-                reason=result.reason,
-                processed_at=datetime.now(),
-            )
-            records.append(record)
-
-        except Exception as e:
-            logger.error(f"Error classifying file {file_path}: {e}")
+        if is_error:
             stats.errors += 1
+            continue
+
+        if record:
+            records.append(record)
+            stats.processed += 1
+            if is_updated:
+                stats.updated += 1
 
     return records, stats
 
