@@ -17,7 +17,7 @@ from backend.models.automation import (
     AutomationStatus,
     ArchivingRecord,
 )
-from backend.config import PathConfig
+from backend.config import PathConfig, AppConfig
 
 logger = logging.getLogger(__name__)
 
@@ -158,9 +158,8 @@ def _archive_single_file(path_obj: Path, log_id: str) -> ArchivingResult:
     단일 파일 아카이빙 실행
     - 파일을 Archives/{OriginalCategory} 폴더로 이동
     """
-    try:
-        current_category = _infer_para_category(path_obj)
 
+    try:
         # 목적지 경로 설정: Archives / 기존카테고리 / 파일명
         # (계층 구조 유지를 위해 relative_to 등을 사용할 수도 있으나, 단순화를 위해 1단계 하위로 이동)
         # 만약 원본이 Projects/ProjectA/note.md 라면 -> Archives/Projects/ProjectA/note.md 가 이상적
@@ -192,6 +191,13 @@ def _archive_single_file(path_obj: Path, log_id: str) -> ArchivingResult:
         # 폴더 생성
         destination.parent.mkdir(parents=True, exist_ok=True)
 
+        # 파일 이름 충돌 처리
+        if destination.exists():
+            timestamp_suffix = datetime.now().strftime("%Y%m%d_%H%M%S")
+            new_name = f"{destination.stem}_{timestamp_suffix}{destination.suffix}"
+            destination = destination.parent / new_name
+            logger.info(f"Destination exists, renaming to: {destination}")
+
         # 파일 이동
         shutil.move(str(path_obj), str(destination))
         logger.info(f"Archived: {path_obj} -> {destination}")
@@ -220,7 +226,7 @@ def archive_inactive_files(self):
     - Archives 폴더로 이동
     """
     task_name = "archive-inactive-files"
-    days_threshold = 30
+    days_threshold = AppConfig.ARCHIVE_DAYS_THRESHOLD
     start_time = datetime.now()
     log_id = str(uuid.uuid4())
 
@@ -284,7 +290,7 @@ def archive_inactive_files(self):
         log.details = {"error": str(e)}
         log.completed_at = datetime.now()
         log.duration_seconds = (log.completed_at - start_time).total_seconds()
-        log.errors_count += 1
+        log.errors_count = (log.errors_count or 0) + 1
 
         _save_automation_log(log)
         raise e

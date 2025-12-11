@@ -239,6 +239,9 @@ class AppConfig:
     DEFAULT_TOP_K = 5
     SIMILARITY_THRESHOLD = 0.7
 
+    # 자동화 설정
+    ARCHIVE_DAYS_THRESHOLD = 30  # 아카이브 기준일 (미접근 기간)
+
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 🔧 래퍼 함수 & 상수 (직접 임포트용)
