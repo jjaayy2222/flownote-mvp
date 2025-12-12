@@ -153,6 +153,24 @@ def _is_file_inactive(path_obj: Path, recent_files_set: Set[str], days: int) -> 
     return True
 
 
+def _resolve_archive_destination(destination: Path) -> Path:
+    """
+    목적지 파일 이름 충돌 시 고유한 이름 생성
+    - 형식: 원본명_YYYYMMDD_HHMMSS_microseconds_shortuuid.ext
+    """
+    if not destination.exists():
+        return destination
+
+    unique_suffix = (
+        f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{uuid.uuid4().hex[:8]}"
+    )
+    new_name = f"{destination.stem}_{unique_suffix}{destination.suffix}"
+    new_destination = destination.parent / new_name
+
+    logger.info(f"Destination exists, renaming: {destination} -> {new_destination}")
+    return new_destination
+
+
 def _archive_single_file(path_obj: Path, log_id: str) -> ArchivingResult:
     """
     단일 파일 아카이빙 실행
@@ -191,12 +209,10 @@ def _archive_single_file(path_obj: Path, log_id: str) -> ArchivingResult:
         # 폴더 생성
         destination.parent.mkdir(parents=True, exist_ok=True)
 
-        # 파일 이름 충돌 처리
-        if destination.exists():
-            timestamp_suffix = datetime.now().strftime("%Y%m%d_%H%M%S")
-            new_name = f"{destination.stem}_{timestamp_suffix}{destination.suffix}"
-            destination = destination.parent / new_name
-            logger.info(f"Destination exists, renaming to: {destination}")
+        # 파일 이름 충돌 해결 (Helper 사용)
+        destination = _resolve_archive_destination(destination)
+
+        # 파일 이동
 
         # 파일 이동
         shutil.move(str(path_obj), str(destination))
@@ -290,7 +306,8 @@ def archive_inactive_files(self):
         log.details = {"error": str(e)}
         log.completed_at = datetime.now()
         log.duration_seconds = (log.completed_at - start_time).total_seconds()
-        log.errors_count = (log.errors_count or 0) + 1
+        # Ensure errors_count is int
+        log.errors_count = 0 if log.errors_count is None else log.errors_count + 1
 
         _save_automation_log(log)
         raise e
