@@ -213,8 +213,6 @@ def _archive_single_file(path_obj: Path, log_id: str) -> ArchivingResult:
         destination = _resolve_archive_destination(destination)
 
         # 파일 이동
-
-        # 파일 이동
         shutil.move(str(path_obj), str(destination))
         logger.info(f"Archived: {path_obj} -> {destination}")
 
@@ -307,7 +305,7 @@ def archive_inactive_files(self):
         log.completed_at = datetime.now()
         log.duration_seconds = (log.completed_at - start_time).total_seconds()
         # Ensure errors_count is int
-        log.errors_count = 0 if log.errors_count is None else log.errors_count + 1
+        log.errors_count = (0 if log.errors_count is None else log.errors_count) + 1
 
         _save_automation_log(log)
         raise e
