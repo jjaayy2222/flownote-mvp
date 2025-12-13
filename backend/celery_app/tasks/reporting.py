@@ -255,7 +255,11 @@ def _execute_report_task(
 
     try:
         # 1. 메트릭 수집
-        days = REPORT_PERIOD_DAYS.get(report_type, 7)  # 기본값 7일
+        try:
+            days = REPORT_PERIOD_DAYS[report_type]
+        except KeyError:
+            raise ValueError(f"Unsupported report_type: {report_type}")
+
         period_start = start_time - timedelta(days=days)
 
         metrics = _collect_metrics(days=days)
@@ -296,9 +300,11 @@ def _execute_report_task(
 
         # 상세 에러 정보는 민감 정보가 포함될 수 있으므로 해싱하여 저장 (선택 사항)
         # 여기서는 운영 편의를 위해 Error Type만 남기고 상세 내용은 제외
+        # 주의: logger.exception은 트레이스백(민감정보 포함)을 남기므로 logger.error(exc_info=False) 사용
 
-        logger.exception(
+        logger.error(
             f"{task_name} failed",
+            exc_info=False,
             extra={
                 "task_name": task_name,
                 "log_id": log_id,
