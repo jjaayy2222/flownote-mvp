@@ -44,23 +44,22 @@ def _save_automation_log(log: AutomationLog):
 
 
 def _save_report(report: Report):
-    """생성된 리포트를 JSON 파일로 저장"""
-    try:
-        # 파일명: report_{type}_{date}_{id}.json
-        date_str = report.created_at.strftime("%Y%m%d")
-        filename = (
-            f"report_{report.report_type.value}_{date_str}_{report.report_id[:8]}.json"
-        )
-        path = REPORT_DIR / filename
+    """
+    생성된 리포트를 JSON 파일로 저장
+    - 실패 시 예외를 발생시켜 호출자가 처리하도록 함
+    """
+    # 파일명: report_{type}_{date}_{id}.json
+    date_str = report.created_at.strftime("%Y%m%d")
+    filename = (
+        f"report_{report.report_type.value}_{date_str}_{report.report_id[:8]}.json"
+    )
+    path = REPORT_DIR / filename
 
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(report.model_dump_json(indent=2))
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(report.model_dump_json(indent=2))
 
-        logger.info(f"Report saved: {path}")
-        return str(path)
-    except Exception as e:
-        logger.exception(f"Failed to save report: {e}")
-        return None
+    logger.info(f"Report saved: {path}")
+    return str(path)
 
 
 def _collect_metrics(days: int) -> Dict[str, ReportMetric]:
@@ -87,18 +86,22 @@ def _collect_metrics(days: int) -> Dict[str, ReportMetric]:
                     try:
                         data = json.loads(line)
                         log_time = datetime.fromisoformat(data["started_at"])
+
                         if log_time >= start_date:
-                            if (
-                                data.get("task_type")
-                                == AutomationTaskType.RECLASSIFICATION
-                            ):
+                            # JSON의 문자열 task_type을 Enum 값과 비교하기 위해 .value 사용하거나 직접 문자열 비교
+                            task_type = data.get("task_type")
+
+                            if task_type == AutomationTaskType.RECLASSIFICATION.value:
                                 reclassify_count += data.get("files_updated", 0)
-                            elif data.get("task_type") == AutomationTaskType.ARCHIVING:
+                            elif task_type == AutomationTaskType.ARCHIVING.value:
                                 archive_count += data.get("files_archived", 0)
 
                             total_processed += data.get("files_processed", 0)
                             total_errors += data.get("errors_count", 0)
-                    except Exception:
+
+                    except (json.JSONDecodeError, ValueError) as e:
+                        # 잘못된 형식의 로그 라인은 경고 후 건너뜀
+                        logger.warning(f"Skipping malformed automation log line: {e}")
                         continue
 
         metrics["reclassified_files"] = ReportMetric(
