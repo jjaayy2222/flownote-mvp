@@ -3,6 +3,7 @@
 import json
 import uuid
 import logging
+import hashlib
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 from pathlib import Path
@@ -125,9 +126,14 @@ def _collect_metrics(days: int) -> Dict[str, ReportMetric]:
                         continue
                     except Exception as e:
                         # 기타 예상치 못한 에러는 스택 트레이스 포함하여 로깅
+                        # 원본 로그 내용이 민감 정보일 수 있으므로, 내용 전체 대신 해시만 로깅
+                        content_hash = hashlib.sha256(
+                            safe_line.encode("utf-8", "ignore")
+                        ).hexdigest()
+
                         logger.exception(
                             "Unexpected error processing log line",
-                            extra={"content": f"{safe_line}..."},
+                            extra={"content_hash": content_hash},
                         )
                         continue
 
