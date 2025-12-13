@@ -309,6 +309,7 @@ def _execute_report_task(
                 "task_name": task_name,
                 "log_id": log_id,
                 "error_type": error_type,
+                "unhandled": True,
             },
         )
 
