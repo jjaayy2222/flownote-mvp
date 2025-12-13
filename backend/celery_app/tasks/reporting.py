@@ -293,10 +293,10 @@ def _execute_report_task(
 
         return f"{report_type.value.title()} Report generated: {report.report_id}"
 
-    except Exception as e:
+    except Exception as exc:
         # 방어적 코딩 및 보안 로깅
         # 민감 정보 유출 방지를 위해 구체적인 에러 메시지 대신 에러 타입만 기록
-        error_type = type(e).__name__
+        error_type = type(exc).__name__
 
         # 상세 에러 정보는 민감 정보가 포함될 수 있으므로 해싱하여 저장 (선택 사항)
         # 여기서는 운영 편의를 위해 Error Type만 남기고 상세 내용은 제외
@@ -313,7 +313,7 @@ def _execute_report_task(
         )
 
         log.status = AutomationStatus.FAILED
-        log.details = {"error_type": error_type}  # 민감한 str(e) 대신 타입 기록
+        log.details = {"error_type": error_type}  # 민감한 str(exc) 대신 타입 기록
         log.completed_at = datetime.now()
         log.duration_seconds = (log.completed_at - start_time).total_seconds()
         log.errors_count = (log.errors_count or 0) + 1
