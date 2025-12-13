@@ -281,3 +281,74 @@ def generate_weekly_report(self):
 
         _save_automation_log(log)
         raise e
+
+
+@app.task(bind=True)
+def generate_monthly_report(self):
+    """
+    [월간 리포트 생성]
+    - 매월 1일 실행
+    - 지난 30일간의 통계 집계
+    """
+    task_name = "generate-monthly-report"
+    start_time = datetime.now()
+    log_id = str(uuid.uuid4())
+
+    log = AutomationLog(
+        log_id=log_id,
+        task_type=AutomationTaskType.REPORTING,
+        task_name=task_name,
+        celery_task_id=self.request.id,
+        status=AutomationStatus.RUNNING,
+        started_at=start_time,
+    )
+
+    try:
+        # 1. 메트릭 수집 (30일)
+        period_days = 30
+        period_start = start_time - timedelta(days=period_days)
+
+        metrics = _collect_metrics(days=period_days)
+        insights = _generate_insights(metrics)
+
+        # 2. 리포트 객체 생성
+        report = Report(
+            report_id=str(uuid.uuid4()),
+            title=f"Monthly Automation Report ({period_start.strftime('%Y-%m-%d')} ~)",
+            report_type=ReportType.MONTHLY,
+            period_start=period_start,
+            period_end=start_time,
+            summary=f"Monthly report for {period_days} days activity.",
+            insights=insights,
+            recommendations=[],  # Todo: 향후 데이터 분석 기반 추천 로직 고도화
+            metrics=metrics,
+        )
+
+        # 3. 리포트 저장 (실패 시 예외 전파됨)
+        saved_path = _save_report(report)
+
+        # 4. 결과 기록
+        log.status = AutomationStatus.COMPLETED
+        log.completed_at = datetime.now()
+        log.duration_seconds = (log.completed_at - start_time).total_seconds()
+        log.details = {"report_path": saved_path, "report_id": report.report_id}
+
+        _save_automation_log(log)
+
+        return f"Monthly Report generated: {report.report_id}"
+
+    except Exception as e:
+        # 체크리스트 반영: 스택 트레이스 확보 및 구조화된 로깅
+        logger.exception(
+            "Monthly report task failed",
+            extra={"task_name": task_name, "log_id": log_id, "error_message": str(e)},
+        )
+
+        log.status = AutomationStatus.FAILED
+        log.details = {"error": str(e)}
+        log.completed_at = datetime.now()
+        log.duration_seconds = (log.completed_at - start_time).total_seconds()
+        log.errors_count = (log.errors_count or 0) + 1
+
+        _save_automation_log(log)
+        raise e
