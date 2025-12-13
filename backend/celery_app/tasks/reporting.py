@@ -81,6 +81,8 @@ def _collect_metrics(days: int) -> Dict[str, ReportMetric]:
         archive_count = 0
 
         if AUTO_LOG_FILE.exists():
+            malformed_log_lines = 0
+
             with open(AUTO_LOG_FILE, "r", encoding="utf-8") as f:
                 for line in f:
                     safe_line = line.strip()[:200]
@@ -88,24 +90,18 @@ def _collect_metrics(days: int) -> Dict[str, ReportMetric]:
                     # 1. JSON 파싱
                     try:
                         data = json.loads(line)
-                    except json.JSONDecodeError as e:
-                        logger.warning(
-                            f"JSON parsing failed: {e} | Content: {safe_line}..."
-                        )
+                    except json.JSONDecodeError:
+                        malformed_log_lines += 1
                         continue
 
                     # 2. 데이터 구조 검증
                     if not isinstance(data, dict):
-                        logger.warning(
-                            f"Log entry is not a dict | Content: {safe_line}..."
-                        )
+                        malformed_log_lines += 1
                         continue
 
                     started_at_str = data.get("started_at")
                     if not started_at_str:
-                        logger.warning(
-                            f"Missing 'started_at' field | Content: {safe_line}..."
-                        )
+                        malformed_log_lines += 1
                         continue
 
                     # 3. 날짜 파싱 및 로직 처리
@@ -123,18 +119,24 @@ def _collect_metrics(days: int) -> Dict[str, ReportMetric]:
                             total_processed += data.get("files_processed", 0)
                             total_errors += data.get("errors_count", 0)
 
-                    except ValueError as e:
-                        # 날짜 포맷 에러 등
-                        logger.warning(
-                            f"Invalid value in log entry: {e} | Content: {safe_line}..."
-                        )
+                    except (ValueError, TypeError):
+                        # 날짜 포맷 에러 또는 타입 에러
+                        malformed_log_lines += 1
                         continue
                     except Exception as e:
-                        # 기타 예상치 못한 에러
-                        logger.warning(
+                        # 기타 예상치 못한 에러는 스택 트레이스 포함하여 로깅
+                        logger.exception(
                             f"Unexpected error processing log line: {e} | Content: {safe_line}..."
                         )
                         continue
+
+            # 루프 종료 후 요약 로그
+            if malformed_log_lines > 0:
+                logger.warning(
+                    "Skipped %d malformed log line(s) while parsing %s",
+                    malformed_log_lines,
+                    AUTO_LOG_FILE,
+                )
 
         metrics["reclassified_files"] = ReportMetric(
             metric_name="Reclassified Files",
