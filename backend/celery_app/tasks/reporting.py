@@ -126,14 +126,24 @@ def _collect_metrics(days: int) -> Dict[str, ReportMetric]:
                         continue
                     except Exception as e:
                         # 기타 예상치 못한 에러는 스택 트레이스 포함하여 로깅
-                        # 원본 로그 내용이 민감 정보일 수 있으므로, 내용 전체 대신 해시만 로깅
-                        content_hash = hashlib.sha256(
-                            safe_line.encode("utf-8", "ignore")
+                        # 방어적 코딩: safe_line이 None이거나 문자열이 아닐 경우 대비
+                        safe_content = str(safe_line) if safe_line is not None else ""
+
+                        # 민감 정보 마스킹을 위한 해시 생성
+                        content_sha256 = hashlib.sha256(
+                            safe_content.encode("utf-8", "ignore")
                         ).hexdigest()
+
+                        # 디버깅을 위한 비민감 메타데이터 수집
+                        meta_info = {
+                            "content_sha256": content_sha256,
+                            "content_length": len(safe_content),
+                            "is_empty": not bool(safe_content),
+                        }
 
                         logger.exception(
                             "Unexpected error processing log line",
-                            extra={"content_hash": content_hash},
+                            extra=meta_info,
                         )
                         continue
 
