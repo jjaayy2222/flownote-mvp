@@ -151,7 +151,6 @@ __all__ = [
     "AutomationRule",
     "AutomationLog",
     "ReclassificationRecord",
-    "ReclassificationRecord",
     "ArchivingRecord",
     # Reporting (Phase 4)
     "ReportType",
