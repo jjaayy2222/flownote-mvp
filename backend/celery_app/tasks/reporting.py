@@ -83,22 +83,36 @@ def _collect_metrics(days: int) -> Dict[str, ReportMetric]:
         if AUTO_LOG_FILE.exists():
             with open(AUTO_LOG_FILE, "r", encoding="utf-8") as f:
                 for line in f:
+                    safe_line = line.strip()[:200]
+
+                    # 1. JSON 파싱
                     try:
                         data = json.loads(line)
+                    except json.JSONDecodeError as e:
+                        logger.warning(
+                            f"JSON parsing failed: {e} | Content: {safe_line}..."
+                        )
+                        continue
 
-                        # 데이터 타입 검증
-                        if not isinstance(data, dict):
-                            continue
+                    # 2. 데이터 구조 검증
+                    if not isinstance(data, dict):
+                        logger.warning(
+                            f"Log entry is not a dict | Content: {safe_line}..."
+                        )
+                        continue
 
-                        # 필수 필드 확인
-                        started_at_str = data.get("started_at")
-                        if not started_at_str:
-                            continue
+                    started_at_str = data.get("started_at")
+                    if not started_at_str:
+                        logger.warning(
+                            f"Missing 'started_at' field | Content: {safe_line}..."
+                        )
+                        continue
 
+                    # 3. 날짜 파싱 및 로직 처리
+                    try:
                         log_time = datetime.fromisoformat(started_at_str)
 
                         if log_time >= start_date:
-                            # JSON의 문자열 task_type을 Enum 값과 비교하기 위해 .value 사용하거나 직접 문자열 비교
                             task_type = data.get("task_type")
 
                             if task_type == AutomationTaskType.RECLASSIFICATION.value:
@@ -109,17 +123,16 @@ def _collect_metrics(days: int) -> Dict[str, ReportMetric]:
                             total_processed += data.get("files_processed", 0)
                             total_errors += data.get("errors_count", 0)
 
-                    except (
-                        json.JSONDecodeError,
-                        ValueError,
-                        KeyError,
-                        TypeError,
-                        AttributeError,
-                    ) as e:
-                        # 잘못된 형식의 로그 라인은 경고 후 건너뜜 (내용 포함)
-                        safe_line = line.strip()[:200]
+                    except ValueError as e:
+                        # 날짜 포맷 에러 등
                         logger.warning(
-                            f"Skipping malformed automation log line: {e} | Content: {safe_line}..."
+                            f"Invalid value in log entry: {e} | Content: {safe_line}..."
+                        )
+                        continue
+                    except Exception as e:
+                        # 기타 예상치 못한 에러
+                        logger.warning(
+                            f"Unexpected error processing log line: {e} | Content: {safe_line}..."
                         )
                         continue
 
