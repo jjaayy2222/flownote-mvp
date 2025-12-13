@@ -85,7 +85,17 @@ def _collect_metrics(days: int) -> Dict[str, ReportMetric]:
                 for line in f:
                     try:
                         data = json.loads(line)
-                        log_time = datetime.fromisoformat(data["started_at"])
+
+                        # 데이터 타입 검증
+                        if not isinstance(data, dict):
+                            continue
+
+                        # 필수 필드 확인
+                        started_at_str = data.get("started_at")
+                        if not started_at_str:
+                            continue
+
+                        log_time = datetime.fromisoformat(started_at_str)
 
                         if log_time >= start_date:
                             # JSON의 문자열 task_type을 Enum 값과 비교하기 위해 .value 사용하거나 직접 문자열 비교
@@ -99,9 +109,18 @@ def _collect_metrics(days: int) -> Dict[str, ReportMetric]:
                             total_processed += data.get("files_processed", 0)
                             total_errors += data.get("errors_count", 0)
 
-                    except (json.JSONDecodeError, ValueError) as e:
-                        # 잘못된 형식의 로그 라인은 경고 후 건너뜀
-                        logger.warning(f"Skipping malformed automation log line: {e}")
+                    except (
+                        json.JSONDecodeError,
+                        ValueError,
+                        KeyError,
+                        TypeError,
+                        AttributeError,
+                    ) as e:
+                        # 잘못된 형식의 로그 라인은 경고 후 건너뜜 (내용 포함)
+                        safe_line = line.strip()[:200]
+                        logger.warning(
+                            f"Skipping malformed automation log line: {e} | Content: {safe_line}..."
+                        )
                         continue
 
         metrics["reclassified_files"] = ReportMetric(
