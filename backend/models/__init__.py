@@ -88,6 +88,13 @@ from .automation import (
     ArchivingRecord,
 )
 
+# Reporting (Phase 4)
+from .report import (
+    ReportType,
+    ReportMetric,
+    Report,
+)
+
 
 __all__ = [
     # Classification
@@ -145,4 +152,8 @@ __all__ = [
     "AutomationLog",
     "ReclassificationRecord",
     "ArchivingRecord",
+    # Reporting (Phase 4)
+    "ReportType",
+    "ReportMetric",
+    "Report",
 ]
