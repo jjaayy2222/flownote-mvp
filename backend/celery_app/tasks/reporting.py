@@ -126,7 +126,8 @@ def _collect_metrics(days: int) -> Dict[str, ReportMetric]:
                     except Exception as e:
                         # 기타 예상치 못한 에러는 스택 트레이스 포함하여 로깅
                         logger.exception(
-                            f"Unexpected error processing log line | Content: {safe_line}..."
+                            "Unexpected error processing log line",
+                            extra={"content": f"{safe_line}..."},
                         )
                         continue
 
