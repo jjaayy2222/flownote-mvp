@@ -217,11 +217,25 @@ def _generate_insights(metrics: Dict[str, ReportMetric]) -> List[str]:
     return insights
 
 
+# 리포트 타입별 기간(일) 매핑
+REPORT_PERIOD_DAYS = {
+    ReportType.WEEKLY: 7,
+    ReportType.MONTHLY: 30,
+}
+
+
+def _format_report_title(
+    report_type: ReportType, start: datetime, end: datetime
+) -> str:
+    """리포트 제목 생성 헬퍼"""
+    date_fmt = "%Y-%m-%d"
+    return f"{report_type.value.title()} Automation Report ({start.strftime(date_fmt)} ~ {end.strftime(date_fmt)})"
+
+
 def _execute_report_task(
     celery_task_id: str,
     task_name: str,
     report_type: ReportType,
-    days: int,
 ):
     """
     리포트 생성 공통 로직 실행
@@ -241,13 +255,14 @@ def _execute_report_task(
 
     try:
         # 1. 메트릭 수집
+        days = REPORT_PERIOD_DAYS.get(report_type, 7)  # 기본값 7일
         period_start = start_time - timedelta(days=days)
+
         metrics = _collect_metrics(days=days)
         insights = _generate_insights(metrics)
 
         # 2. 리포트 객체 생성
-        date_fmt = "%Y-%m-%d"
-        title = f"{report_type.value.title()} Automation Report ({period_start.strftime(date_fmt)} ~ {start_time.strftime(date_fmt)})"
+        title = _format_report_title(report_type, period_start, start_time)
 
         report = Report(
             report_id=str(uuid.uuid4()),
@@ -276,17 +291,23 @@ def _execute_report_task(
 
     except Exception as e:
         # 방어적 코딩 및 보안 로깅
+        # 민감 정보 유출 방지를 위해 구체적인 에러 메시지 대신 에러 타입만 기록
+        error_type = type(e).__name__
+
+        # 상세 에러 정보는 민감 정보가 포함될 수 있으므로 해싱하여 저장 (선택 사항)
+        # 여기서는 운영 편의를 위해 Error Type만 남기고 상세 내용은 제외
+
         logger.exception(
             f"{task_name} failed",
             extra={
                 "task_name": task_name,
                 "log_id": log_id,
-                "error_message": str(e),
+                "error_type": error_type,
             },
         )
 
         log.status = AutomationStatus.FAILED
-        log.details = {"error": str(e)}
+        log.details = {"error_type": error_type}  # 민감한 str(e) 대신 타입 기록
         log.completed_at = datetime.now()
         log.duration_seconds = (log.completed_at - start_time).total_seconds()
         log.errors_count = (log.errors_count or 0) + 1
@@ -306,7 +327,6 @@ def generate_weekly_report(self):
         celery_task_id=self.request.id,
         task_name="generate-weekly-report",
         report_type=ReportType.WEEKLY,
-        days=7,
     )
 
 
@@ -321,5 +341,4 @@ def generate_monthly_report(self):
         celery_task_id=self.request.id,
         task_name="generate-monthly-report",
         report_type=ReportType.MONTHLY,
-        days=30,
     )
