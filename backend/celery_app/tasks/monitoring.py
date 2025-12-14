@@ -5,7 +5,8 @@ import logging
 import uuid
 import json
 from datetime import datetime
-from typing import Dict, Any
+from datetime import datetime
+from typing import Dict, Any, TypeVar, Awaitable
 
 from backend.celery_app.celery import app
 from backend.config import PathConfig
@@ -38,7 +39,10 @@ def _save_monitoring_log(log: AutomationLog):
         )
 
 
-def _run_coroutine_safely(coro: Any) -> Any:
+T = TypeVar("T")
+
+
+def _run_coroutine_safely(coro: Awaitable[T]) -> T:
     """Executes a coroutine in a temporary event loop with safe cleanup."""
     old_loop = None
     try:
