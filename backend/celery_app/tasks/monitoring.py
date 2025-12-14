@@ -158,3 +158,104 @@ def check_sync_status(self):
         _save_monitoring_log(log)
 
         raise
+
+
+@app.task(bind=True)
+def check_task_health(self):
+    """
+    [Celery Worker & Task 상태 모니터링]
+    - Worker 생존 확인 (ping)
+    - Worker 통계 수집 (stats)
+    """
+    task_name = "check_task_health"
+    start_time = datetime.now()
+    log_id = str(uuid.uuid4())
+
+    details = {}
+    is_healthy = True
+    error_msg = None
+
+    try:
+        # 1. Worker Ping Check
+        # app.control.ping() returns list of dicts: [{'celery@hostname': {'ok': 'pong'}}, ...]
+        ping_result = app.control.ping(timeout=3.0)
+        active_workers = []
+
+        if ping_result:
+            for node in ping_result:
+                active_workers.extend(node.keys())
+
+        details["active_workers"] = active_workers
+
+        if not active_workers:
+            is_healthy = False
+            error_msg = "No active Celery workers found"
+
+        # 2. Worker Stats (Optional performance metrics)
+        if is_healthy:
+            # inspect().stats() may return None if no workers respond
+            inspector = app.control.inspect()
+            stats = inspector.stats()
+            if stats:
+                details["worker_stats"] = stats
+            else:
+                details["worker_stats"] = "No stats available"
+
+        # 3. Log Result
+        status = AutomationStatus.COMPLETED if is_healthy else AutomationStatus.FAILED
+
+        if not is_healthy:
+            # 실패 시에만 AutomationLog 저장
+            log = AutomationLog(
+                log_id=log_id,
+                task_type=AutomationTaskType.MONITORING,
+                task_name=task_name,
+                celery_task_id=self.request.id,
+                status=status,
+                started_at=start_time,
+                completed_at=datetime.now(),
+                duration_seconds=(datetime.now() - start_time).total_seconds(),
+                details=details,
+                errors_count=1 if not is_healthy else 0,
+            )
+            # Add error detail if exists
+            if error_msg:
+                log.details["error"] = error_msg
+
+            _save_monitoring_log(log)
+
+            logger.error(
+                f"❌ {task_name} Failed: {error_msg}",
+                exc_info=False,
+                extra={
+                    "task_name": task_name,
+                    "active_workers": active_workers,
+                    "error_type": "WorkerHealthError",
+                },
+            )
+            return f"Health Check Failed: {error_msg}"
+
+        return f"Healthy. Active Workers: {len(active_workers)}"
+
+    except Exception as exc:
+        error_type = type(exc).__name__
+        logger.error(
+            f"{task_name} unexpected error",
+            exc_info=False,
+            extra={"task_name": task_name, "error_type": error_type, "unhandled": True},
+        )
+        # 예기치 못한 에러도 로그에 남김
+        log = AutomationLog(
+            log_id=log_id,
+            task_type=AutomationTaskType.MONITORING,
+            task_name=task_name,
+            celery_task_id=self.request.id,
+            status=AutomationStatus.FAILED,
+            started_at=start_time,
+            completed_at=datetime.now(),
+            duration_seconds=(datetime.now() - start_time).total_seconds(),
+            details={"error_type": error_type},
+            errors_count=1,
+        )
+        _save_monitoring_log(log)
+        raise
