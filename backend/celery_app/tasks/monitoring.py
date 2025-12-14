@@ -34,30 +34,32 @@ def _save_monitoring_log(log: AutomationLog):
         logger.error(
             "Failed to save monitoring log",
             exc_info=False,
-            extra={"error_type": type(exc).__name__}
+            extra={"error_type": type(exc).__name__},
         )
 
 
 def _run_async_check(service: ObsidianSyncService) -> bool:
-    """Run async connection check synchronously."""
+    """Run async connection check synchronously with loop cleanup."""
+    # 기존 루프 백업 (있다면)
+    old_loop = None
     try:
-        # Create a new event loop for this thread/process if needed
-        # Celery worker might prevent getting existing loop cleanly
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        # Run connect()
-        result = loop.run_until_complete(service.connect())
-        
-        loop.close()
-        return result
-    except Exception as exc:
-        logger.error(
-            "Async connection check failed",
-            exc_info=False,
-            extra={"error_type": type(exc).__name__}
-        )
-        return False
+        old_loop = asyncio.get_event_loop()
+    except RuntimeError:
+        pass
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    try:
+        return loop.run_until_complete(service.connect())
+    finally:
+        try:
+            loop.close()
+        except Exception:
+            pass  # 닫기 실패는 무시
+
+        # 루프 복원
+        asyncio.set_event_loop(old_loop)
 
 
 @app.task(bind=True)
@@ -71,17 +73,17 @@ def check_sync_status(self):
     task_name = "check_sync_status"
     start_time = datetime.now()
     log_id = str(uuid.uuid4())
-    
+
     # 설정 확인
     if not mcp_config.obsidian.enabled:
         return "Obsidian Sync Disabled"
-    
+
     service = ObsidianSyncService(mcp_config.obsidian)
     is_connected = False
-    
+
     try:
         is_connected = _run_async_check(service)
-        
+
         if not is_connected:
             # 연결 실패 시에만 AutomationLog에 ERROR로 기록
             log = AutomationLog(
@@ -95,12 +97,12 @@ def check_sync_status(self):
                 duration_seconds=(datetime.now() - start_time).total_seconds(),
                 details={
                     "error": "Obsidian Connection Failed",
-                    "vault_path": mcp_config.obsidian.vault_path
+                    "vault_path": mcp_config.obsidian.vault_path,
                 },
-                errors_count=1
+                errors_count=1,
             )
             _save_monitoring_log(log)
-            
+
             logger.error(
                 "❌ External Tool Connection Failed",
                 exc_info=False,
@@ -108,8 +110,8 @@ def check_sync_status(self):
                     "tool": "Obsidian",
                     "vault_path": mcp_config.obsidian.vault_path,
                     "task_name": task_name,
-                    "error_type": "ConnectionError"
-                }
+                    "error_type": "ConnectionError",
+                },
             )
             return "Connection Failed"
 
@@ -122,11 +124,7 @@ def check_sync_status(self):
         logger.error(
             f"{task_name} unexpected error",
             exc_info=False,
-            extra={
-                "task_name": task_name,
-                "error_type": error_type,
-                "unhandled": True
-            }
+            extra={"task_name": task_name, "error_type": error_type, "unhandled": True},
         )
         # 예기치 못한 에러도 로그에 남김
         log = AutomationLog(
@@ -139,8 +137,8 @@ def check_sync_status(self):
             completed_at=datetime.now(),
             duration_seconds=(datetime.now() - start_time).total_seconds(),
             details={"error_type": error_type},
-            errors_count=1
+            errors_count=1,
         )
         _save_monitoring_log(log)
-        
+
         raise
