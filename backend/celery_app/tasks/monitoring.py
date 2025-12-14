@@ -6,7 +6,6 @@ import uuid
 import json
 from datetime import datetime
 from typing import Dict, Any
-from contextlib import contextmanager
 
 from backend.celery_app.celery import app
 from backend.config import PathConfig
@@ -39,9 +38,8 @@ def _save_monitoring_log(log: AutomationLog):
         )
 
 
-@contextmanager
-def _temporary_event_loop():
-    """Context manager for temporary event loop execution."""
+def _run_coroutine_safely(coro: Any) -> Any:
+    """Executes a coroutine in a temporary event loop with safe cleanup."""
     old_loop = None
     try:
         old_loop = asyncio.get_event_loop()
@@ -52,7 +50,7 @@ def _temporary_event_loop():
     asyncio.set_event_loop(loop)
 
     try:
-        yield loop
+        return loop.run_until_complete(coro)
     finally:
         try:
             loop.close()
@@ -60,7 +58,10 @@ def _temporary_event_loop():
             logger.warning(
                 "Failed to close temporary event loop",
                 exc_info=False,
-                extra={"error_type": type(exc).__name__},
+                extra={
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                },
             )
 
         # 기존 루프가 있었을 때만 복원
@@ -69,10 +70,8 @@ def _temporary_event_loop():
 
 
 def _run_async_check(service: ObsidianSyncService) -> bool:
-    """Run async connection check synchronously with loop cleanup."""
-    # Context manager를 사용하여 루프 생성/정리 로직 캡슐화
-    with _temporary_event_loop() as loop:
-        return loop.run_until_complete(service.connect())
+    """Run async connection check synchronously with safe loop handling."""
+    return _run_coroutine_safely(service.connect())
 
 
 @app.task(bind=True)
