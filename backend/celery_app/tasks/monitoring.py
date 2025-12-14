@@ -39,6 +39,29 @@ def _save_monitoring_log(log: AutomationLog):
         )
 
 
+def _sanitize_worker_stats(stats: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Worker 통계 데이터 정제 (로그 용량 최적화 및 직렬화 안전)
+    - PID, Uptime, Pool 정보 등 핵심 지표만 추출
+    """
+    if not stats:
+        return {}
+
+    sanitized = {}
+    for node, info in stats.items():
+        if not isinstance(info, dict):
+            sanitized[node] = str(info)
+            continue
+
+        sanitized[node] = {
+            "pid": info.get("pid"),
+            "uptime": info.get("uptime"),
+            "pool": info.get("pool", {}),
+            # "rusage": info.get("rusage", {}), # 너무 상세하면 제외
+        }
+    return sanitized
+
+
 T = TypeVar("T")
 
 
@@ -101,6 +124,7 @@ def check_sync_status(self):
         is_connected = _run_async_check(service)
 
         if not is_connected:
+            end_time = datetime.now()
             # 연결 실패 시에만 AutomationLog에 ERROR로 기록
             log = AutomationLog(
                 log_id=log_id,
@@ -109,8 +133,8 @@ def check_sync_status(self):
                 celery_task_id=self.request.id,
                 status=AutomationStatus.FAILED,
                 started_at=start_time,
-                completed_at=datetime.now(),
-                duration_seconds=(datetime.now() - start_time).total_seconds(),
+                completed_at=end_time,
+                duration_seconds=(end_time - start_time).total_seconds(),
                 details={
                     "error": "Obsidian Connection Failed",
                     "vault_path": mcp_config.obsidian.vault_path,
@@ -142,6 +166,8 @@ def check_sync_status(self):
             exc_info=False,
             extra={"task_name": task_name, "error_type": error_type, "unhandled": True},
         )
+
+        end_time = datetime.now()
         # 예기치 못한 에러도 로그에 남김
         log = AutomationLog(
             log_id=log_id,
@@ -150,8 +176,8 @@ def check_sync_status(self):
             celery_task_id=self.request.id,
             status=AutomationStatus.FAILED,
             started_at=start_time,
-            completed_at=datetime.now(),
-            duration_seconds=(datetime.now() - start_time).total_seconds(),
+            completed_at=end_time,
+            duration_seconds=(end_time - start_time).total_seconds(),
             details={"error_type": error_type},
             errors_count=1,
         )
@@ -197,7 +223,7 @@ def check_task_health(self):
             inspector = app.control.inspect()
             stats = inspector.stats()
             if stats:
-                details["worker_stats"] = stats
+                details["worker_stats"] = _sanitize_worker_stats(stats)
             else:
                 details["worker_stats"] = "No stats available"
 
@@ -205,6 +231,7 @@ def check_task_health(self):
         status = AutomationStatus.COMPLETED if is_healthy else AutomationStatus.FAILED
 
         if not is_healthy:
+            end_time = datetime.now()
             # 실패 시에만 AutomationLog 저장
             log = AutomationLog(
                 log_id=log_id,
@@ -213,8 +240,8 @@ def check_task_health(self):
                 celery_task_id=self.request.id,
                 status=status,
                 started_at=start_time,
-                completed_at=datetime.now(),
-                duration_seconds=(datetime.now() - start_time).total_seconds(),
+                completed_at=end_time,
+                duration_seconds=(end_time - start_time).total_seconds(),
                 details=details,
                 errors_count=1 if not is_healthy else 0,
             )
@@ -244,6 +271,8 @@ def check_task_health(self):
             exc_info=False,
             extra={"task_name": task_name, "error_type": error_type, "unhandled": True},
         )
+
+        end_time = datetime.now()
         # 예기치 못한 에러도 로그에 남김
         log = AutomationLog(
             log_id=log_id,
@@ -252,8 +281,8 @@ def check_task_health(self):
             celery_task_id=self.request.id,
             status=AutomationStatus.FAILED,
             started_at=start_time,
-            completed_at=datetime.now(),
-            duration_seconds=(datetime.now() - start_time).total_seconds(),
+            completed_at=end_time,
+            duration_seconds=(end_time - start_time).total_seconds(),
             details={"error_type": error_type},
             errors_count=1,
         )
