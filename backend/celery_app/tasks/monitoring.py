@@ -53,13 +53,55 @@ def _sanitize_worker_stats(stats: Dict[str, Any]) -> Dict[str, Any]:
             sanitized[node] = str(info)
             continue
 
+        # Pool 정보에서 원시 타입 필드만 추출
+        pool_info = info.get("pool", {})
+        sanitized_pool = {}
+        if isinstance(pool_info, dict):
+            # 직렬화 가능한 원시 타입 필드만 화이트리스트
+            for key in [
+                "max-concurrency",
+                "max-tasks-per-child",
+                "processes",
+                "timeouts",
+            ]:
+                if key in pool_info:
+                    val = pool_info[key]
+                    # 원시 타입만 허용
+                    if isinstance(val, (int, float, str, bool, type(None))):
+                        sanitized_pool[key] = val
+
         sanitized[node] = {
             "pid": info.get("pid"),
             "uptime": info.get("uptime"),
-            "pool": info.get("pool", {}),
-            # "rusage": info.get("rusage", {}), # 너무 상세하면 제외
+            "pool": sanitized_pool,
         }
     return sanitized
+
+
+def _create_failed_log(
+    log_id: str,
+    task_name: str,
+    celery_task_id: str,
+    start_time: datetime,
+    details: Dict[str, Any],
+    errors_count: int = 1,
+) -> AutomationLog:
+    """
+    실패한 모니터링 태스크의 AutomationLog 생성 (시간 일관성 보장)
+    """
+    end_time = datetime.now()
+    return AutomationLog(
+        log_id=log_id,
+        task_type=AutomationTaskType.MONITORING,
+        task_name=task_name,
+        celery_task_id=celery_task_id,
+        status=AutomationStatus.FAILED,
+        started_at=start_time,
+        completed_at=end_time,
+        duration_seconds=(end_time - start_time).total_seconds(),
+        details=details,
+        errors_count=errors_count,
+    )
 
 
 T = TypeVar("T")
@@ -124,22 +166,16 @@ def check_sync_status(self):
         is_connected = _run_async_check(service)
 
         if not is_connected:
-            end_time = datetime.now()
             # 연결 실패 시에만 AutomationLog에 ERROR로 기록
-            log = AutomationLog(
+            log = _create_failed_log(
                 log_id=log_id,
-                task_type=AutomationTaskType.MONITORING,
                 task_name=task_name,
                 celery_task_id=self.request.id,
-                status=AutomationStatus.FAILED,
-                started_at=start_time,
-                completed_at=end_time,
-                duration_seconds=(end_time - start_time).total_seconds(),
+                start_time=start_time,
                 details={
                     "error": "Obsidian Connection Failed",
                     "vault_path": mcp_config.obsidian.vault_path,
                 },
-                errors_count=1,
             )
             _save_monitoring_log(log)
 
@@ -167,19 +203,13 @@ def check_sync_status(self):
             extra={"task_name": task_name, "error_type": error_type, "unhandled": True},
         )
 
-        end_time = datetime.now()
         # 예기치 못한 에러도 로그에 남김
-        log = AutomationLog(
+        log = _create_failed_log(
             log_id=log_id,
-            task_type=AutomationTaskType.MONITORING,
             task_name=task_name,
             celery_task_id=self.request.id,
-            status=AutomationStatus.FAILED,
-            started_at=start_time,
-            completed_at=end_time,
-            duration_seconds=(end_time - start_time).total_seconds(),
+            start_time=start_time,
             details={"error_type": error_type},
-            errors_count=1,
         )
         _save_monitoring_log(log)
 
@@ -231,19 +261,13 @@ def check_task_health(self):
         status = AutomationStatus.COMPLETED if is_healthy else AutomationStatus.FAILED
 
         if not is_healthy:
-            end_time = datetime.now()
             # 실패 시에만 AutomationLog 저장
-            log = AutomationLog(
+            log = _create_failed_log(
                 log_id=log_id,
-                task_type=AutomationTaskType.MONITORING,
                 task_name=task_name,
                 celery_task_id=self.request.id,
-                status=status,
-                started_at=start_time,
-                completed_at=end_time,
-                duration_seconds=(end_time - start_time).total_seconds(),
+                start_time=start_time,
                 details=details,
-                errors_count=1 if not is_healthy else 0,
             )
             # Add error detail if exists
             if error_msg:
@@ -272,19 +296,13 @@ def check_task_health(self):
             extra={"task_name": task_name, "error_type": error_type, "unhandled": True},
         )
 
-        end_time = datetime.now()
         # 예기치 못한 에러도 로그에 남김
-        log = AutomationLog(
+        log = _create_failed_log(
             log_id=log_id,
-            task_type=AutomationTaskType.MONITORING,
             task_name=task_name,
             celery_task_id=self.request.id,
-            status=AutomationStatus.FAILED,
-            started_at=start_time,
-            completed_at=end_time,
-            duration_seconds=(end_time - start_time).total_seconds(),
+            start_time=start_time,
             details={"error_type": error_type},
-            errors_count=1,
         )
         _save_monitoring_log(log)
         raise
