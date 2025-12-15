@@ -291,10 +291,12 @@ class AutomationManager:
                 extra={"error_type": type(exc).__name__},
             )
 
-        # 최신 로그가 먼저 오도록 역순 및 limit 적용
+        # 최신 로그가 먼저 오도록 정렬 후 limit 적용
+        # logs는 파일 순서(오래된 → 최신)로 수집되므로 역순으로 최신 → 오래된 리스트를 만든다
+        logs = list(reversed(logs))
         if limit is not None:
-            return list(reversed(logs[-limit:]))
-        return list(reversed(logs))
+            return logs[:limit]
+        return logs
 
 
 # 싱글톤 인스턴스
