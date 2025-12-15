@@ -7,6 +7,7 @@ Maintenance Tasks
 
 import json
 import logging
+import os
 import uuid
 import shutil
 import tempfile
@@ -98,6 +99,8 @@ def _cleanup_jsonl_file(
     temp_fd, temp_path = tempfile.mkstemp(
         dir=file_path.parent, prefix=f".{file_path.stem}_", suffix=".tmp"
     )
+    # 파일 디스크립터 즉시 닫기 (리소스 누수 방지)
+    os.close(temp_fd)
 
     total_count = 0
     kept_count = 0
@@ -105,7 +108,7 @@ def _cleanup_jsonl_file(
 
     try:
         with open(file_path, "r", encoding="utf-8") as infile, open(
-            temp_fd, "w", encoding="utf-8"
+            temp_path, "w", encoding="utf-8"
         ) as outfile:
 
             for line in infile:
