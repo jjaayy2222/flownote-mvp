@@ -9,7 +9,8 @@ import json
 import logging
 import uuid
 import shutil
-from datetime import datetime, timedelta
+import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Any, List
 
@@ -90,8 +91,13 @@ def _cleanup_jsonl_file(
     if not file_path.exists():
         return {"total": 0, "deleted": 0, "kept": 0}
 
-    cutoff_date = datetime.now() - timedelta(days=days_threshold)
-    temp_file = file_path.with_suffix(".tmp")
+    # UTC 기준 cutoff 날짜 (타임존 비교 문제 해결)
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_threshold)
+
+    # 고유한 임시 파일 생성 (동시 실행 경쟁 조건 방지)
+    temp_fd, temp_path = tempfile.mkstemp(
+        dir=file_path.parent, prefix=f".{file_path.stem}_", suffix=".tmp"
+    )
 
     total_count = 0
     kept_count = 0
@@ -99,7 +105,7 @@ def _cleanup_jsonl_file(
 
     try:
         with open(file_path, "r", encoding="utf-8") as infile, open(
-            temp_file, "w", encoding="utf-8"
+            temp_fd, "w", encoding="utf-8"
         ) as outfile:
 
             for line in infile:
@@ -123,6 +129,9 @@ def _cleanup_jsonl_file(
                         log_date = datetime.fromisoformat(
                             log_date_str.replace("Z", "+00:00")
                         )
+                        # Naive datetime을 UTC로 간주 (타임존 정보 없는 경우)
+                        if log_date.tzinfo is None:
+                            log_date = log_date.replace(tzinfo=timezone.utc)
                     except (ValueError, AttributeError):
                         # 파싱 실패 시 보존
                         outfile.write(line + "\n")
@@ -142,7 +151,7 @@ def _cleanup_jsonl_file(
                     kept_count += 1
 
         # 원본 파일 교체
-        shutil.move(str(temp_file), str(file_path))
+        shutil.move(temp_path, str(file_path))
 
     except Exception as exc:
         logger.error(
@@ -151,8 +160,10 @@ def _cleanup_jsonl_file(
             extra={"error_type": type(exc).__name__},
         )
         # 임시 파일 정리
-        if temp_file.exists():
-            temp_file.unlink()
+        try:
+            Path(temp_path).unlink()
+        except Exception:
+            pass
         raise
 
     return {"total": total_count, "deleted": deleted_count, "kept": kept_count}
@@ -256,7 +267,8 @@ def backup_automation_data(self):
     errors_count = 0
 
     try:
-        timestamp = start_time.strftime("%Y%m%d_%H%M%S")
+        # 마이크로초 포함 타임스탬프 (빠른 재시도 시 충돌 방지)
+        timestamp = start_time.strftime("%Y%m%d_%H%M%S_%f")
         backup_files: List[str] = []
 
         # 백업할 파일 목록
@@ -292,9 +304,11 @@ def backup_automation_data(self):
         details["backup_count"] = len(backup_files)
         details["timestamp"] = timestamp
 
-        status = (
-            AutomationStatus.COMPLETED if errors_count == 0 else AutomationStatus.FAILED
-        )
+        # 부분 성공 지원: 일부라도 성공하면 COMPLETED, 모두 실패면 FAILED
+        if len(backup_files) > 0:
+            status = AutomationStatus.COMPLETED
+        else:
+            status = AutomationStatus.FAILED
 
         log = _create_maintenance_log(
             log_id=log_id,
