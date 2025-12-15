@@ -295,7 +295,7 @@ class AutomationManager:
         # limit 검증: None 또는 0 이상의 정수만 허용 (bool 제외)
         if limit is not None:
             # int 서브클래스 허용, bool 제외
-            if not (isinstance(limit, int) and not isinstance(limit, bool)):
+            if isinstance(limit, bool) or not isinstance(limit, int):
                 raise TypeError("limit must be a non-boolean int or None")
             if limit < 0:
                 raise ValueError("limit must be non-negative")
