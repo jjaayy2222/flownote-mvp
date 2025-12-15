@@ -6,6 +6,7 @@ Automation Manager Service
 """
 
 import json
+from itertools import islice
 import logging
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -291,12 +292,13 @@ class AutomationManager:
                 extra={"error_type": type(exc).__name__},
             )
 
-        # 최신 로그가 먼저 오도록 정렬 후 limit 적용
-        # logs는 파일 순서(오래된 → 최신)로 수집되므로 역순으로 최신 → 오래된 리스트를 만든다
-        logs = list(reversed(logs))
+        # 최신 로그가 먼저 오도록 역순 iterator 사용
+        reversed_logs = reversed(logs)
         if limit is not None:
-            return logs[:limit]
-        return logs
+            # limit이 작은 경우 전체 역순 리스트를 만들지 않고 슬라이스
+            return list(islice(reversed_logs, limit))
+        # limit이 None이면 전체를 최신 순으로 반환
+        return list(reversed_logs)
 
 
 # 싱글톤 인스턴스
