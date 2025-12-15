@@ -292,10 +292,11 @@ class AutomationManager:
                 extra={"error_type": type(exc).__name__},
             )
 
-        # limit 검증: None 또는 0 이상의 정수만 허용
+        # limit 검증: None 또는 0 이상의 정수만 허용 (bool 제외)
         if limit is not None:
-            if not isinstance(limit, int):
-                raise TypeError("limit must be an int or None")
+            # type 체크 (bool 은 int 서브클래스이므로 별도 검사)
+            if type(limit) is not int:
+                raise TypeError("limit must be an int (bool not allowed) or None")
             if limit < 0:
                 raise ValueError("limit must be non-negative")
         # 최신 로그가 먼저 오도록 역순 iterator 사용
