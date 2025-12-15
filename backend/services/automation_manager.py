@@ -292,6 +292,9 @@ class AutomationManager:
                 extra={"error_type": type(exc).__name__},
             )
 
+        # limit 검증: None 또는 0 이상의 정수만 허용
+        if limit is not None and limit < 0:
+            raise ValueError("limit must be non-negative or None")
         # 최신 로그가 먼저 오도록 역순 iterator 사용
         reversed_logs = reversed(logs)
         if limit is not None:
