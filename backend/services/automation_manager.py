@@ -45,8 +45,8 @@ class AutomationManager:
     def get_automation_logs(
         self,
         limit: int = 100,
-        task_type: Optional[str] = None,
-        status: Optional[str] = None,
+        task_type: Optional[AutomationTaskType] = None,
+        status: Optional[AutomationStatus] = None,
     ) -> List[AutomationLog]:
         """
         자동화 로그 목록 조회
@@ -57,10 +57,14 @@ class AutomationManager:
             status: 상태 필터 (선택)
 
         Returns:
-            AutomationLog 리스트
+            AutomationLog 리스트 (최신 순)
         """
+        # Enum을 문자열로 변환
+        task_type_str = task_type.value if task_type else None
+        status_str = status.value if status else None
+
         logs_data = self._read_jsonl_logs(
-            AUTO_LOG_FILE, limit=limit, task_type=task_type, status=status
+            AUTO_LOG_FILE, limit=limit, task_type=task_type_str, status=status_str
         )
 
         logs = []
@@ -87,7 +91,8 @@ class AutomationManager:
         Returns:
             AutomationLog 또는 None
         """
-        logs_data = self._read_jsonl_logs(AUTO_LOG_FILE, limit=10000)
+        # limit 없이 전체 로그 검색 (오래된 로그도 접근 가능)
+        logs_data = self._read_jsonl_logs(AUTO_LOG_FILE, limit=None)
 
         for data in logs_data:
             if data.get("log_id") == log_id:
@@ -237,21 +242,21 @@ class AutomationManager:
     def _read_jsonl_logs(
         self,
         file_path: Path,
-        limit: int = 100,
+        limit: Optional[int] = 100,
         task_type: Optional[str] = None,
         status: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
-        JSONL 로그 파일 읽기 (필터링 지원)
+        JSONL 로그 파일 읽기 (필터링 지원, 최신 순 반환)
 
         Args:
             file_path: 로그 파일 경로
-            limit: 최대 반환 개수
+            limit: 최대 반환 개수 (None이면 전체)
             task_type: 작업 유형 필터 (선택)
             status: 상태 필터 (선택)
 
         Returns:
-            로그 딕셔너리 리스트
+            로그 딕셔너리 리스트 (최신 순)
         """
         if not file_path.exists():
             return []
@@ -275,9 +280,6 @@ class AutomationManager:
 
                         logs.append(log_data)
 
-                        if len(logs) >= limit:
-                            break
-
                     except json.JSONDecodeError:
                         logger.warning(f"Malformed JSON line in {file_path}")
                         continue
@@ -289,7 +291,10 @@ class AutomationManager:
                 extra={"error_type": type(exc).__name__},
             )
 
-        return logs
+        # 최신 로그가 먼저 오도록 역순 및 limit 적용
+        if limit is not None:
+            return list(reversed(logs[-limit:]))
+        return list(reversed(logs))
 
 
 # 싱글톤 인스턴스
