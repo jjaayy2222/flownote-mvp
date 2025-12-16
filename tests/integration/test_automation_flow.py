@@ -105,17 +105,17 @@ class TestAutomationFlow:
     """자동화 플로우 통합 테스트"""
 
     def _assert_error_schema(self, data: dict):
-        """에러 응답 스키마 검증 헬퍼"""
+        """에러 응답 스키마 검증 헬퍼 (Forward Compatibility)"""
         assert isinstance(data, dict)
-        # 키 집합 검증 (Unexpected fields check)
-        assert set(data.keys()) == {"detail"}
+        # 필수 키 존재 여부 검증 (issubset) - API 확장에 유연하게 대응
+        assert {"detail"}.issubset(data.keys())
         assert isinstance(data["detail"], str)
 
     def _assert_log_list_schema(self, data: dict):
-        """로그 목록 응답 스키마 검증 헬퍼"""
+        """로그 목록 응답 스키마 검증 헬퍼 (Forward Compatibility)"""
         assert isinstance(data, dict)
-        # 키 집합 검증
-        assert set(data.keys()) == {"total", "logs"}
+        # 필수 키 존재 여부 검증 - API 확장에 유연하게 대응
+        assert {"total", "logs"}.issubset(data.keys())
         assert isinstance(data["total"], int)
         assert isinstance(data["logs"], list)
 
