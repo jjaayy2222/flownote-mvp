@@ -171,7 +171,7 @@ flownote-mvp/
 ├── .gitignore
 │
 ├── backend/                            # FastAPI 백엔드
-│   ├── main.py                         # FastAPI 메인 앱
+│   ├── main.py                         # FastAPI 메인 앱 (Entrypoint)
 │   ├── celery_app/                     # Celery 설정 ✨
 │   │   ├── celery.py                   # Celery 인스턴스
 │   │   ├── config.py                   # Celery 설정
@@ -257,7 +257,7 @@ FlowNote의 모든 기능을 사용하려면 **4개의 터미널**이 필요합�
 **1. FastAPI Backend 실행 (Terminal 1)**
 ```bash
 cd backend
-python app.py
+python main.py
 # → http://127.0.0.1:8000
 ```
 
