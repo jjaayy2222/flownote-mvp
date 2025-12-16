@@ -216,3 +216,31 @@ class TestAutomationFlow:
         # 현재 미구현이므로 501 반환 (404가 아니어야 함)
         assert response.status_code == 501
         assert "not implemented" in response.json()["detail"].lower()
+
+    def test_get_logs_empty_flow(self, mock_automation_env):
+        """
+        [Flow - Negative] 로그 파일이 없거나 비어있는 경우
+        상황: 로그 파일이 존재하지 않음
+        동작: API를 통해 로그 목록 조회
+        검증: total == 0, logs == [] 인지 확인
+        """
+        log_file = mock_automation_env["log_file"]
+        # 로그 파일 삭제하여 빈 상태 강제
+        if log_file.exists():
+            log_file.unlink()
+
+        response = client.get("/api/automation/logs")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["total"] == 0
+        assert data["logs"] == []
+
+    def test_get_log_detail_not_found_flow(self, mock_automation_env):
+        """
+        [Flow - Negative] 존재하지 않는 로그 ID 조회 시 404 반환
+        """
+        non_existent_log_id = "non-existent-log-id"
+
+        response = client.get(f"/api/automation/logs/{non_existent_log_id}")
+        assert response.status_code == 404
