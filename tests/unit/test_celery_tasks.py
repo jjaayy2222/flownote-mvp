@@ -121,9 +121,21 @@ class TestReclassificationTasks:
         path = Path("/data/Projects/my_project/file.md")
         assert _infer_para_category(path) == "Projects"
 
+        # Areas
+        path = Path("/data/Areas/health/fitness.md")
+        assert _infer_para_category(path) == "Areas"
+
         # Resources
         path = Path("/data/Resources/docs/guide.md")
         assert _infer_para_category(path) == "Resources"
+
+        # Archives
+        path = Path("/data/Archives/2024/old-note.md")
+        assert _infer_para_category(path) == "Archives"
+
+        # Inbox
+        path = Path("/data/Inbox/new-idea.md")
+        assert _infer_para_category(path) == "Inbox"
 
         # Unknown
         path = Path("/data/other/file.md")
@@ -142,16 +154,34 @@ class TestArchivingTasks:
         """활성 파일 목록 수집 테스트"""
         from backend.celery_app.tasks.archiving import _get_active_files
 
+        # 테스트 파일 경로 정의
+        projects_file = mock_data_dir / "Projects" / "test.md"
+        resources_file = mock_data_dir / "Resources" / "doc.md"
+        archives_file = mock_data_dir / "Archives" / "old.md"
+
+        # 디렉토리 생성
+        projects_file.parent.mkdir(parents=True, exist_ok=True)
+        resources_file.parent.mkdir(parents=True, exist_ok=True)
+        archives_file.parent.mkdir(parents=True, exist_ok=True)
+
         # 테스트 파일 생성
-        (mock_data_dir / "Projects" / "test.md").write_text("Test", encoding="utf-8")
-        (mock_data_dir / "Resources" / "doc.md").write_text("Doc", encoding="utf-8")
+        projects_file.write_text("Test", encoding="utf-8")
+        resources_file.write_text("Doc", encoding="utf-8")
+        archives_file.write_text("Old", encoding="utf-8")
 
         # 활성 파일 수집
         active_files = _get_active_files(mock_data_dir)
 
-        # 검증
+        # 기대 동작 검증
+        # 1) 활성 파일 목록이 비어 있지 않음
         assert len(active_files) > 0
-        # Archives 폴더는 제외되어야 함
+
+        # 2) Projects/Resources 의 파일은 포함되어야 함
+        assert projects_file in active_files
+        assert resources_file in active_files
+
+        # 3) Archives 디렉터리의 파일은 포함되지 않아야 함
+        assert archives_file not in active_files
         for file in active_files:
             assert "Archives" not in str(file)
 
@@ -187,9 +217,16 @@ class TestReportingTasks:
         metrics = _collect_metrics(days=7)
 
         # 검증
+        # 검증
         assert isinstance(metrics, dict)
-        # 기본 메트릭 키 확인
-        assert "total_files" in metrics or len(metrics) >= 0
+        # 필수 메트릭 키 확인 및 값 검증
+        metric_key = "reclassified_files"
+        assert metric_key in metrics
+
+        metric_obj = metrics[metric_key]
+        # ReportMetric 객체의 value 확인
+        assert isinstance(metric_obj.value, int)
+        assert metric_obj.value >= 0
 
     @patch("backend.celery_app.tasks.reporting.PathConfig")
     def test_save_report(self, mock_path_config, mock_data_dir):
