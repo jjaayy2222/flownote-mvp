@@ -11,6 +11,7 @@ import pytest
 import json
 import uuid
 import warnings
+from typing import Any, Set, Mapping
 from pathlib import Path
 from datetime import datetime, timedelta
 from unittest.mock import patch
@@ -109,7 +110,9 @@ def seeded_logs(mock_automation_env):
 class TestAutomationFlow:
     """자동화 플로우 통합 테스트"""
 
-    def _validate_schema_keys(self, data: dict, required_keys: set, context: str):
+    def _validate_schema_keys(
+        self, data: Mapping[str, Any], required_keys: Set[str], context: str
+    ):
         """
         공통 스키마 키 검증 헬퍼
         - 필수 키 존재 여부 검증 (Contract)
@@ -121,7 +124,10 @@ class TestAutomationFlow:
 
         extra = set(data.keys()) - required_keys
         if extra:
-            warnings.warn(f"Extra keys found in {context}: {extra}", UserWarning)
+            # stacklevel=2: 경고를 헬퍼 내부가 아닌 호출자(테스트 메서드) 위치에서 발생시킴
+            warnings.warn(
+                f"Extra keys found in {context}: {extra}", UserWarning, stacklevel=2
+            )
 
     def _assert_error_schema(self, data: dict):
         """에러 응답 스키마 검증 헬퍼"""
