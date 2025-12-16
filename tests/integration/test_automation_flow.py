@@ -247,7 +247,9 @@ class TestAutomationFlow:
 
         # 에러 응답 구조 검증
         error_data = response.json()
+        assert isinstance(error_data, dict)
         assert "detail" in error_data
+        assert isinstance(error_data["detail"], str)
         # 상세 메시지 검증 (Log not found)
         assert "not found" in error_data["detail"].lower()
 
@@ -263,5 +265,14 @@ class TestAutomationFlow:
         assert response.status_code == 200
 
         data = response.json()
+
+        # 응답 구조(Contract) 검증
+        assert isinstance(data, dict)
+        assert "total" in data
+        assert "logs" in data
+        assert isinstance(data["total"], int)
+        assert isinstance(data["logs"], list)
+
+        # 값 검증
         assert data["total"] == 0
         assert data["logs"] == []
