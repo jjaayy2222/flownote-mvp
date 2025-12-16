@@ -11,7 +11,7 @@ import pytest
 import json
 import uuid
 import warnings
-from typing import Any, Set, Mapping
+from typing import Any, Mapping, AbstractSet
 from pathlib import Path
 from datetime import datetime, timedelta
 from unittest.mock import patch
@@ -111,7 +111,7 @@ class TestAutomationFlow:
     """자동화 플로우 통합 테스트"""
 
     def _validate_schema_keys(
-        self, data: Mapping[str, Any], required_keys: Set[str], context: str
+        self, data: Mapping[str, Any], required_keys: AbstractSet[str], context: str
     ):
         """
         공통 스키마 키 검증 헬퍼
@@ -129,13 +129,13 @@ class TestAutomationFlow:
                 f"Extra keys found in {context}: {extra}", UserWarning, stacklevel=2
             )
 
-    def _assert_error_schema(self, data: dict):
+    def _assert_error_schema(self, data: Mapping[str, Any]):
         """에러 응답 스키마 검증 헬퍼"""
         assert isinstance(data, dict)
         self._validate_schema_keys(data, REQUIRED_ERROR_KEYS, "error response")
         assert isinstance(data["detail"], str)
 
-    def _assert_log_list_schema(self, data: dict):
+    def _assert_log_list_schema(self, data: Mapping[str, Any]):
         """로그 목록 응답 스키마 검증 헬퍼"""
         assert isinstance(data, dict)
         self._validate_schema_keys(data, REQUIRED_LOG_LIST_KEYS, "log list response")
