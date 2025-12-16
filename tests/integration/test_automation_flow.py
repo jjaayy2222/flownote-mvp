@@ -26,6 +26,10 @@ from backend.models.automation import (
 # 테스트용 클라이언트
 client = TestClient(app)
 
+# Schema Constants
+REQUIRED_ERROR_KEYS = {"detail"}
+REQUIRED_LOG_LIST_KEYS = {"total", "logs"}
+
 
 @pytest.fixture
 def mock_automation_env(tmp_path):
@@ -105,17 +109,29 @@ class TestAutomationFlow:
     """자동화 플로우 통합 테스트"""
 
     def _assert_error_schema(self, data: dict):
-        """에러 응답 스키마 검증 헬퍼 (Forward Compatibility)"""
+        """에러 응답 스키마 검증 헬퍼 (Forward Compatibility + Awareness)"""
         assert isinstance(data, dict)
         # 필수 키 존재 여부 검증 (issubset) - API 확장에 유연하게 대응
-        assert {"detail"}.issubset(data.keys())
+        assert REQUIRED_ERROR_KEYS.issubset(data.keys())
+
+        # 추가 키 발견 시 알림 (Visibility for unexpected fields)
+        extra = set(data.keys()) - REQUIRED_ERROR_KEYS
+        if extra:
+            print(f"\n[Schema Notice] Extra keys in error response: {extra}")
+
         assert isinstance(data["detail"], str)
 
     def _assert_log_list_schema(self, data: dict):
-        """로그 목록 응답 스키마 검증 헬퍼 (Forward Compatibility)"""
+        """로그 목록 응답 스키마 검증 헬퍼 (Forward Compatibility + Awareness)"""
         assert isinstance(data, dict)
         # 필수 키 존재 여부 검증 - API 확장에 유연하게 대응
-        assert {"total", "logs"}.issubset(data.keys())
+        assert REQUIRED_LOG_LIST_KEYS.issubset(data.keys())
+
+        # 추가 키 발견 시 알림
+        extra = set(data.keys()) - REQUIRED_LOG_LIST_KEYS
+        if extra:
+            print(f"\n[Schema Notice] Extra keys in log list response: {extra}")
+
         assert isinstance(data["total"], int)
         assert isinstance(data["logs"], list)
 
