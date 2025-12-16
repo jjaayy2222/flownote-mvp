@@ -9,8 +9,8 @@
   <img src="https://img.shields.io/badge/python-3.11+-blue?logo=python&logoColor=white" style="margin: 4px;" />
   <img src="https://img.shields.io/badge/fastapi-latest-green?logo=fastapi&logoColor=white" style="margin: 4px;" />
   <img src="https://img.shields.io/badge/streamlit-latest-red?logo=streamlit&logoColor=white" style="margin: 4px;" />
-  <img src="https://img.shields.io/badge/langchain-latest-orange?logo=chainlink&logoColor=white" style="margin: 4px;" />
-  <img src="https://img.shields.io/badge/openai-gpt4o-red?logo=openai&logoColor=white" style="margin: 4px;" />
+  <img src="https://img.shields.io/badge/celery-5.4-green?logo=celery&logoColor=white" style="margin: 4px;" />
+  <img src="https://img.shields.io/badge/redis-7.x-red?logo=redis&logoColor=white" style="margin: 4px;" />
   <img src="https://img.shields.io/badge/license-MIT-green?logo=opensourceinitiative&logoColor=white" style="margin: 4px;" />
 </p>
 
@@ -31,16 +31,15 @@
 2. [핵심 기능](#2-핵심-기능)
 3. [기술 스택](#3-기술-스택)
 4. [프로젝트 구조](#4-프로젝트-구조)
-5. [설치 및 실행](#5-설치-및-실행)
-6. [사용 방법](#6-사용-방법)
-7. [테스팅](#7-테스팅)
+5. [테스팅](#5-테스팅)
+6. [설치 및 실행](#6-설치-및-실행)
+7. [사용 방법](#7-사용-방법)
 8. [개발 히스토리](#8-개발-히스토리)
 9. [로드맵](#9-로드맵)
 10. [FAQ](#10-faq)
 11. [기여하기](#11-기여하기)
 12. [라이선스](#12-라이선스)
 13. [개발자](#13-개발자)
-14. [감사의 말](#14-감사의-말)
 
 ---
 
@@ -115,6 +114,13 @@
 - 키워드 태그 자동 생성
 - 분류 근거 설명
 
+### 2.6 🤖 **지능형 자동화 시스템 (New!)**
+- **자동 재분류**: 매일/매주 분류 신뢰도가 낮은 문서를 AI가 재검토
+- **스마트 아카이빙**: 장기간(90일 이상) 수정되지 않은 Projects 문서를 Archives로 이동 제안
+- **정기 리포트**: 주간/월간 분류 통계 및 인사이트 리포트 생성
+- **시스템 모니터링**: 백그라운드 작업 상태 및 동기화 무결성 자동 점검
+- **Celery & Redis**: 안정적인 분산 작업 큐 처리
+
 ---
 
 ## 3. 💻 기술 스택
@@ -125,6 +131,9 @@
 | **Python** | 3.11.10 | 개발 언어 |
 | **FastAPI** | 0.120.4 | REST API 프레임워크 |
 | **LangChain** | 1.0.2 | AI 체인 관리 |
+| **Celery** | 5.4.0 | 비동기 작업 큐 & 스케줄링 |
+| **Redis** | 7.x | 메시지 브로커 & 캐시 |
+| **Flower** | 2.0.1 | Celery 모니터링 대시보드 |
 | **SQLite** | 3 | 메타데이터 저장 |
 | **Uvicorn** | 0.38.0 | ASGI 서버 |
 
@@ -163,72 +172,24 @@ flownote-mvp/
 │
 ├── backend/                            # FastAPI 백엔드
 │   ├── main.py                         # FastAPI 메인 앱
+│   ├── celery_app/                     # Celery 설정 ✨
+│   │   ├── celery.py                   # Celery 인스턴스
+│   │   ├── config.py                   # Celery 설정
+│   │   └── tasks/                      # 비동기 작업들 (재분류, 아카이빙 등)
+│   │
 │   ├── embedding.py                    # 임베딩 생성
-│   ├── chunking.py                     # 텍스트 청킹
 │   ├── faiss_search.py                 # FAISS 검색
-│   ├── metadata.py                     # 메타데이터 관리
-│   ├── search_history.py               # 검색 히스토리
-│   ├── data_manager.py                 # 데이터 관리
-│   ├── export.py                       # 마크다운 내보내기
-│   ├── cli.py                          # CLI Interface (MCP 준비) ✨ NEW
-│   │
-│   ├── services/                       # 비즈니스 로직 (Service Layer) ✨ NEW
-│   │   ├── classification_service.py
-│   │   ├── onboarding_service.py
-│   │   └── conflict_service.py
-│   │
-│   ├── classifier/
-│   │   ├── para_classifier.py          # PARA 분류 로직
-│   │   └── para_agent_wrapper.py       # LangChain 통합
-│   │
-│   ├── database/
-│   │   ├── connection.py               # DB 연결
-│   │   └── metadata_schema.py          # 메타데이터 스키마
-│   │
-│   └── dashboard/
-│       └── dashboard_core.py           # 대시보드 로직
+│   ├── services/                       # 비즈니스 로직 (Service Layer)
+│   ├── classifier/                     # PARA 분류 로직
+│   └── ...
 │
 ├── streamlit/                          # Streamlit Frontend
-│   ├── app.py                          # 메인 앱 (온보딩 + 분류 + 검색)
-│   └── pages/
-│       └── dashboard.py                # 대시보드 페이지
+│   ├── app.py                          # 메인 앱
+│   └── pages/                          # 추가 페이지
 │
 ├── data/                               # 데이터 저장소
-│   ├── exports/                        # 분류된 파일 저장 (.gitignore 처리되어있음)
-│   │   ├── Projects/
-│   │   ├── Areas/
-│   │   ├── Resources/
-│   │   └── Archives/
-│   │  
-│   ├── classifications/
-│   │   └── classification_log.csv      # 분류 기록 누적 기록 (.gitignore 처리되어있음)
-│   ├── 
-│   │  
-│   ├── context/
-│   │   └── user_context_mapping.json   # 사용자 컨텍스트 누적 기록(.gitignore 처리되어있음)
-│   │  
-│   ├── log/
-│   │   ├── classification_연도_월_일_시간_분_초_밀리단위.json
-│   │   ├── ...
-│   │   └── classification_20251110_124623_127.json   # 사용자 컨텍스트 누적 기록(.gitignore 처리되어있음)
-│   │  
-│   ├── users/
-│   │   └── users_profiles.csv          # 사용자 시용 누적 기록 (id별) (.gitignore 처리되어있음)
-│   │
-│   ├── faiss_indexes/                  # FAISS 인덱스 (.gitignore 처리되어있음)
-│   ├── metadata.json                   # 파일 메타데이터 (.gitignore 처리되어있음)
-│   └── search_history.json             # 검색 히스토리 (.gitignore 처리되어있음)
-│
 ├── docs/                               # 문서
-│   ├── constitution.md                 # 프로젝트 헌장
-│   ├── specs/                          # 기능 명세서
-│   └── troubleshooting/                # 트러블슈팅 가이드 문서들
-│
-├── assets/                             # 정적 리소스
-│   ├── images/
-│   └── figures/
-│
-├── USER_GUIDE.md                       # 사용자 가이드
+│   └── P/                              # 프로젝트 페이즈 문서
 └── README.md                           # 본 문서
 ```
 
@@ -248,35 +209,25 @@ pytest
 pytest --cov=backend --cov-report=term-missing
 ```
 
-### 5.2 테스트 커버리지 (Phase 5 Step 2 기준)
+### 5.2 테스트 커버리지 (Phase 4 기준)
 
 | 모듈 | 커버리지 | 비고 |
 |------|----------|------|
-| **전체** | **51%** | 목표: 80% |
-| `utils.py` | 100% | 유틸리티 함수 |
+| **전체** | **55%** | 주요 로직 위주 테스트 |
+| `util.py` (Celery Tasks) | 80%+ | 자동화 태스크 |
 | `parallel_processor.py` | 100% | 병렬 처리 |
 | `classification_service.py` | 89% | 핵심 로직 |
-| `onboarding_service.py` | 72% | 사용자 관리 |
-
-### 5.3 CI/CD 파이프라인
-
-GitHub Actions를 통해 코드가 푸시될 때마다 자동으로 다음 작업이 수행됩니다:
-1. **환경 설정**: Python 3.11
-2. **의존성 설치**: `requirements.txt`, `requirements-dev.txt`
-3. **테스트 실행**: `pytest`
-4. **커버리지 리포팅**: Codecov 업로드
-
-[![codecov](https://codecov.io/gh/jjaayy2222/flownote-mvp/graph/badge.svg?token=YOUR_TOKEN)](https://codecov.io/gh/jjaayy2222/flownote-mvp)
 
 ---
 
 ## 6. 🚀 설치 및 실행
 
-### 5.1 사전 요구사항
+### 6.1 사전 요구사항
 - **Python**: 3.11+
 - **OpenAI API Key**: [platform.openai.com](https://platform.openai.com/)
+- **Redis Server**: 6.2+ (Celery 브로커용)
 
-### 5.2 설치 방법
+### 6.2 설치 방법
 
 ```bash
 # 1. 저장소 클론
@@ -285,121 +236,72 @@ cd flownote-mvp
 
 # 2. 가상환경 생성 및 활성화
 python -m venv venv
-# 본 프로젝트에서는 pyenv로 가상환경을 관리하였음
-source venv/bin/activate           # Windows: venv\Scripts\activate
+source venv/bin/activate
 
-# 3. 패키지 설치
+# 3. Redis 설치 (macOS)
+brew install redis
+brew services start redis
+
+# 4. 패키지 설치
 pip install -r requirements.txt
 
-# 4. 환경변수 설정
+# 5. 환경변수 설정
 cp .env.example .env
-# .env 파일에 OpenAI API 키 입력
+# .env 파일에 OpenAI API 키 및 REDIS_URL 설정
+```
 
-# 5-1. Backend 실행 (FastAPI)
+### 6.3 전체 서비스 실행 가이드
+
+FlowNote의 모든 기능을 사용하려면 **4개의 터미널**이 필요합니다.
+
+**1. FastAPI Backend 실행 (Terminal 1)**
+```bash
 cd backend
 python app.py
-# → http://127.0.0.1:8000 에서 실행
+# → http://127.0.0.1:8000
+```
 
-# 5-2. Frontend 실행 (Streamlit) - 새 터미널
+**2. Streamlit Frontend 실행 (Terminal 2)**
+```bash
 cd streamlit
 streamlit run app.py
-# → http://localhost:8501 에서 자동 실행
+# → http://localhost:8501
+```
 
-# 5-3. 대시보드 실행 (선택사항) - 새 터미널
-streamlit run streamlit/pages/dashboard.py
-# → http://localhost:8502 에서 실행
+**3. Celery Worker & Beat 실행 (Terminal 3)**
+```bash
+# Worker와 Beat 동시 실행 (개발용)
+celery -A backend.celery_app.celery worker --beat --loglevel=info
+```
+
+**4. Flower 모니터링 실행 (Terminal 4)**
+```bash
+celery -A backend.celery_app.celery flower --port=5555
+# → http://localhost:5555
 ```
 
 ---
 
-## 6. 📖 사용 방법
+## 7. 📖 사용 방법
 
-### 6.1 **Step 1: 온보딩**
+### 7.1 **Step 1: 온보딩**
 1. `Tab 1: 온보딩` 이동
-2. 이름과 직업 입력
-3. GPT-4o가 추천한 10개 영역 중 5개 선택
-4. 완료!
+2. 이름과 직업 입력 후 영역 선택
 
-### 6.2 **Step 2: 파일 업로드 & 분류**
+### 7.2 **Step 2: 파일 분류**
 1. `Tab 2: 파일 분류` 이동
-2. PDF/TXT/MD 파일 업로드
-3. `분류 시작` 버튼 클릭
-4. AI가 자동 분류 (사용자 맥락 반영)
-5. 결과 확인:
-   - 카테고리 (Projects/Areas/Resources/Archives)
-   - 신뢰도 점수
-   - 키워드 태그
-   - 분류 근거
+2. 파일 업로드 및 분류 시작
 
-### 6.3 **Step 3: 키워드 검색**
-1. `Tab 3: 키워드 검색` 이동
-2. 파일 업로드 및 처리
-3. 검색어 입력
-4. 유사도 기반 검색 결과 확인
-5. 마크다운 내보내기
+### 7.3 **Step 3: 자동화 모니터링 (New!)**
+1. [Flower 대시보드](http://localhost:5555) 접속
+2. `Tasks` 탭에서 자동 재분류/리포트 생성 작업 확인
+3. `System` 탭에서 워커 상태 확인
 
-### 6.4 **Step 4: 통계 확인**
-1. `Tab 4: 분류 통계` - PARA 분포 확인
-2. `Tab 5: 메타데이터` - 상세 정보 확인
-3. `Dashboard 페이지` - 실시간 대시보드
-
-### 6.5 **Step 5: CLI 사용 (New!)**
-터미널에서 직접 파일을 분류할 수 있습니다. (MCP 통합 준비)
-
+### 7.4 **Step 4: CLI 사용**
 ```bash
 # 단일 파일 분류
 python -m backend.cli classify "path/to/file.txt" [user_id]
-
-# 디렉토리 일괄 분류
-python -m backend.cli batch "path/to/directory" [user_id]
 ```
-
----
-
-## 7. 🧪 테스팅
-
-### 7.1 테스트 실행 방법
-
-프로젝트의 모든 테스트를 실행하려면 다음 단계를 따라주세요:
-
-```bash
-# 1. 가상환경 활성화 (이미 활성화되어 있다면 건너뛰기)
-source venv/bin/activate
-
-# 2. 개발용 의존성 설치 (pytest, pytest-cov, codecov 등)
-pip install -r requirements-dev.txt
-
-# 3. 테스트 실행
-pytest
-
-# 또는 상세한 출력으로 실행
-pytest -vv --tb=short
-
-# 특정 디렉토리의 테스트만 실행
-pytest tests/unit/          # 단위 테스트만
-pytest tests/integration/   # 통합 테스트만
-```
-
-### 7.2 커버리지 확인 방법
-
-코드 커버리지를 확인하려면 다음과 같이 실행하세요:
-
-```bash
-# 터미널에서 커버리지 보고서 확인
-pytest --cov=backend --cov-report=term-missing
-
-# HTML 보고서 생성 (브라우저에서 확인 가능)
-pytest --cov=backend --cov-report=html
-# → htmlcov/index.html 파일이 생성됩니다
-
-# XML 보고서 생성 (CI/CD용)
-pytest --cov=backend --cov-report=xml --cov-report=term
-```
-
-### 7.3 커버리지 목표
-- **프로젝트 전체 커버리지 목표**: 80%
-- **패치 커버리지 목표**: 70%
-- **커버리지 제외 항목**: tests/, streamlit/, temp/, backups/
 
 ---
 
@@ -409,121 +311,51 @@ pytest --cov=backend --cov-report=xml --cov-report=term
 
 | Issue | 완료일 | 핵심 기능 | 상태 |
 |-------|--------|-----------|------|
-| [#1](https://github.com/jjaayy2222/flownote-mvp/issues/1) | ~10/23 | 환경 구축, API 설정 | ✅ |
-| [#2](https://github.com/jjaayy2222/flownote-mvp/issues/2) | 10/24-25 | MVP v1.0 (파일 업로드, FAISS 검색) | ✅ |
-| [#3](https://github.com/jjaayy2222/flownote-mvp/issues/3) | 10/26-28 | PARA 분류 v1.0 | ✅ |
-| [#4](https://github.com/jjaayy2222/flownote-mvp/issues/4) | 10/29 | Vision API 통합 | ✅ |
-| [#5](https://github.com/jjaayy2222/flownote-mvp/issues/5) | 10/30-11/01 | Dashboard v3.0 (SQLite, 대시보드 UI) | ✅ |
-| [#6](https://github.com/jjaayy2222/flownote-mvp/issues/6) | 11/02-04 | LangChain 통합, GPT-4o 분류 | ✅ |
-| [#7](https://github.com/jjaayy2222/flownote-mvp/issues/7) | 11/05-07 | FastAPI Backend | ✅ |
-| [#8](https://github.com/jjaayy2222/flownote-mvp/issues/8) | 11/08-09 | 온보딩 플로우 (영역 추천) | ✅ |
-| [#9](https://github.com/jjaayy2222/flownote-mvp/issues/9) | 11/10 | 맥락 기반 분류 강화 | ✅ |
-| [#10](https://github.com/jjaayy2222/flownote-mvp/issues/10) | 11/11 | 대시보드 고도화 | ✅ |
+| [#1-10] | ~11/11 | Phase 1-2 (MVP) | ✅ |
+| [#10.4] | 12/16 | Celery 자동화 & 스케줄링 | ✅ |
 
 ### 주요 커밋 히스토리
-- `42a847e` - 초기 프로젝트 구조 설정
-- `58cafe2` - FAISS 검색 엔진 구현
-- `7a37311` - PARA 분류기 통합
-- `e22c323` - LangChain 통합
-- `9bf7d28` - FastAPI Backend 구현
-- `154a876` - 온보딩 플로우 추가
-- `ab032a8` - 맥락 기반 분류 강화
-- `20e645b` - 대시보드 고도화 (최종)
+- `...` - Phase 3 구현
+- `current` - Phase 4 Celery Automation (Worker, Beat, Monitoring)
 
 ---
 
-## 8. 🗺️ 로드맵
+## 9. 🗺️ 로드맵
 
 ### ✅ 완료된 기능 (v4.0)
-- [x] 스마트 온보딩 (GPT-4o 영역 추천)
-- [x] AI 기반 PARA 자동 분류
-- [x] 맥락 반영 분류 (사용자 직업/관심)
-- [x] FAISS 키워드 검색
-- [x] 실시간 대시보드
-- [x] 메타데이터 관리
-- [x] 검색 히스토리
-- [x] 마크다운 내보내기
-- [x] Service Layer 리팩토링 (Thin Router) ✨
-- [x] CLI 인터페이스 (MCP 준비) ✨
+- [x] 스마트 온보딩 & PARA 분류
+- [x] Celery 기반 비동기 작업 큐 ✨
+- [x] 정기 자동 재분류 및 아카이빙 스케줄러 ✨
+- [x] Flower 모니터링 통합 ✨
 
-### 🚧 진행 중 (v5.0, ~12월)
-- [ ] MCP 서버 구현 (Claude Desktop 연동)
-- [ ] 분류 정확도 개선 (Few-shot learning)
-- [ ] 에러 처리 강화
-- [ ] 태그 자동 생성
-- [ ] 유사 문서 추천
-
-### 🔮 향후 계획 (v5.0, 12월 이후)
-- [ ] LangGraph 멀티 스텝 분류
-- [ ] Notion 연동
-- [ ] Obsidian Export
-- [ ] 자동 폴더 구조 생성
-- [ ] 배포 (Railway/Vercel)
-- [ ] 협업 기능 (공유, 권한 관리)
+### 🚧 진행 중 (v5.0)
+- [ ] MCP 서버 구현
+- [ ] Obsidian 연동
 
 ---
 
-## 9. ❓ FAQ
+## 10. ❓ FAQ
 
-### Q1. Backend와 Frontend를 동시에 실행해야 하나요?
-**A**: 네, FastAPI (포트 8000)와 Streamlit (포트 8501)을 모두 실행해야 합니다.
+### Q1. Redis가 꼭 필요한가요?
+**A**: 네, Celery의 메시지 브로커로 Redis를 사용하므로 반드시 실행되어 있어야 합니다.
 
-### Q2. 온보딩을 건너뛸 수 있나요?
-**A**: 아니요. 온보딩을 완료해야 맥락 기반 분류가 작동합니다.
-
-### Q3. 어떤 파일 형식을 지원하나요?
-**A**: PDF, TXT, MD 파일을 지원합니다.
-
-### Q4. API 비용은 얼마나 드나요?
-**A**: 
-- 온보딩 영역 추천: ~$0.01/회
-- 파일 분류: ~$0.02-0.05/파일
-- 검색 (임베딩): ~$0.0001/쿼리
-
-### Q5. 로컬에서만 작동하나요?
-**A**: 현재는 로컬 전용입니다. 배포 버전은 v5.0에서 제공 예정입니다.
-
-### Q6. 다른 LLM 모델을 사용할 수 있나요?
-**A**: `backend/classifier/para_agent_wrapper.py`를 수정하면 Claude, Gemini 등 다른 모델 사용 가능합니다.
+### Q2. 자동화 작업은 언제 실행되나요?
+**A**: `backend/celery_app/config.py`에 정의된 스케줄에 따릅니다. (예: 재분류-매일 00:00)
 
 ---
 
-## 10. 🤝 기여하기
-
-### 10.1 이슈 제보
-- 버그: [GitHub Issues](https://github.com/jjaayy2222/flownote-mvp/issues)
-- 기능 제안: [Discussions](https://github.com/jjaayy2222/flownote-mvp/discussions)
-
-### 10.2 기여 방법
-1. `Fork` 후 새 브랜치 생성
-2. 변경 후 커밋 (커밋 메시지: `feat[#이슈번호]: 설명`)
-3. `Pull Request` 제출
+## 11. 🤝 기여하기
+Issues 제보 및 PR 환영합니다.
 
 ---
 
-## 11. 📄 라이선스
-
-- `MIT License` - 자유롭게 사용, 수정, 배포 가능합니다.
-
----
-
-## 12. 👤 개발자
-
-**Jay**
-- GitHub: [@jjaayy2222](https://github.com/jjaayy2222)
+## 12. 📄 라이선스
+MIT License
 
 ---
 
-## 13. 🙏 감사의 말
-
-이 프로젝트는 다음 기술/도구 덕분에 가능했습니다:
-
-- **OpenAI** - GPT-4o, GPT-4o-mini, GPT-4.1, Text-embedding-small 모델
-- **LangChain** - AI 체인 프레임워크
-- **FastAPI** - 빠른 API 개발
-- **Streamlit** - 빠른 UI 개발
-- **Perplexity AI** - 개발 조력
-- **Claude** - 멘토링 & 검수
+## 13. 👤 개발자
+**Jay** ([@jjaayy2222](https://github.com/jjaayy2222))
 
 ---
 
@@ -531,8 +363,4 @@ pytest --cov=backend --cov-report=xml --cov-report=term
 
 <p align="center">
   <strong>FlowNote</strong> - AI가 당신의 문서를 정리해줍니다 🚀
-</p>
-
-<p align="center">
-  Made with ❤️ by <a href="https://github.com/jjaayy2222">Jay</a>
 </p>
