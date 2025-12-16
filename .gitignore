@@ -174,3 +174,6 @@ temp_test_data/
 # Celery
 celerybeat-schedule
 celerybeat.pid
+
+# Automation 관련 data
+data/automation_logs/

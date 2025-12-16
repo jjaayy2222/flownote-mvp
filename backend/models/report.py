@@ -1,9 +1,7 @@
-# backend/models/report.py
-
 from enum import Enum
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, root_validator
+from pydantic import BaseModel, Field, model_validator
 
 
 class ReportType(str, Enum):
@@ -51,15 +49,8 @@ class Report(BaseModel):
         description="생성 일시 (UTC)",
     )
 
-    @root_validator
-    def validate_period_range(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        period_start = values.get("period_start")
-        period_end = values.get("period_end")
-
-        if period_start is not None and period_end is not None:
-            if period_end < period_start:
-                raise ValueError(
-                    "period_end must be greater than or equal to period_start"
-                )
-
-        return values
+    @model_validator(mode="after")
+    def validate_period_range(self) -> "Report":
+        if self.period_end < self.period_start:
+            raise ValueError("period_end must be greater than or equal to period_start")
+        return self
