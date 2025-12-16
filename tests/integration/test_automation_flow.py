@@ -131,13 +131,13 @@ class TestAutomationFlow:
 
     def _assert_error_schema(self, data: Mapping[str, Any]):
         """에러 응답 스키마 검증 헬퍼"""
-        assert isinstance(data, dict)
+        assert isinstance(data, Mapping)
         self._validate_schema_keys(data, REQUIRED_ERROR_KEYS, "error response")
         assert isinstance(data["detail"], str)
 
     def _assert_log_list_schema(self, data: Mapping[str, Any]):
         """로그 목록 응답 스키마 검증 헬퍼"""
-        assert isinstance(data, dict)
+        assert isinstance(data, Mapping)
         self._validate_schema_keys(data, REQUIRED_LOG_LIST_KEYS, "log list response")
         assert isinstance(data["total"], int)
         assert isinstance(data["logs"], list)
