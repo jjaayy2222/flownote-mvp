@@ -10,6 +10,7 @@
 import pytest
 import json
 import uuid
+import warnings
 from pathlib import Path
 from datetime import datetime, timedelta
 from unittest.mock import patch
@@ -108,30 +109,30 @@ def seeded_logs(mock_automation_env):
 class TestAutomationFlow:
     """자동화 플로우 통합 테스트"""
 
-    def _assert_error_schema(self, data: dict):
-        """에러 응답 스키마 검증 헬퍼 (Forward Compatibility + Awareness)"""
-        assert isinstance(data, dict)
-        # 필수 키 존재 여부 검증 (issubset) - API 확장에 유연하게 대응
-        assert REQUIRED_ERROR_KEYS.issubset(data.keys())
+    def _validate_schema_keys(self, data: dict, required_keys: set, context: str):
+        """
+        공통 스키마 키 검증 헬퍼
+        - 필수 키 존재 여부 검증 (Contract)
+        - 추가 키 발견 시 경고 발생 (Visibility using warnings)
+        """
+        assert required_keys.issubset(
+            data.keys()
+        ), f"Missing keys in {context}. Expected {required_keys}"
 
-        # 추가 키 발견 시 알림 (Visibility for unexpected fields)
-        extra = set(data.keys()) - REQUIRED_ERROR_KEYS
+        extra = set(data.keys()) - required_keys
         if extra:
-            print(f"\n[Schema Notice] Extra keys in error response: {extra}")
+            warnings.warn(f"Extra keys found in {context}: {extra}", UserWarning)
 
+    def _assert_error_schema(self, data: dict):
+        """에러 응답 스키마 검증 헬퍼"""
+        assert isinstance(data, dict)
+        self._validate_schema_keys(data, REQUIRED_ERROR_KEYS, "error response")
         assert isinstance(data["detail"], str)
 
     def _assert_log_list_schema(self, data: dict):
-        """로그 목록 응답 스키마 검증 헬퍼 (Forward Compatibility + Awareness)"""
+        """로그 목록 응답 스키마 검증 헬퍼"""
         assert isinstance(data, dict)
-        # 필수 키 존재 여부 검증 - API 확장에 유연하게 대응
-        assert REQUIRED_LOG_LIST_KEYS.issubset(data.keys())
-
-        # 추가 키 발견 시 알림
-        extra = set(data.keys()) - REQUIRED_LOG_LIST_KEYS
-        if extra:
-            print(f"\n[Schema Notice] Extra keys in log list response: {extra}")
-
+        self._validate_schema_keys(data, REQUIRED_LOG_LIST_KEYS, "log list response")
         assert isinstance(data["total"], int)
         assert isinstance(data["logs"], list)
 
