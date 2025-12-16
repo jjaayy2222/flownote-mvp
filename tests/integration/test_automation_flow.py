@@ -104,6 +104,21 @@ def seeded_logs(mock_automation_env):
 class TestAutomationFlow:
     """자동화 플로우 통합 테스트"""
 
+    def _assert_error_schema(self, data: dict):
+        """에러 응답 스키마 검증 헬퍼"""
+        assert isinstance(data, dict)
+        # 키 집합 검증 (Unexpected fields check)
+        assert set(data.keys()) == {"detail"}
+        assert isinstance(data["detail"], str)
+
+    def _assert_log_list_schema(self, data: dict):
+        """로그 목록 응답 스키마 검증 헬퍼"""
+        assert isinstance(data, dict)
+        # 키 집합 검증
+        assert set(data.keys()) == {"total", "logs"}
+        assert isinstance(data["total"], int)
+        assert isinstance(data["logs"], list)
+
     def test_get_logs_flow(self, mock_automation_env, seeded_logs):
         """
         [Flow] 로그 조회 통합 테스트
@@ -220,9 +235,7 @@ class TestAutomationFlow:
     def test_get_logs_empty_flow(self, mock_automation_env):
         """
         [Flow - Negative] 로그 파일이 없거나 비어있는 경우
-        상황: 로그 파일이 존재하지 않음
-        동작: API를 통해 로그 목록 조회
-        검증: total == 0, logs == [] 인지 확인
+        (파일이 없는 경우)
         """
         log_file = mock_automation_env["log_file"]
         # 로그 파일 삭제하여 빈 상태 강제
@@ -233,6 +246,7 @@ class TestAutomationFlow:
         assert response.status_code == 200
 
         data = response.json()
+        self._assert_log_list_schema(data)
         assert data["total"] == 0
         assert data["logs"] == []
 
@@ -245,11 +259,9 @@ class TestAutomationFlow:
         response = client.get(f"/api/automation/logs/{non_existent_log_id}")
         assert response.status_code == 404
 
-        # 에러 응답 구조 검증
+        # 에러 응답 구조 검증 (헬퍼 사용)
         error_data = response.json()
-        assert isinstance(error_data, dict)
-        assert "detail" in error_data
-        assert isinstance(error_data["detail"], str)
+        self._assert_error_schema(error_data)
         # 상세 메시지 검증 (Log not found)
         assert "not found" in error_data["detail"].lower()
 
@@ -265,14 +277,32 @@ class TestAutomationFlow:
         assert response.status_code == 200
 
         data = response.json()
-
-        # 응답 구조(Contract) 검증
-        assert isinstance(data, dict)
-        assert "total" in data
-        assert "logs" in data
-        assert isinstance(data["total"], int)
-        assert isinstance(data["logs"], list)
-
+        # 응답 구조(Contract) 검증 (헬퍼 사용)
+        self._assert_log_list_schema(data)
         # 값 검증
         assert data["total"] == 0
         assert data["logs"] == []
+
+    def test_get_logs_non_empty_file_flow_schema(
+        self, mock_automation_env, seeded_logs
+    ):
+        """
+        [Flow - Schema] 로그가 존재하는 경우 응답 스키마 및 내부 원소 타입 검증
+        """
+        # seeded_logs 픽스처가 이미 로그 파일을 생성해둠
+        response = client.get("/api/automation/logs")
+        assert response.status_code == 200
+        data = response.json()
+
+        # 기본 구조 검증 (헬퍼 재사용)
+        self._assert_log_list_schema(data)
+
+        # 내부 원소 검증
+        assert len(data["logs"]) > 0
+        for log in data["logs"]:
+            assert isinstance(log, dict)
+            # 필수 키 일부 검증 (API Contract)
+            assert "log_id" in log
+            assert "task_type" in log
+            assert "status" in log
+            assert "started_at" in log
