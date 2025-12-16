@@ -244,3 +244,24 @@ class TestAutomationFlow:
 
         response = client.get(f"/api/automation/logs/{non_existent_log_id}")
         assert response.status_code == 404
+
+        # 에러 응답 구조 검증
+        error_data = response.json()
+        assert "detail" in error_data
+        # 상세 메시지 검증 (Log not found)
+        assert "not found" in error_data["detail"].lower()
+
+    def test_get_logs_empty_file_flow(self, mock_automation_env):
+        """
+        [Flow - Negative] 로그 파일이 존재하지만 비어있는 경우 (0바이트)
+        """
+        log_file = mock_automation_env["log_file"]
+        # 빈 파일 생성
+        log_file.write_text("", encoding="utf-8")
+
+        response = client.get("/api/automation/logs")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["total"] == 0
+        assert data["logs"] == []

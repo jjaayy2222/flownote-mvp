@@ -51,7 +51,7 @@ class Report(BaseModel):
 
     @model_validator(mode="after")
     def validate_period_range(self) -> "Report":
-        if self.period_start and self.period_end:
+        if self.period_start is not None and self.period_end is not None:
             if self.period_end < self.period_start:
                 raise ValueError(
                     "period_end must be greater than or equal to period_start"
