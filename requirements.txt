@@ -1,3 +1,4 @@
+aiofiles==25.1.0
 altair==5.5.0
 annotated-doc==0.0.3
 annotated-types==0.7.0
@@ -22,6 +23,7 @@ fastapi==0.120.4
 fonttools==4.60.1
 gitdb==4.0.12
 GitPython==3.1.45
+gunicorn==23.0.0
 h11==0.16.0
 httpcore==1.0.9
 httpx==0.28.1
@@ -104,8 +106,11 @@ tzlocal==5.3.1
 urllib3==2.5.0
 uvicorn==0.38.0
 validators==0.35.0
+watchdog==6.0.0
 wordcloud==1.9.4
 xxhash==3.6.0
 zipp==3.23.0
 zstandard==0.25.0
-gunicorn
+
+celery[redis]==5.3.4
+flower==2.0.1

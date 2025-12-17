@@ -164,3 +164,16 @@ git_history_backup.txt
 # 백업 디렉토리
 backups/
 *.backup/
+
+# Test artifacts
+temp_test_data/
+
+# Agent
+.agent/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Automation 관련 data
+data/automation_logs/

@@ -1,4 +1,5 @@
 # backend/models/conflict.py
+from __future__ import annotations
 
 """
 충돌 감지 및 해결 관련 Pydantic 모델
@@ -15,14 +16,17 @@ from enum import Enum
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from uuid import uuid4
+from .external_sync import ExternalToolType
 
 
 # ==========================================
 # Enums
 # ==========================================
 
+
 class ConflictType(str, Enum):
     """충돌 유형"""
+
     CATEGORY_CONFLICT = "category_conflict"
     KEYWORD_CONFLICT = "keyword_conflict"
     METADATA_CONFLICT = "metadata_conflict"
@@ -32,6 +36,7 @@ class ConflictType(str, Enum):
 
 class ResolutionMethod(str, Enum):
     """해결 방법"""
+
     AUTO_BY_CONFIDENCE = "auto_by_confidence"
     AUTO_BY_CONTEXT = "auto_by_context"
     MANUAL_OVERRIDE = "manual_override"
@@ -41,6 +46,7 @@ class ResolutionMethod(str, Enum):
 
 class ResolutionStatus(str, Enum):
     """해결 상태"""
+
     PENDING = "pending"
     PENDING_REVIEW = "pending_review"
     RESOLVED = "resolved"
@@ -51,23 +57,25 @@ class ResolutionStatus(str, Enum):
 # Core Models
 # ==========================================
 
+
 class ConflictDetail(BaseModel):
     """
     충돌 상세 정보
-    
+
     충돌이 발생한 필드와 값들을 저장
     """
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "field": "category",
                 "current_value": "Projects",
                 "suggested_value": "Areas",
-                "confidence": 0.85
+                "confidence": 0.85,
             }
         }
     )
-    
+
     field: str = Field(..., description="충돌 필드명")
     current_value: Any = Field(..., description="현재 값")
     suggested_value: Any = Field(..., description="제안 값")
@@ -77,9 +85,10 @@ class ConflictDetail(BaseModel):
 class ConflictRecord(BaseModel):
     """
     충돌 기록
-    
+
     개별 충돌 사례를 기록
     """
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -88,14 +97,13 @@ class ConflictRecord(BaseModel):
                 "description": "유사 키워드: 'python' vs 'py'",
                 "severity": 0.8,
                 "auto_resolvable": True,
-                "created_at": "2025-11-17T12:00:00"
+                "created_at": "2025-11-17T12:00:00",
             }
         }
     )
-    
+
     conflict_id: str = Field(
-        default_factory=lambda: f"conflict_{uuid4().hex[:8]}",
-        description="충돌 ID"
+        default_factory=lambda: f"conflict_{uuid4().hex[:8]}", description="충돌 ID"
     )
     type: ConflictType = Field(..., description="충돌 유형")
     description: str = Field(..., description="충돌 설명")
@@ -107,9 +115,10 @@ class ConflictRecord(BaseModel):
 class ResolutionStrategy(BaseModel):
     """
     해결 전략
-    
+
     충돌 해결 방법 및 설정
     """
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -117,11 +126,11 @@ class ResolutionStrategy(BaseModel):
                 "recommended_value": "Projects",
                 "confidence": 0.92,
                 "reasoning": "신뢰도가 threshold 이상",
-                "conflict_id": "conflict_abc123"
+                "conflict_id": "conflict_abc123",
             }
         }
     )
-    
+
     method: ResolutionMethod = Field(..., description="해결 방법")
     recommended_value: Any = Field(..., description="권장 값")
     confidence: float = Field(..., ge=0.0, le=1.0, description="신뢰도")
@@ -132,9 +141,10 @@ class ResolutionStrategy(BaseModel):
 class ConflictResolution(BaseModel):
     """
     충돌 해결 결과
-    
+
     충돌이 어떻게 해결되었는지 기록
     """
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -142,15 +152,15 @@ class ConflictResolution(BaseModel):
                 "status": "resolved",
                 "strategy": {
                     "method": "auto_by_confidence",
-                    "recommended_value": "Projects"
+                    "recommended_value": "Projects",
                 },
                 "resolved_by": "system",
                 "resolved_at": "2025-11-17T12:00:00",
-                "notes": "자동 해결 완료"
+                "notes": "자동 해결 완료",
             }
         }
     )
-    
+
     conflict_id: str = Field(..., description="충돌 ID")
     status: ResolutionStatus = Field(..., description="해결 상태")
     strategy: Dict[str, Any] = Field(..., description="사용된 전략")
@@ -163,12 +173,14 @@ class ConflictResolution(BaseModel):
 # Report Models
 # ==========================================
 
+
 class ConflictReport(BaseModel):
     """
     충돌 보고서
-    
+
     전체 충돌 감지 및 해결 결과 요약
     """
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -179,19 +191,17 @@ class ConflictReport(BaseModel):
                 "manual_review_needed": 3,
                 "resolution_rate": 0.7,
                 "status": "completed",
-                "summary": "10개 중 7개 자동 해결"
+                "summary": "10개 중 7개 자동 해결",
             }
         }
     )
-    
+
     total_conflicts: int = Field(..., description="총 충돌 수")
     detected_conflicts: List[ConflictRecord] = Field(
-        default_factory=list,
-        description="감지된 충돌들"
+        default_factory=list, description="감지된 충돌들"
     )
     resolutions: List[ConflictResolution] = Field(
-        default_factory=list,
-        description="해결 결과들"
+        default_factory=list, description="해결 결과들"
     )
     auto_resolved_count: int = Field(default=0, description="자동 해결 수")
     manual_review_needed: int = Field(default=0, description="수동 검토 필요 수")
@@ -204,28 +214,24 @@ class ConflictReport(BaseModel):
 # API Request/Response Models
 # ==========================================
 
+
 class DetectConflictRequest(BaseModel):
     """
     충돌 감지 요청
-    
+
     분류 결과 간 충돌 감지를 요청
     """
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "file_id": "file_123",
-                "current_classification": {
-                    "category": "Projects",
-                    "confidence": 0.85
-                },
-                "new_classification": {
-                    "category": "Areas",
-                    "confidence": 0.82
-                }
+                "current_classification": {"category": "Projects", "confidence": 0.85},
+                "new_classification": {"category": "Areas", "confidence": 0.82},
             }
         }
     )
-    
+
     file_id: str = Field(..., description="파일 ID")
     current_classification: Dict[str, Any] = Field(..., description="현재 분류")
     new_classification: Dict[str, Any] = Field(..., description="새 분류")
@@ -234,22 +240,20 @@ class DetectConflictRequest(BaseModel):
 class ResolveConflictRequest(BaseModel):
     """
     충돌 해결 요청
-    
+
     감지된 충돌을 해결하기 위한 요청
     """
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "conflict_id": "conflict_abc123",
-                "strategy": {
-                    "method": "manual_override",
-                    "confidence_threshold": 0.8
-                },
-                "manual_value": "Projects"
+                "strategy": {"method": "manual_override", "confidence_threshold": 0.8},
+                "manual_value": "Projects",
             }
         }
     )
-    
+
     conflict_id: str = Field(..., description="충돌 ID")
     strategy: ResolutionStrategy = Field(..., description="해결 전략")
     manual_value: Optional[Any] = Field(None, description="수동 선택 값")
@@ -258,20 +262,19 @@ class ResolveConflictRequest(BaseModel):
 class ConflictDetectResponse(BaseModel):
     """
     충돌 감지 응답
-    
+
     감지된 충돌 정보 반환
     """
+
     model_config = ConfigDict(
         json_schema_extra={
-            "example": {
-                "conflicts": [],
-                "has_conflicts": True,
-                "total_count": 2
-            }
+            "example": {"conflicts": [], "has_conflicts": True, "total_count": 2}
         }
     )
-    
-    conflicts: List[ConflictRecord] = Field(default_factory=list, description="충돌 목록")
+
+    conflicts: List[ConflictRecord] = Field(
+        default_factory=list, description="충돌 목록"
+    )
     has_conflicts: bool = Field(..., description="충돌 존재 여부")
     total_count: int = Field(default=0, description="총 충돌 수")
 
@@ -279,21 +282,19 @@ class ConflictDetectResponse(BaseModel):
 class ConflictResolveResponse(BaseModel):
     """
     충돌 해결 응답
-    
+
     해결 결과 반환
     """
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "resolution": {
-                    "conflict_id": "conflict_abc123",
-                    "status": "resolved"
-                },
-                "success": True
+                "resolution": {"conflict_id": "conflict_abc123", "status": "resolved"},
+                "success": True,
             }
         }
     )
-    
+
     resolution: ConflictResolution = Field(..., description="해결 결과")
     success: bool = Field(..., description="성공 여부")
 
@@ -303,17 +304,87 @@ __all__ = [
     "ConflictType",
     "ResolutionMethod",
     "ResolutionStatus",
-    
     # Core Models
     "ConflictDetail",
     "ConflictRecord",
     "ResolutionStrategy",
     "ConflictResolution",
     "ConflictReport",
-    
     # API Models
     "DetectConflictRequest",
     "ResolveConflictRequest",
     "ConflictDetectResponse",
     "ConflictResolveResponse",
+    # Sync Conflict Models (Phase 3)
+    "SyncConflict",
+    "SyncConflictType",
+    "ConflictResolutionLog",
 ]
+
+
+# ==========================================
+# Sync Conflict Models (Phase 3)
+# ==========================================
+
+
+class SyncConflictType(str, Enum):
+    """
+    동기화 충돌 유형
+    """
+
+    CONTENT_MISMATCH = "content_mismatch"
+    DELETED_REMOTE = "deleted_remote"
+    DELETED_LOCAL = "deleted_local"
+    METADATA_MISMATCH = "metadata_mismatch"
+
+
+class SyncConflict(BaseModel):
+    """
+    동기화 충돌 정보 (Phase 3)
+
+    로컬(FlowNote)과 원격(External Tool) 간의 데이터 불일치 상태를 정의
+    """
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "conflict_id": "sync_conf_123",
+                "file_id": "doc_abc",
+                "external_path": "/Vault/Notes/doc.md",
+                "tool_type": "obsidian",
+                "conflict_type": "content_mismatch",
+                "local_hash": "a1b2c3d4",
+                "remote_hash": "e5f6g7h8",
+                "status": "pending_review",
+            }
+        }
+    )
+
+    conflict_id: str = Field(
+        default_factory=lambda: f"sync_conf_{uuid4().hex[:8]}",
+        description="동기화 충돌 ID",
+    )
+    file_id: str = Field(..., description="내부 파일 ID")
+    external_path: str = Field(..., description="외부 파일 경로")
+    tool_type: ExternalToolType = Field(..., description="외부 도구 유형")
+    conflict_type: SyncConflictType = Field(..., description="충돌 유형 (Enum)")
+    local_hash: Optional[str] = Field(None, description="로컬 파일 해시")
+    remote_hash: Optional[str] = Field(None, description="원격 파일 해시")
+    detected_at: datetime = Field(default_factory=datetime.now, description="감지 시각")
+    status: ResolutionStatus = Field(
+        default=ResolutionStatus.PENDING, description="해결 상태"
+    )
+
+
+class ConflictResolutionLog(BaseModel):
+    """
+    충돌 해결 로그 (Phase 3)
+    """
+
+    resolution_id: str = Field(
+        default_factory=lambda: f"res_{uuid4().hex[:8]}", description="해결 로그 ID"
+    )
+    conflict_id: str = Field(..., description="관련 충돌 ID")
+    strategy: ResolutionStrategy = Field(..., description="적용된 해결 전략")
+    final_content_hash: Optional[str] = Field(None, description="최종 콘텐츠 해시")
+    resolved_at: datetime = Field(default_factory=datetime.now, description="해결 시각")

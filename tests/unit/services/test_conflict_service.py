@@ -37,7 +37,7 @@ async def test_classify_text_success():
         mock_para_agent.return_value = mock_para_result
 
         # KeywordClassifier Mocking
-        service.keyword_classifier.aclassify = AsyncMock(
+        service.keyword_classifier.classify = AsyncMock(
             return_value=mock_keyword_result
         )
 
@@ -69,7 +69,7 @@ async def test_classify_text_success():
 
             # Verify Calls
             mock_para_agent.assert_called_once_with(mock_text)
-            service.keyword_classifier.aclassify.assert_called_once()
+            service.keyword_classifier.classify.assert_called_once()
             service.snapshot_manager.save_snapshot.assert_called_once()
 
 

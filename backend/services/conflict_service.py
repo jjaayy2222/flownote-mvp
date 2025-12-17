@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # 필요한 분류기 import
 try:
     from backend.classifier.para_agent import run_para_agent
-    from backend.classifier.keyword_classifier import KeywordClassifier
+    from backend.classifier.keyword import KeywordClassifier
     from backend.classifier.conflict_resolver import ClassificationResult, ConflictResolver
     from backend.classifier.snapshot_manager import SnapshotManager
 except ImportError:
@@ -28,7 +28,7 @@ except ImportError:
     PROJECT_ROOT = Path(__file__).parent.parent.parent
     sys.path.insert(0, str(PROJECT_ROOT))
     from backend.classifier.para_agent import run_para_agent
-    from backend.classifier.keyword_classifier import KeywordClassifier
+    from backend.classifier.keyword import KeywordClassifier
     from backend.classifier.conflict_resolver import ClassificationResult, ConflictResolver
     from backend.classifier.snapshot_manager import SnapshotManager
     
@@ -89,9 +89,9 @@ class ConflictService:
             # 2. Keyword 분류 
             if keyword_result is None:
                 logger.info("2. Keyword 분류 실행...")
-                # KeywordClassifier가 async 지원하면 aclassify 사용
-                if hasattr(self.keyword_classifier, 'aclassify'):
-                    keyword_result = await self.keyword_classifier.aclassify(
+                # KeywordClassifier가 async 지원하면 classify 사용
+                if hasattr(self.keyword_classifier, 'classify'):
+                    keyword_result = await self.keyword_classifier.classify(
                         text, user_context
                     )
                 else:
@@ -168,8 +168,13 @@ class ConflictService:
                 tags=None
             )
             
+            # Keyword 결과에서 category 우선 사용, 없으면 tags[0] 사용
+            kw_category = keyword_result.get("category")
+            if not kw_category and keyword_result.get("tags"):
+                kw_category = keyword_result.get("tags")[0]
+            
             keyword_obj = ClassificationResult(
-                category=keyword_result.get("tags", ["기타"])[0] if keyword_result.get("tags") else "기타",
+                category=kw_category or "기타",
                 confidence=keyword_result.get("confidence", 0.8),
                 source="keyword",
                 reasoning=keyword_result.get("reasoning", ""),

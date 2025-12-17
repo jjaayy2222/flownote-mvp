@@ -69,7 +69,31 @@ from .conflict import (
     ConflictResolveResponse,
 )
 
+# External Sync (Phase 3 - NEW!)
+from .external_sync import (
+    ExternalToolConnection,
+    ExternalFileMapping,
+    ExternalSyncLog,
+    SyncStatus,
+    ExternalToolType,
+)
 
+# Automation (Phase 4 - NEW!)
+from .automation import (
+    AutomationTaskType,
+    AutomationStatus,
+    AutomationRule,
+    AutomationLog,
+    ReclassificationRecord,
+    ArchivingRecord,
+)
+
+# Reporting (Phase 4)
+from .report import (
+    ReportType,
+    ReportMetric,
+    Report,
+)
 
 
 __all__ = [
@@ -88,14 +112,12 @@ __all__ = [
     "ClassificationSaveRequest",
     "ClassificationSearchRequest",
     "PARAClassificationOutput",
-    
     # User
     "Step1Input",
     "Step2Input",
     "OnboardingStatus",
     "UserProfile",
     "UserContext",
-    
     # Common
     "ErrorResponse",
     "SuccessResponse",
@@ -104,7 +126,6 @@ __all__ = [
     "MetadataResponse",
     "SaveClassificationRequest",
     "SearchRequest",
-    
     # Conflict
     "ConflictType",
     "ResolutionMethod",
@@ -118,4 +139,21 @@ __all__ = [
     "ResolveConflictRequest",
     "ConflictDetectResponse",
     "ConflictResolveResponse",
+    # External Sync (Phase 3 - NEW!)
+    "ExternalToolConnection",
+    "ExternalFileMapping",
+    "ExternalSyncLog",
+    "SyncStatus",
+    "ExternalToolType",
+    # Automation (Phase 4 - NEW!)
+    "AutomationTaskType",
+    "AutomationStatus",
+    "AutomationRule",
+    "AutomationLog",
+    "ReclassificationRecord",
+    "ArchivingRecord",
+    # Reporting (Phase 4)
+    "ReportType",
+    "ReportMetric",
+    "Report",
 ]
