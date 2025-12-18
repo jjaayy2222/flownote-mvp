@@ -1,0 +1,86 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.10, pytest-8.3.0, pluggy-1.6.0 -- /Users/jay/.pyenv/versions/3.11.10/envs/myenv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/jay/ICT-projects/flownote-mvp
+configfile: pytest.ini
+plugins: anyio-4.11.0, langsmith-0.4.37, asyncio-1.3.0, cov-7.0.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 8 items
+
+tests/e2e/test_full_flow.py::test_full_onboarding_and_classification_flow PASSED [ 12%]
+tests/integration/services/test_classification_flow.py::test_1_keyword_classifier PASSED [ 25%]
+tests/integration/services/test_classification_flow.py::test_2_conflict_service PASSED [ 37%]
+tests/integration/services/test_classification_flow.py::test_3_db_storage PASSED [ 50%]
+tests/integration/services/test_classification_flow.py::test_4_classification_log PASSED [ 62%]
+tests/integration/services/test_classification_flow.py::test_5_api_endpoint PASSED [ 75%]
+tests/unit/services/test_conflict_service.py::test_classify_text_success PASSED [ 87%]
+tests/unit/services/test_conflict_service.py::test_classify_text_error_handling PASSED [100%]
+
+================================ tests coverage ================================
+______________ coverage: platform darwin, python 3.11.10-final-0 _______________
+
+Name                                               Stmts   Miss  Cover   Missing
+--------------------------------------------------------------------------------
+backend/__init__.py                                    1      0   100%
+backend/api/__init__.py                                3      0   100%
+backend/api/endpoints/__init__.py                      4      0   100%
+backend/api/endpoints/classify.py                      5      1    80%   12
+backend/api/endpoints/conflict_resolver.py            71     71     0%   3-197
+backend/api/endpoints/conflict_resolver_agent.py     165    165     0%   9-430
+backend/api/endpoints/dashboard.py                    31     31     0%   5-56
+backend/api/endpoints/metadata.py                      5      1    80%   12
+backend/api/endpoints/search.py                        5      1    80%   12
+backend/api/models.py                                  4      4     0%   7-21
+backend/api/models/__init__.py                         3      0   100%
+backend/api/routes.py                                  6      0   100%
+backend/chunking.py                                   35     35     0%   10-124
+backend/classifier/__init__.py                         2      0   100%
+backend/classifier/base_classifier.py                 31     19    39%   41, 47-66, 70
+backend/classifier/conflict_resolver.py               38     10    74%   73-74, 119, 136, 140-150
+backend/classifier/context_injector.py               109    109     0%   7-243
+backend/classifier/keyword.py                         40     10    75%   37-42, 62-63, 71-73
+backend/classifier/langchain_integration.py          208    171    18%   47-58, 75-109, 115-133, 147-171, 186-203, 235-272, 281-299, 304-320, 348-374, 400-460, 466-555
+backend/classifier/metadata_classifier.py             37     37     0%   7-91
+backend/classifier/para_agent.py                      77     49    36%   32-41, 49-54, 62-86, 94-104, 112-124, 132-149, 154-170, 175, 181-194
+backend/classifier/para_agent_wrapper.py              21     21     0%   5-111
+backend/classifier/para_classifier.py                 83     83     0%   9-277
+backend/classifier/snapshot_manager.py                38     12    68%   27, 69, 73-76, 80-86, 97
+backend/cli.py                                        89     89     0%   6-165
+backend/config.py                                    118     53    55%   29-37, 89, 93-95, 98-100, 107, 111, 113, 128-142, 147-176, 223, 238-245
+backend/dashboard/__init__.py                          0      0   100%
+backend/dashboard/dashboard_core.py                   13     13     0%   3-42
+backend/data_manager.py                              167     86    49%   44-46, 50-51, 55-57, 80, 82, 88-92, 96-99, 110-114, 120-129, 140, 157-158, 181-182, 188-195, 201-204, 225-227, 240-254, 260-270, 291-331
+backend/database/__init__.py                           2      0   100%
+backend/database/connection.py                        96     64    33%   64-69, 73-88, 92-101, 105-115, 119-124, 128-136, 140-145, 149-157, 161-166, 171-178, 183-184, 187, 190
+backend/database/metadata_schema.py                   52     17    67%   24-28, 32-36, 40-44, 48-49, 64, 73, 75, 79-83, 116
+backend/embedding.py                                  33     33     0%   10-118
+backend/exceptions.py                                 12     12     0%   10-43
+backend/export.py                                     28     28     0%   7-68
+backend/faiss_search.py                               78     78     0%   9-248
+backend/main.py                                       33      7    79%   110, 125, 143-149
+backend/metadata.py                                   95     95     0%   9-329
+backend/models/__init__.py                             5      0   100%
+backend/models/classification.py                      78      0   100%
+backend/models/common.py                              43      0   100%
+backend/models/conflict.py                            81      0   100%
+backend/models/user.py                                32      0   100%
+backend/modules/__init__.py                            3      3     0%   7-10
+backend/modules/pdf_helper.py                         26     26     0%   9-62
+backend/modules/vision_helper.py                      59     59     0%   11-296
+backend/routes/__init__.py                             0      0   100%
+backend/routes/api_models.py                          24     24     0%   17-112
+backend/routes/classifier_routes.py                   42     18    57%   93-106, 150-154, 158-162, 179-181
+backend/routes/conflict_routes.py                     20      8    60%   42-49, 55
+backend/routes/onboarding_routes.py                   36      5    86%   64, 174-179
+backend/search_history.py                             93     93     0%   9-353
+backend/services/__init__.py                           1      0   100%
+backend/services/classification_service.py            81     12    85%   130-132, 154-156, 170, 172, 229, 264-266
+backend/services/conflict_service.py                  71     19    73%   25-35, 99, 196-199, 212, 216, 220, 224-225
+backend/services/gpt_helper.py                       130     89    32%   25-29, 57-60, 74-103, 119-128, 146-196, 209-222, 244-274, 296-327, 357-392
+backend/services/onboarding_service.py                53     22    58%   58-60, 83, 96-98, 127, 138-140, 158-182
+backend/services/parallel_processor.py                23     23     0%   8-72
+backend/utils.py                                      42     42     0%   9-110
+backend/validators.py                                 88     88     0%   16-252
+--------------------------------------------------------------------------------
+TOTAL                                               2869   1936    33%
+============================== 8 passed in 0.45s ===============================
