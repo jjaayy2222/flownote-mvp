@@ -53,8 +53,8 @@ def get_classifier() -> HybridClassifier:
 
 def get_retriever() -> FAISSRetriever:
     """Thread-safe lazy initialization of FAISSRetriever"""
-    return _lazy_init(_retriever_ref, FAISSRetriever)
     # TODO: Persistent loading of embeddings should be implemented here or in FAISSRetriever
+    return _lazy_init(_retriever_ref, FAISSRetriever)
 
 
 def get_aggregator() -> MetadataAggregator:
@@ -66,8 +66,10 @@ async def _run_blocking(fn, *args, **kwargs):
     try:
         return await asyncio.to_thread(fn, *args, **kwargs)
     except Exception as e:
-        logger.exception(f"Error in blocking call {fn.__name__}")
-        return e
+        logger.exception(
+            f"Error in blocking call {fn.__name__ if hasattr(fn, '__name__') else str(fn)}"
+        )
+        raise e
 
 
 # 1. Tools (기능 노출)
@@ -118,20 +120,25 @@ async def search_notes(query: str) -> Dict[str, Any]:
             "metadata": {"reason": "empty_query"},
         }
 
-    result = await _run_blocking(get_retriever().search, query, k=5)
+    try:
+        # Wrap getter in lambda to catch init errors in _run_blocking if desired,
+        # or simply rely on _run_blocking wrapping the call.
+        # Here we get the retriever first. If it fails, it's caught by local try/except.
+        retriever = get_retriever()
+        result = await _run_blocking(retriever.search, query, k=5)
 
-    if isinstance(result, Exception):
+        return {
+            "results": result,
+            "error": None,
+            "metadata": {"reason": "ok"},
+        }
+    except Exception:
+        logger.exception("Error during search")
         return {
             "results": [],
             "error": "search_failed",
             "metadata": {"reason": "exception"},
         }
-
-    return {
-        "results": result,
-        "error": None,
-        "metadata": {"reason": "ok"},
-    }
 
 
 @mcp.tool()
@@ -139,12 +146,12 @@ async def get_automation_stats() -> Dict[str, Any]:
     """
     Get recent automation statistics (files, searches, categories).
     """
-    result = await _run_blocking(get_aggregator().get_file_statistics)
-
-    if isinstance(result, Exception):
+    try:
+        aggregator = get_aggregator()
+        return await _run_blocking(aggregator.get_file_statistics)
+    except Exception:
+        logger.exception("Error during stats retrieval")
         return {"error": "stats_retrieval_failed"}
-
-    return result
 
 
 # 2. Resources (데이터 노출)
@@ -153,23 +160,25 @@ async def get_automation_stats() -> Dict[str, Any]:
 @mcp.resource("flownote://para/projects")
 async def get_projects() -> str:
     """Get list of projects/categories breakdown as JSON string"""
-    result = await _run_blocking(get_aggregator().get_para_breakdown)
-
-    if isinstance(result, Exception):
+    try:
+        aggregator = get_aggregator()
+        result = await _run_blocking(aggregator.get_para_breakdown)
+        return json.dumps(result, ensure_ascii=False, indent=2)
+    except Exception:
+        logger.exception("Error retrieval projects resource")
         return json.dumps({"error": "resource_retrieval_failed"})
-
-    return json.dumps(result, ensure_ascii=False, indent=2)
 
 
 @mcp.resource("flownote://dashboard/summary")
 async def get_dashboard_summary() -> str:
     """Get dashboard summary as JSON string"""
-    result = await _run_blocking(get_aggregator().get_file_statistics)
-
-    if isinstance(result, Exception):
+    try:
+        aggregator = get_aggregator()
+        result = await _run_blocking(aggregator.get_file_statistics)
+        return json.dumps(result, ensure_ascii=False, indent=2)
+    except Exception:
+        logger.exception("Error retrieval dashboard summary resource")
         return json.dumps({"error": "resource_retrieval_failed"})
-
-    return json.dumps(result, ensure_ascii=False, indent=2)
 
 
 if __name__ == "__main__":
