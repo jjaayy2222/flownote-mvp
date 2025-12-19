@@ -8,6 +8,7 @@ External AI agents can use FlowNote capabilities as Tools and access Resources.
 import json
 import asyncio
 import threading
+import logging
 from typing import Dict, Any, List, Optional
 from mcp.server.fastmcp import FastMCP
 
@@ -15,7 +16,9 @@ from mcp.server.fastmcp import FastMCP
 from backend.classifier.hybrid_classifier import HybridClassifier
 from backend.faiss_search import FAISSRetriever
 from backend.dashboard.dashboard_core import MetadataAggregator
-from backend.database.connection import DatabaseConnection
+
+# Initialize Logger
+logger = logging.getLogger(__name__)
 
 # Initialize FastMCP
 mcp = FastMCP("FlowNote MCP Server")
@@ -25,41 +28,48 @@ _classifier: Optional[HybridClassifier] = None
 _retriever: Optional[FAISSRetriever] = None
 _aggregator: Optional[MetadataAggregator] = None
 
-# Thread-safe locks for lazy initialization
-_classifier_lock = threading.Lock()
-_retriever_lock = threading.Lock()
-_aggregator_lock = threading.Lock()
+# Single thread-safe lock for lazy initialization
+_lazy_lock = threading.Lock()
+
+
+def _lazy_init(instance_ref: Dict[str, Any], factory) -> Any:
+    """Helper for thread-safe lazy initialization"""
+    if instance_ref["value"] is None:
+        with _lazy_lock:
+            if instance_ref["value"] is None:
+                instance_ref["value"] = factory()
+    return instance_ref["value"]
+
+
+# Instance references container
+_classifier_ref = {"value": None}
+_retriever_ref = {"value": None}
+_aggregator_ref = {"value": None}
 
 
 def get_classifier() -> HybridClassifier:
-    """Thread-safe lazy initialization of HybridClassifier"""
-    global _classifier
-    if _classifier is None:
-        with _classifier_lock:
-            if _classifier is None:
-                _classifier = HybridClassifier()
-    return _classifier
+    return _lazy_init(_classifier_ref, HybridClassifier)
 
 
 def get_retriever() -> FAISSRetriever:
     """Thread-safe lazy initialization of FAISSRetriever"""
-    global _retriever
-    if _retriever is None:
-        with _retriever_lock:
-            if _retriever is None:
-                _retriever = FAISSRetriever()
-                # TODO: Persistent loading of embeddings should be implemented here or in FAISSRetriever
-    return _retriever
+    # TODO: Persistent loading of embeddings should be implemented here or in FAISSRetriever
+    return _lazy_init(_retriever_ref, FAISSRetriever)
 
 
 def get_aggregator() -> MetadataAggregator:
-    """Thread-safe lazy initialization of MetadataAggregator"""
-    global _aggregator
-    if _aggregator is None:
-        with _aggregator_lock:
-            if _aggregator is None:
-                _aggregator = MetadataAggregator()
-    return _aggregator
+    return _lazy_init(_aggregator_ref, MetadataAggregator)
+
+
+async def _run_blocking(fn, *args, **kwargs):
+    """Helper to run blocking functions in a separate thread"""
+    try:
+        return await asyncio.to_thread(fn, *args, **kwargs)
+    except Exception as e:
+        logger.exception(
+            f"Error in blocking call {fn.__name__ if hasattr(fn, '__name__') else str(fn)}"
+        )
+        raise e
 
 
 # 1. Tools (기능 노출)
@@ -75,18 +85,28 @@ async def classify_content(text: str) -> Dict[str, Any]:
     """
     # Defensive programming: validate input
     if not text:
-        return {"error": "Input text is required"}
+        return {
+            "category": "Unclassified",
+            "confidence": 0.0,
+            "reasoning": "Input text is empty",
+            "error": "empty_input",
+        }
 
     try:
         classifier = get_classifier()
         # classify method is already async in HybridClassifier
         return await classifier.classify(text)
-    except Exception as e:
-        return {"error": str(e), "category": "Unclassified", "confidence": 0.0}
+    except Exception:
+        logger.exception("Error during classification")
+        return {
+            "category": "Unclassified",
+            "confidence": 0.0,
+            "error": "classification_failed",
+        }
 
 
 @mcp.tool()
-async def search_notes(query: str) -> List[Dict[str, Any]]:
+async def search_notes(query: str) -> Dict[str, Any]:
     """
     Search for notes using vector similarity search.
 
@@ -94,17 +114,31 @@ async def search_notes(query: str) -> List[Dict[str, Any]]:
         query: The search query.
     """
     if not query:
-        return []
+        return {
+            "results": [],
+            "error": None,
+            "metadata": {"reason": "empty_query"},
+        }
 
     try:
+        # Wrap getter in lambda to catch init errors in _run_blocking if desired,
+        # or simply rely on _run_blocking wrapping the call.
+        # Here we get the retriever first. If it fails, it's caught by local try/except.
         retriever = get_retriever()
-        # Run blocking search in a thread executor to avoid blocking the event loop
-        results = await asyncio.to_thread(retriever.search, query, k=5)
-        return results
-    except Exception as e:
-        # Log unexpected errors but don't crash the server
-        print(f"Error during search: {e}")
-        return []
+        result = await _run_blocking(retriever.search, query, k=5)
+
+        return {
+            "results": result,
+            "error": None,
+            "metadata": {"reason": "ok"},
+        }
+    except Exception:
+        logger.exception("Error during search")
+        return {
+            "results": [],
+            "error": "search_failed",
+            "metadata": {"reason": "exception"},
+        }
 
 
 @mcp.tool()
@@ -114,10 +148,10 @@ async def get_automation_stats() -> Dict[str, Any]:
     """
     try:
         aggregator = get_aggregator()
-        # DB operations are blocking, run in thread
-        return await asyncio.to_thread(aggregator.get_file_statistics)
-    except Exception as e:
-        return {"error": str(e)}
+        return await _run_blocking(aggregator.get_file_statistics)
+    except Exception:
+        logger.exception("Error during stats retrieval")
+        return {"error": "stats_retrieval_failed"}
 
 
 # 2. Resources (데이터 노출)
@@ -128,11 +162,11 @@ async def get_projects() -> str:
     """Get list of projects/categories breakdown as JSON string"""
     try:
         aggregator = get_aggregator()
-        # DB operations are blocking, run in thread
-        stats = await asyncio.to_thread(aggregator.get_para_breakdown)
-        return json.dumps(stats, ensure_ascii=False, indent=2)
-    except Exception as e:
-        return json.dumps({"error": str(e)})
+        result = await _run_blocking(aggregator.get_para_breakdown)
+        return json.dumps(result, ensure_ascii=False, indent=2)
+    except Exception:
+        logger.exception("Error retrieval projects resource")
+        return json.dumps({"error": "resource_retrieval_failed"})
 
 
 @mcp.resource("flownote://dashboard/summary")
@@ -140,12 +174,14 @@ async def get_dashboard_summary() -> str:
     """Get dashboard summary as JSON string"""
     try:
         aggregator = get_aggregator()
-        # DB operations are blocking, run in thread
-        stats = await asyncio.to_thread(aggregator.get_file_statistics)
-        return json.dumps(stats, ensure_ascii=False, indent=2)
-    except Exception as e:
-        return json.dumps({"error": str(e)})
+        result = await _run_blocking(aggregator.get_file_statistics)
+        return json.dumps(result, ensure_ascii=False, indent=2)
+    except Exception:
+        logger.exception("Error retrieval dashboard summary resource")
+        return json.dumps({"error": "resource_retrieval_failed"})
 
 
 if __name__ == "__main__":
+    # Basic logging config for standalone execution
+    logging.basicConfig(level=logging.INFO)
     mcp.run()
