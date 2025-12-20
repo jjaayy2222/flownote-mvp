@@ -11,34 +11,35 @@ from backend.services.classification_service import ClassificationService
 
 logger = logging.getLogger(__name__)
 
+# Module-level executor to avoid expensive thread creation on every call
+# Used only when run_async falls back to thread offloading
+_executor = ThreadPoolExecutor(max_workers=1)
+
 
 def run_async(coro):
     """
     Run async code synchronously.
 
-    If an event loop is already running in the current thread,
-    blocking on it (e.g. via run_coroutine_threadsafe.result()) can cause deadlocks.
-    In such cases, we offload the async execution to a separate thread.
+    WARNING: When a running event loop is detected, this helper executes
+    the coroutine in a separate thread using asyncio.run() within a shared ThreadPoolExecutor.
+    This creates a NEW event loop isolated from the current running loop.
 
-    If no loop is running, we use standard asyncio.run().
+    Ensure that the coroutine and its dependencies do not rely on objects
+    bound to the original event loop (e.g. connections, locks created on the parent loop).
+    Usage restricted to Celery tasks where isolation is acceptable.
     """
     try:
         # Check if we are in a thread with a running event loop
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
+        asyncio.get_running_loop()
+        # If no strict exception raised, a loop is running.
 
-    if loop and loop.is_running():
         # Active loop detected. running .result() here would block the loop -> deadlock.
         # Solution: Run standard asyncio.run in a separate thread.
         # This isolates the new async task from the existing loop.
-        logger.debug(
-            "Active event loop detected. Running coroutine in separate thread to avoid deadlock."
-        )
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(asyncio.run, coro)
-            return future.result()
-    else:
+        logger.debug("Active event loop detected. Offloading to shared executor.")
+        return _executor.submit(asyncio.run, coro).result()
+
+    except RuntimeError:
         # No running loop, safe to use standard asyncio.run
         return asyncio.run(coro)
 
