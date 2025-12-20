@@ -14,6 +14,9 @@ from backend.services.classification_service import ClassificationService
 
 logger = logging.getLogger(__name__)
 
+# Constants
+INVALID_PATH_SENTINEL = "Invalid Path"
+
 # Module-level executor to avoid expensive thread creation on every call
 # Used only when run_async falls back to thread offloading
 # Initialized lazily to avoid resource creation if not needed
@@ -35,11 +38,11 @@ def _safe_path(path_str: str) -> str:
     or, if no extension is present (no dot suffix):
       'ext:unknown (hash:deadbeef)'
 
-    Returns 'Invalid Path' on any error or empty/None input.
-    Consumers should treat 'Invalid Path' as a failure state.
+    Returns INVALID_PATH_SENTINEL on any error or empty/None input.
+    Consumers should treat this as a failure state.
     """
     if not path_str:
-        return "Invalid Path"
+        return INVALID_PATH_SENTINEL
 
     try:
         path = Path(path_str)
@@ -50,7 +53,7 @@ def _safe_path(path_str: str) -> str:
         return f"ext:{suffix} (hash:{path_hash})"
     except Exception:
         # Fallback for invalid or unexpected path values
-        return "Invalid Path"
+        return INVALID_PATH_SENTINEL
 
 
 def _get_executor() -> ThreadPoolExecutor:
