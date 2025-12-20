@@ -13,23 +13,22 @@ logger = logging.getLogger(__name__)
 
 def run_async(coro):
     """
-    Helper to run async code synchronously.
-    Handles existing event loop scenarios (e.g. gevent, eventlet, or nested usage).
+    Run async code synchronously.
+
+    Uses asyncio.run in the normal case; if already inside a running
+    event loop, falls back to thread-safe submission.
     """
     try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # Standard, easy-to-reason-about path (Celery prefork, etc.)
+        return asyncio.run(coro)
+    except RuntimeError as exc:
+        # Only handle the specific 'running event loop' case
+        if "asyncio.run() cannot be called from a running event loop" not in str(exc):
+            raise
 
-    if loop.is_running():
-        # Loop is running (e.g. gevent patch or similar), use a future
-        # Note: In standard Celery prefork, the loop is usually not running.
-        # This branch handles edge cases where an event loop exists and is active.
+        loop = asyncio.get_event_loop()
+        # Edge case: already-running loop; keep current behavior
         return asyncio.run_coroutine_threadsafe(coro, loop).result()
-    else:
-        # Standard case for prefork worker
-        return loop.run_until_complete(coro)
 
 
 @app.task(bind=True)
