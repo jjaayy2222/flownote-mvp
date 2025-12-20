@@ -25,12 +25,14 @@ class ObsidianFileEventHandler(FileSystemEventHandler):
         super().__init__()
 
     def _is_valid_file(self, path_str: str) -> bool:
-        """Markdown 파일이고 숨김 파일이 아닌지 확인"""
+        """Markdown 파일이고 숨김 파일이 아닌지 확인 (숨김 디렉터리도 제외)"""
         path = Path(path_str)
         return (
             path.suffix == ".md"
+            # 파일 자체가 숨김 파일이 아니고
             and not path.name.startswith(".")
-            and not ".obsidian" in path.parts
+            # 경로 중 어떤 부분도 숨김 디렉터리가 아니어야 함 (예: .obsidian, .git 등)
+            and all(not part.startswith(".") for part in path.parts)
         )
 
     def on_created(self, event):
