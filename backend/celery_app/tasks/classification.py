@@ -27,7 +27,7 @@ def _safe_path(path_str: str) -> str:
 
     We deliberately avoid logging the raw filename, as it may contain PII or
     other sensitive details. Instead, we log:
-      - the file extension (if present, e.g. ".pdf", ".txt"), and
+      - the file extension (with leading dot if present, e.g. ".pdf", ".txt"), and
       - a truncated hash of the full path for correlation in logs.
 
     Returns a string like:
@@ -35,12 +35,11 @@ def _safe_path(path_str: str) -> str:
     or, if no extension is present (no dot suffix):
       'ext:unknown (hash:deadbeef)'
 
-    If path_str is empty/None, returns 'Unknown'.
-    If path is invalid/unparseable, returns 'Invalid Path'.
-    Consumers should treat 'Unknown' and 'Invalid Path' as failure states.
+    Returns 'Invalid Path' on any error or empty/None input.
+    Consumers should treat 'Invalid Path' as a failure state.
     """
     if not path_str:
-        return "Unknown"
+        return "Invalid Path"
 
     try:
         path = Path(path_str)
