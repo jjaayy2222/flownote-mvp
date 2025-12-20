@@ -4,6 +4,7 @@ import asyncio
 import logging
 from pathlib import Path
 from typing import Dict, Any
+from concurrent.futures import ThreadPoolExecutor
 
 from backend.celery_app.celery import app
 from backend.services.classification_service import ClassificationService
@@ -15,20 +16,31 @@ def run_async(coro):
     """
     Run async code synchronously.
 
-    Uses asyncio.run in the normal case; if already inside a running
-    event loop, falls back to thread-safe submission.
+    If an event loop is already running in the current thread,
+    blocking on it (e.g. via run_coroutine_threadsafe.result()) can cause deadlocks.
+    In such cases, we offload the async execution to a separate thread.
+
+    If no loop is running, we use standard asyncio.run().
     """
     try:
-        # If this does not raise, we're already inside a running event loop
+        # Check if we are in a thread with a running event loop
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        # No running loop in this thread: use asyncio.run for simplicity
-        return asyncio.run(coro)
+        loop = None
+
+    if loop and loop.is_running():
+        # Active loop detected. running .result() here would block the loop -> deadlock.
+        # Solution: Run standard asyncio.run in a separate thread.
+        # This isolates the new async task from the existing loop.
+        logger.debug(
+            "Active event loop detected. Running coroutine in separate thread to avoid deadlock."
+        )
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(asyncio.run, coro)
+            return future.result()
     else:
-        # Running loop detected: submit coroutine in a thread-safe way
-        # Note: run_coroutine_threadsafe returns a concurrent.futures.Future
-        future = asyncio.run_coroutine_threadsafe(coro, loop)
-        return future.result()
+        # No running loop, safe to use standard asyncio.run
+        return asyncio.run(coro)
 
 
 @app.task(bind=True)
