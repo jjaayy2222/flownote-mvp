@@ -19,16 +19,16 @@ def run_async(coro):
     event loop, falls back to thread-safe submission.
     """
     try:
-        # Standard, easy-to-reason-about path (Celery prefork, etc.)
+        # If this does not raise, we're already inside a running event loop
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop in this thread: use asyncio.run for simplicity
         return asyncio.run(coro)
-    except RuntimeError as exc:
-        # Only handle the specific 'running event loop' case
-        if "asyncio.run() cannot be called from a running event loop" not in str(exc):
-            raise
-
-        loop = asyncio.get_event_loop()
-        # Edge case: already-running loop; keep current behavior
-        return asyncio.run_coroutine_threadsafe(coro, loop).result()
+    else:
+        # Running loop detected: submit coroutine in a thread-safe way
+        # Note: run_coroutine_threadsafe returns a concurrent.futures.Future
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        return future.result()
 
 
 @app.task(bind=True)
