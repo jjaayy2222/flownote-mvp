@@ -4,8 +4,9 @@ import asyncio
 import logging
 import atexit
 import threading
+import hashlib
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor
 
 from backend.celery_app.celery import app
@@ -16,11 +17,28 @@ logger = logging.getLogger(__name__)
 # Module-level executor to avoid expensive thread creation on every call
 # Used only when run_async falls back to thread offloading
 # Initialized lazily to avoid resource creation if not needed
-_executor = None
+_executor: Optional[ThreadPoolExecutor] = None
 _executor_lock = threading.Lock()  # Lock for thread-safe initialization
 
 
-def _get_executor():
+def _safe_path(path_str: str) -> str:
+    """
+    Generate a privacy-safe representation of a file path for logging.
+    Returns: 'filename.ext (hash: first-8-chars-of-sha256)'
+    """
+    if not path_str:
+        return "Unknown"
+    try:
+        path = Path(path_str)
+        filename = path.name
+        path_hash = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:8]
+        return f"{filename} (hash:{path_hash})"
+    except Exception:
+        # Fallback for invalid paths
+        return "Invalid Path"
+
+
+def _get_executor() -> ThreadPoolExecutor:
     """
     Get the shared ThreadPoolExecutor, initializing it safely on first use.
 
@@ -28,12 +46,12 @@ def _get_executor():
     We use it to offload async work when the main thread's event loop is busy.
     """
     global _executor
-    if _executor is None:
-        with _executor_lock:
-            if _executor is None:
-                _executor = ThreadPoolExecutor(max_workers=1)
-                # Register cleanup hook
-                atexit.register(_executor.shutdown, wait=True)
+    # Simplify to always acquiring lock, as this path is not hot (used only on fallback)
+    with _executor_lock:
+        if _executor is None:
+            _executor = ThreadPoolExecutor(max_workers=1)
+            # Register cleanup hook
+            atexit.register(_executor.shutdown, wait=True)
     return _executor
 
 
@@ -74,30 +92,26 @@ def classify_new_file_task(self, file_path: str):
     신규 파일 생성 시 호출되는 Task
     ClassificationService를 사용하여 즉시 분류 수행
     """
-    logger.info(f"🚀 Started classification for new file: {file_path}")
+    safe_path = _safe_path(file_path)
+    logger.info(f"🚀 Started classification for new file: {safe_path}")
 
     try:
         # 파일 내용 읽기
         path_obj = Path(file_path)
         if not path_obj.exists():
-            logger.error(f"File not found: {file_path}")
+            logger.error(f"File not found: {safe_path}")
             return {"status": "error", "message": "File not found"}
 
-        # [Checklist Item 19: Null Safety & Validation]
-        # read_text can raise exceptions, handled by try-except
         content = path_obj.read_text(encoding="utf-8", errors="ignore")
         if not content.strip():
-            logger.warning(f"File is empty: {file_path}")
+            logger.warning(f"File is empty: {safe_path}")
             return {"status": "skipped", "message": "Empty file"}
 
         # 서비스 초기화 및 실행
         service = ClassificationService()
 
-        # [Checklist Item 17: Masking sensitive data]
-        # We process file content here but only log results/errors, not raw content.
-
         # Safe async execution using helper
-        # Use full absolute path as file_id to avoid collisions
+        # Use full absolute path as file_id to avoid collisions (Internal ID uses full path)
         file_id = str(path_obj.absolute())
 
         result = run_async(
@@ -106,7 +120,7 @@ def classify_new_file_task(self, file_path: str):
             )
         )
 
-        logger.info(f"✅ Classification completed for {file_path}: {result.category}")
+        logger.info(f"✅ Classification completed for {safe_path}: {result.category}")
         return {
             "status": "success",
             "category": result.category,
@@ -114,9 +128,8 @@ def classify_new_file_task(self, file_path: str):
         }
 
     except Exception as e:
-        # [Checklist Item 13: Stack Trace]
-        logger.exception(f"Error classifying file {file_path}")
-        return {"status": "error", "message": str(e)}
+        logger.exception(f"Error classifying file {safe_path}")
+        return {"status": "error", "message": "Internal error during classification"}
 
 
 @app.task(bind=True)
@@ -124,5 +137,5 @@ def update_embedding_task(self, file_path: str):
     """
     파일 수정 시 호출되는 Task (임베딩 업데이트)
     """
-    logger.info(f"🔄 Updating embedding for: {file_path}")
+    logger.info(f"🔄 Updating embedding for: {_safe_path(file_path)}")
     return {"status": "pending_implementation", "file_path": file_path}
