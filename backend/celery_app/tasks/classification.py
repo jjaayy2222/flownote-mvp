@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import atexit
 from pathlib import Path
 from typing import Dict, Any
 from concurrent.futures import ThreadPoolExecutor
@@ -13,7 +14,17 @@ logger = logging.getLogger(__name__)
 
 # Module-level executor to avoid expensive thread creation on every call
 # Used only when run_async falls back to thread offloading
-_executor = ThreadPoolExecutor(max_workers=1)
+# Initialized lazily to avoid resource creation if not needed
+_executor = None
+
+
+def _get_executor():
+    global _executor
+    if _executor is None:
+        _executor = ThreadPoolExecutor(max_workers=1)
+        # Register cleanup hook
+        atexit.register(_executor.shutdown, wait=True)
+    return _executor
 
 
 def run_async(coro):
@@ -28,18 +39,21 @@ def run_async(coro):
     bound to the original event loop (e.g. connections, locks created on the parent loop).
     Usage restricted to Celery tasks where isolation is acceptable.
     """
-    try:
-        # Check if we are in a thread with a running event loop
-        asyncio.get_running_loop()
-        # If no strict exception raised, a loop is running.
 
+    # Check for running event loop
+    try:
+        asyncio.get_running_loop()
+        has_running_loop = True
+    except RuntimeError:
+        has_running_loop = False
+
+    if has_running_loop:
         # Active loop detected. running .result() here would block the loop -> deadlock.
         # Solution: Run standard asyncio.run in a separate thread.
         # This isolates the new async task from the existing loop.
         logger.debug("Active event loop detected. Offloading to shared executor.")
-        return _executor.submit(asyncio.run, coro).result()
-
-    except RuntimeError:
+        return _get_executor().submit(asyncio.run, coro).result()
+    else:
         # No running loop, safe to use standard asyncio.run
         return asyncio.run(coro)
 
