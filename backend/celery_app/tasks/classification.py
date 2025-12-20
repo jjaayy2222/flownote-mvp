@@ -32,14 +32,20 @@ def _safe_path(path_str: str) -> str:
 
     Returns a string like:
       'ext:.pdf (hash:deadbeef)'
-    or, if no extension is present:
+    or, if no extension is present (no dot suffix):
       'ext:unknown (hash:deadbeef)'
+
+    If path_str is empty/None, returns 'Unknown'.
+    If path is invalid/unparseable, returns 'Invalid Path'.
+    Consumers should treat 'Unknown' and 'Invalid Path' as failure states.
     """
     if not path_str:
         return "Unknown"
 
     try:
         path = Path(path_str)
+        # Note: path.suffix starts with '.', e.g. '.pdf'.
+        # If no suffix, we return 'unknown' explicitly.
         suffix = path.suffix if path.suffix else "unknown"
         path_hash = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:8]
         return f"ext:{suffix} (hash:{path_hash})"
