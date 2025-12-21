@@ -12,6 +12,15 @@ from concurrent.futures import ThreadPoolExecutor
 from backend.celery_app.celery import app
 from backend.services.classification_service import ClassificationService
 
+# Sync & Config Imports
+from backend.config.mcp_config import mcp_config
+from backend.services.obsidian_sync import ObsidianSyncService
+from backend.models.external_sync import (
+    ExternalToolConnection,
+    ExternalToolType,
+    ConnectionConfig,
+)
+
 logger = logging.getLogger(__name__)
 
 # Constants
@@ -113,6 +122,11 @@ def classify_new_file_task(self, file_path: str):
     safe_path = _safe_path(file_path)
     logger.info(f"🚀 Started classification for new file: {safe_path}")
 
+    # Check if safe_path indicates an invalid path before proceeding
+    if safe_path == INVALID_PATH_SENTINEL:
+        logger.error("Skipping classification due to invalid file path")
+        return {"status": "error", "message": "Invalid file path provided"}
+
     try:
         # 파일 내용 읽기
         path_obj = Path(file_path)
@@ -139,10 +153,34 @@ def classify_new_file_task(self, file_path: str):
         )
 
         logger.info(f"✅ Classification completed for {safe_path}: {result.category}")
+
+        # Post-Processing: Move file to PARA folder if Obsidian Sync is enabled
+        new_path = None
+        if mcp_config.obsidian.enabled and result.category:
+            try:
+                # Construct Connection (Stateless connection for this task)
+                conn = ExternalToolConnection(
+                    tool_type=ExternalToolType.OBSIDIAN,
+                    config=ConnectionConfig(
+                        base_path=mcp_config.obsidian.vault_path, enabled=True
+                    ),
+                )
+                sync_service = ObsidianSyncService(conn)
+
+                # Move file (Async wrapped in run_async)
+                new_path = run_async(
+                    sync_service.move_file_to_para(file_path, result.category)
+                )
+                if new_path:
+                    logger.info(f"🚚 Moved file to: {new_path}")
+            except Exception as e:
+                logger.error(f"Failed to move file after classification: {e}")
+
         return {
             "status": "success",
             "category": result.category,
             "confidence": result.confidence,
+            "new_path": new_path,
         }
 
     except Exception as e:
