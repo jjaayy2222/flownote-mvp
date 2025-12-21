@@ -156,25 +156,35 @@ def classify_new_file_task(self, file_path: str):
 
         # Post-Processing: Move file to PARA folder if Obsidian Sync is enabled
         new_path = None
-        if mcp_config.obsidian.enabled and result.category:
-            try:
-                # Construct Connection (Stateless connection for this task)
-                conn = ExternalToolConnection(
-                    tool_type=ExternalToolType.OBSIDIAN,
-                    config=ConnectionConfig(
-                        base_path=mcp_config.obsidian.vault_path, enabled=True
-                    ),
-                )
-                sync_service = ObsidianSyncService(conn)
 
-                # Move file (Async wrapped in run_async)
-                new_path = run_async(
-                    sync_service.move_file_to_para(file_path, result.category)
+        # PARA Validation
+        VALID_PARA_CATEGORIES = {"Projects", "Areas", "Resources", "Archive"}
+
+        if mcp_config.obsidian.enabled and result.category:
+            if result.category not in VALID_PARA_CATEGORIES:
+                logger.warning(
+                    f"⚠️ Skipping move: '{result.category}' is not a valid PARA category. "
+                    f"Valid categories: {VALID_PARA_CATEGORIES}"
                 )
-                if new_path:
-                    logger.info(f"🚚 Moved file to: {new_path}")
-            except Exception as e:
-                logger.error(f"Failed to move file after classification: {e}")
+            else:
+                try:
+                    # Construct Connection (Stateless connection for this task)
+                    conn = ExternalToolConnection(
+                        tool_type=ExternalToolType.OBSIDIAN,
+                        config=ConnectionConfig(
+                            base_path=mcp_config.obsidian.vault_path, enabled=True
+                        ),
+                    )
+                    sync_service = ObsidianSyncService(conn)
+
+                    # Move file (Async wrapped in run_async)
+                    new_path = run_async(
+                        sync_service.move_file_to_para(file_path, result.category)
+                    )
+                    if new_path:
+                        logger.info(f"🚚 Moved file to: {new_path}")
+                except Exception as e:
+                    logger.error(f"Failed to move file after classification: {e}")
 
         return {
             "status": "success",

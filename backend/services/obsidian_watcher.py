@@ -37,49 +37,44 @@ class ObsidianFileEventHandler(FileSystemEventHandler):
             and all(not part.startswith(".") for part in path.parts)
         )
 
-    def on_created(self, event):
+    def _should_process(self, event, path: str, event_type: str) -> bool:
+        """
+        이벤트 처리 여부 결정 헬퍼
+        공통 체크: 디렉터리 여부, Ignore 목록, 파일 유효성
+        """
         if event.is_directory:
+            return False
+
+        if ignore_manager.is_ignored(path):
+            logger.info(f"🙈 Ignoring {event_type} event (Loop Prevention): {path}")
+            return False
+
+        return self._is_valid_file(path)
+
+    def on_created(self, event):
+        if not self._should_process(event, event.src_path, "created"):
             return
 
-        if ignore_manager.is_ignored(event.src_path):
-            logger.info(
-                f"🙈 Ignoring created event (Loop Prevention): {event.src_path}"
-            )
-            return
-
-        if self._is_valid_file(event.src_path):
-            logger.info(f"✨ New file detected: {event.src_path}")
-            # Trigger Celery Task (Async)
-            classify_new_file_task.delay(event.src_path)
+        logger.info(f"✨ New file detected: {event.src_path}")
+        # Trigger Celery Task (Async)
+        classify_new_file_task.delay(event.src_path)
 
     def on_modified(self, event):
-        if event.is_directory:
+        if not self._should_process(event, event.src_path, "modified"):
             return
 
-        if ignore_manager.is_ignored(event.src_path):
-            logger.info(
-                f"🙈 Ignoring modified event (Loop Prevention): {event.src_path}"
-            )
-            return
-
-        if self._is_valid_file(event.src_path):
-            logger.info(f"📝 File modified: {event.src_path}")
-            # Trigger Celery Task (Async)
-            update_embedding_task.delay(event.src_path)
+        logger.info(f"📝 File modified: {event.src_path}")
+        # Trigger Celery Task (Async)
+        update_embedding_task.delay(event.src_path)
 
     def on_moved(self, event):
-        if event.is_directory:
+        # We process the destination path for updates
+        if not self._should_process(event, event.dest_path, "moved"):
             return
 
-        # Check destination path for ignore
-        if ignore_manager.is_ignored(event.dest_path):
-            logger.info(f"🙈 Ignoring moved event (Loop Prevention): {event.dest_path}")
-            return
-
-        if self._is_valid_file(event.dest_path):
-            logger.info(f"📦 File moved: {event.src_path} -> {event.dest_path}")
-            # Treat move/rename as update
-            update_embedding_task.delay(event.dest_path)
+        logger.info(f"📦 File moved: {event.src_path} -> {event.dest_path}")
+        # Treat move/rename as update
+        update_embedding_task.delay(event.dest_path)
 
 
 class ObsidianWatcherService:
