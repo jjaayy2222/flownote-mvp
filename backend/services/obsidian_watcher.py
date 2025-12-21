@@ -2,8 +2,9 @@
 
 import time
 import logging
+import threading
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -12,6 +13,7 @@ from backend.celery_app.tasks.classification import (
     classify_new_file_task,
     update_embedding_task,
 )
+from backend.services.ignore_manager import ignore_manager
 
 logger = logging.getLogger(__name__)
 
@@ -36,23 +38,47 @@ class ObsidianFileEventHandler(FileSystemEventHandler):
         )
 
     def on_created(self, event):
-        if not event.is_directory and self._is_valid_file(event.src_path):
+        if event.is_directory:
+            return
+
+        if ignore_manager.is_ignored(event.src_path):
+            logger.info(
+                f"🙈 Ignoring created event (Loop Prevention): {event.src_path}"
+            )
+            return
+
+        if self._is_valid_file(event.src_path):
             logger.info(f"✨ New file detected: {event.src_path}")
             # Trigger Celery Task (Async)
             classify_new_file_task.delay(event.src_path)
 
     def on_modified(self, event):
-        if not event.is_directory and self._is_valid_file(event.src_path):
+        if event.is_directory:
+            return
+
+        if ignore_manager.is_ignored(event.src_path):
+            logger.info(
+                f"🙈 Ignoring modified event (Loop Prevention): {event.src_path}"
+            )
+            return
+
+        if self._is_valid_file(event.src_path):
             logger.info(f"📝 File modified: {event.src_path}")
             # Trigger Celery Task (Async)
             update_embedding_task.delay(event.src_path)
 
     def on_moved(self, event):
-        if not event.is_directory and self._is_valid_file(event.dest_path):
+        if event.is_directory:
+            return
+
+        # Check destination path for ignore
+        if ignore_manager.is_ignored(event.dest_path):
+            logger.info(f"🙈 Ignoring moved event (Loop Prevention): {event.dest_path}")
+            return
+
+        if self._is_valid_file(event.dest_path):
             logger.info(f"📦 File moved: {event.src_path} -> {event.dest_path}")
-            # Treat move/rename as new file for classification check?
-            # Or update embedding registry.
-            # For now, trigger embedding update on destination
+            # Treat move/rename as update
             update_embedding_task.delay(event.dest_path)
 
 
