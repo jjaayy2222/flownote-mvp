@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 # Constants
 INVALID_PATH_SENTINEL = "Invalid Path"
+VALID_PARA_CATEGORIES = {"Projects", "Areas", "Resources", "Archive"}
 
 # Module-level executor to avoid expensive thread creation on every call
 # Used only when run_async falls back to thread offloading
@@ -157,14 +158,13 @@ def classify_new_file_task(self, file_path: str):
         # Post-Processing: Move file to PARA folder if Obsidian Sync is enabled
         new_path = None
 
-        # PARA Validation
-        VALID_PARA_CATEGORIES = {"Projects", "Areas", "Resources", "Archive"}
-
         if mcp_config.obsidian.enabled and result.category:
             if result.category not in VALID_PARA_CATEGORIES:
+                valid_categories_display = ", ".join(sorted(VALID_PARA_CATEGORIES))
                 logger.warning(
-                    f"⚠️ Skipping move: '{result.category}' is not a valid PARA category. "
-                    f"Valid categories: {VALID_PARA_CATEGORIES}"
+                    "⚠️ Skipping move: '%s' is not a valid PARA category. Valid categories: %s",
+                    result.category,
+                    valid_categories_display,
                 )
             else:
                 try:
