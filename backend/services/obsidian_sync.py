@@ -32,6 +32,11 @@ class ObsidianSyncService(SyncServiceBase):
         if not self.vault_path.exists():
             logger.error(f"Obsidian Vault path not found: {self.vault_path}")
             return False
+
+        if not self.vault_path.is_dir():
+            logger.error(f"Obsidian Vault path is not a directory: {self.vault_path}")
+            return False
+
         return True
 
     async def sync_all(self) -> List[SyncConflict]:

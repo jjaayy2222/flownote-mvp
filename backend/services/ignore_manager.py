@@ -2,6 +2,7 @@
 
 import time
 import threading
+from pathlib import Path
 from typing import Dict, Optional
 
 
@@ -16,16 +17,25 @@ class IgnoreManager:
         self._lock = threading.Lock()
 
     def add(self, path: str, duration: float = 2.0):
-        """특정 경로를 duration(초) 동안 무시 목록애 추가"""
+        """특정 경로를 duration(초) 동안 무시 목록에 추가"""
+        try:
+            resolved_path = str(Path(path).resolve())
+        except Exception:
+            resolved_path = str(path)
+
         with self._lock:
-            self._ignores[str(path)] = time.time() + duration
+            self._ignores[resolved_path] = time.time() + duration
             # Cleanup expired items casually
             self._cleanup()
 
     def is_ignored(self, path: str) -> bool:
         """현재 경로가 무시되어야 하는지 확인"""
-        with self._lock:
+        try:
+            path_str = str(Path(path).resolve())
+        except Exception:
             path_str = str(path)
+
+        with self._lock:
             if path_str not in self._ignores:
                 return False
 
