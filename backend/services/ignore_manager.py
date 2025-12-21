@@ -16,13 +16,20 @@ class IgnoreManager:
         self._ignores: Dict[str, float] = {}  # path -> expiration_timestamp
         self._lock = threading.Lock()
 
+    def _normalize_path(self, path: str) -> str:
+        """
+        경로를 정규화하여 일관된 문자열 포맷으로 반환합니다.
+        절대 경로 변환 실패 시 원본 문자열을 반환합니다.
+        """
+        try:
+            return str(Path(path).resolve())
+        except (OSError, ValueError):
+            # 파일 시스템 접근 불가 등의 사유로 resolve 실패 시 원본 사용
+            return str(path)
+
     def add(self, path: str, duration: float = 2.0):
         """특정 경로를 duration(초) 동안 무시 목록에 추가"""
-        try:
-            resolved_path = str(Path(path).resolve())
-        except Exception:
-            resolved_path = str(path)
-
+        resolved_path = self._normalize_path(path)
         with self._lock:
             self._ignores[resolved_path] = time.time() + duration
             # Cleanup expired items casually
@@ -30,11 +37,7 @@ class IgnoreManager:
 
     def is_ignored(self, path: str) -> bool:
         """현재 경로가 무시되어야 하는지 확인"""
-        try:
-            path_str = str(Path(path).resolve())
-        except Exception:
-            path_str = str(path)
-
+        path_str = self._normalize_path(path)
         with self._lock:
             if path_str not in self._ignores:
                 return False
