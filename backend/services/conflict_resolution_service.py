@@ -11,6 +11,7 @@ import shutil
 from typing import Optional
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 from backend.models.conflict import (
     SyncConflict,
@@ -147,9 +148,18 @@ class ConflictResolutionService:
             backup_path = local_path.parent / backup_name
 
             # 3. 로컬 파일 백업 (Loop Prevention)
-            ignore_manager.add(str(backup_path))
-            shutil.copy2(str(local_path), str(backup_path))
-            logger.info(f"✅ Created conflict backup: {backup_path.name}")
+            # NOTE: ignore_manager.add는 백업 성공 후에만 호출하여 실패 시 무시 방지
+            try:
+                shutil.copy2(str(local_path), str(backup_path))
+            except OSError as e:
+                logger.error(
+                    "⚠️ Failed to create conflict backup '%s': %s", backup_path, e
+                )
+                return False
+            else:
+                # 백업 성공 시에만 ignore 등록
+                ignore_manager.add(str(backup_path))
+                logger.info(f"✅ Created conflict backup: {backup_path.name}")
 
             # 4. 원격 파일 Pull
             remote_content = await self.sync_service.pull_file(conflict.external_path)
@@ -200,8 +210,10 @@ class ConflictResolutionService:
 
         Step 4 요구사항: 충돌 이력 로깅
         """
+        # 로그 ID를 유니크하게 생성 (동일 충돌 재시도 시 ID 충돌 방지)
+        uuid_suffix = uuid4().hex[:8]
         log_entry = ExternalSyncLog(
-            id=f"sync_log_{conflict.conflict_id}",
+            id=f"sync_log_{conflict.conflict_id}_{uuid_suffix}",
             timestamp=datetime.now(),
             tool_type=conflict.tool_type,
             action=action,
