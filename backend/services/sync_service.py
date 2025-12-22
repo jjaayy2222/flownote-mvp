@@ -80,6 +80,67 @@ class SyncServiceBase(ABC):
         """
         return not last_synced_hash or current_hash != last_synced_hash
 
+    def detect_conflict_3way(
+        self,
+        local_hash: str,
+        remote_hash: str,
+        last_synced_hash: Optional[str],
+    ) -> Optional[SyncConflict]:
+        """
+        3-way 충돌 감지 (Step 4 핵심 로직)
+
+        충돌 시나리오:
+        1. 양쪽 모두 변경됨 (local != last_synced AND remote != last_synced)
+        2. 로컬만 변경됨 -> 충돌 아님 (Push 필요)
+        3. 원격만 변경됨 -> 충돌 아님 (Pull 필요)
+        4. 양쪽 동일 -> 충돌 아님
+
+        Args:
+            local_hash: 현재 로컬 파일 해시
+            remote_hash: 현재 원격 파일 해시
+            last_synced_hash: 마지막 동기화 시점 해시
+
+        Returns:
+            SyncConflict if conflict detected, None otherwise
+        """
+        # 초기 동기화 (last_synced_hash 없음)
+        if not last_synced_hash:
+            if local_hash != remote_hash:
+                logger.info(
+                    "First sync detected with different content. Treating as remote-wins."
+                )
+                return None  # 초기 동기화는 충돌로 간주하지 않음
+            return None
+
+        # 양쪽 모두 변경되지 않음
+        if local_hash == remote_hash == last_synced_hash:
+            return None
+
+        # 로컬만 변경됨
+        local_changed = local_hash != last_synced_hash
+        remote_changed = remote_hash != last_synced_hash
+
+        if local_changed and not remote_changed:
+            logger.debug("Local-only change detected. Push required.")
+            return None
+
+        # 원격만 변경됨
+        if remote_changed and not local_changed:
+            logger.debug("Remote-only change detected. Pull required.")
+            return None
+
+        # 양쪽 모두 변경됨 -> 충돌!
+        if local_changed and remote_changed:
+            logger.warning(
+                f"⚠️ CONFLICT DETECTED: Both local and remote modified since last sync. "
+                f"Local: {local_hash[:8]}, Remote: {remote_hash[:8]}, Last: {last_synced_hash[:8]}"
+            )
+            # SyncConflict 객체는 호출자가 생성 (file_id, external_path 필요)
+            # 여기서는 충돌 여부만 반환
+            return True  # Placeholder: 실제로는 SyncConflict 객체 반환 필요
+
+        return None
+
     async def _handle_conflict(self, conflict: SyncConflict) -> bool:
         """
         [공통] 충돌 발생 시 처리 (DB 기록 등)
