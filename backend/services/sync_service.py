@@ -16,7 +16,7 @@ from backend.models.external_sync import (
     ExternalFileMapping,
     SyncStatus,
 )
-from backend.models.conflict import SyncConflict, ResolutionMethod
+from backend.models.conflict import SyncConflict, SyncConflictType, ResolutionMethod
 
 logger = logging.getLogger(__name__)
 
@@ -107,8 +107,6 @@ class SyncServiceBase(ABC):
         Returns:
             SyncConflict object if conflict detected, None otherwise
         """
-        from backend.models.conflict import SyncConflictType
-
         # 초기 동기화 (last_synced_hash 없음)
         if not last_synced_hash:
             if local_hash != remote_hash:

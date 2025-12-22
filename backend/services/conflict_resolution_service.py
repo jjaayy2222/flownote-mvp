@@ -152,8 +152,11 @@ class ConflictResolutionService:
             try:
                 shutil.copy2(str(local_path), str(backup_path))
             except OSError as e:
-                logger.error(
-                    "⚠️ Failed to create conflict backup '%s': %s", backup_path, e
+                # 부분 백업 파일 정리 (손상된 파일이 남지 않도록)
+                backup_path.unlink(missing_ok=True)
+                logger.exception(
+                    "⚠️ Failed to create conflict backup '%s'. Partial file cleaned up.",
+                    backup_path,
                 )
                 return False
             else:
@@ -210,8 +213,8 @@ class ConflictResolutionService:
 
         Step 4 요구사항: 충돌 이력 로깅
         """
-        # 로그 ID를 유니크하게 생성 (동일 충돌 재시도 시 ID 충돌 방지)
-        uuid_suffix = uuid4().hex[:8]
+        # 로그 ID를 유니크하게 생성 (동일 충돌 재시도 시 ID 충돌 방지, 충분한 엔트로피 확보)
+        uuid_suffix = uuid4().hex  # 32자 전체를 사용하여 충돌 가능성 최소화
         log_entry = ExternalSyncLog(
             id=f"sync_log_{conflict.conflict_id}_{uuid_suffix}",
             timestamp=datetime.now(),
