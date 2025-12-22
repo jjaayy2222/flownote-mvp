@@ -159,9 +159,8 @@ class ConflictResolutionService:
                 except OSError as cleanup_error:
                     # 정리 실패는 무시하되, 디버깅을 위해 debug 레벨로 로깅
                     logger.debug(
-                        "Cleanup failed for partial backup '%s' (non-critical): %s",
+                        "Cleanup failed for partial backup '%s' (non-critical)",
                         backup_path,
-                        cleanup_error,
                         exc_info=True,
                     )
 
