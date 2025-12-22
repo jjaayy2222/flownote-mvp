@@ -153,9 +153,15 @@ class ConflictResolutionService:
                 shutil.copy2(str(local_path), str(backup_path))
             except OSError as e:
                 # 부분 백업 파일 정리 (손상된 파일이 남지 않도록)
-                backup_path.unlink(missing_ok=True)
+                # NOTE: 정리 실패는 원본 에러를 가리지 않도록 무시 (best-effort cleanup)
+                try:
+                    backup_path.unlink(missing_ok=True)
+                except OSError:
+                    # 정리 실패는 무시 (권한 문제, 읽기 전용 파일 시스템 등)
+                    pass
+
                 logger.exception(
-                    "⚠️ Failed to create conflict backup '%s'. Partial file cleaned up.",
+                    "⚠️ Failed to create conflict backup '%s'. Partial file cleanup attempted.",
                     backup_path,
                 )
                 return False
