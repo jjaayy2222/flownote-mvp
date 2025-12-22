@@ -82,6 +82,8 @@ class SyncServiceBase(ABC):
 
     def detect_conflict_3way(
         self,
+        file_id: str,
+        external_path: str,
         local_hash: str,
         remote_hash: str,
         last_synced_hash: Optional[str],
@@ -90,19 +92,23 @@ class SyncServiceBase(ABC):
         3-way 충돌 감지 (Step 4 핵심 로직)
 
         충돌 시나리오:
-        1. 양쪽 모두 변경됨 (local != last_synced AND remote != last_synced)
+        1. 양쪽 모두 변경됨 (local != last_synced AND remote != last_synced) -> CONFLICT
         2. 로컬만 변경됨 -> 충돌 아님 (Push 필요)
         3. 원격만 변경됨 -> 충돌 아님 (Pull 필요)
         4. 양쪽 동일 -> 충돌 아님
 
         Args:
+            file_id: 내부 파일 ID (absolute path)
+            external_path: 외부 파일 경로
             local_hash: 현재 로컬 파일 해시
             remote_hash: 현재 원격 파일 해시
             last_synced_hash: 마지막 동기화 시점 해시
 
         Returns:
-            SyncConflict if conflict detected, None otherwise
+            SyncConflict object if conflict detected, None otherwise
         """
+        from backend.models.conflict import SyncConflictType
+
         # 초기 동기화 (last_synced_hash 없음)
         if not last_synced_hash:
             if local_hash != remote_hash:
@@ -135,9 +141,16 @@ class SyncServiceBase(ABC):
                 f"⚠️ CONFLICT DETECTED: Both local and remote modified since last sync. "
                 f"Local: {local_hash[:8]}, Remote: {remote_hash[:8]}, Last: {last_synced_hash[:8]}"
             )
-            # SyncConflict 객체는 호출자가 생성 (file_id, external_path 필요)
-            # 여기서는 충돌 여부만 반환
-            return True  # Placeholder: 실제로는 SyncConflict 객체 반환 필요
+
+            # SyncConflict 객체 생성 및 반환
+            return SyncConflict(
+                file_id=file_id,
+                external_path=external_path,
+                tool_type=self.tool_type,
+                conflict_type=SyncConflictType.CONTENT_MISMATCH,
+                local_hash=local_hash,
+                remote_hash=remote_hash,
+            )
 
         return None
 
