@@ -156,9 +156,14 @@ class ConflictResolutionService:
                 # NOTE: 정리 실패는 원본 에러를 가리지 않도록 무시 (best-effort cleanup)
                 try:
                     backup_path.unlink(missing_ok=True)
-                except OSError:
-                    # 정리 실패는 무시 (권한 문제, 읽기 전용 파일 시스템 등)
-                    pass
+                except OSError as cleanup_error:
+                    # 정리 실패는 무시하되, 디버깅을 위해 debug 레벨로 로깅
+                    logger.debug(
+                        "Cleanup failed for partial backup '%s' (non-critical): %s",
+                        backup_path,
+                        cleanup_error,
+                        exc_info=True,
+                    )
 
                 logger.exception(
                     "⚠️ Failed to create conflict backup '%s'. Partial file cleanup attempted.",
