@@ -120,9 +120,14 @@ async def test_conflict_detection_and_rename_resolution(mock_vault: Path, map_ma
     last_synced_hash = "different_hash"  # 양쪽 모두 변경됨
 
     # Act: 충돌 감지
+    # 원격 파일 생성 (별도 경로)
+    remote_file = mock_vault / '.remote' / 'conflict_note.md'
+    remote_file.parent.mkdir(exist_ok=True)
+    remote_file.write_text(remote_content, encoding='utf-8')
+
     conflict = sync_service.detect_conflict_3way(
         file_id=str(conflict_file),
-        external_path=str(conflict_file),
+        external_path=str(remote_file),
         local_hash=local_hash,
         remote_hash=remote_hash,
         last_synced_hash=last_synced_hash,
@@ -143,18 +148,30 @@ async def test_conflict_detection_and_rename_resolution(mock_vault: Path, map_ma
         conflict_id=conflict.conflict_id,
     )
 
-    # 원격 파일 시뮬레이션 (실제로는 pull_file이 호출됨)
-    # 여기서는 직접 파일에 원격 내용 작성
-    conflict_file.write_text(remote_content, encoding="utf-8")
-
     resolution = await resolution_service.resolve_conflict(conflict, strategy)
 
     # Assert: 해결 상태 확인
-    # Note: 현재 구현에서는 pull_file이 실제 파일을 읽으므로,
-    # 백업 파일 생성 여부만 확인
+    assert resolution.status == ResolutionStatus.RESOLVED, "충돌 해결이 성공해야 함"
+    assert resolution.conflict_id == conflict.conflict_id, "충돌 ID가 일치해야 함"
+
+    # Assert: 백업 파일 생성 확인
     backup_files = list(mock_vault.glob("conflict_note_conflict_*.md"))
-    # 실제 Rename 로직은 파일이 존재할 때만 동작하므로,
-    # 이 테스트에서는 로직 검증에 집중
+    assert len(backup_files) >= 1, "백업 파일이 최소 1개 생성되어야 함"
+
+    # 백업 파일 이름 검증
+    backup_file = backup_files[0]
+    assert backup_file.name.startswith(
+        "conflict_note_conflict_"
+    ), "백업 파일 이름 형식 확인"
+    assert backup_file.suffix == ".md", "백업 파일 확장자 확인"
+
+    # Assert: 백업 파일 내용 확인 (로컬 내용 보존)
+    backup_content = backup_file.read_text(encoding="utf-8")
+    assert backup_content == local_content, "백업 파일에 로컬 내용이 보존되어야 함"
+
+    # Assert: 원본 파일 내용 확인 (원격 내용 적용)
+    final_content = conflict_file.read_text(encoding="utf-8")
+    assert final_content == remote_content, "원본 파일에 원격 내용이 적용되어야 함"
 
 
 # ==========================================
@@ -234,3 +251,47 @@ async def test_no_conflict_when_only_remote_changed(mock_vault: Path):
 
     # Assert
     assert conflict is None, "원격만 변경 시 충돌이 없어야 함"
+
+
+# ==========================================
+# Test: MCP Tools 호출 검증
+# ==========================================
+
+
+@pytest.mark.asyncio
+async def test_mcp_tools_integration(mock_vault: Path):
+    """
+    [Integration] MCP Tools 호출 검증
+
+    시나리오:
+    1. MCP 서버의 classify_content 도구 시뮬레이션
+    2. 테스트 텍스트 분류
+    3. 결과 검증
+
+    Note: 이 테스트는 MCP 도구 통합 경로를 검증합니다.
+    실제 MCP 서버 호출은 E2E 테스트에서 수행됩니다.
+    """
+    # Arrange: 분류할 텍스트 준비
+    test_text = "오늘 프로젝트 회의가 있습니다. 마감일은 다음주입니다."
+
+    # MCP 도구 호출 시뮬레이션
+    # 실제 구현에서는 backend.mcp.server의 classify_content를 호출
+    from backend.services.classification_service import ClassificationService
+
+    service = ClassificationService()
+
+    # Act: 분류 실행
+    result = await service.classify(
+        text=test_text, file_id="test_mcp_001", user_id="test_user"
+    )
+
+    # Assert: 분류 결과 검증
+    assert result is not None, "분류 결과가 반환되어야 함"
+    assert result.category in [
+        "Projects",
+        "Areas",
+        "Resources",
+        "Archive",
+    ], "유효한 PARA 카테고리가 반환되어야 함"
+    assert 0.0 <= result.confidence <= 1.0, "신뢰도가 0-1 범위여야 함"
+    assert result.reasoning is not None, "분류 이유가 제공되어야 함"
