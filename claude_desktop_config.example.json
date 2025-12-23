@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "flownote": {
+      "command": "python",
+      "args": [
+        "-m",
+        "backend.mcp.server"
+      ],
+      "cwd": "/path/to/your/flownote-mvp",
+      "env": {
+        "OBSIDIAN_VAULT_PATH": "/path/to/your/ObsidianVault",
+        "OBSIDIAN_SYNC_ENABLED": "true",
+        "OBSIDIAN_SYNC_INTERVAL": "300"
+      }
+    }
+  }
+}
