@@ -177,3 +177,8 @@ celerybeat.pid
 
 # Automation 관련 data
 data/automation_logs/
+
+# Claude Desktop 개인 설정 (개인 경로 포함)
+claude_desktop_config.json
+
+
