@@ -13,7 +13,7 @@ from pathlib import Path
 import logging
 
 from backend.services.obsidian_sync import ObsidianSyncService
-from backend.config.mcp_config import get_mcp_config
+from backend.config.mcp_config import mcp_config
 from backend.models.external_sync import SyncStatus, ExternalToolType
 from pydantic import BaseModel
 
@@ -75,11 +75,15 @@ async def get_sync_status():
         SyncStatusResponse: 동기화 상태 정보
     """
     try:
-        config = get_mcp_config()
+        config = mcp_config
 
         # Vault 경로 확인
-        vault_path = Path(config.obsidian.vault_path) if config.obsidian.vault_path else None
-        connected = vault_path is not None and vault_path.exists() and vault_path.is_dir()
+        vault_path = (
+            Path(config.obsidian.vault_path) if config.obsidian.vault_path else None
+        )
+        connected = (
+            vault_path is not None and vault_path.exists() and vault_path.is_dir()
+        )
 
         # 파일 개수 계산
         file_count = 0
@@ -111,7 +115,7 @@ async def get_mcp_status():
     try:
         # TODO: 실제 MCP 서버 상태는 backend.mcp.server에서 조회
         # 현재는 설정 기반으로 응답
-        config = get_mcp_config()
+        config = mcp_config
 
         # Placeholder 데이터
         return MCPStatusResponse(
