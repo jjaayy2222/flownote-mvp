@@ -15,6 +15,9 @@ from backend.classifier.para_classifier import PARAClassifier
 from backend.classifier.para_agent_wrapper import run_para_agent_sync
 
 
+from unittest.mock import patch, AsyncMock
+
+
 def test_prompt_conflict(client):
     """
     애매한 내용이 담긴 텍스트를 분류하여 충돌 감지 및 최종 분류가 정상적으로 이루어지는지 테스트
@@ -27,10 +30,22 @@ def test_prompt_conflict(client):
     # 2. 파일 업로드 방식으로 요청
     files = {"file": ("python_tutorial.txt", file_content, "text/plain")}
 
-    response = client.post(
-        "/classifier/file",
-        files=files,
-    )
+    # Mocking: HybridClassifier
+    with patch(
+        "backend.classifier.hybrid_classifier.HybridClassifier.classify",
+        new_callable=AsyncMock,
+    ) as mock_hybrid:
+        mock_hybrid.return_value = {
+            "category": "Resources",
+            "confidence": 0.6,
+            "reasoning": "Mocked Reasoning",
+            "snapshot_id": "mock_snapshot_123",
+        }
+
+        response = client.post(
+            "/classifier/file",
+            files=files,
+        )
 
     # 기본 응답 검증
     assert (

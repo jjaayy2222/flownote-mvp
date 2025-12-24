@@ -48,7 +48,8 @@ def _perform_file_classification(client, user_id):
 
     # ClassificationService 내부의 외부 호출 Mocking
     with patch(
-        "backend.services.classification_service.run_para_agent", new_callable=AsyncMock
+        "backend.classifier.hybrid_classifier.HybridClassifier.classify",
+        new_callable=AsyncMock,
     ) as mock_para:
         mock_para.return_value = mock_para_result
 
@@ -82,13 +83,13 @@ def _perform_file_classification(client, user_id):
             assert "keyword_tags" in result
 
 
-@patch('backend.services.gpt_helper.GPT4oHelper.suggest_areas')
+@patch("backend.services.gpt_helper.GPT4oHelper.suggest_areas")
 def test_full_onboarding_and_classification_flow(mock_suggest, client):
     # Mock 설정
     mock_suggest.return_value = {
         "status": "success",
         "areas": ["Python", "AI", "Web"],
-        "message": "Mocked response"
+        "message": "Mocked response",
     }
     """
     E2E 테스트: 온보딩 -> 분류 전체 흐름 검증

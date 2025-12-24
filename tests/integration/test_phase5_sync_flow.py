@@ -121,9 +121,9 @@ async def test_conflict_detection_and_rename_resolution(mock_vault: Path, map_ma
 
     # Act: 충돌 감지
     # 원격 파일 생성 (별도 경로)
-    remote_file = mock_vault / '.remote' / 'conflict_note.md'
+    remote_file = mock_vault / ".remote" / "conflict_note.md"
     remote_file.parent.mkdir(exist_ok=True)
-    remote_file.write_text(remote_content, encoding='utf-8')
+    remote_file.write_text(remote_content, encoding="utf-8")
 
     conflict = sync_service.detect_conflict_3way(
         file_id=str(conflict_file),
@@ -258,6 +258,11 @@ async def test_no_conflict_when_only_remote_changed(mock_vault: Path):
 # ==========================================
 
 
+# ==========================================
+# Test: MCP Tools 호출 검증
+# ==========================================
+
+
 @pytest.mark.asyncio
 async def test_mcp_tools_integration(mock_vault: Path):
     """
@@ -271,6 +276,8 @@ async def test_mcp_tools_integration(mock_vault: Path):
     Note: 이 테스트는 MCP 도구 통합 경로를 검증합니다.
     실제 MCP 서버 호출은 E2E 테스트에서 수행됩니다.
     """
+    from unittest.mock import patch, AsyncMock
+
     # Arrange: 분류할 텍스트 준비
     test_text = "오늘 프로젝트 회의가 있습니다. 마감일은 다음주입니다."
 
@@ -281,9 +288,21 @@ async def test_mcp_tools_integration(mock_vault: Path):
     service = ClassificationService()
 
     # Act: 분류 실행
-    result = await service.classify(
-        text=test_text, file_id="test_mcp_001", user_id="test_user"
-    )
+    # 실제 API 호출 방지를 위해 HybridClassifier.classify를 Mocking
+    with patch(
+        "backend.classifier.hybrid_classifier.HybridClassifier.classify",
+        new_callable=AsyncMock,
+    ) as mock_hybrid:
+        mock_hybrid.return_value = {
+            "category": "Projects",
+            "confidence": 0.85,
+            "reasoning": "Mocked PARA result",
+            "snapshot_id": "mock_snapshot_123",
+        }
+
+        result = await service.classify(
+            text=test_text, file_id="test_mcp_001", user_id="test_user"
+        )
 
     # Assert: 분류 결과 검증
     assert result is not None, "분류 결과가 반환되어야 함"
