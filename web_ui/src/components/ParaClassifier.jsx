@@ -1,6 +1,7 @@
 // frontend/components/ParaClassifier.jsx
 
 import React, { useState } from 'react';
+import { API_BASE } from '../utils/api';
 import './ParaClassifier.css';
 
 export default function ParaClassifier() {
@@ -24,7 +25,7 @@ export default function ParaClassifier() {
     formData.append('file', file);
 
     try {
-      const response = await fetch('http://localhost:8000/api/classify', {
+      const response = await fetch(`${API_BASE}/api/classify`, {
         method: 'POST',
         body: formData,
       });

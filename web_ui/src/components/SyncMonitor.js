@@ -1,6 +1,9 @@
 // web_ui/src/components/SyncMonitor.js
 
 import React, { useState, useEffect } from 'react';
+import { API_BASE, normalizeStatus, STATUS_MAP } from '../utils/api';
+import LoadingSpinner from './common/LoadingSpinner';
+import ErrorMessage from './common/ErrorMessage';
 import './SyncMonitor.css';
 
 const SyncMonitor = () => {
@@ -10,57 +13,49 @@ const SyncMonitor = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const API_BASE = 'http://localhost:8000';
-
   // Fetch sync status
   const fetchSyncStatus = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/sync/status`);
-      if (!response.ok) throw new Error('Failed to fetch sync status');
-      const data = await response.json();
-      setSyncStatus(data);
-    } catch (err) {
-      console.error('Sync status error:', err);
-      setError(err.message);
-    }
+    const response = await fetch(`${API_BASE}/api/sync/status`);
+    if (!response.ok) throw new Error('Failed to fetch sync status');
+    const data = await response.json();
+    setSyncStatus(data);
   };
 
   // Fetch MCP status
   const fetchMCPStatus = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/sync/mcp/status`);
-      if (!response.ok) throw new Error('Failed to fetch MCP status');
-      const data = await response.json();
-      setMcpStatus(data);
-    } catch (err) {
-      console.error('MCP status error:', err);
-      setError(err.message);
-    }
+    const response = await fetch(`${API_BASE}/api/sync/mcp/status`);
+    if (!response.ok) throw new Error('Failed to fetch MCP status');
+    const data = await response.json();
+    setMcpStatus(data);
   };
 
   // Fetch conflicts
   const fetchConflicts = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/sync/conflicts?limit=10`);
-      if (!response.ok) throw new Error('Failed to fetch conflicts');
-      const data = await response.json();
-      setConflicts(data);
-    } catch (err) {
-      console.error('Conflicts error:', err);
-      setError(err.message);
-    }
+    const response = await fetch(`${API_BASE}/api/sync/conflicts?limit=10`);
+    if (!response.ok) throw new Error('Failed to fetch conflicts');
+    const data = await response.json();
+    setConflicts(data);
   };
 
-  // Initial load
+  // Initial load and polling
   useEffect(() => {
     const loadAll = async () => {
       setLoading(true);
-      await Promise.all([
-        fetchSyncStatus(),
-        fetchMCPStatus(),
-        fetchConflicts()
-      ]);
-      setLoading(false);
+      setError(null); // Clear previous errors
+      
+      try {
+        await Promise.all([
+          fetchSyncStatus(),
+          fetchMCPStatus(),
+          fetchConflicts()
+        ]);
+        setError(null); // Explicitly clear error on success
+      } catch (err) {
+        console.error('Sync monitor error:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
     };
 
     loadAll();
@@ -71,22 +66,11 @@ const SyncMonitor = () => {
   }, []);
 
   if (loading) {
-    return (
-      <div className="sync-monitor loading">
-        <div className="spinner"></div>
-        <p>Loading sync status...</p>
-      </div>
-    );
+    return <LoadingSpinner message="Loading sync status..." color="#3498db" />;
   }
 
   if (error) {
-    return (
-      <div className="sync-monitor error">
-        <h2>⚠️ Error</h2>
-        <p>{error}</p>
-        <button onClick={() => window.location.reload()}>Retry</button>
-      </div>
-    );
+    return <ErrorMessage message={error} onRetry={() => window.location.reload()} />;
   }
 
   return (
@@ -184,7 +168,7 @@ const SyncMonitor = () => {
               <div key={conflict.conflict_id} className="conflict-item">
                 <div className="conflict-header">
                   <span className="conflict-id">{conflict.conflict_id}</span>
-                  <span className={`conflict-status status-${conflict.status}`}>
+                  <span className={`conflict-status status-${normalizeStatus(conflict.status, STATUS_MAP)}`}>
                     {conflict.status}
                   </span>
                 </div>
