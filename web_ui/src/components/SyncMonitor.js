@@ -1,7 +1,7 @@
 // web_ui/src/components/SyncMonitor.js
 
 import React, { useState, useEffect } from 'react';
-import { API_BASE, fetchAPI, normalizeStatus } from '../utils/api';
+import { API_BASE, fetchAPI, getStatusClassName } from '../utils/api';
 import LoadingSpinner from './common/LoadingSpinner';
 import ErrorMessage from './common/ErrorMessage';
 import './SyncMonitor.css';
@@ -168,7 +168,7 @@ const SyncMonitor = () => {
               <div key={conflict.conflict_id} className="conflict-item">
                 <div className="conflict-header">
                   <span className="conflict-id">{conflict.conflict_id}</span>
-                  <span className={`conflict-status status-${normalizeStatus(conflict.status)}`}>
+                  <span className={`conflict-status ${getStatusClassName(conflict.status)}`}>
                     {conflict.status}
                   </span>
                 </div>
