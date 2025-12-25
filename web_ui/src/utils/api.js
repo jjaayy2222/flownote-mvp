@@ -15,54 +15,62 @@
 export const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000';
 
 /**
- * 상태 값을 CSS 클래스명으로 정규화
+ * 공통 상태 매핑
  * 
- * @param {string} status - 원본 상태 값
- * @param {Object} statusMap - 상태 매핑 객체
- * @returns {string} 정규화된 CSS 클래스명
+ * 모든 상태 값을 정규화된 CSS 클래스명으로 매핑합니다.
+ * 중복 제거: 동일한 키-값 쌍은 한 번만 정의
  */
-export const normalizeStatus = (status, statusMap = {}) => {
-  if (!status) return 'unknown';
+export const STATUS_MAP = {
+  // Connection status
+  connected: 'connected',
+  disconnected: 'disconnected',
   
-  const normalized = status.toLowerCase().trim();
-  return statusMap[normalized] || normalized;
+  // Server/Task status
+  running: 'running',
+  stopped: 'stopped',
+  success: 'success',
+  failed: 'failed',
+  pending: 'pending',
+  completed: 'completed',
+  resolved: 'resolved',
+  
+  // Fallback
+  unknown: 'unknown',
 };
 
 /**
- * 공통 상태 매핑
+ * 상태 값을 CSS 클래스명으로 정규화
+ * 
+ * @param {any} status - 원본 상태 값 (문자열이 아니어도 문자열로 변환하여 처리)
+ * @returns {string} 정규화된 CSS 클래스명
+ * 
+ * @example
+ * normalizeStatus('Connected') // 'connected'
+ * normalizeStatus('RUNNING')   // 'running'
+ * normalizeStatus(null)        // 'unknown'
+ * normalizeStatus(123)         // 'unknown' (숫자는 매핑되지 않음)
  */
-export const STATUS_MAP = {
-  // Sync status
-  'connected': 'connected',
-  'disconnected': 'disconnected',
+export const normalizeStatus = (status) => {
+  // null, undefined 체크
+  if (status == null) return 'unknown';
   
-  // MCP status
-  'running': 'running',
-  'stopped': 'stopped',
+  // 문자열로 변환 후 정규화
+  const normalized = String(status).toLowerCase().trim();
   
-  // Task status
-  'success': 'success',
-  'running': 'running',
-  'failed': 'failed',
-  'pending': 'pending',
-  
-  // Event status
-  'completed': 'completed',
-  'pending': 'pending',
-  'failed': 'failed',
-  
-  // Conflict status
-  'resolved': 'resolved',
-  'pending': 'pending',
+  // STATUS_MAP에서 찾거나, 없으면 정규화된 값 그대로 반환
+  return STATUS_MAP[normalized] || normalized;
 };
 
 /**
  * Fetch with error handling
  * 
- * @param {string} url - API endpoint URL
+ * @param {string} url - API endpoint URL (full URL)
  * @param {Object} options - fetch options
  * @returns {Promise<Object>} Response data
  * @throws {Error} Fetch error
+ * 
+ * @example
+ * const data = await fetchAPI(`${API_BASE}/api/tasks`);
  */
 export const fetchAPI = async (url, options = {}) => {
   try {
@@ -78,4 +86,24 @@ export const fetchAPI = async (url, options = {}) => {
     console.error(`API Error [${url}]:`, error);
     throw error;
   }
+};
+
+/**
+ * Response 데이터 검증 헬퍼
+ * 
+ * @param {any} data - 검증할 데이터
+ * @param {Function} validator - 검증 함수
+ * @param {string} errorMessage - 에러 메시지
+ * @returns {any} 검증된 데이터
+ * @throws {Error} 검증 실패 시
+ * 
+ * @example
+ * const data = await fetchAPI(`${API_BASE}/api/tasks`);
+ * validateResponse(data, (d) => Array.isArray(d.tasks), 'Invalid tasks response');
+ */
+export const validateResponse = (data, validator, errorMessage = 'Invalid response') => {
+  if (!validator(data)) {
+    throw new Error(errorMessage);
+  }
+  return data;
 };

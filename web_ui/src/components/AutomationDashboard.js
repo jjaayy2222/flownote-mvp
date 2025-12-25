@@ -1,7 +1,7 @@
 // web_ui/src/components/AutomationDashboard.js
 
 import React, { useState, useEffect } from 'react';
-import { API_BASE, normalizeStatus, STATUS_MAP } from '../utils/api';
+import { API_BASE, fetchAPI, validateResponse, normalizeStatus } from '../utils/api';
 import LoadingSpinner from './common/LoadingSpinner';
 import ErrorMessage from './common/ErrorMessage';
 import './AutomationDashboard.css';
@@ -14,42 +14,16 @@ const AutomationDashboard = () => {
 
   // Fetch automation logs
   const fetchAutomationLogs = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/automation/logs?limit=10`);
-      if (!response.ok) throw new Error('Failed to fetch automation logs');
-      const data = await response.json();
-      
-      // Validate response data
-      if (!data || !Array.isArray(data.logs)) {
-        throw new Error('Invalid response format');
-      }
-      
-      setAutomationLogs(data.logs);
-      return true;
-    } catch (err) {
-      console.error('Automation logs error:', err);
-      throw err;
-    }
+    const data = await fetchAPI(`${API_BASE}/api/automation/logs?limit=10`);
+    validateResponse(data, (d) => Array.isArray(d.logs), 'Invalid automation logs response');
+    setAutomationLogs(data.logs);
   };
 
   // Fetch watchdog events
   const fetchWatchdogEvents = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/automation/watchdog/events?limit=10`);
-      if (!response.ok) throw new Error('Failed to fetch watchdog events');
-      const data = await response.json();
-      
-      // Validate response data
-      if (!data || !Array.isArray(data.events)) {
-        throw new Error('Invalid response format');
-      }
-      
-      setWatchdogEvents(data.events);
-      return true;
-    } catch (err) {
-      console.error('Watchdog events error:', err);
-      throw err;
-    }
+    const data = await fetchAPI(`${API_BASE}/api/automation/watchdog/events?limit=10`);
+    validateResponse(data, (d) => Array.isArray(d.events), 'Invalid watchdog events response');
+    setWatchdogEvents(data.events);
   };
 
   // Initial load and polling
@@ -65,6 +39,7 @@ const AutomationDashboard = () => {
         ]);
         setError(null); // Explicitly clear error on success
       } catch (err) {
+        console.error('Automation dashboard error:', err);
         setError(err.message);
       } finally {
         setLoading(false);
@@ -83,7 +58,13 @@ const AutomationDashboard = () => {
   }
 
   if (error) {
-    return <ErrorMessage message={error} onRetry={() => window.location.reload()} />;
+    return (
+      <ErrorMessage 
+        message={error} 
+        onRetry={() => window.location.reload()} 
+        buttonColor="#9b59b6"
+      />
+    );
   }
 
   return (
@@ -101,7 +82,7 @@ const AutomationDashboard = () => {
               <div key={log.log_id} className="log-item">
                 <div className="log-header">
                   <span className="log-id">{log.log_id}</span>
-                  <span className={`log-status status-${normalizeStatus(log.status, STATUS_MAP)}`}>
+                  <span className={`log-status status-${normalizeStatus(log.status)}`}>
                     {log.status}
                   </span>
                 </div>
@@ -147,7 +128,7 @@ const AutomationDashboard = () => {
                   <p className="event-message">
                     <strong>[Obsidian]</strong> File {event.event_type}: "{event.file_path}" → {event.action}
                   </p>
-                  <span className={`event-status status-${normalizeStatus(event.status, STATUS_MAP)}`}>
+                  <span className={`event-status status-${normalizeStatus(event.status)}`}>
                     {event.status}
                   </span>
                 </div>
