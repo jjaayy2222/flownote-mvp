@@ -1,0 +1,31 @@
+/* web_ui/src/components/common/LoadingSpinner.css */
+
+.common-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  padding: 2rem;
+}
+
+.common-spinner {
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #3498db; /* Default color, can be overridden */
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: common-spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes common-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-message {
+  color: #7f8c8d;
+  font-size: 1rem;
+  margin: 0;
+}

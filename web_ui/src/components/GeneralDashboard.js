@@ -1,6 +1,9 @@
 // web_ui/src/components/GeneralDashboard.js
 
 import React, { useState, useEffect } from 'react';
+import { API_BASE, normalizeStatus, STATUS_MAP } from '../utils/api';
+import LoadingSpinner from './common/LoadingSpinner';
+import ErrorMessage from './common/ErrorMessage';
 import './GeneralDashboard.css';
 
 const GeneralDashboard = () => {
@@ -8,27 +11,40 @@ const GeneralDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const API_BASE = 'http://localhost:8000';
-
   // Fetch dashboard summary
   const fetchSummary = async () => {
     try {
       const response = await fetch(`${API_BASE}/api/automation/dashboard/summary`);
       if (!response.ok) throw new Error('Failed to fetch dashboard summary');
       const data = await response.json();
+      
+      // Validate response data
+      if (!data) {
+        throw new Error('Invalid response format');
+      }
+      
       setSummary(data);
+      return true;
     } catch (err) {
       console.error('Dashboard summary error:', err);
-      setError(err.message);
+      throw err;
     }
   };
 
-  // Initial load
+  // Initial load and polling
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      await fetchSummary();
-      setLoading(false);
+      setError(null); // Clear previous errors
+      
+      try {
+        await fetchSummary();
+        setError(null); // Explicitly clear error on success
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
     };
 
     loadData();
@@ -39,22 +55,11 @@ const GeneralDashboard = () => {
   }, []);
 
   if (loading) {
-    return (
-      <div className="general-dashboard loading">
-        <div className="spinner"></div>
-        <p>Loading dashboard...</p>
-      </div>
-    );
+    return <LoadingSpinner message="Loading dashboard..." color="#e67e22" />;
   }
 
   if (error) {
-    return (
-      <div className="general-dashboard error">
-        <h2>⚠️ Error</h2>
-        <p>{error}</p>
-        <button onClick={() => window.location.reload()}>Retry</button>
-      </div>
-    );
+    return <ErrorMessage message={error} onRetry={() => window.location.reload()} />;
   }
 
   return (
@@ -102,7 +107,7 @@ const GeneralDashboard = () => {
         <div className="status-info">
           <div className="status-item">
             <span className="label">Status:</span>
-            <span className={`value status-${summary?.sync_status?.toLowerCase()}`}>
+            <span className={`value status-${normalizeStatus(summary?.sync_status, STATUS_MAP)}`}>
               {summary?.sync_status || 'Unknown'}
             </span>
           </div>
