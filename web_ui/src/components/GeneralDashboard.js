@@ -1,7 +1,7 @@
 // web_ui/src/components/GeneralDashboard.js
 
 import React, { useState, useEffect } from 'react';
-import { API_BASE, fetchAPI, normalizeStatus } from '../utils/api';
+import { API_BASE, fetchAPI, getStatusClassName } from '../utils/api';
 import LoadingSpinner from './common/LoadingSpinner';
 import ErrorMessage from './common/ErrorMessage';
 import './GeneralDashboard.css';
@@ -100,7 +100,7 @@ const GeneralDashboard = () => {
         <div className="status-info">
           <div className="status-item">
             <span className="label">Status:</span>
-            <span className={`value status-${normalizeStatus(summary?.sync_status)}`}>
+            <span className={`value ${getStatusClassName(summary?.sync_status)}`}>
               {summary?.sync_status || 'Unknown'}
             </span>
           </div>

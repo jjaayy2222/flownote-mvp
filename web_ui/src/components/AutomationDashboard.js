@@ -1,7 +1,7 @@
 // web_ui/src/components/AutomationDashboard.js
 
 import React, { useState, useEffect } from 'react';
-import { API_BASE, fetchAPI, validateResponse, normalizeStatus } from '../utils/api';
+import { API_BASE, fetchAPI, validateResponse, getStatusClassName } from '../utils/api';
 import LoadingSpinner from './common/LoadingSpinner';
 import ErrorMessage from './common/ErrorMessage';
 import './AutomationDashboard.css';
@@ -82,7 +82,7 @@ const AutomationDashboard = () => {
               <div key={log.log_id} className="log-item">
                 <div className="log-header">
                   <span className="log-id">{log.log_id}</span>
-                  <span className={`log-status status-${normalizeStatus(log.status)}`}>
+                  <span className={`log-status ${getStatusClassName(log.status)}`}>
                     {log.status}
                   </span>
                 </div>
@@ -128,7 +128,7 @@ const AutomationDashboard = () => {
                   <p className="event-message">
                     <strong>[Obsidian]</strong> File {event.event_type}: "{event.file_path}" → {event.action}
                   </p>
-                  <span className={`event-status status-${normalizeStatus(event.status)}`}>
+                  <span className={`event-status ${getStatusClassName(event.status)}`}>
                     {event.status}
                   </span>
                 </div>

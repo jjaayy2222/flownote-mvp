@@ -39,29 +39,27 @@ export const STATUS_MAP = {
 };
 
 /**
- * 상태 값을 CSS 클래스명으로 정규화
+ * 상태 값에 해당하는 CSS 클래스명 반환
  * 
- * @param {any} status - 원본 상태 값 (문자열이 아니어도 문자열로 변환하여 처리)
- * @returns {string} 정규화된 CSS 클래스명
+ * 원본 상태 값을 매핑된 안전한 CSS 클래스명('status-{key}')으로 변환합니다.
+ * 매핑되지 않은 값은 'status-unknown'을 반환합니다.
  * 
- * @example
- * normalizeStatus('Connected') // 'connected'
- * normalizeStatus('RUNNING')   // 'running'
- * normalizeStatus(null)        // 'unknown'
- * normalizeStatus(123)         // 'unknown' (숫자는 매핑되지 않음)
+ * @param {any} status - 원본 상태 값
+ * @returns {string} CSS 클래스명 (예: 'status-running', 'status-unknown')
  */
-export const normalizeStatus = (status) => {
+export const getStatusClassName = (status) => {
   // null, undefined 체크
-  if (status == null) return STATUS_MAP.unknown;
+  if (status == null) return `status-${STATUS_MAP.unknown}`;
   
   // 문자열로 변환 후 정규화
   const normalized = String(status).toLowerCase().trim();
 
   // 빈 문자열 체크
-  if (!normalized) return STATUS_MAP.unknown;
+  if (!normalized) return `status-${STATUS_MAP.unknown}`;
   
-  // STATUS_MAP에서 찾거나, 없으면 unknown 반환 (안전한 CSS 클래스 생성 위함)
-  return STATUS_MAP[normalized] || STATUS_MAP.unknown;
+  // STATUS_MAP에서 찾거나, 없으면 unknown 반환
+  const key = STATUS_MAP[normalized] || STATUS_MAP.unknown;
+  return `status-${key}`;
 };
 
 /**
