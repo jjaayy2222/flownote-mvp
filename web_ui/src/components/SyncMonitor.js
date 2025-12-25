@@ -1,7 +1,7 @@
 // web_ui/src/components/SyncMonitor.js
 
 import React, { useState, useEffect } from 'react';
-import { API_BASE, normalizeStatus, STATUS_MAP } from '../utils/api';
+import { API_BASE, fetchAPI, normalizeStatus } from '../utils/api';
 import LoadingSpinner from './common/LoadingSpinner';
 import ErrorMessage from './common/ErrorMessage';
 import './SyncMonitor.css';
@@ -15,25 +15,19 @@ const SyncMonitor = () => {
 
   // Fetch sync status
   const fetchSyncStatus = async () => {
-    const response = await fetch(`${API_BASE}/api/sync/status`);
-    if (!response.ok) throw new Error('Failed to fetch sync status');
-    const data = await response.json();
+    const data = await fetchAPI(`${API_BASE}/api/sync/status`);
     setSyncStatus(data);
   };
 
   // Fetch MCP status
   const fetchMCPStatus = async () => {
-    const response = await fetch(`${API_BASE}/api/sync/mcp/status`);
-    if (!response.ok) throw new Error('Failed to fetch MCP status');
-    const data = await response.json();
+    const data = await fetchAPI(`${API_BASE}/api/sync/mcp/status`);
     setMcpStatus(data);
   };
 
   // Fetch conflicts
   const fetchConflicts = async () => {
-    const response = await fetch(`${API_BASE}/api/sync/conflicts?limit=10`);
-    if (!response.ok) throw new Error('Failed to fetch conflicts');
-    const data = await response.json();
+    const data = await fetchAPI(`${API_BASE}/api/sync/conflicts?limit=10`);
     setConflicts(data);
   };
 
@@ -70,7 +64,13 @@ const SyncMonitor = () => {
   }
 
   if (error) {
-    return <ErrorMessage message={error} onRetry={() => window.location.reload()} />;
+    return (
+      <ErrorMessage 
+        message={error} 
+        onRetry={() => window.location.reload()} 
+        buttonColor="#3498db"
+      />
+    );
   }
 
   return (
@@ -168,7 +168,7 @@ const SyncMonitor = () => {
               <div key={conflict.conflict_id} className="conflict-item">
                 <div className="conflict-header">
                   <span className="conflict-id">{conflict.conflict_id}</span>
-                  <span className={`conflict-status status-${normalizeStatus(conflict.status, STATUS_MAP)}`}>
+                  <span className={`conflict-status status-${normalizeStatus(conflict.status)}`}>
                     {conflict.status}
                   </span>
                 </div>

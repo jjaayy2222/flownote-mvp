@@ -9,10 +9,15 @@ import './LoadingSpinner.css';
  * @param {Object} props
  * @param {string} props.message - 로딩 메시지
  * @param {string} props.color - 스피너 색상 (기본: #3498db)
+ * @param {string} props.minHeight - 최소 높이 (기본: 400px)
  */
-const LoadingSpinner = ({ message = 'Loading...', color = '#3498db' }) => {
+const LoadingSpinner = ({ 
+  message = 'Loading...', 
+  color = '#3498db',
+  minHeight = '400px'
+}) => {
   return (
-    <div className="common-loading">
+    <div className="common-loading" style={{ minHeight }}>
       <div 
         className="common-spinner" 
         style={{ borderTopColor: color }}

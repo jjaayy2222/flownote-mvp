@@ -5,7 +5,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 400px;
+  /* minHeight는 inline style로 제어 */
   padding: 2rem;
 }
 

@@ -1,7 +1,7 @@
 // web_ui/src/components/GeneralDashboard.js
 
 import React, { useState, useEffect } from 'react';
-import { API_BASE, normalizeStatus, STATUS_MAP } from '../utils/api';
+import { API_BASE, fetchAPI, normalizeStatus } from '../utils/api';
 import LoadingSpinner from './common/LoadingSpinner';
 import ErrorMessage from './common/ErrorMessage';
 import './GeneralDashboard.css';
@@ -13,22 +13,8 @@ const GeneralDashboard = () => {
 
   // Fetch dashboard summary
   const fetchSummary = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/automation/dashboard/summary`);
-      if (!response.ok) throw new Error('Failed to fetch dashboard summary');
-      const data = await response.json();
-      
-      // Validate response data
-      if (!data) {
-        throw new Error('Invalid response format');
-      }
-      
-      setSummary(data);
-      return true;
-    } catch (err) {
-      console.error('Dashboard summary error:', err);
-      throw err;
-    }
+    const data = await fetchAPI(`${API_BASE}/api/automation/dashboard/summary`);
+    setSummary(data);
   };
 
   // Initial load and polling
@@ -41,6 +27,7 @@ const GeneralDashboard = () => {
         await fetchSummary();
         setError(null); // Explicitly clear error on success
       } catch (err) {
+        console.error('General dashboard error:', err);
         setError(err.message);
       } finally {
         setLoading(false);
@@ -59,7 +46,13 @@ const GeneralDashboard = () => {
   }
 
   if (error) {
-    return <ErrorMessage message={error} onRetry={() => window.location.reload()} />;
+    return (
+      <ErrorMessage 
+        message={error} 
+        onRetry={() => window.location.reload()} 
+        buttonColor="#e67e22"
+      />
+    );
   }
 
   return (
@@ -107,7 +100,7 @@ const GeneralDashboard = () => {
         <div className="status-info">
           <div className="status-item">
             <span className="label">Status:</span>
-            <span className={`value status-${normalizeStatus(summary?.sync_status, STATUS_MAP)}`}>
+            <span className={`value status-${normalizeStatus(summary?.sync_status)}`}>
               {summary?.sync_status || 'Unknown'}
             </span>
           </div>
