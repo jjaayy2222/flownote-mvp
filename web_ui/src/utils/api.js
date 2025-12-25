@@ -52,13 +52,16 @@ export const STATUS_MAP = {
  */
 export const normalizeStatus = (status) => {
   // null, undefined 체크
-  if (status == null) return 'unknown';
+  if (status == null) return STATUS_MAP.unknown;
   
   // 문자열로 변환 후 정규화
   const normalized = String(status).toLowerCase().trim();
+
+  // 빈 문자열 체크
+  if (!normalized) return STATUS_MAP.unknown;
   
-  // STATUS_MAP에서 찾거나, 없으면 정규화된 값 그대로 반환
-  return STATUS_MAP[normalized] || normalized;
+  // STATUS_MAP에서 찾거나, 없으면 unknown 반환 (안전한 CSS 클래스 생성 위함)
+  return STATUS_MAP[normalized] || STATUS_MAP.unknown;
 };
 
 /**
