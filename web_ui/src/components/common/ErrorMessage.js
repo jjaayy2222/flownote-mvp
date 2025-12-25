@@ -27,8 +27,7 @@ const ErrorMessage = ({
           className="error-retry-btn" 
           onClick={onRetry}
           style={{ 
-            backgroundColor: buttonColor,
-            borderColor: buttonColor
+            backgroundColor: buttonColor
           }}
         >
           Retry
