@@ -204,3 +204,106 @@ async def trigger_automation_task(
         status_code=501,
         detail=f"Manual task triggering not implemented yet for {task_type.value}",
     )
+
+
+# ============================================================================
+# Watchdog Event Logs (Phase 6 - Automation Dashboard)
+# ============================================================================
+
+
+class WatchdogEvent(BaseModel):
+    """Watchdog 이벤트 모델"""
+
+    event_id: str = Field(..., description="이벤트 ID")
+    timestamp: str = Field(..., description="발생 시각")
+    event_type: str = Field(
+        ..., description="이벤트 유형 (created, modified, moved, deleted)"
+    )
+    file_path: str = Field(..., description="파일 경로")
+    action: str = Field(..., description="트리거된 액션")
+    status: str = Field(..., description="처리 상태 (pending, completed, failed)")
+
+
+class WatchdogEventListResponse(BaseModel):
+    """Watchdog 이벤트 목록 응답"""
+
+    total: int = Field(..., description="전체 이벤트 수")
+    events: List[WatchdogEvent] = Field(..., description="이벤트 목록")
+
+
+@router.get("/watchdog/events", response_model=WatchdogEventListResponse)
+async def get_watchdog_events(
+    limit: int = Query(50, ge=1, le=500, description="최대 반환 개수"),
+    event_type: Optional[str] = Query(None, description="이벤트 유형 필터"),
+):
+    """
+    Watchdog 이벤트 로그 조회
+
+    - Obsidian Vault의 파일 변경 이벤트 로그
+    - 예: [Obsidian] File Created: "Idea.md" -> Triggered Reclassification
+    """
+    # TODO: 실제로는 파일 시스템 또는 DB에서 조회
+    # 현재는 Placeholder 데이터 반환
+    events = [
+        WatchdogEvent(
+            event_id="evt_001",
+            timestamp="2025-12-25T19:00:00",
+            event_type="created",
+            file_path="Idea.md",
+            action="Triggered Reclassification",
+            status="completed",
+        ),
+        WatchdogEvent(
+            event_id="evt_002",
+            timestamp="2025-12-25T18:55:00",
+            event_type="modified",
+            file_path="Project_Plan.md",
+            action="Updated Embedding",
+            status="completed",
+        ),
+    ]
+
+    if event_type:
+        events = [e for e in events if e.event_type == event_type]
+
+    return WatchdogEventListResponse(total=len(events), events=events[:limit])
+
+
+# ============================================================================
+# Dashboard Summary (Phase 6 - General Dashboard)
+# ============================================================================
+
+
+class DashboardSummary(BaseModel):
+    """대시보드 요약 정보"""
+
+    total_files: int = Field(..., description="전체 파일 수")
+    total_classifications: int = Field(..., description="전체 분류 수")
+    total_conflicts: int = Field(..., description="전체 충돌 수")
+    automation_tasks_today: int = Field(..., description="오늘 실행된 자동화 작업 수")
+    sync_status: str = Field(..., description="동기화 상태")
+    last_sync: Optional[str] = Field(None, description="마지막 동기화 시각")
+
+
+@router.get("/dashboard/summary", response_model=DashboardSummary)
+async def get_dashboard_summary():
+    """
+    대시보드 요약 정보 조회
+
+    - 전체 파일 수, 분류 수, 충돌 수 등
+    - Summary Card에 표시될 정보
+    """
+    # TODO: 실제 데이터 집계
+    # - 파일 시스템에서 파일 수 계산
+    # - classification_log.csv에서 분류 수 계산
+    # - ExternalSyncLog에서 충돌 수 계산
+    # - AutomationLog에서 오늘 작업 수 계산
+
+    return DashboardSummary(
+        total_files=150,
+        total_classifications=320,
+        total_conflicts=5,
+        automation_tasks_today=12,
+        sync_status="Connected",
+        last_sync="2025-12-25T18:50:00",
+    )
