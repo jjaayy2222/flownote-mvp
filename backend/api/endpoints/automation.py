@@ -6,7 +6,8 @@ Automation API Endpoints
 """
 
 import logging
-from typing import List, Optional
+from typing import List, Optional, Literal
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query, Path as PathParam
 from pydantic import BaseModel, Field
@@ -215,13 +216,15 @@ class WatchdogEvent(BaseModel):
     """Watchdog 이벤트 모델"""
 
     event_id: str = Field(..., description="이벤트 ID")
-    timestamp: str = Field(..., description="발생 시각")
-    event_type: str = Field(
-        ..., description="이벤트 유형 (created, modified, moved, deleted)"
+    timestamp: datetime = Field(..., description="발생 시각")
+    event_type: Literal["created", "modified", "moved", "deleted"] = Field(
+        ..., description="이벤트 유형"
     )
     file_path: str = Field(..., description="파일 경로")
     action: str = Field(..., description="트리거된 액션")
-    status: str = Field(..., description="처리 상태 (pending, completed, failed)")
+    status: Literal["pending", "completed", "failed"] = Field(
+        ..., description="처리 상태"
+    )
 
 
 class WatchdogEventListResponse(BaseModel):
@@ -247,7 +250,7 @@ async def get_watchdog_events(
     events = [
         WatchdogEvent(
             event_id="evt_001",
-            timestamp="2025-12-25T19:00:00",
+            timestamp=datetime.fromisoformat("2025-12-25T19:00:00"),
             event_type="created",
             file_path="Idea.md",
             action="Triggered Reclassification",
@@ -255,7 +258,7 @@ async def get_watchdog_events(
         ),
         WatchdogEvent(
             event_id="evt_002",
-            timestamp="2025-12-25T18:55:00",
+            timestamp=datetime.fromisoformat("2025-12-25T18:55:00"),
             event_type="modified",
             file_path="Project_Plan.md",
             action="Updated Embedding",
