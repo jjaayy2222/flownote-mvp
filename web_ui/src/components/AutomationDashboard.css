@@ -1,0 +1,266 @@
+/* web_ui/src/components/AutomationDashboard.css */
+
+.automation-dashboard {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+}
+
+.automation-dashboard h1 {
+  font-size: 2.5rem;
+  margin-bottom: 2rem;
+  color: #2c3e50;
+  border-bottom: 3px solid #9b59b6;
+  padding-bottom: 0.5rem;
+}
+
+/* Loading & Error States */
+.automation-dashboard.loading,
+.automation-dashboard.error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+}
+
+.spinner {
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #9b59b6;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.automation-dashboard.error h2 {
+  color: #e74c3c;
+}
+
+.automation-dashboard.error button {
+  margin-top: 1rem;
+  padding: 0.75rem 1.5rem;
+  background: #9b59b6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background 0.3s;
+}
+
+.automation-dashboard.error button:hover {
+  background: #8e44ad;
+}
+
+/* Dashboard Cards */
+.dashboard-card {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: box-shadow 0.3s;
+}
+
+.dashboard-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.dashboard-card h2 {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+  color: #34495e;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.subtitle {
+  color: #7f8c8d;
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 2rem;
+  color: #95a5a6;
+  font-size: 1rem;
+  font-style: italic;
+}
+
+/* Log List */
+.log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.log-item {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-left: 4px solid #9b59b6;
+  border-radius: 8px;
+  padding: 1rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.log-item:hover {
+  transform: translateX(4px);
+  box-shadow: 0 4px 12px rgba(155, 89, 182, 0.2);
+}
+
+.log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.log-id {
+  font-family: 'Courier New', monospace;
+  font-size: 0.875rem;
+  color: #7f8c8d;
+}
+
+.log-status {
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.log-status.status-success {
+  background: #d4edda;
+  color: #155724;
+}
+
+.log-status.status-running {
+  background: #cce5ff;
+  color: #004085;
+}
+
+.log-status.status-failed {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.log-body p {
+  margin: 0.25rem 0;
+  font-size: 0.875rem;
+  color: #34495e;
+}
+
+/* Event List */
+.event-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.event-item {
+  display: flex;
+  gap: 1rem;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 1rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.event-item:hover {
+  transform: translateX(4px);
+  box-shadow: 0 4px 12px rgba(52, 152, 219, 0.2);
+}
+
+.event-icon {
+  font-size: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 50px;
+}
+
+.event-content {
+  flex: 1;
+}
+
+.event-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.event-type {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #3498db;
+  background: #e3f2fd;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+.event-time {
+  font-size: 0.75rem;
+  color: #7f8c8d;
+}
+
+.event-message {
+  margin: 0.5rem 0;
+  font-size: 0.875rem;
+  color: #2c3e50;
+}
+
+.event-status {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-top: 0.5rem;
+}
+
+.event-status.status-completed {
+  background: #d4edda;
+  color: #155724;
+}
+
+.event-status.status-pending {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.event-status.status-failed {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .automation-dashboard {
+    padding: 1rem;
+  }
+
+  .automation-dashboard h1 {
+    font-size: 2rem;
+  }
+
+  .event-item {
+    flex-direction: column;
+  }
+
+  .event-icon {
+    min-width: auto;
+  }
+}
