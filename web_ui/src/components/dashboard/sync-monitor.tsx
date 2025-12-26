@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE, fetchAPI } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -53,7 +53,7 @@ export function SyncMonitor() {
     remoteContent: string
   } | null>(null);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       // Parallel fetch for dashboard data
       const [syncData, mcpData, conflictData] = await Promise.all([
@@ -73,13 +73,46 @@ export function SyncMonitor() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 5000);
-    return () => clearInterval(interval);
-  }, []);
+    let timeoutId: ReturnType<typeof setTimeout>;
+    let cancelled = false;
+
+    const poll = async () => {
+      if (cancelled) return;
+
+      // Skip invalid API calls when tab is hidden to save resources
+      if (document.hidden) {
+        timeoutId = setTimeout(poll, 5000); 
+        return;
+      }
+
+      await fetchData();
+      
+      if (!cancelled) {
+        timeoutId = setTimeout(poll, 5000);
+      }
+    };
+
+    poll(); // Start polling
+
+    // Immediately poll when returning to the tab
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        clearTimeout(timeoutId);
+        poll();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [fetchData]);
 
   const handleResolveClick = (conflict: Conflict) => {
     // In a real scenario, we would fetch the actual file content diff here.
