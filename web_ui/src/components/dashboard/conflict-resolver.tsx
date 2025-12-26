@@ -22,7 +22,7 @@ export function ConflictResolver({
   if (!conflict) return null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Resolve Conflict: {conflict.path}</DialogTitle>
