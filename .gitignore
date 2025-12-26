@@ -127,6 +127,7 @@ backend/classifier/prompts/bacoup_20251107_2/
 streamlit/data/
 
 # web_ui - React 관련
+web_ui/.env.example
 web_ui/node_modules/
 web_ui/package.json
 web_ui/package-lock.json
