@@ -1,3 +1,5 @@
+// web_ui/src/components/dashboard/conflict-resolver.tsx
+
 "use client"
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"

@@ -1,6 +1,9 @@
+// web_ui/src/components/dashboard/sync-monitor.tsx
+
 "use client"
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
+import { useVisibilityPolling } from '@/hooks/use-visibility-polling';
 import { API_BASE, fetchAPI } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -38,6 +41,8 @@ interface Conflict {
   remote_hash: string;
 }
 
+const POLLING_INTERVAL = 5000;
+
 export function SyncMonitor() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [mcpStatus, setMcpStatus] = useState<MCPStatus | null>(null);
@@ -53,7 +58,7 @@ export function SyncMonitor() {
     remoteContent: string
   } | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = async () => {
     try {
       // Parallel fetch for dashboard data
       const [syncData, mcpData, conflictData] = await Promise.all([
@@ -73,46 +78,10 @@ export function SyncMonitor() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  };
 
-  useEffect(() => {
-    let timeoutId: ReturnType<typeof setTimeout>;
-    let cancelled = false;
-
-    const poll = async () => {
-      if (cancelled) return;
-
-      // Skip invalid API calls when tab is hidden to save resources
-      if (document.hidden) {
-        timeoutId = setTimeout(poll, 5000); 
-        return;
-      }
-
-      await fetchData();
-      
-      if (!cancelled) {
-        timeoutId = setTimeout(poll, 5000);
-      }
-    };
-
-    poll(); // Start polling
-
-    // Immediately poll when returning to the tab
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        clearTimeout(timeoutId);
-        poll();
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timeoutId);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [fetchData]);
+  // Optimized polling with visibility check
+  useVisibilityPolling(fetchData, POLLING_INTERVAL);
 
   const handleResolveClick = (conflict: Conflict) => {
     // In a real scenario, we would fetch the actual file content diff here.
