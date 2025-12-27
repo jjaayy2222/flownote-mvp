@@ -19,6 +19,7 @@ from backend.routes.classifier_routes import router as classifier_router
 from backend.routes.onboarding_routes import router as onboarding_router
 from backend.api.endpoints.sync import router as sync_router
 from backend.api.endpoints.automation import router as automation_router
+from backend.api.endpoints.graph import router as graph_router
 
 
 # 로깅 설정
@@ -104,6 +105,9 @@ logger.info("✅ sync_router 등록 완료 (MCP Sync & Conflict Resolution)")
 
 app.include_router(automation_router, prefix="/api")
 logger.info("✅ automation_router 등록 완료 (Celery Automation)")
+
+app.include_router(graph_router, prefix="/api")
+logger.info("✅ graph_router 등록 완료 (Visualization)")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
