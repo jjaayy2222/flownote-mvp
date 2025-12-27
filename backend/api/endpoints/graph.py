@@ -48,9 +48,8 @@ async def get_graph_data():
             }
         )
 
-    db = DatabaseConnection()
-    files = db.get_files_with_para()
-    db.close()
+    with DatabaseConnection() as db:
+        files = db.get_files_with_para()
 
     # 2. Add File Nodes and Edges
     for file in files:
@@ -58,21 +57,23 @@ async def get_graph_data():
         filename = file["filename"]
         category = file["para_category"]
 
-        if not category:
-            category = "Unclassified"  # Handle unclassified files if needed
-
         # Skip if category is not in our main PARA (unless we want to show uncategorized)
-        if category not in category_positions:
+        if not category or category not in category_positions:
             continue
 
-        # Random offset around the category
+        # Deterministic offset around the category based on file id
+        # This ensures the graph layout is stable across reloads
         base_pos = category_positions[category]
-        offset_x = random.randint(-200, 200)
-        offset_y = random.randint(-200, 200)
 
-        # Avoid placing too close to center
+        # Seed random with file_id for consistent positioning
+        rng = random.Random(file_id)
+
+        offset_x = rng.randint(-200, 200)
+        offset_y = rng.randint(-200, 200)
+
+        # Avoid placing too close to center (simple rejection logic)
         if abs(offset_x) < 80 and abs(offset_y) < 80:
-            offset_x += 100
+            offset_x += 100 if offset_x >= 0 else -100
 
         file_node_id = f"file-{file_id}"
 
