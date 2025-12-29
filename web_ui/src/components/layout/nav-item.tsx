@@ -2,6 +2,7 @@
 
 "use client";
 
+import type React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -25,15 +26,18 @@ export function NavItem({ href, label, icon: Icon, external, onClick }: NavItemP
     </>
   );
 
+  // Use asChild=true for both cases to avoid <button> inside <button> nesting issues
+  // The Button component with asChild will render the child element (Link or a) directly
+  // while preserving the button styles.
   return (
     <Button
       variant={isActive ? "secondary" : "ghost"}
       className="w-full justify-start"
-      asChild={!external}
+      asChild
       onClick={onClick}
     >
       {external ? (
-        <a href={href} target="_blank" rel="noreferrer">
+        <a href={href} target="_blank" rel="noreferrer noopener">
           {content}
         </a>
       ) : (
