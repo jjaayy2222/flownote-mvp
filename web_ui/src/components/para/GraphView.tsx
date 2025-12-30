@@ -47,19 +47,24 @@ export default function GraphView() {
     fetchData();
   }, [fetchData]);
 
-  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
-    // 1. Null Safety: Ensure data exists
-    const label = node.data?.label || "Unknown Node";
+  // Helper to determine node type label
+  const getNodeTypeLabel = (node: Node) => {
+    if (node.type === "input") return "Category";
+    if (!node.type || node.type === "default") return "File";
+    return "Unknown Type";
+  };
 
-    // 2. Explicit Type Mapping
-    let typeLabel = "Unknown Type";
-    if (node.type === "input") typeLabel = "Category";
-    else if (!node.type || node.type === "default") typeLabel = "File";
+  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+    // 1. Null Safety: Use nullish coalescing to allow empty strings if valid
+    const label = node.data?.label ?? "Unknown Node";
+
+    // 2. Type Mapping: Use helper function
+    const typeLabel = getNodeTypeLabel(node);
     
-    // 3. Prevent Toast Stacking: Use a consistent ID for the same node
+    // 3. Prevent Toast Stacking: Use a consistent ID includes type context
     toast(`Selected: ${label}`, {
       description: `Type: ${typeLabel}`,
-      id: `node-click-${node.id}`, // Replaces existing toast for this node if active
+      id: `node-click-${node.id}-${typeLabel}`, 
     });
   }, []);
 
