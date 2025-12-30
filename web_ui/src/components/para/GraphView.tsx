@@ -11,6 +11,7 @@ import ReactFlow, {
   Node,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import { toast } from "sonner";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000';
 
@@ -36,6 +37,7 @@ export default function GraphView() {
       setEdges(data.edges);
     } catch (error) {
       console.error('Error fetching graph data:', error);
+      toast.error("Failed to load graph data");
     } finally {
       setLoading(false);
     }
@@ -44,6 +46,12 @@ export default function GraphView() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+    toast(`Selected: ${node.data.label}`, {
+      description: `Type: ${node.type === 'input' ? 'Category' : 'File'}`,
+    });
+  }, []);
 
   if (loading) {
     return <div className="flex h-full w-full items-center justify-center p-10">Loading Graph...</div>;
@@ -56,6 +64,7 @@ export default function GraphView() {
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodeClick={onNodeClick}
         fitView
         attributionPosition="bottom-right"
       >
