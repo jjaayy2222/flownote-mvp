@@ -1,12 +1,12 @@
-# Phase 7: Visualization & Mobile Support
+# Step 3 Phase 3: Visualization & Mobile Support
 
 ## 📋 Overview
 
-Phase 7에서는 프로젝트의 데이터를 시각적으로 표현하고 모바일 환경에서도 원활하게 접근할 수 있도록 UI/UX를 고도화했습니다. PARA 구조를 직관적으로 파악할 수 있는 Graph View와 데이터 흐름을 보여주는 통계 차트, 그리고 반응형 모바일 네비게이션이 핵심입니다.
+Step 3 Phase 3에서는 프로젝트의 데이터를 시각적으로 표현하고 모바일 환경에서도 원활하게 접근할 수 있도록 UI/UX를 고도화했습니다. PARA 구조를 직관적으로 파악할 수 있는 Graph View와 데이터 흐름을 보여주는 통계 차트, 그리고 반응형 모바일 네비게이션이 핵심입니다.
 
 ## 🎯 구현 내용
 
-### **2.2 Advanced Visualization** (New!)
+### **2.1 Advanced Visualization** (New!)
 
 - **🕸️ PARA Graph View (`/graph`)**
     - **Tech**: `reactflow`
@@ -23,7 +23,7 @@ Phase 7에서는 프로젝트의 데이터를 시각적으로 표현하고 모�
         2.  **Weekly Trend**: 최근 12주간의 파일 처리량 추이 (Line Chart)
         3.  **PARA Distribution**: 현재 보관함의 카테고리별 비중 (Pie Chart)
 
-### **2.3 Mobile Responsiveness** (New!)
+### **2.2 Mobile Responsiveness** (New!)
 
 - **📱 Adaptive Navigation**
     - **Desktop**: 좌측 고정 사이드바 (`Sidebar`)
@@ -79,5 +79,5 @@ web_ui/src/
 
 ## 🔗 Related
 
-- [Phase 6 Detail](./README.md) (Frontend Basics)
+- [Step 3 Phase 2 Detail](../v5_phase2_frontend/README.md) (Frontend Basics)
 - [Project Issue #214](https://github.com/jjaayy2222/flownote-mvp/issues/214)
