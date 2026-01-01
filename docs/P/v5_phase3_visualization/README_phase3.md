@@ -2,7 +2,7 @@
 
 ## 📋 Overview
 
-Step 3 Phase 3에서는 프로젝트의 데이터를 시각적으로 표현하고 모바일 환경에서도 원활하게 접근할 수 있도록 UI/UX를 고도화했습니다. PARA 구조를 직관적으로 파악할 수 있는 Graph View와 데이터 흐름을 보여주는 통계 차트, 그리고 반응형 모바일 네비게이션이 핵심입니다.
+Step 3 Phase 3에서는 프로젝트의 데이터를 시각적으로 표현하고 모바일 환경에서도 원활하게 접근할 수 있도록 UI/UX를 고도화했습니다. PARA 구조를 직관적으로 파악할 수 있는 Graph View와 데이터 흐름을 보여주는 통계 차트, 그리고 반응형 모바일 내비게이션이 핵심입니다.
 
 ## 🎯 구현 내용
 
@@ -28,11 +28,11 @@ Step 3 Phase 3에서는 프로젝트의 데이터를 시각적으로 표현하�
 - **📱 Adaptive Navigation**
     - **Desktop**: 좌측 고정 사이드바 (`Sidebar`)
     - **Mobile**: 상단 헤더 및 좌측 슬라이드 메뉴 (`MobileNav` + Shadcn UI `Sheet`)
-    - **Auto Switch**: 화면 너비(`md` breakpoint)에 따라 자동으로 최적의 네비게이션 전환
+    - **Auto Switch**: 화면 너비(`md` breakpoint)에 따라 자동으로 최적의 내비게이션 전환
 
 - **🔧 UX Polish**
     - **Drawer Scroll**: 모바일 메뉴가 길어질 경우 스크롤(`overflow-y-auto`) 지원
-    - **Prevent Layout Shift**: 네비게이션 전환 시 레이아웃 흔들림 방지 처리
+    - **Prevent Layout Shift**: 내비게이션 전환 시 레이아웃 흔들림 방지 처리
 
 ## 🏗️ 아키텍처 (Frontend Update)
 
