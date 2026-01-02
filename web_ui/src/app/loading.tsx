@@ -1,6 +1,7 @@
 // web_ui/src/app/loading.tsx 
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { UI_MESSAGES } from "@/config/messages";
 
 export default function Loading() {
   return (
@@ -9,7 +10,7 @@ export default function Loading() {
       role="status" 
       aria-busy="true" 
       aria-live="polite"
-      aria-label="콘텐츠를 불러오는 중입니다..."
+      aria-label={UI_MESSAGES.common.loading}
     >
       <div className="space-y-2">
         <Skeleton className="h-8 w-[200px]" />
