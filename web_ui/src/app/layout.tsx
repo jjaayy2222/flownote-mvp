@@ -18,12 +18,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"),
   title: {
     default: "FlowNote - AI Knowledge System",
     template: "%s | FlowNote",
   },
   description: "AI-powered Knowledge Management System based on PARA method. Automate your second brain.",
-  keywords: ["Knowledge Management", "PARA", "AI", "Obsidian", "Second Brain"],
   icons: {
     icon: "/favicon.ico",
   },
