@@ -8,7 +8,8 @@ export default function Loading() {
       className="space-y-6" 
       role="status" 
       aria-busy="true" 
-      aria-label="Loading content..."
+      aria-live="polite"
+      aria-label="콘텐츠를 불러오는 중입니다..."
     >
       <div className="space-y-2">
         <Skeleton className="h-8 w-[200px]" />
