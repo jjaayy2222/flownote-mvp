@@ -18,8 +18,15 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FlowNote",
-  description: "AI-powered Knowledge Management System",
+  title: {
+    default: "FlowNote - AI Knowledge System",
+    template: "%s | FlowNote",
+  },
+  description: "AI-powered Knowledge Management System based on PARA method. Automate your second brain.",
+  keywords: ["Knowledge Management", "PARA", "AI", "Obsidian", "Second Brain"],
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({
