@@ -163,7 +163,7 @@
 | **Next.js** | 16.1.1 | React 프레임워크 (App Router) |
 | **React** | 19.2.3 | UI 라이브러리 |
 | **TypeScript** | 5.x | 타입 안전성 |
-| **Tailwind CSS** | ^4 | 스타일링 |
+| **Tailwind CSS** | ^4.x | 스타일링 |
 | **Shadcn UI** | latest | UI 컴포넌트 라이브러리 |
 | **React Flow** | ^11.11.4 | 그래프 시각화 |
 | **Recharts** | ^3.6.0 | 차트 라이브러리 |
@@ -301,7 +301,11 @@ FlowNote의 모든 기능을 사용하려면 **4개의 터미널** (+ MCP 서버
 **1. FastAPI Backend 실행 (Terminal 1)**
 ```bash
 # 프로젝트 루트 디렉토리에서
+# Unix/macOS:
 source venv/bin/activate  # 또는 pyenv activate <your-env>
+# Windows:
+# venv\Scripts\activate
+
 python -m uvicorn backend.main:app --reload
 # → http://127.0.0.1:8000
 ```
