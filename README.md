@@ -114,12 +114,32 @@
 - 키워드 태그 자동 생성
 - 분류 근거 설명
 
-### 2.6 🤖 **지능형 자동화 시스템 (New!)**
+### 2.6 🤖 **지능형 자동화 시스템**
 - **자동 재분류**: 매일/매주 분류 신뢰도가 낮은 문서를 AI가 재검토
 - **스마트 아카이빙**: 장기간(90일 이상) 수정되지 않은 Projects 문서를 Archives로 이동 제안
 - **정기 리포트**: 주간/월간 분류 통계 및 인사이트 리포트 생성
 - **시스템 모니터링**: 백그라운드 작업 상태 및 동기화 무결성 자동 점검
 - **Celery & Redis**: 안정적인 분산 작업 큐 처리
+
+### 2.7 🔗 **MCP 서버 & Obsidian 연동** (v5.0 Phase 1)
+- **Model Context Protocol (MCP)**: Claude Desktop과 통합 가능한 MCP 서버 구현
+- **Obsidian 동기화**: 실시간 Vault 파일 감지 및 자동 분류
+- **충돌 해결**: 3-way 충돌 감지 및 자동 해결 (Rename 전략)
+- **MCP Tools**: `classify_content`, `search_notes`, `get_automation_stats`
+- **MCP Resources**: PARA 카테고리별 파일 리스트 제공
+
+### 2.8 📊 **Next.js 기반 모던 대시보드** (v5.0 Phase 2-3)
+- **Sync Monitor**: Obsidian 연결 상태 및 MCP 서버 상태 실시간 모니터링
+- **PARA Graph View**: React Flow 기반 파일-카테고리 관계 시각화
+  - 노드 클릭 인터랙션 (Toast 알림)
+  - Deterministic Layout (새로고침 시에도 위치 유지)
+  - Zoom/Pan 지원
+- **Advanced Stats**: Recharts 기반 통계 차트
+  - Activity Heatmap (GitHub 스타일 연간 활동)
+  - Weekly Trend (12주 파일 처리량)
+  - PARA Distribution (카테고리별 비중 Pie Chart)
+- **Mobile Responsive**: 데스크탑/모바일 자동 전환 내비게이션
+- **Accessibility**: ARIA 속성 및 스크린 리더 지원
 
 ---
 
@@ -140,10 +160,14 @@
 ### 3.2 Frontend
 | 기술 | 버전 | 용도 |
 |------|------|------|
-| **Streamlit** | 1.51.0 | 웹 UI 프레임워크 |
-| **Plotly** | 6.3.1 | 데이터 시각화 |
-| **Pandas** | 2.3.3 | 데이터 처리 |
-| **st-aggrid** | 1.1.9 | 테이블 렌더링 |
+| **Next.js** | 16.1.1 | React 프레임워크 (App Router) |
+| **React** | 19.2.3 | UI 라이브러리 |
+| **TypeScript** | 5.x | 타입 안전성 |
+| **Tailwind CSS** | 4.x | 스타일링 |
+| **Shadcn UI** | latest | UI 컴포넌트 라이브러리 |
+| **React Flow** | 11.11.4 | 그래프 시각화 |
+| **Recharts** | 3.6.0 | 차트 라이브러리 |
+| **Sonner** | 2.0.7 | Toast 알림 |
 
 ### 3.3 LLM & AI
 | 기술 | 모델 | 용도 |
@@ -172,24 +196,44 @@ flownote-mvp/
 │
 ├── backend/                            # FastAPI 백엔드
 │   ├── main.py                         # FastAPI 메인 앱 (Entrypoint)
-│   ├── celery_app/                     # Celery 설정 ✨
+│   ├── celery_app/                     # Celery 설정
 │   │   ├── celery.py                   # Celery 인스턴스
 │   │   ├── config.py                   # Celery 설정
 │   │   └── tasks/                      # 비동기 작업들 (재분류, 아카이빙 등)
 │   │
+│   ├── mcp/                            # MCP 서버 ✨
+│   │   ├── server.py                   # MCP 서버 구현
+│   │   └── tools/                      # MCP Tools (classify, search 등)
+│   │
+│   ├── services/                       # 비즈니스 로직 (Service Layer)
+│   │   ├── obsidian_sync.py            # Obsidian 동기화 ✨
+│   │   ├── conflict_resolution_service.py  # 충돌 해결 ✨
+│   │   └── ...
+│   │
 │   ├── embedding.py                    # 임베딩 생성
 │   ├── faiss_search.py                 # FAISS 검색
-│   ├── services/                       # 비즈니스 로직 (Service Layer)
 │   ├── classifier/                     # PARA 분류 로직
 │   └── ...
 │
-├── streamlit/                          # Streamlit Frontend
-│   ├── app.py                          # 메인 앱
-│   └── pages/                          # 추가 페이지
+├── web_ui/                             # Next.js Frontend ✨
+│   ├── src/
+│   │   ├── app/                        # App Router
+│   │   │   ├── page.tsx                # Dashboard
+│   │   │   ├── graph/page.tsx          # Graph View
+│   │   │   └── stats/page.tsx          # Statistics
+│   │   ├── components/                 # React 컴포넌트
+│   │   │   ├── dashboard/              # Dashboard 컴포넌트
+│   │   │   ├── para/GraphView.tsx      # Graph View
+│   │   │   └── layout/                 # Navigation
+│   │   └── config/                     # 설정 파일
+│   └── package.json
 │
 ├── data/                               # 데이터 저장소
 ├── docs/                               # 문서
 │   └── P/                              # 프로젝트 페이즈 문서
+│       ├── v5_phase1_mcp_server/       # MCP 서버 문서
+│       ├── v5_phase2_frontend/         # Frontend 문서
+│       └── v5_phase3_visualization/    # Visualization 문서
 └── README.md                           # 본 문서
 ```
 
@@ -252,20 +296,21 @@ cp .env.example .env
 
 ### 6.3 전체 서비스 실행 가이드
 
-FlowNote의 모든 기능을 사용하려면 **4개의 터미널**이 필요합니다.
+FlowNote의 모든 기능을 사용하려면 **5개의 터미널**이 필요합니다.
 
 **1. FastAPI Backend 실행 (Terminal 1)**
 ```bash
-cd backend
-python main.py
+cd /Users/jay/ICT-projects/flownote-mvp
+pyenv activate myenv
+python -m uvicorn backend.main:app --reload
 # → http://127.0.0.1:8000
 ```
 
-**2. Streamlit Frontend 실행 (Terminal 2)**
+**2. Next.js Frontend 실행 (Terminal 2)**
 ```bash
-cd streamlit
-streamlit run app.py
-# → http://localhost:8501
+cd web_ui
+npm run dev
+# → http://localhost:3000
 ```
 
 **3. Celery Worker & Beat 실행 (Terminal 3)**
@@ -278,6 +323,13 @@ celery -A backend.celery_app.celery worker --beat --loglevel=info
 ```bash
 celery -A backend.celery_app.celery flower --port=5555
 # → http://localhost:5555
+```
+
+**5. MCP 서버 실행 (Terminal 5) - Optional**
+```bash
+# Claude Desktop 연동 시
+python -m backend.mcp.server
+# 또는 Claude Desktop 설정에서 자동 시작
 ```
 
 ---
@@ -322,15 +374,21 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 
 ## 9. 🗺️ 로드맵
 
-### ✅ 완료된 기능 (v4.0)
+### ✅ 완료된 기능 (v5.0)
 - [x] 스마트 온보딩 & PARA 분류
-- [x] Celery 기반 비동기 작업 큐 ✨
-- [x] 정기 자동 재분류 및 아카이빙 스케줄러 ✨
-- [x] Flower 모니터링 통합 ✨
+- [x] Celery 기반 비동기 작업 큐
+- [x] 정기 자동 재분류 및 아카이빙 스케줄러
+- [x] Flower 모니터링 통합
+- [x] MCP 서버 구현 ✨
+- [x] Obsidian 동기화 및 충돌 해결 ✨
+- [x] Next.js 기반 모던 대시보드 ✨
+- [x] PARA Graph View & Advanced Stats ✨
+- [x] Mobile Responsive UI ✨
 
-### 🚧 진행 중 (v5.0)
-- [ ] MCP 서버 구현
-- [ ] Obsidian 연동
+### 🚧 진행 중 (v6.0)
+- [ ] WebSocket 실시간 업데이트
+- [ ] Conflict Diff Viewer
+- [ ] 다국어 지원 (i18n)
 
 ---
 
