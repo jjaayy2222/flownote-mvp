@@ -1,0 +1,199 @@
+// web_ui/src/components/SyncMonitor.js
+
+import React, { useState, useEffect } from 'react';
+import { API_BASE, fetchAPI, getStatusClassName } from '../utils/api';
+import LoadingSpinner from './common/LoadingSpinner';
+import ErrorMessage from './common/ErrorMessage';
+import './SyncMonitor.css';
+
+const SyncMonitor = () => {
+  const [syncStatus, setSyncStatus] = useState(null);
+  const [mcpStatus, setMcpStatus] = useState(null);
+  const [conflicts, setConflicts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Fetch sync status
+  const fetchSyncStatus = async () => {
+    const data = await fetchAPI(`${API_BASE}/api/sync/status`);
+    setSyncStatus(data);
+  };
+
+  // Fetch MCP status
+  const fetchMCPStatus = async () => {
+    const data = await fetchAPI(`${API_BASE}/api/sync/mcp/status`);
+    setMcpStatus(data);
+  };
+
+  // Fetch conflicts
+  const fetchConflicts = async () => {
+    const data = await fetchAPI(`${API_BASE}/api/sync/conflicts?limit=10`);
+    setConflicts(data);
+  };
+
+  // Initial load and polling
+  useEffect(() => {
+    const loadAll = async () => {
+      setLoading(true);
+      setError(null); // Clear previous errors
+      
+      try {
+        await Promise.all([
+          fetchSyncStatus(),
+          fetchMCPStatus(),
+          fetchConflicts()
+        ]);
+        setError(null); // Explicitly clear error on success
+      } catch (err) {
+        console.error('Sync monitor error:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAll();
+
+    // Poll every 5 seconds
+    const interval = setInterval(loadAll, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (loading) {
+    return <LoadingSpinner message="Loading sync status..." color="#3498db" />;
+  }
+
+  if (error) {
+    return (
+      <ErrorMessage 
+        message={error} 
+        onRetry={() => window.location.reload()} 
+        buttonColor="#3498db"
+      />
+    );
+  }
+
+  return (
+    <div className="sync-monitor">
+      <h1>🔗 Sync Monitor</h1>
+
+      {/* Obsidian Status */}
+      <section className="status-card">
+        <h2>📔 Obsidian Connection</h2>
+        <div className="status-grid">
+          <div className="status-item">
+            <span className="label">Status:</span>
+            <span className={`value ${syncStatus?.connected ? 'connected' : 'disconnected'}`}>
+              {syncStatus?.connected ? '✅ Connected' : '❌ Disconnected'}
+            </span>
+          </div>
+          <div className="status-item">
+            <span className="label">Vault Path:</span>
+            <span className="value">{syncStatus?.vault_path || 'N/A'}</span>
+          </div>
+          <div className="status-item">
+            <span className="label">Last Sync:</span>
+            <span className="value">
+              {syncStatus?.last_sync 
+                ? new Date(syncStatus.last_sync).toLocaleString()
+                : 'Never'}
+            </span>
+          </div>
+          <div className="status-item">
+            <span className="label">File Count:</span>
+            <span className="value">{syncStatus?.file_count || 0} files</span>
+          </div>
+          <div className="status-item">
+            <span className="label">Sync Interval:</span>
+            <span className="value">{syncStatus?.sync_interval || 0}s</span>
+          </div>
+          <div className="status-item">
+            <span className="label">Enabled:</span>
+            <span className={`value ${syncStatus?.enabled ? 'enabled' : 'disabled'}`}>
+              {syncStatus?.enabled ? '✓ Yes' : '✗ No'}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* MCP Server Status */}
+      <section className="status-card">
+        <h2>🤖 MCP Server</h2>
+        <div className="status-grid">
+          <div className="status-item">
+            <span className="label">Status:</span>
+            <span className={`value ${mcpStatus?.running ? 'running' : 'stopped'}`}>
+              {mcpStatus?.running ? '▶ Running' : '⏸ Stopped'}
+            </span>
+          </div>
+          <div className="status-item full-width">
+            <span className="label">Active Clients:</span>
+            <div className="client-list">
+              {mcpStatus?.active_clients?.length > 0 ? (
+                mcpStatus.active_clients.map((client, idx) => (
+                  <span key={idx} className="client-badge">{client}</span>
+                ))
+              ) : (
+                <span className="value muted">No active clients</span>
+              )}
+            </div>
+          </div>
+          <div className="status-item full-width">
+            <span className="label">Registered Tools:</span>
+            <div className="tool-list">
+              {mcpStatus?.tools_registered?.map((tool, idx) => (
+                <span key={idx} className="tool-badge">{tool}</span>
+              ))}
+            </div>
+          </div>
+          <div className="status-item full-width">
+            <span className="label">Registered Resources:</span>
+            <div className="resource-list">
+              {mcpStatus?.resources_registered?.map((resource, idx) => (
+                <code key={idx} className="resource-uri">{resource}</code>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Conflict Log Viewer */}
+      <section className="status-card conflicts">
+        <h2>⚠️ Conflict History</h2>
+        {conflicts.length === 0 ? (
+          <p className="empty-state">No conflicts detected. All syncs successful! 🎉</p>
+        ) : (
+          <div className="conflict-list">
+            {conflicts.map((conflict) => (
+              <div key={conflict.conflict_id} className="conflict-item">
+                <div className="conflict-header">
+                  <span className="conflict-id">{conflict.conflict_id}</span>
+                  <span className={`conflict-status ${getStatusClassName(conflict.status)}`}>
+                    {conflict.status}
+                  </span>
+                </div>
+                <div className="conflict-body">
+                  <p><strong>File:</strong> {conflict.file_path}</p>
+                  <p><strong>Type:</strong> {conflict.conflict_type}</p>
+                  <p><strong>Time:</strong> {new Date(conflict.timestamp).toLocaleString()}</p>
+                  {conflict.resolution_method && (
+                    <p><strong>Resolved:</strong> {conflict.resolution_method}</p>
+                  )}
+                  {conflict.notes && (
+                    <p className="conflict-notes">{conflict.notes}</p>
+                  )}
+                </div>
+                <div className="conflict-hashes">
+                  <div><code>Local: {conflict.local_hash.substring(0, 8)}...</code></div>
+                  <div><code>Remote: {conflict.remote_hash.substring(0, 8)}...</code></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+};
+
+export default SyncMonitor;

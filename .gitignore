@@ -127,8 +127,8 @@ backend/classifier/prompts/bacoup_20251107_2/
 streamlit/data/
 
 # web_ui - React 관련
+web_ui/.env.example
 web_ui/node_modules/
-web_ui/src/components/
 web_ui/package.json
 web_ui/package-lock.json
 
@@ -177,3 +177,8 @@ celerybeat.pid
 
 # Automation 관련 data
 data/automation_logs/
+
+# Claude Desktop 개인 설정 (개인 경로 포함)
+claude_desktop_config.json
+
+

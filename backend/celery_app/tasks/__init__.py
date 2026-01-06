@@ -9,5 +9,5 @@ from . import (
     reporting,
     monitoring,
     maintenance,
-    # 여기에 새로운 태스크 모듈을 추가하세요. (e.g., my_new_task)
+    classification,  # Added classification task
 )
