@@ -1,4 +1,4 @@
-# 📖 FlowNote 사용자 가이드
+# 📖 FlowNote 사용자 가이드 (v5.0)
 
 > **FlowNote**로 문서를 AI 기반으로 자동 분류하고 관리하는 방법을 안내합니다.
 
@@ -11,9 +11,11 @@
 3. [파일 분류](#3-파일-분류)
 4. [키워드 검색](#4-키워드-검색)
 5. [대시보드 활용](#5-대시보드-활용)
-6. [고급 기능](#6-고급-기능)
-7. [문제 해결](#7-문제-해결)
-8. [팁 & 트릭](#8-팁--트릭)
+6. [Graph View 사용법](#6-graph-view-사용법)
+7. [MCP & Obsidian 연동](#7-mcp--obsidian-연동)
+8. [모바일 사용 가이드](#8-모바일-사용-가이드)
+9. [문제 해결](#9-문제-해결)
+10. [팁 & 트릭](#10-팁--트릭)
 
 ---
 
@@ -22,9 +24,10 @@
 ### 1.1 환경 요구사항
 
 - **Python**: 3.11 이상
+- **Node.js**: 18 이상 (Frontend용)
 - **운영체제**: Windows, macOS, Linux
 - **OpenAI API Key**: [platform.openai.com](https://platform.openai.com/)
-- **필수 라이브러리**: [requirements.txt](requirements.txt) 참조
+- **Redis**: 7.x (Celery 브로커용)
 
 ### 1.2 설치 및 실행
 
@@ -36,21 +39,15 @@ cd flownote-mvp
 
 #### **Step 2: 가상환경 설정**
 ```bash
-# Windows
-python -m venv venv
-venv\Scripts\activate
+# Unix/macOS:
+source venv/bin/activate  # 또는 pyenv activate <your-env>
+# Windows:
+# venv\Scripts\activate
 
-# macOS/Linux
-python3 -m venv venv
-source venv/bin/activate
-```
-
-#### **Step 3: 패키지 설치**
-```bash
 pip install -r requirements.txt
 ```
 
-#### **Step 4: 환경 변수 설정**
+#### **Step 3: 환경 변수 설정**
 프로젝트 루트에 `.env` 파일 생성:
 ```plaintext
 # OpenAI API Keys
@@ -70,33 +67,75 @@ GPT4O_MINI_MODEL=gpt-4o-mini
 EMBEDDING_API_KEY=sk-your-api-key-here
 EMBEDDING_BASE_URL=https://api.openai.com/v1
 EMBEDDING_MODEL=text-embedding-3-small
+
+# Redis (Celery)
+REDIS_URL=redis://localhost:6379/0
+
+# Obsidian (Optional)
+OBSIDIAN_VAULT_PATH=/path/to/your/vault
+OBSIDIAN_SYNC_ENABLED=true
+OBSIDIAN_SYNC_INTERVAL=300
 ```
 
-#### **Step 5: 앱 실행**
-
-**Backend (FastAPI) 실행:**
+#### **Step 4: Redis 설치 및 실행**
 ```bash
-cd backend
-python app.py
-# → http://127.0.0.1:8000 에서 실행
+# macOS
+brew install redis
+brew services start redis
+
+# Ubuntu/Debian
+sudo apt-get install redis-server
+sudo systemctl start redis
+
+# Windows
+# https://redis.io/docs/getting-started/installation/install-redis-on-windows/
 ```
 
-**Frontend (Streamlit) 실행 (새 터미널):**
+#### **Step 5: Frontend 의존성 설치**
 ```bash
-cd streamlit
-streamlit run app.py
-# → http://localhost:8501 에서 자동 실행
+cd web_ui
+npm install
+cd ..
 ```
 
-**대시보드 실행 (선택사항, 새 터미널):**
+#### **Step 6: 전체 서비스 실행**
+
+**Terminal 1 - FastAPI Backend:**
 ```bash
-streamlit run streamlit/pages/dashboard.py
-# → http://localhost:8502 에서 실행
+# 프로젝트 루트 디렉토리에서
+source venv/bin/activate
+python -m uvicorn backend.main:app --reload
+# → http://127.0.0.1:8000
 ```
 
-#### **Step 6: 브라우저에서 확인**
-- 자동으로 브라우저가 열립니다
-- 열리지 않으면 터미널의 URL을 직접 복사하여 접속
+**Terminal 2 - Next.js Frontend:**
+```bash
+cd web_ui
+npm run dev
+# → http://localhost:3000
+```
+
+**Terminal 3 - Celery Worker & Beat:**
+```bash
+celery -A backend.celery_app.celery worker --beat --loglevel=info
+```
+
+**Terminal 4 - Flower (모니터링):**
+```bash
+celery -A backend.celery_app.celery flower --port=5555
+# → http://localhost:5555
+```
+
+**Terminal 5 - MCP 서버 (Optional):**
+```bash
+# Claude Desktop 연동 시
+python -m backend.mcp.server
+```
+
+#### **Step 7: 브라우저에서 확인**
+- Next.js 대시보드: http://localhost:3000
+- FastAPI Docs: http://127.0.0.1:8000/docs
+- Flower 모니터링: http://localhost:5555
 
 ---
 
@@ -108,16 +147,17 @@ streamlit run streamlit/pages/dashboard.py
 
 ### 2.2 온보딩 단계
 
-#### **Step 1: 기본 정보 입력**
+#### **Step 1: 대시보드 접속**
+1. http://localhost:3000 접속
+2. 첫 방문 시 온보딩 프롬프트 표시
 
-1. `Tab 1: 온보딩` 클릭
-2. **이름** 입력 (예: `Jay`)
-3. **직업** 입력 (예: `개발자`, `디자이너`, `교사`)
-4. `다음 단계 →` 버튼 클릭
-5. GPT-4o가 당신의 직업에 맞는 **10개 영역** 추천
+#### **Step 2: 기본 정보 입력**
+1. **이름** 입력 (예: `Jay`)
+2. **직업** 입력 (예: `개발자`, `디자이너`, `교사`)
+3. `다음 →` 버튼 클릭
+4. GPT-4o가 당신의 직업에 맞는 **10개 영역** 추천
 
-#### **Step 2: 관심 영역 선택**
-
+#### **Step 3: 관심 영역 선택**
 1. 추천된 10개 영역 중 **정확히 5개** 선택
 2. 선택 예시:
    - `Python Development`
@@ -125,21 +165,15 @@ streamlit run streamlit/pages/dashboard.py
    - `Web Development`
    - `Data Science`
    - `Project Management`
-3. `완료 →` 버튼 클릭
+3. `완료` 버튼 클릭
 
-#### **Step 3: 완료 확인**
-
+#### **Step 4: 완료 확인**
 - ✅ 온보딩 완료!
 - 사용자 정보 확인:
   - 이름
   - 직업
   - User ID
   - 선택한 5개 영역
-
-### 2.3 온보딩 재설정
-
-- 온보딩 완료 후 `🔄 온보딩 다시하기` 버튼으로 초기화 가능
-- 직업이나 관심 영역이 변경되었을 때 재설정 권장
 
 ---
 
@@ -149,29 +183,28 @@ streamlit run streamlit/pages/dashboard.py
 
 #### **단계별 안내**
 
-1. `Tab 2: 파일 분류` 이동
-2. 온보딩 완료 여부 확인 (미완료 시 경고 메시지)
-3. `📤 분류할 파일 업로드` 클릭
-4. 파일 선택 (PDF, TXT, MD 지원)
-5. 파일 정보 확인:
+1. 대시보드 메인 페이지 이동
+2. `파일 업로드` 버튼 클릭
+3. 파일 선택 (PDF, TXT, MD 지원)
+4. 파일 정보 확인:
    - 파일명
    - 파일 크기
    - 파일 타입
 
-#### **지원 파일**
+#### **지원 파일 형식**
 - ✅ PDF (`.pdf`)
 - ✅ TXT (`.txt`)
 - ✅ Markdown (`.md`)
 
 ### 3.2 자동 분류 실행
 
-1. `🚀 분류 시작` 버튼 클릭
+1. `분류 시작` 버튼 클릭
 2. AI 분석 진행 중... (사용자 맥락 반영)
 3. 분류 결과 확인:
    - **카테고리**: Projects/Areas/Resources/Archives
    - **신뢰도**: 0-100%
-   - **맥락 반영**: ✅/❌
-   - **키워드 수**: 추출된 키워드 개수
+   - **키워드**: 추출된 주요 키워드
+   - **분류 근거**: AI의 판단 이유
 
 ### 3.3 분류 결과 이해하기
 
@@ -206,138 +239,181 @@ streamlit run streamlit/pages/dashboard.py
 - **50-69%**: 중간 신뢰도 (수동 확인 권장)
 - **50% 미만**: 낮은 신뢰도 (재분류 권장)
 
-### 3.4 분류 히스토리
-
-- 사이드바 `📊 분류 히스토리`에서 확인
-- 최근 5개 분류 결과 표시
-- `초기화` 버튼으로 히스토리 삭제
-
 ---
 
 ## 4. 🔍 키워드 검색
 
-### 4.1 문서 업로드 및 처리
+### 4.1 검색 실행
 
-1. `Tab 3: 키워드 검색` 이동
-2. 여러 문서 업로드 (다중 선택 가능)
-3. `📑 파일 처리` 버튼 클릭
-4. 처리 과정 확인:
-   - ✅ 텍스트 분석 중...
-   - ✅ 임베딩 생성 중...
-   - ✅ 검색 인덱스 구축 중...
+1. 대시보드 상단 검색바 사용
+2. 검색어 입력 (예: `프로젝트 목표`)
+3. Enter 또는 검색 버튼 클릭
 
-### 4.2 검색 실행
+### 4.2 검색 결과 확인
 
-1. 검색어 입력 (예: `프로젝트 목표`)
-2. 검색 결과 개수 선택 (슬라이더, 1-10개)
-3. `🔎 키워드 검색` 버튼 클릭
+- 파일명, 카테고리, 신뢰도 표시
+- 유사도 점수 기반 정렬
+- 검색 결과 미리보기
 
-### 4.3 검색 결과 확인
+### 4.3 고급 검색 (FAISS)
 
-```markdown
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 검색 결과 (3개)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📄 결과 #1 | example.pdf | PDF | 점수: 0.8234
-───────────────────────────────────────────
-프로젝트의 주요 목표는 11월 30일까지 대시보드 구현을 
-완료하는 것입니다...
-
-키워드: 프로젝트, 목표, 마감일, 대시보드, 구현
-신뢰도: 95%
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-### 4.4 검색 결과 내보내기
-
-1. `📥 검색 결과 MD로 내보내기` 버튼 클릭
-2. `💾 다운로드` 버튼으로 마크다운 파일 저장
-3. 파일명: `flownote_search_YYYYMMDD_HHMMSS.md`
+- 벡터 기반 의미 검색
+- OpenAI Embeddings 활용
+- 실시간 유사도 점수 표시
 
 ---
 
 ## 5. 📊 대시보드 활용
 
-### 5.1 분류 통계 확인
+### 5.1 메인 대시보드 (/)
 
-`Tab 4: 분류 통계` 또는 `Dashboard 페이지`에서 확인
+#### **Sync Monitor**
+- Obsidian 연결 상태 확인
+- MCP 서버 상태 모니터링
+- 최근 동기화 시간 표시
+- 충돌 이력 확인
 
-#### **KPI 메트릭**
-- 📁 **전체 파일**: 총 파일 개수 (변화량 표시)
-- 🔍 **총 검색**: 총 검색 횟수 (변화율 표시)
-- 📊 **분류율**: 분류 완료율
-- ⭐ **평균 신뢰도**: 평균 분류 신뢰도
+#### **Analytics Overview**
+- PARA 분류 통계
+- 파일 분포 차트
+- 최근 활동 로그
 
-#### **PARA 분포**
-- Projects/Areas/Resources/Archives별 파일 개수
-- 바 차트로 시각화
+### 5.2 Statistics 페이지 (/stats)
 
-### 5.2 메타데이터 확인
+#### **Activity Heatmap**
+- GitHub 스타일 연간 활동 히트맵
+- 파일 생성/수정 빈도 시각화
+- 일별 활동량 확인
 
-`Tab 5: 메타데이터`에서 확인
+#### **Weekly Trend**
+- 최근 12주간 파일 처리량
+- Line Chart로 추이 확인
+- 주간 평균 계산
 
-#### **세션 데이터**
-- 이번 세션 분류 목록
-- 사용자 필터링 가능
-- 파일명, 카테고리, 신뢰도, 시간 표시
-
-#### **전체 DB 데이터**
-- 모든 분류 기록 확인
-- 충돌 플래그 표시
-- Snapshot ID 확인
-
-### 5.3 파일 트리
-
-`Dashboard 페이지` → `🏗️ 파일 트리`
-
-- 계층 구조로 파일 표시
-- 최대 7개 표시 (나머지는 expander)
-- 📁 폴더, 📄 파일 아이콘 구분
-
-### 5.4 최근 활동 로그
-
-`Dashboard 페이지` → `🔥 최근 활동` 탭
-
-- 최근 10개 분류 활동 표시
-- 타임스탬프, 파일명, 카테고리, 신뢰도 확인
+#### **PARA Distribution**
+- 카테고리별 파일 비중
+- Pie Chart 시각화
+- 실시간 업데이트
 
 ---
 
-## 6. 🎯 고급 기능
+## 6. 🕸️ Graph View 사용법
 
-### 6.1 맥락 기반 분류
+### 6.1 Graph View 접속
 
-**맥락 반영이란?**
-- 사용자의 직업과 관심 영역을 고려한 분류
-- 동일한 문서도 사용자에 따라 다르게 분류될 수 있음
+1. 좌측 사이드바에서 `Graph View` 클릭
+2. 또는 http://localhost:3000/graph 직접 접속
 
-**예시:**
-```
-문서: "Python 최적화 가이드"
+### 6.2 그래프 조작
 
-개발자 → Resources (자료)
-학생 → Areas (학습 분야)
-강사 → Projects (강의 준비)
-```
+#### **Zoom & Pan**
+- **마우스 휠**: 줌 인/아웃
+- **드래그**: 그래프 이동
+- **Controls**: 우측 하단 컨트롤 버튼 사용
 
-### 6.2 배치 처리 (예정)
+#### **노드 인터랙션**
+- **노드 클릭**: 파일/카테고리 정보 Toast 알림
+- **노드 타입**:
+  - 큰 원: PARA 카테고리 (Projects, Areas, Resources, Archives)
+  - 작은 원: 개별 파일
 
-- 여러 파일 동시 처리
-- 폴더 단위 업로드
-- 자동 분류 및 정리
+#### **MiniMap**
+- 우측 하단 미니맵으로 전체 구조 파악
+- 현재 뷰포트 위치 확인
 
-### 6.3 태그 자동 생성 (예정)
+### 6.3 그래프 해석
 
-- AI가 키워드 태그 자동 생성
-- 태그 기반 검색
-- 태그 클라우드 시각화
+- **엣지(연결선)**: 파일이 속한 카테고리 표시
+- **노드 위치**: Deterministic Layout (새로고침 시에도 유지)
+- **색상**: 카테고리별 구분
 
 ---
 
-## 7. 🔧 문제 해결
+## 7. 🔗 MCP & Obsidian 연동
 
-### 7.1 자주 발생하는 오류
+### 7.1 Obsidian 동기화 설정
+
+#### **Step 1: Vault 경로 설정**
+`.env` 파일에 Vault 경로 추가:
+```plaintext
+OBSIDIAN_VAULT_PATH=/Users/your-name/Documents/ObsidianVault
+OBSIDIAN_SYNC_ENABLED=true
+OBSIDIAN_SYNC_INTERVAL=300
+```
+
+#### **Step 2: 동기화 시작**
+1. Backend 서버 재시작
+2. Sync Monitor에서 연결 상태 확인
+3. Vault 내 파일 자동 감지 및 분류
+
+### 7.2 Claude Desktop 연동 (MCP)
+
+#### **Step 1: 설정 파일 생성**
+```bash
+# macOS
+cp claude_desktop_config.example.json ~/Library/Application\ Support/Claude/claude_desktop_config.json
+
+# 설정 파일 편집
+# - 프로젝트 경로 수정
+# - Vault 경로 수정
+```
+
+#### **Step 2: Claude Desktop 재시작**
+
+#### **Step 3: MCP Tools 사용**
+Claude에게 다음과 같이 요청:
+- "내 노트에서 '프로젝트' 관련 내용 찾아줘"
+- "이 텍스트를 분류해줘: [텍스트]"
+- "자동화 통계 보여줘"
+
+### 7.3 충돌 해결
+
+#### **충돌 감지**
+- 3-way 충돌 감지 (local vs remote vs last_synced)
+- Sync Monitor에서 충돌 이력 확인
+
+#### **자동 해결**
+- Rename 전략: 충돌 파일 백업 생성
+- 파일명: `filename_conflict_timestamp.md`
+
+---
+
+## 8. 📱 모바일 사용 가이드
+
+### 8.1 모바일 접속
+
+1. 모바일 브라우저에서 http://localhost:3000 접속
+   (또는 배포된 URL)
+2. 자동으로 모바일 레이아웃 전환
+
+### 8.2 모바일 내비게이션
+
+#### **햄버거 메뉴**
+- 좌측 상단 햄버거 아이콘(☰) 클릭
+- 슬라이드 드로어 메뉴 열림
+- 메뉴 항목:
+  - Dashboard
+  - Graph View
+  - Statistics
+  - Preferences
+  - GitHub
+
+#### **메뉴 닫기**
+- 메뉴 외부 영역 클릭
+- 또는 X 버튼 클릭
+
+### 8.3 모바일 최적화 기능
+
+- **반응형 그리드**: 1열 레이아웃 자동 전환
+- **터치 친화적**: 버튼 크기 최적화
+- **스크롤 최적화**: 가로 스크롤 없음 (375px 기준)
+- **Drawer Scroll**: 메뉴가 길 경우 스크롤 지원
+
+---
+
+## 9. 🔧 문제 해결
+
+### 9.1 자주 발생하는 오류
 
 #### **❌ `OPENAI_API_KEY not found`**
 
@@ -348,54 +424,54 @@ streamlit run streamlit/pages/dashboard.py
 **해결:**
 ```bash
 # .env 파일 생성
-echo "OPENAI_API_KEY=sk-your-key-here" > .env
-
-# 앱 재시작
-streamlit run streamlit/app.py
+cp .env.example .env
+# API Key 입력 후 서버 재시작
 ```
 
-#### **❌ `온보딩 필요` 경고**
+#### **❌ `Redis connection failed`**
 
 **원인:**
-- 온보딩을 완료하지 않음
+- Redis 서버 미실행
 
 **해결:**
-- `Tab 1: 온보딩`에서 온보딩 완료
+```bash
+# macOS
+brew services start redis
 
-#### **❌ `API 오류: 401 Unauthorized`**
+# Ubuntu/Debian
+sudo systemctl start redis
+
+# 연결 확인
+redis-cli ping
+# 응답: PONG
+```
+
+#### **❌ `Port 3000 already in use`**
 
 **원인:**
-- API Key 잘못됨
-- API Key 만료
+- 다른 프로세스가 포트 사용 중
 
 **해결:**
-- `.env` 파일의 API Key 확인
-- 새 API Key 발급 후 재설정
+```bash
+# 프로세스 확인 및 종료
+lsof -ti:3000 | xargs kill -9
 
-#### **❌ 파일 업로드 실패**
+# 또는 다른 포트 사용
+npm run dev -- -p 3001
+```
+
+#### **❌ MCP 서버 연결 실패**
 
 **원인:**
-- 파일 형식 불일치 (PDF/TXT/MD만 지원)
-- 파일 손상
-- 메모리 부족
+- Claude Desktop 설정 오류
+- 경로 불일치
 
 **해결:**
-1. 파일 형식 확인
-2. 파일 무결성 확인 (다른 앱에서 열어보기)
-3. 파일 크기 확인 (권장: 10MB 이하)
+1. `claude_desktop_config.json` 경로 확인
+2. 프로젝트 절대 경로 확인
+3. Claude Desktop 재시작
 
-#### **❌ 검색 결과 없음**
-
-**원인:**
-- 검색어와 문서 내용 불일치
-- 파일 처리 미완료
-
-**해결:**
-1. 검색어를 더 일반적으로 변경
-2. K 값 증가 (더 많은 결과 요청)
-3. 파일 목록에서 처리 완료 확인
-
-### 7.2 성능 최적화 팁
+### 9.2 성능 최적화 팁
 
 #### **파일 전처리**
 - 불필요한 페이지 제거
@@ -414,9 +490,9 @@ streamlit run streamlit/app.py
 
 ---
 
-## 8. 💡 팁 & 트릭
+## 10. 💡 팁 & 트릭
 
-### 8.1 효율적인 검색법
+### 10.1 효율적인 검색법
 
 ```markdown
 ❌ 나쁜 예:
@@ -427,13 +503,13 @@ streamlit run streamlit/app.py
 "프로젝트 목표"
 ```
 
-### 8.2 파일명 규칙
+### 10.2 파일명 규칙
 
 - 명확한 이름 사용
 - 날짜 포함 (예: `2025-11-project-report.pdf`)
 - 버전 표시 (예: `budget_v2.pdf`)
 
-### 8.3 분류 정확도 향상
+### 10.3 분류 정확도 향상
 
 1. **온보딩 정보를 정확하게 입력**
    - 직업을 구체적으로 작성
@@ -447,27 +523,33 @@ streamlit run streamlit/app.py
    - 50% 미만 신뢰도는 재분류 권장
    - 파일 내용 보완 후 재업로드
 
-### 8.4 생산성 향상 워크플로우
+### 10.4 생산성 향상 워크플로우
 
 ```markdown
 1. 온보딩 완료 (최초 1회)
-2. 파일 일괄 업로드
-3. 자동 분류 실행
-4. 신뢰도 낮은 파일 재확인
-5. 키워드 검색으로 상세 탐색
-6. 대시보드에서 전체 현황 확인
-7. 필요 시 마크다운 내보내기
+2. Obsidian Vault 연동 (자동 동기화)
+3. 파일 생성 시 자동 분류
+4. Graph View로 구조 파악
+5. Stats로 활동 추이 확인
+6. 필요 시 키워드 검색
+7. Claude Desktop으로 AI 어시스턴트 활용
 ```
 
-### 8.5 통합 활용 (예정)
+### 10.5 자동화 활용
 
-- **Notion**: 분류 결과 자동 동기화
-- **Obsidian**: 마크다운 파일 연동
-- **Google Drive**: 자동 백업
+#### **Celery 스케줄러**
+- 매일 00:00: 자동 재분류 (신뢰도 낮은 파일)
+- 매주 일요일: 스마트 아카이빙 (90일 이상 미수정 파일)
+- 매주 월요일: 주간 리포트 생성
+
+#### **Flower 모니터링**
+- http://localhost:5555 접속
+- 작업 상태 실시간 확인
+- 워커 성능 모니터링
 
 ---
 
-## 9. 📞 지원 및 문의
+## 11. 📞 지원 및 문의
 
 ### 문제가 해결되지 않나요?
 
@@ -477,35 +559,31 @@ streamlit run streamlit/app.py
 
 ---
 
-## 10. 🔄 업데이트 내역
+## 12. 🔄 업데이트 내역
 
-### v3.5 (2025-11-11) - 현재 버전
+### v5.0.0 (2026-01-06) - 현재 버전
+- ✅ MCP 서버 & Obsidian 동기화
+- ✅ Next.js 기반 모던 대시보드
+- ✅ PARA Graph View (React Flow)
+- ✅ Advanced Stats (Recharts)
+- ✅ Mobile Responsive UI
+- ✅ Accessibility 개선 (ARIA, 스크린 리더)
+
+### v4.0 (2025-12-16)
+- ✅ Celery 기반 자동화 시스템
+- ✅ Redis 통합
+- ✅ Flower 모니터링
+
+### v3.5 (2025-11-11)
 - ✅ 스마트 온보딩 (GPT-4o 영역 추천)
 - ✅ 맥락 기반 분류
-- ✅ 실시간 대시보드
-- ✅ 메타데이터 관리
-- ✅ 검색 히스토리
-- ✅ 마크다운 내보내기
-
-### v3.0 (2025-11-01)
-- ✅ Dashboard 구현
-- ✅ SQLite 데이터베이스
-- ✅ MetadataAggregator
-
-### v2.0 (2025-10-28)
-- ✅ PARA 분류 시스템
-- ✅ LangChain 통합
-
-### v1.0 (2025-10-25)
-- ✅ 기본 검색 기능
-- ✅ 파일 업로드 자동화
-- ✅ FAISS 검색 엔진
+- ✅ 실시간 대시보드 (Streamlit)
 
 ---
 
 <br>
 
-> **FlowNote**를 사용해 주셔서 감사합니다! 🎉
+> **FlowNote v5.0**을 사용해 주셔서 감사합니다! 🎉
 > 
 > 더 나은 경험을 위해 지속적으로 개선하고 있습니다.
 > 
