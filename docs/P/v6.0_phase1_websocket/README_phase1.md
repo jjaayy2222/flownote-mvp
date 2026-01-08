@@ -69,6 +69,12 @@ class RedisPubSub:
 
 ### 2. Frontend WebSocket 클라이언트
 
+#### **환경 변수 설정**
+```bash
+# web_ui/.env.local
+NEXT_PUBLIC_WS_URL=ws://localhost:8000/ws
+```
+
 #### **useWebSocket Hook**
 ```typescript
 // web_ui/src/hooks/useWebSocket.ts
@@ -127,8 +133,10 @@ export type WebSocketEvent =
 ```typescript
 // web_ui/src/components/dashboard/SyncMonitor.tsx
 
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws';
+
 export function SyncMonitor() {
-  const { lastMessage } = useWebSocket('ws://localhost:8000/ws');
+  const { lastMessage } = useWebSocket(WS_URL);
   
   useEffect(() => {
     if (lastMessage?.type === 'sync_status_changed') {
@@ -144,8 +152,10 @@ export function SyncMonitor() {
 ```typescript
 // web_ui/src/components/para/GraphView.tsx
 
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws';
+
 export function GraphView() {
-  const { lastMessage } = useWebSocket('ws://localhost:8000/ws');
+  const { lastMessage } = useWebSocket(WS_URL);
   
   useEffect(() => {
     if (lastMessage?.type === 'graph_updated') {
@@ -177,8 +187,8 @@ npm run dev
 # wscat 설치
 npm install -g wscat
 
-# WebSocket 연결 테스트
-wscat -c ws://localhost:8000/ws
+# WebSocket 연결 테스트 (환경 변수 사용)
+wscat -c ${NEXT_PUBLIC_WS_URL:-ws://localhost:8000/ws}
 ```
 
 ## 🧪 Testing
