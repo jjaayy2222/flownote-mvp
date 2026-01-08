@@ -69,12 +69,22 @@ def generate_diff(local: str, remote: str) -> dict:
         todesc='Remote'
     )
     
+    # Diff 헤더 제외하고 실제 변경 라인만 카운트
+    additions = sum(
+        1 for line in unified_diff 
+        if line.startswith('+') and not line.startswith('+++')
+    )
+    deletions = sum(
+        1 for line in unified_diff 
+        if line.startswith('-') and not line.startswith('---')
+    )
+    
     return {
         "unified": "".join(unified_diff),
         "html": html_diff,
         "stats": {
-            "additions": sum(1 for line in unified_diff if line.startswith('+')),
-            "deletions": sum(1 for line in unified_diff if line.startswith('-'))
+            "additions": additions,
+            "deletions": deletions
         }
     }
 ```
