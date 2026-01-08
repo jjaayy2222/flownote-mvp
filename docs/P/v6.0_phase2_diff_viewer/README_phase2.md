@@ -69,18 +69,15 @@ def generate_diff(local: str, remote: str) -> dict:
         todesc='Remote'
     )
     
-    # Diff 헤더(+++, ---) 및 hunk 헤더(@@) 제외하고 실제 변경 라인만 카운트
+    # Diff 헤더(+++, ---) 제외하고 실제 변경 라인만 카운트
+    # (@@ hunk 헤더는 + 또는 -로 시작하지 않으므로 별도 체크 불필요)
     additions = sum(
         1 for line in unified_diff 
-        if line.startswith('+') 
-        and not line.startswith('+++')
-        and not line.startswith('@@')
+        if line.startswith('+') and not line.startswith('+++')
     )
     deletions = sum(
         1 for line in unified_diff 
-        if line.startswith('-') 
-        and not line.startswith('---')
-        and not line.startswith('@@')
+        if line.startswith('-') and not line.startswith('---')
     )
     
     return {
