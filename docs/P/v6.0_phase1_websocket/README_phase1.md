@@ -75,6 +75,15 @@ class RedisPubSub:
 NEXT_PUBLIC_WS_URL=ws://localhost:8000/ws
 ```
 
+#### **중앙 집중화된 설정 모듈**
+```typescript
+// web_ui/src/config/websocket.ts
+
+export const getWebSocketUrl = (): string => {
+  return process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws';
+};
+```
+
 #### **useWebSocket Hook**
 ```typescript
 // web_ui/src/hooks/useWebSocket.ts
@@ -133,10 +142,10 @@ export type WebSocketEvent =
 ```typescript
 // web_ui/src/components/dashboard/SyncMonitor.tsx
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws';
+import { getWebSocketUrl } from '@/config/websocket';
 
 export function SyncMonitor() {
-  const { lastMessage } = useWebSocket(WS_URL);
+  const { lastMessage } = useWebSocket(getWebSocketUrl());
   
   useEffect(() => {
     if (lastMessage?.type === 'sync_status_changed') {
@@ -152,10 +161,10 @@ export function SyncMonitor() {
 ```typescript
 // web_ui/src/components/para/GraphView.tsx
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws';
+import { getWebSocketUrl } from '@/config/websocket';
 
 export function GraphView() {
-  const { lastMessage } = useWebSocket(WS_URL);
+  const { lastMessage } = useWebSocket(getWebSocketUrl());
   
   useEffect(() => {
     if (lastMessage?.type === 'graph_updated') {

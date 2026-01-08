@@ -52,7 +52,7 @@ def generate_diff(local: str, remote: str) -> dict:
     local_lines = local.splitlines(keepends=True)
     remote_lines = remote.splitlines(keepends=True)
     
-    # Unified Diff
+    # Unified Diff (제너레이터를 리스트로 물질화하여 재사용 가능하게 함)
     unified_diff = list(difflib.unified_diff(
         local_lines, 
         remote_lines,
@@ -69,14 +69,18 @@ def generate_diff(local: str, remote: str) -> dict:
         todesc='Remote'
     )
     
-    # Diff 헤더 제외하고 실제 변경 라인만 카운트
+    # Diff 헤더(+++, ---) 및 hunk 헤더(@@) 제외하고 실제 변경 라인만 카운트
     additions = sum(
         1 for line in unified_diff 
-        if line.startswith('+') and not line.startswith('+++')
+        if line.startswith('+') 
+        and not line.startswith('+++')
+        and not line.startswith('@@')
     )
     deletions = sum(
         1 for line in unified_diff 
-        if line.startswith('-') and not line.startswith('---')
+        if line.startswith('-') 
+        and not line.startswith('---')
+        and not line.startswith('@@')
     )
     
     return {
