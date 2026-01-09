@@ -41,6 +41,12 @@ export const WS_READY_STATE = {
 } as const;
 
 /**
+ * WebSocket readyState 타입
+ * 유효한 readyState 값만 허용 (0-3)
+ */
+export type WebSocketReadyState = typeof WS_READY_STATE[keyof typeof WS_READY_STATE];
+
+/**
  * Native WebSocket readyState를 WebSocketStatus로 변환
  * 
  * @param readyState - WebSocket.readyState 값 (0-3)
@@ -51,7 +57,7 @@ export const WS_READY_STATE = {
  * const status = mapReadyStateToStatus(ws.readyState);
  * ```
  */
-export const mapReadyStateToStatus = (readyState: number): WebSocketStatus => {
+export const mapReadyStateToStatus = (readyState: WebSocketReadyState): WebSocketStatus => {
   switch (readyState) {
     case WS_READY_STATE.CONNECTING:
       return WebSocketStatus.CONNECTING;
@@ -60,7 +66,5 @@ export const mapReadyStateToStatus = (readyState: number): WebSocketStatus => {
     case WS_READY_STATE.CLOSING:
     case WS_READY_STATE.CLOSED:
       return WebSocketStatus.DISCONNECTED;
-    default:
-      return WebSocketStatus.ERROR;
   }
 };

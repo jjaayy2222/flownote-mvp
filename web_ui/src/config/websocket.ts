@@ -15,10 +15,33 @@ const logger = createLogger('WebSocket Config');
  * WebSocket URL 유효성 검사
  * 
  * @param url - 검증할 URL
- * @returns ws:// 또는 wss:// 프로토콜로 시작하는 경우 true
+ * @returns 유효한 WebSocket URL인 경우 true
  */
 const isValidWebSocketUrl = (url: string): boolean => {
-  return /^wss?:\/\//.test(url);
+  // 1. 프로토콜 체크
+  if (!/^wss?:\/\//.test(url)) {
+    return false;
+  }
+  
+  // 2. URL 파싱 및 호스트명 검증
+  try {
+    const urlObj = new URL(url);
+    
+    // 호스트명이 비어있으면 유효하지 않음
+    if (!urlObj.hostname) {
+      return false;
+    }
+    
+    // 3. 프로덕션 환경에서는 WSS만 허용
+    if (process.env.NODE_ENV === 'production' && urlObj.protocol === 'ws:') {
+      logger.warn('Insecure WebSocket (ws://) detected in production. Use wss:// instead.');
+      return false;
+    }
+    
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 /**
@@ -28,7 +51,7 @@ const isValidWebSocketUrl = (url: string): boolean => {
  * 1. NEXT_PUBLIC_WS_URL 환경 변수 (유효성 검사 통과 시)
  * 2. window.location 기반 동적 URL (브라우저 환경)
  * 3. NEXT_PUBLIC_WS_FALLBACK_URL 환경 변수 (SSR 환경)
- * 4. ws://localhost:8000/ws (최종 폴백)
+ * 4. ws://localhost:8000/ws (최종 폴백, 개발 환경만)
  * 
  * @returns WebSocket 서버 URL
  * 
@@ -90,4 +113,4 @@ export const WEBSOCKET_CONFIG = {
 } as const;
 
 // Re-export WebSocket types for convenience
-export { WebSocketStatus, mapReadyStateToStatus } from '@/types/websocket';
+export { WebSocketStatus, mapReadyStateToStatus, type WebSocketReadyState } from '@/types/websocket';
