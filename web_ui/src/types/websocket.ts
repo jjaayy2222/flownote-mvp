@@ -56,33 +56,47 @@ const VALID_READY_STATES: Set<number> = new Set(Object.values(WS_READY_STATE));
  * readyState가 유효한 값인지 타입 가드
  * WS_READY_STATE에서 값을 파생하여 항상 동기화 유지
  * 
- * @param value - 검증할 값
+ * unknown 타입을 받아 typeof 체크를 수행하여 범용적으로 사용 가능
+ * 
+ * @param value - 검증할 값 (any type)
  * @returns 유효한 WebSocketReadyState인 경우 true
+ * 
+ * @example
+ * ```typescript
+ * const state = externalLib.getState(); // unknown
+ * if (isValidReadyState(state)) {
+ *   // state is WebSocketReadyState
+ * }
+ * ```
  */
-const isValidReadyState = (value: number): value is WebSocketReadyState => {
-  return VALID_READY_STATES.has(value);
+export const isValidReadyState = (value: unknown): value is WebSocketReadyState => {
+  return typeof value === 'number' && VALID_READY_STATES.has(value);
 };
 
 /**
  * Native WebSocket readyState를 WebSocketStatus로 변환
+ * 
+ * number 타입도 허용하여 실제 WebSocket API와 호환
+ * (ws.readyState는 number 타입으로 반환됨)
  * 
  * @param readyState - WebSocket.readyState 값 (0-3)
  * @returns 해당하는 WebSocketStatus
  * 
  * @example
  * ```typescript
- * const status = mapReadyStateToStatus(ws.readyState);
+ * const ws = new WebSocket('ws://...');
+ * const status = mapReadyStateToStatus(ws.readyState); // ws.readyState is number
  * ```
  */
-export const mapReadyStateToStatus = (readyState: WebSocketReadyState): WebSocketStatus => {
-  // 런타임 타입 가드: 느슨한 타입 컨텍스트에서 호출될 수 있음
-  // 내부적으로 number로 캐스팅하여 검증
-  if (!isValidReadyState(readyState as number)) {
+export const mapReadyStateToStatus = (readyState: number | WebSocketReadyState): WebSocketStatus => {
+  // 런타임 타입 가드: 느슨한 타입 컨텍스트나 외부 라이브러리에서 호출 가능
+  if (!isValidReadyState(readyState)) {
     console.error(`[WebSocket] Invalid readyState value: ${readyState}`);
     return WebSocketStatus.ERROR;
   }
   
   // 타입 안전한 switch: exhaustiveness check 보장
+  // isValidReadyState 통과 후 readyState는 WebSocketReadyState로 narrowing됨
   switch (readyState) {
     case WS_READY_STATE.CONNECTING:
       return WebSocketStatus.CONNECTING;
