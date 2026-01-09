@@ -66,11 +66,14 @@ export const mapReadyStateToStatus = (readyState: WebSocketReadyState): WebSocke
     case WS_READY_STATE.CLOSING:
     case WS_READY_STATE.CLOSED:
       return WebSocketStatus.DISCONNECTED;
-    default:
-      // 런타임 안전성: 예상치 못한 값에 대한 방어적 처리
-      // TypeScript는 이 케이스에 도달할 수 없다고 판단하지만,
-      // 느슨한 타입 컨텍스트나 외부 라이브러리에서 호출될 수 있음
-      console.error(`[WebSocket] Unexpected readyState value: ${readyState}`);
-      return WebSocketStatus.ERROR;
   }
+  
+  // Exhaustiveness check: TypeScript가 모든 케이스를 처리했는지 확인
+  // 새로운 WS_READY_STATE 값이 추가되면 컴파일 오류 발생
+  const _exhaustiveCheck: never = readyState;
+  
+  // 런타임 안전성: 예상치 못한 값에 대한 방어적 처리
+  // 느슨한 타입 컨텍스트나 외부 라이브러리에서 호출될 수 있음
+  console.error(`[WebSocket] Unexpected readyState value: ${_exhaustiveCheck}`);
+  return WebSocketStatus.ERROR;
 };
