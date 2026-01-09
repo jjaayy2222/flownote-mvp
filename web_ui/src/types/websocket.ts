@@ -47,13 +47,20 @@ export const WS_READY_STATE = {
 export type WebSocketReadyState = typeof WS_READY_STATE[keyof typeof WS_READY_STATE];
 
 /**
+ * 유효한 readyState 값들의 Set (동기화 보장)
+ * Set<number>로 타입 지정하여 타입 가드에서 number 타입 인수 허용
+ */
+const VALID_READY_STATES: Set<number> = new Set(Object.values(WS_READY_STATE));
+
+/**
  * readyState가 유효한 값인지 타입 가드
+ * WS_READY_STATE에서 값을 파생하여 항상 동기화 유지
  * 
  * @param value - 검증할 값
  * @returns 유효한 WebSocketReadyState인 경우 true
  */
 const isValidReadyState = (value: number): value is WebSocketReadyState => {
-  return value === 0 || value === 1 || value === 2 || value === 3;
+  return VALID_READY_STATES.has(value);
 };
 
 /**
@@ -67,9 +74,10 @@ const isValidReadyState = (value: number): value is WebSocketReadyState => {
  * const status = mapReadyStateToStatus(ws.readyState);
  * ```
  */
-export const mapReadyStateToStatus = (readyState: WebSocketReadyState | number): WebSocketStatus => {
+export const mapReadyStateToStatus = (readyState: WebSocketReadyState): WebSocketStatus => {
   // 런타임 타입 가드: 느슨한 타입 컨텍스트에서 호출될 수 있음
-  if (!isValidReadyState(readyState)) {
+  // 내부적으로 number로 캐스팅하여 검증
+  if (!isValidReadyState(readyState as number)) {
     console.error(`[WebSocket] Invalid readyState value: ${readyState}`);
     return WebSocketStatus.ERROR;
   }
@@ -88,5 +96,7 @@ export const mapReadyStateToStatus = (readyState: WebSocketReadyState | number):
   // Exhaustiveness check: 모든 케이스가 처리되었음을 TypeScript에 증명
   // 새로운 WS_READY_STATE 값이 추가되면 컴파일 오류 발생
   const _exhaustiveCheck: never = readyState;
-  return _exhaustiveCheck;
+  
+  // 런타임 안전성: 이 지점에 도달하는 것은 버그이므로 명시적으로 예외를 던진다
+  throw new Error(`Unexpected WebSocket readyState: ${_exhaustiveCheck}`);
 };
