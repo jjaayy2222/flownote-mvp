@@ -76,7 +76,7 @@ export const isValidReadyState = (value: unknown): value is WebSocketReadyState 
 /**
  * Native WebSocket readyState를 WebSocketStatus로 변환
  * 
- * number 타입도 허용하여 실제 WebSocket API와 호환
+ * number 타입을 받아 실제 WebSocket API와 호환
  * (ws.readyState는 number 타입으로 반환됨)
  * 
  * @param readyState - WebSocket.readyState 값 (0-3)
@@ -84,12 +84,14 @@ export const isValidReadyState = (value: unknown): value is WebSocketReadyState 
  * 
  * @example
  * ```typescript
- * const ws = new WebSocket('ws://...');
- * const status = mapReadyStateToStatus(ws.readyState); // ws.readyState is number
+ * // nosemgrep: javascript.lang.security.detect-insecure-websocket
+ * // 예시 코드: 실제로는 wss:// 사용 권장
+ * const ws = new WebSocket('wss://example.com/ws');
+ * const status = mapReadyStateToStatus(ws.readyState);
  * ```
  */
-export const mapReadyStateToStatus = (readyState: number | WebSocketReadyState): WebSocketStatus => {
-  // 런타임 타입 가드: 느슨한 타입 컨텍스트나 외부 라이브러리에서 호출 가능
+export const mapReadyStateToStatus = (readyState: number): WebSocketStatus => {
+  // 런타임 타입 가드: 유효한 readyState 값인지 검증
   if (!isValidReadyState(readyState)) {
     console.error(`[WebSocket] Invalid readyState value: ${readyState}`);
     return WebSocketStatus.ERROR;
