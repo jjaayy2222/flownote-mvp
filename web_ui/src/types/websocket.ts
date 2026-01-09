@@ -47,6 +47,16 @@ export const WS_READY_STATE = {
 export type WebSocketReadyState = typeof WS_READY_STATE[keyof typeof WS_READY_STATE];
 
 /**
+ * readyState가 유효한 값인지 타입 가드
+ * 
+ * @param value - 검증할 값
+ * @returns 유효한 WebSocketReadyState인 경우 true
+ */
+const isValidReadyState = (value: number): value is WebSocketReadyState => {
+  return value === 0 || value === 1 || value === 2 || value === 3;
+};
+
+/**
  * Native WebSocket readyState를 WebSocketStatus로 변환
  * 
  * @param readyState - WebSocket.readyState 값 (0-3)
@@ -57,7 +67,14 @@ export type WebSocketReadyState = typeof WS_READY_STATE[keyof typeof WS_READY_ST
  * const status = mapReadyStateToStatus(ws.readyState);
  * ```
  */
-export const mapReadyStateToStatus = (readyState: WebSocketReadyState): WebSocketStatus => {
+export const mapReadyStateToStatus = (readyState: WebSocketReadyState | number): WebSocketStatus => {
+  // 런타임 타입 가드: 느슨한 타입 컨텍스트에서 호출될 수 있음
+  if (!isValidReadyState(readyState)) {
+    console.error(`[WebSocket] Invalid readyState value: ${readyState}`);
+    return WebSocketStatus.ERROR;
+  }
+  
+  // 타입 안전한 switch: exhaustiveness check 보장
   switch (readyState) {
     case WS_READY_STATE.CONNECTING:
       return WebSocketStatus.CONNECTING;
@@ -68,12 +85,8 @@ export const mapReadyStateToStatus = (readyState: WebSocketReadyState): WebSocke
       return WebSocketStatus.DISCONNECTED;
   }
   
-  // Exhaustiveness check: TypeScript가 모든 케이스를 처리했는지 확인
+  // Exhaustiveness check: 모든 케이스가 처리되었음을 TypeScript에 증명
   // 새로운 WS_READY_STATE 값이 추가되면 컴파일 오류 발생
   const _exhaustiveCheck: never = readyState;
-  
-  // 런타임 안전성: 예상치 못한 값에 대한 방어적 처리
-  // 느슨한 타입 컨텍스트나 외부 라이브러리에서 호출될 수 있음
-  console.error(`[WebSocket] Unexpected readyState value: ${_exhaustiveCheck}`);
-  return WebSocketStatus.ERROR;
+  return _exhaustiveCheck;
 };
