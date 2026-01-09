@@ -45,13 +45,23 @@ const isValidWebSocketUrl = (url: string): boolean => {
 };
 
 /**
+ * 개발/테스트 환경 여부 확인
+ * 
+ * @returns 개발 또는 테스트 환경인 경우 true
+ */
+const isNonProductionEnv = (): boolean => {
+  const env = process.env.NODE_ENV;
+  return env === 'development' || env === 'test';
+};
+
+/**
  * WebSocket URL 가져오기
  * 
  * 우선순위:
  * 1. NEXT_PUBLIC_WS_URL 환경 변수 (유효성 검사 통과 시)
  * 2. window.location 기반 동적 URL (브라우저 환경)
  * 3. NEXT_PUBLIC_WS_FALLBACK_URL 환경 변수 (SSR 환경)
- * 4. ws://localhost:8000/ws (개발 환경 SSR만)
+ * 4. ws://localhost:8000/ws (개발/테스트 환경 SSR만)
  * 
  * @returns WebSocket 서버 URL
  * @throws {Error} 프로덕션 SSR 환경에서 NEXT_PUBLIC_WS_FALLBACK_URL이 설정되지 않은 경우
@@ -89,18 +99,22 @@ export const getWebSocketUrl = (): string => {
       return ssrFallback;
     }
     
-    // 개발 환경에서만 localhost 허용
-    if (process.env.NODE_ENV === 'development') {
+    // 개발/테스트 환경에서만 localhost 허용
+    if (isNonProductionEnv()) {
       // nosemgrep: javascript.lang.security.detect-insecure-websocket
-      // 개발 환경 전용: 로컬 개발 서버 연결
+      // 개발/테스트 환경 전용: 로컬 개발 서버 연결
       const devFallback = 'ws://localhost:8000/ws';
-      logger.debug('Using development SSR fallback URL:', devFallback);
+      logger.debug(`Using ${process.env.NODE_ENV} SSR fallback URL:`, devFallback);
       return devFallback;
     }
     
-    // 프로덕션 SSR에서 폴백 URL이 없으면 오류
-    logger.error('NEXT_PUBLIC_WS_FALLBACK_URL not set in production SSR environment');
-    throw new Error('WebSocket URL configuration required for production SSR');
+    // 프로덕션/스테이징 SSR에서 폴백 URL이 없으면 오류
+    const env = process.env.NODE_ENV || 'unknown';
+    logger.error(`NEXT_PUBLIC_WS_FALLBACK_URL not set in ${env} SSR environment`);
+    throw new Error(
+      `WebSocket URL configuration required for ${env} SSR. ` +
+      'Please set NEXT_PUBLIC_WS_FALLBACK_URL environment variable.'
+    );
   }
 
   // 3. 브라우저 환경 - location 기반 동적 URL
