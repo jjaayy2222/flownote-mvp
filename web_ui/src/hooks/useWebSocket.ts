@@ -95,6 +95,12 @@ export function useWebSocket<T = unknown>(
   const isMounted = useRef(true);
   const socketIdRef = useRef(0);
   const connectRef = useRef<(() => void) | undefined>(undefined);
+  const reconnectOptionRef = useRef(reconnect);
+
+  // reconnect 옵션 최신값 유지
+  useEffect(() => {
+    reconnectOptionRef.current = reconnect;
+  }, [reconnect]);
 
   // 콜백 안정화
   const stableOnOpen = useCallback(() => {
@@ -125,6 +131,10 @@ export function useWebSocket<T = unknown>(
 
     // 수동 연결 시 플래그 초기화
     manuallyDisconnected.current = false;
+    
+    // 연결 시작 시 재연결 카운트 초기화 (새로운 연결 시도 간주)
+    reconnectCountRef.current = 0;
+    setReconnectCount(0);
 
     // 이전 타임아웃 정리
     if (reconnectTimeoutId.current) {
@@ -169,8 +179,8 @@ export function useWebSocket<T = unknown>(
         setStatus(WebSocketStatus.DISCONNECTED);
         stableOnClose();
 
-        // 재연결 로직
-        if (!reconnect || manuallyDisconnected.current || !isMounted.current) {
+        // 재연결 로직 - 최신 reconnect 옵션 사용
+        if (!reconnectOptionRef.current || manuallyDisconnected.current || !isMounted.current) {
           return;
         }
 
@@ -210,7 +220,7 @@ export function useWebSocket<T = unknown>(
       console.error('[WebSocket] Failed to create connection:', error);
       setStatus(WebSocketStatus.ERROR);
     }
-  }, [url, reconnect, stableOnOpen, stableOnClose, stableOnError, stableOnMessage]);
+  }, [url, stableOnOpen, stableOnClose, stableOnError, stableOnMessage]);
 
   // connectRef 업데이트
   useEffect(() => {
