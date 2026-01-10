@@ -16,7 +16,7 @@ export interface WebSocketMessage<T = unknown> {
 /**
  * useWebSocket 옵션
  */
-export interface UseWebSocketOptions {
+export interface UseWebSocketOptions<T = unknown> {
   /** 자동 연결 여부 (기본: true) */
   autoConnect?: boolean;
   /** 재연결 활성화 (기본: true) */
@@ -28,7 +28,7 @@ export interface UseWebSocketOptions {
   /** 에러 콜백 */
   onError?: (error: Event) => void;
   /** 메시지 수신 콜백 */
-  onMessage?: (message: WebSocketMessage) => void;
+  onMessage?: (message: WebSocketMessage<T>) => void;
 }
 
 /**
@@ -42,7 +42,7 @@ export interface UseWebSocketReturn<T = unknown> {
   /** 마지막 수신 메시지 */
   lastMessage: WebSocketMessage<T> | null;
   /** 메시지 전송 함수 */
-  sendMessage: (message: WebSocketMessage) => void;
+  sendMessage: (message: WebSocketMessage<T>) => void;
   /** 수동 연결 함수 */
   connect: () => void;
   /** 수동 연결 해제 함수 */
@@ -71,7 +71,7 @@ export interface UseWebSocketReturn<T = unknown> {
  */
 export function useWebSocket<T = unknown>(
   url: string,
-  options: UseWebSocketOptions = {}
+  options: UseWebSocketOptions<T> = {}
 ): UseWebSocketReturn<T> {
   const {
     autoConnect = true,
@@ -89,9 +89,11 @@ export function useWebSocket<T = unknown>(
 
   // Ref 관리
   const ws = useRef<WebSocket | null>(null);
-  const reconnectTimeoutId = useRef<NodeJS.Timeout | null>(null);
-  const shouldReconnect = useRef(reconnect);
+  const reconnectTimeoutId = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectCountRef = useRef(0);
+  const manuallyDisconnected = useRef(false);
   const isMounted = useRef(true);
+  const socketIdRef = useRef(0);
   const connectRef = useRef<(() => void) | undefined>(undefined);
 
   // 콜백 안정화
@@ -107,7 +109,7 @@ export function useWebSocket<T = unknown>(
     onError?.(error);
   }, [onError]);
 
-  const stableOnMessage = useCallback((message: WebSocketMessage) => {
+  const stableOnMessage = useCallback((message: WebSocketMessage<T>) => {
     onMessage?.(message);
   }, [onMessage]);
 
@@ -121,6 +123,9 @@ export function useWebSocket<T = unknown>(
       return;
     }
 
+    // 수동 연결 시 플래그 초기화
+    manuallyDisconnected.current = false;
+
     // 이전 타임아웃 정리
     if (reconnectTimeoutId.current) {
       clearTimeout(reconnectTimeoutId.current);
@@ -129,22 +134,29 @@ export function useWebSocket<T = unknown>(
 
     try {
       setStatus(WebSocketStatus.CONNECTING);
+      
+      // 새로운 소켓 ID 생성
+      socketIdRef.current += 1;
+      const currentSocketId = socketIdRef.current;
+      
       ws.current = new WebSocket(url);
 
       ws.current.onopen = () => {
-        if (!isMounted.current) return;
+        // 소켓 ID 확인 (URL 변경으로 인한 오래된 소켓 무시)
+        if (currentSocketId !== socketIdRef.current || !isMounted.current) return;
         
         setStatus(WebSocketStatus.CONNECTED);
+        reconnectCountRef.current = 0;
         setReconnectCount(0);
         stableOnOpen();
       };
 
       ws.current.onmessage = (event) => {
-        if (!isMounted.current) return;
+        if (currentSocketId !== socketIdRef.current || !isMounted.current) return;
 
         try {
-          const message: WebSocketMessage = JSON.parse(event.data);
-          setLastMessage(message as WebSocketMessage<T>);
+          const message: WebSocketMessage<T> = JSON.parse(event.data);
+          setLastMessage(message);
           stableOnMessage(message);
         } catch (error) {
           console.error('[WebSocket] Failed to parse message:', error);
@@ -152,39 +164,43 @@ export function useWebSocket<T = unknown>(
       };
 
       ws.current.onclose = () => {
-        if (!isMounted.current) return;
+        if (currentSocketId !== socketIdRef.current || !isMounted.current) return;
 
         setStatus(WebSocketStatus.DISCONNECTED);
         stableOnClose();
 
         // 재연결 로직
-        if (shouldReconnect.current && isMounted.current) {
-          setStatus(WebSocketStatus.RECONNECTING);
-          
-          const delay = Math.min(
-            WEBSOCKET_CONFIG.INITIAL_RECONNECT_DELAY * Math.pow(2, reconnectCount),
-            WEBSOCKET_CONFIG.MAX_RECONNECT_DELAY
-          );
-
-          const maxAttempts = WEBSOCKET_CONFIG.MAX_RECONNECT_ATTEMPTS;
-          const shouldAttemptReconnect = maxAttempts === -1 || reconnectCount < maxAttempts;
-
-          if (shouldAttemptReconnect) {
-            reconnectTimeoutId.current = setTimeout(() => {
-              if (isMounted.current) {
-                setReconnectCount(prev => prev + 1);
-                // connectRef를 통해 재귀 호출
-                connectRef.current?.();
-              }
-            }, delay);
-          } else {
-            setStatus(WebSocketStatus.ERROR);
-          }
+        if (!reconnect || manuallyDisconnected.current || !isMounted.current) {
+          return;
         }
+
+        setStatus(WebSocketStatus.RECONNECTING);
+
+        const attempt = reconnectCountRef.current;
+        const delay = Math.min(
+          WEBSOCKET_CONFIG.INITIAL_RECONNECT_DELAY * Math.pow(2, attempt),
+          WEBSOCKET_CONFIG.MAX_RECONNECT_DELAY
+        );
+
+        const maxAttempts = WEBSOCKET_CONFIG.MAX_RECONNECT_ATTEMPTS;
+        const shouldAttemptReconnect = maxAttempts === -1 || attempt < maxAttempts;
+
+        if (!shouldAttemptReconnect) {
+          setStatus(WebSocketStatus.ERROR);
+          return;
+        }
+
+        reconnectTimeoutId.current = setTimeout(() => {
+          if (!isMounted.current) return;
+          
+          reconnectCountRef.current += 1;
+          setReconnectCount(reconnectCountRef.current);
+          connectRef.current?.();
+        }, delay);
       };
 
       ws.current.onerror = (error) => {
-        if (!isMounted.current) return;
+        if (currentSocketId !== socketIdRef.current || !isMounted.current) return;
 
         console.error('[WebSocket] Connection error:', error);
         setStatus(WebSocketStatus.ERROR);
@@ -194,7 +210,7 @@ export function useWebSocket<T = unknown>(
       console.error('[WebSocket] Failed to create connection:', error);
       setStatus(WebSocketStatus.ERROR);
     }
-  }, [url, reconnectCount, stableOnOpen, stableOnClose, stableOnError, stableOnMessage]);
+  }, [url, reconnect, stableOnOpen, stableOnClose, stableOnError, stableOnMessage]);
 
   // connectRef 업데이트
   useEffect(() => {
@@ -212,7 +228,7 @@ export function useWebSocket<T = unknown>(
    * WebSocket 연결 해제 함수
    */
   const disconnect = useCallback(() => {
-    shouldReconnect.current = false;
+    manuallyDisconnected.current = true;
 
     // 재연결 타임아웃 정리
     if (reconnectTimeoutId.current) {
@@ -227,13 +243,14 @@ export function useWebSocket<T = unknown>(
     }
 
     setStatus(WebSocketStatus.DISCONNECTED);
+    reconnectCountRef.current = 0;
     setReconnectCount(0);
   }, []);
 
   /**
    * 메시지 전송 함수
    */
-  const sendMessage = useCallback((message: WebSocketMessage) => {
+  const sendMessage = useCallback((message: WebSocketMessage<T>) => {
     if (ws.current?.readyState === WebSocket.OPEN) {
       try {
         const data = JSON.stringify(message);
@@ -249,7 +266,7 @@ export function useWebSocket<T = unknown>(
   // 자동 연결 및 정리
   useEffect(() => {
     isMounted.current = true;
-    shouldReconnect.current = reconnect;
+    manuallyDisconnected.current = false;
 
     if (autoConnect) {
       connect();
@@ -257,7 +274,6 @@ export function useWebSocket<T = unknown>(
 
     return () => {
       isMounted.current = false;
-      shouldReconnect.current = false;
 
       // 타임아웃 정리
       if (reconnectTimeoutId.current) {
@@ -271,7 +287,7 @@ export function useWebSocket<T = unknown>(
         ws.current = null;
       }
     };
-  }, [url, autoConnect, reconnect, connect]);
+  }, [url, autoConnect, connect]);
 
   return {
     status,
