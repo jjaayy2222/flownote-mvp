@@ -179,6 +179,23 @@ export interface GraphData {
 }
 
 /**
+ * 유효한 WebSocket 이벤트 타입 목록
+ * 타입 가드 등에서 런타임 검증에 사용됩니다.
+ * 새로운 이벤트 타입을 추가할 때는 이 리스트에도 반드시 추가해야 합니다.
+ */
+export const WEBSOCKET_EVENT_TYPES = [
+  'file_classified',
+  'sync_status_changed',
+  'conflict_detected',
+  'graph_updated',
+] as const;
+
+/**
+ * WebSocket 이벤트 타입 문자열
+ */
+export type WebSocketEventType = typeof WEBSOCKET_EVENT_TYPES[number];
+
+/**
  * WebSocket 이벤트 타입 정의 (Discriminated Union)
  * 서버에서 전송되는 메시지의 구조를 정의합니다.
  */
@@ -203,12 +220,12 @@ export const isWebSocketEvent = (message: unknown): message is WebSocketEvent =>
     return false;
   }
 
-  const validTypes = [
-    'file_classified',
-    'sync_status_changed',
-    'conflict_detected',
-    'graph_updated'
-  ];
+  if (typeof candidate.type !== 'string' || !('data' in candidate)) {
+    return false;
+  }
 
-  return validTypes.includes(candidate.type);
+  // WEBSOCKET_EVENT_TYPES에 포함된 타입인지 확인
+  // 주의: data 필드의 구체적인 내부 구조(속성 존재 여부 등)까지는 검증하지 않습니다.
+  // 단순히 type이 유효하고 data 속성이 존재하는지만 확인합니다.
+  return WEBSOCKET_EVENT_TYPES.includes(candidate.type as WebSocketEventType);
 };
