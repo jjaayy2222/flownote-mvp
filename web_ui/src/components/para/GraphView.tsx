@@ -22,6 +22,13 @@ import { logger } from '@/lib/logger';
 import { UI_CONFIG } from '@/config/ui';
 import { API_BASE } from '@/lib/api';
 
+// Review Reflection: Calculate throttle duration outside component to avoid recalculation
+// Ensures robustness by validating nonnegative value with Math.max
+const GRAPH_UPDATE_THROTTLE = Math.max(
+  0,
+  UI_CONFIG.TOAST.THROTTLE_MS.GRAPH_UPDATE ?? UI_CONFIG.TOAST.THROTTLE_MS.DEFAULT ?? 3000
+);
+
 interface GraphData {
   nodes: Node[];
   edges: Edge[];
@@ -78,9 +85,8 @@ export default function GraphView() {
 
       // Toast Throttling & Stacking Prevention
       const now = Date.now();
-      const throttleDuration = UI_CONFIG.TOAST.THROTTLE_MS.GRAPH_UPDATE ?? UI_CONFIG.TOAST.THROTTLE_MS.DEFAULT;
       
-      if (now - lastToastTimeRef.current > throttleDuration) {
+      if (now - lastToastTimeRef.current > GRAPH_UPDATE_THROTTLE) {
         toast.info("Graph data updated", {
           description: "Real-time sync from backend",
           id: UI_CONFIG.TOAST.IDS.GRAPH_UPDATE, // 동일 ID 사용으로 스택킹 방지
