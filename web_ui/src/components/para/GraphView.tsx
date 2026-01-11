@@ -78,7 +78,9 @@ export default function GraphView() {
 
       // Toast Throttling & Stacking Prevention
       const now = Date.now();
-      if (now - lastToastTimeRef.current > UI_CONFIG.TOAST.THROTTLE_MS.GRAPH_UPDATE) {
+      const throttleDuration = UI_CONFIG.TOAST.THROTTLE_MS.GRAPH_UPDATE ?? UI_CONFIG.TOAST.THROTTLE_MS.DEFAULT;
+      
+      if (now - lastToastTimeRef.current > throttleDuration) {
         toast.info("Graph data updated", {
           description: "Real-time sync from backend",
           id: UI_CONFIG.TOAST.IDS.GRAPH_UPDATE, // 동일 ID 사용으로 스택킹 방지
