@@ -17,8 +17,11 @@ export const UI_CONFIG = {
       DEFAULT: 2000,
       GRAPH_UPDATE: 3000,
       SYNC_UPDATE: 3000,
-      /** Safety fallback value used when configuration is missing or invalid */
-      FALLBACK: 3000,
+      /** 
+       * [INTERNAL USE ONLY] 
+       * Safety fallback value used when configuration is missing or invalid 
+       */
+      _INTERNAL_FALLBACK: 3000,
     },
     
     /** Specific IDs for toasts to prevent stacking (de-duplication) */
