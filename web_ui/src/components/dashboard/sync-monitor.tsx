@@ -123,9 +123,11 @@ export function SyncMonitor() {
         // 이 컴포넌트에서는 모니터링하지 않는 이벤트
         break;
       default:
-        // Exhaustiveness Check: 모든 케이스가 처리되지 않으면 여기서 컴파일 에러 발생
+        // Exhaustiveness Check (Dead Code in Runtime): 
+        // 모든 케이스가 처리되지 않으면 여기서 컴파일 에러가 발생합니다.
+        // 런타임에는 이 분기에 도달할 수 없습니다 (isWebSocketEvent 가드가 보장).
         const _exhaustiveCheck: never = event;
-        console.debug('[SyncMonitor] Unhandled WebSocket event:', JSON.stringify(_exhaustiveCheck));
+        void _exhaustiveCheck;
         break;
     }
   }, [lastMessage]);

@@ -118,6 +118,28 @@ export const mapReadyStateToStatus = (readyState: number): WebSocketStatus => {
 };
 
 /**
+ * WebSocket 이벤트 타입 상수 (Single Source of Truth)
+ * 모든 이벤트 타입은 이 객체를 참조하여 정의해야 합니다.
+ */
+export const WS_EVENT_TYPE = {
+  FILE_CLASSIFIED: 'file_classified',
+  SYNC_STATUS_CHANGED: 'sync_status_changed',
+  CONFLICT_DETECTED: 'conflict_detected',
+  GRAPH_UPDATED: 'graph_updated',
+} as const;
+
+/**
+ * 유효한 WebSocket 이벤트 타입 목록 (Runtime Check용)
+ * WS_EVENT_TYPE 객체에서 자동으로 파생됩니다.
+ */
+export const WEBSOCKET_EVENT_TYPES = Object.values(WS_EVENT_TYPE);
+
+/**
+ * WebSocket 이벤트 타입 문자열
+ */
+export type WebSocketEventType = typeof WS_EVENT_TYPE[keyof typeof WS_EVENT_TYPE];
+
+/**
  * 파일 분류 결과 데이터 타입
  */
 export interface FileClassification {
@@ -179,31 +201,14 @@ export interface GraphData {
 }
 
 /**
- * 유효한 WebSocket 이벤트 타입 목록
- * 타입 가드 등에서 런타임 검증에 사용됩니다.
- * 새로운 이벤트 타입을 추가할 때는 이 리스트에도 반드시 추가해야 합니다.
- */
-export const WEBSOCKET_EVENT_TYPES = [
-  'file_classified',
-  'sync_status_changed',
-  'conflict_detected',
-  'graph_updated',
-] as const;
-
-/**
- * WebSocket 이벤트 타입 문자열
- */
-export type WebSocketEventType = typeof WEBSOCKET_EVENT_TYPES[number];
-
-/**
  * WebSocket 이벤트 타입 정의 (Discriminated Union)
  * 서버에서 전송되는 메시지의 구조를 정의합니다.
  */
 export type WebSocketEvent = 
-  | { type: 'file_classified'; data: FileClassification }
-  | { type: 'sync_status_changed'; data: SyncStatus }
-  | { type: 'conflict_detected'; data: WsConflict }
-  | { type: 'graph_updated'; data: GraphData };
+  | { type: typeof WS_EVENT_TYPE.FILE_CLASSIFIED; data: FileClassification }
+  | { type: typeof WS_EVENT_TYPE.SYNC_STATUS_CHANGED; data: SyncStatus }
+  | { type: typeof WS_EVENT_TYPE.CONFLICT_DETECTED; data: WsConflict }
+  | { type: typeof WS_EVENT_TYPE.GRAPH_UPDATED; data: GraphData };
 
 /**
  * WebSocket 이벤트 타입 가드
@@ -215,10 +220,6 @@ export const isWebSocketEvent = (message: unknown): message is WebSocketEvent =>
   }
 
   const candidate = message as { type?: unknown; data?: unknown };
-
-  if (typeof candidate.type !== 'string' || !('data' in candidate)) {
-    return false;
-  }
 
   if (typeof candidate.type !== 'string' || !('data' in candidate)) {
     return false;
