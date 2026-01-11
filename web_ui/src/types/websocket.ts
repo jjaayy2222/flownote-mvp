@@ -139,9 +139,10 @@ export interface SyncStatus {
 }
 
 /**
- * 충돌 정보 데이터 타입
+ * 충돌 정보 데이터 타입 (WebSocket Payload)
+ * REST API의 Conflict 타입과 구분을 위해 WsConflict로 명명
  */
-export interface Conflict {
+export interface WsConflict {
   id: string;
   fileId: string;
   baseVersion: string;
@@ -184,5 +185,30 @@ export interface GraphData {
 export type WebSocketEvent = 
   | { type: 'file_classified'; data: FileClassification }
   | { type: 'sync_status_changed'; data: SyncStatus }
-  | { type: 'conflict_detected'; data: Conflict }
+  | { type: 'conflict_detected'; data: WsConflict }
   | { type: 'graph_updated'; data: GraphData };
+
+/**
+ * WebSocket 이벤트 타입 가드
+ * 런타임에 메시지가 유효한 WebSocketEvent 구조인지 검증합니다.
+ */
+export const isWebSocketEvent = (message: unknown): message is WebSocketEvent => {
+  if (!message || typeof message !== 'object') {
+    return false;
+  }
+
+  const candidate = message as { type?: unknown; data?: unknown };
+
+  if (typeof candidate.type !== 'string' || !('data' in candidate)) {
+    return false;
+  }
+
+  const validTypes = [
+    'file_classified',
+    'sync_status_changed',
+    'conflict_detected',
+    'graph_updated'
+  ];
+
+  return validTypes.includes(candidate.type);
+};
