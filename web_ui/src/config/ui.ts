@@ -13,9 +13,11 @@ export const UI_CONFIG = {
      * to prevent spamming in high-update scenarios.
      */
     THROTTLE_MS: {
+      /** Standard throttle time for generic toasts */
       DEFAULT: 2000,
       GRAPH_UPDATE: 3000,
       SYNC_UPDATE: 3000,
+      /** Safety fallback value used when configuration is missing or invalid */
       FALLBACK: 3000,
     },
     
