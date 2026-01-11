@@ -118,9 +118,14 @@ export function SyncMonitor() {
           description: `Conflict ID: ${event.data.id}`
         });
         break;
+      case 'file_classified':
+      case 'graph_updated':
+        // 이 컴포넌트에서는 모니터링하지 않는 이벤트
+        break;
       default:
-        // 미래에 추가될 수 있는 이벤트 타입에 대한 방어 로직
-        console.debug('[SyncMonitor] Unhandled WebSocket event:', event.type);
+        // Exhaustiveness Check: 모든 케이스가 처리되지 않으면 여기서 컴파일 에러 발생
+        const _exhaustiveCheck: never = event;
+        console.debug('[SyncMonitor] Unhandled WebSocket event:', JSON.stringify(_exhaustiveCheck));
         break;
     }
   }, [lastMessage]);
