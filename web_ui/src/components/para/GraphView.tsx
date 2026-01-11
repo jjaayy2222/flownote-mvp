@@ -2,7 +2,7 @@
 
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -59,6 +59,10 @@ export default function GraphView() {
     reconnect: true,
   });
 
+  // Reference for throttling toasts
+  const lastToastTimeRef = useRef<number>(0);
+  const TOAST_THROTTLE_MS = 3000;
+
   // Handle WebSocket events
   useEffect(() => {
     if (!lastMessage) return;
@@ -68,11 +72,21 @@ export default function GraphView() {
 
     // 싱글 소스 상수(WS_EVENT_TYPE)를 사용하여 이벤트 처리
     if (lastMessage.type === WS_EVENT_TYPE.GRAPH_UPDATED) {
-      console.log('[GraphView] Graph updated event received, reloading data...');
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[GraphView] Graph updated event received, reloading data...');
+      }
+      
       fetchData();
-      toast.info("Graph data updated", {
-        description: "Real-time sync from backend"
-      });
+
+      // Toast Throttling & Stacking Prevention
+      const now = Date.now();
+      if (now - lastToastTimeRef.current > TOAST_THROTTLE_MS) {
+        toast.info("Graph data updated", {
+          description: "Real-time sync from backend",
+          id: 'live-graph-update', // 동일 ID 사용으로 스택킹 방지
+        });
+        lastToastTimeRef.current = now;
+      }
     }
   }, [lastMessage, fetchData]);
 
