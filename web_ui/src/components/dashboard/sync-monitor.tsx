@@ -5,7 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { getWebSocketUrl } from '@/config/websocket';
-import { WebSocketEvent } from '@/types/websocket';
+import { WebSocketEvent, isWebSocketEvent } from '@/types/websocket';
 import { API_BASE, fetchAPI } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -97,8 +97,14 @@ export function SyncMonitor() {
   useEffect(() => {
     if (!lastMessage) return;
 
-    // Type assertion to treat message as WebSocketEvent Discriminated Union
-    const event = lastMessage as unknown as WebSocketEvent;
+    // 런타임 타입 검증 (Type Guard) - 안전성 강화
+    if (!isWebSocketEvent(lastMessage)) {
+      console.warn('[SyncMonitor] Received invalid WebSocket message structure:', lastMessage);
+      return;
+    }
+
+    // 타입 가드 통과 후 lastMessage는 WebSocketEvent로 자동 추론됨
+    const event: WebSocketEvent = lastMessage;
 
     switch (event.type) {
       case 'sync_status_changed':
@@ -111,6 +117,10 @@ export function SyncMonitor() {
         toast.warning('New conflict detected!', {
           description: `Conflict ID: ${event.data.id}`
         });
+        break;
+      default:
+        // 미래에 추가될 수 있는 이벤트 타입에 대한 방어 로직
+        console.debug('[SyncMonitor] Unhandled WebSocket event:', event.type);
         break;
     }
   }, [lastMessage]);
