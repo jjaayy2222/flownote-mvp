@@ -8,8 +8,15 @@
 
 export const UI_CONFIG = {
   TOAST: {
-    /** Minimum time (ms) between generic update toasts to prevent spamming */
-    THROTTLE_MS: 3000,
+    /** 
+     * Throttle durations (ms) for different types of toasts 
+     * to prevent spamming in high-update scenarios.
+     */
+    THROTTLE_MS: {
+      DEFAULT: 2000,
+      GRAPH_UPDATE: 3000,
+      SYNC_UPDATE: 3000,
+    },
     
     /** Specific IDs for toasts to prevent stacking (de-duplication) */
     IDS: {

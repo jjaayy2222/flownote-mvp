@@ -20,8 +20,7 @@ import { getWebSocketUrl } from '@/config/websocket';
 import { isWebSocketEvent, WS_EVENT_TYPE } from '@/types/websocket';
 import { logger } from '@/lib/logger';
 import { UI_CONFIG } from '@/config/ui';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000';
+import { API_BASE } from '@/lib/api';
 
 interface GraphData {
   nodes: Node[];
@@ -36,7 +35,7 @@ export default function GraphView() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE_URL}/api/graph/data`);
+      const res = await fetch(`${API_BASE}/api/graph/data`);
       if (!res.ok) {
         throw new Error('Failed to fetch graph data');
       }
@@ -79,7 +78,7 @@ export default function GraphView() {
 
       // Toast Throttling & Stacking Prevention
       const now = Date.now();
-      if (now - lastToastTimeRef.current > UI_CONFIG.TOAST.THROTTLE_MS) {
+      if (now - lastToastTimeRef.current > UI_CONFIG.TOAST.THROTTLE_MS.GRAPH_UPDATE) {
         toast.info("Graph data updated", {
           description: "Real-time sync from backend",
           id: UI_CONFIG.TOAST.IDS.GRAPH_UPDATE, // 동일 ID 사용으로 스택킹 방지
