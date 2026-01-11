@@ -131,10 +131,6 @@ export const WS_EVENT_TYPE = {
 /**
  * 유효한 WebSocket 이벤트 타입 목록 (Runtime Check용)
  * WS_EVENT_TYPE 객체에서 자동으로 파생됩니다.
- */
-/**
- * 유효한 WebSocket 이벤트 타입 목록 (Runtime Check용)
- * WS_EVENT_TYPE 객체에서 자동으로 파생됩니다.
  * Literal Type 정보를 유지하기 위해 readonly 타입을 단언합니다.
  */
 export const WEBSOCKET_EVENT_TYPES = Object.values(WS_EVENT_TYPE) as readonly WebSocketEventType[];
@@ -220,7 +216,9 @@ export type WebSocketEvent =
  * 런타임에 메시지가 유효한 WebSocketEvent 구조인지 검증합니다.
  */
 export const isWebSocketEvent = (message: unknown): message is WebSocketEvent => {
-  if (!message || typeof message !== 'object') {
+  // 0. 기본 객체 검사 (null 및 원시 타입 제외)
+  // !message 체크 대신 명시적으로 null 체크를 수행하여 의도를 분명히 함
+  if (message === null || typeof message !== 'object') {
     return false;
   }
 
