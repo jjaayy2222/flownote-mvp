@@ -116,3 +116,73 @@ export const mapReadyStateToStatus = (readyState: number): WebSocketStatus => {
   // 런타임 안전성: 이 지점에 도달하는 것은 버그이므로 명시적으로 예외를 던진다
   throw new Error(`Unexpected WebSocket readyState: ${_exhaustiveCheck}`);
 };
+
+/**
+ * 파일 분류 결과 데이터 타입
+ */
+export interface FileClassification {
+  id: string;
+  fileName: string;
+  category: string;
+  confidence: number;
+  processedAt: string;
+}
+
+/**
+ * 동기화 상태 데이터 타입
+ */
+export interface SyncStatus {
+  isSyncing: boolean;
+  lastSyncedAt: string | null;
+  error: string | null;
+  pendingChanges: number;
+}
+
+/**
+ * 충돌 정보 데이터 타입
+ */
+export interface Conflict {
+  id: string;
+  fileId: string;
+  baseVersion: string;
+  remoteVersion: string;
+  localVersion: string;
+  timestamp: string;
+}
+
+/**
+ * 그래프 노드 데이터 타입
+ */
+export interface GraphNode {
+  id: string;
+  label: string;
+  type: 'project' | 'area' | 'resource' | 'archive' | 'note';
+  val: number; // 크기
+}
+
+/**
+ * 그래프 엣지 데이터 타입
+ */
+export interface GraphEdge {
+  source: string;
+  target: string;
+  value: number; // 가중치
+}
+
+/**
+ * 그래프 전체 데이터 타입
+ */
+export interface GraphData {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+/**
+ * WebSocket 이벤트 타입 정의 (Discriminated Union)
+ * 서버에서 전송되는 메시지의 구조를 정의합니다.
+ */
+export type WebSocketEvent = 
+  | { type: 'file_classified'; data: FileClassification }
+  | { type: 'sync_status_changed'; data: SyncStatus }
+  | { type: 'conflict_detected'; data: Conflict }
+  | { type: 'graph_updated'; data: GraphData };

@@ -2,8 +2,10 @@
 
 "use client"
 
-import React, { useState } from 'react';
-import { useVisibilityPolling } from '@/hooks/use-visibility-polling';
+import React, { useState, useEffect } from 'react';
+import { useWebSocket } from '@/hooks/useWebSocket';
+import { getWebSocketUrl } from '@/config/websocket';
+import { WebSocketEvent } from '@/types/websocket';
 import { API_BASE, fetchAPI } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -41,7 +43,7 @@ interface Conflict {
   remote_hash: string;
 }
 
-const POLLING_INTERVAL = 5000;
+
 
 export function SyncMonitor() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
@@ -80,8 +82,38 @@ export function SyncMonitor() {
     }
   };
 
-  // Optimized polling with visibility check
-  useVisibilityPolling(fetchData, POLLING_INTERVAL);
+  // WebSocket Integration
+  const { isConnected, lastMessage } = useWebSocket(getWebSocketUrl(), {
+    autoConnect: true,
+    reconnect: true,
+  });
+
+  // Initial fetch
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  // Handle WebSocket events
+  useEffect(() => {
+    if (!lastMessage) return;
+
+    // Type assertion to treat message as WebSocketEvent Discriminated Union
+    const event = lastMessage as unknown as WebSocketEvent;
+
+    switch (event.type) {
+      case 'sync_status_changed':
+        console.log('[SyncMonitor] Sync status changed, refreshing data...');
+        fetchData();
+        break;
+      case 'conflict_detected':
+        console.log('[SyncMonitor] Conflict detected, refreshing list...');
+        fetchData();
+        toast.warning('New conflict detected!', {
+          description: `Conflict ID: ${event.data.id}`
+        });
+        break;
+    }
+  }, [lastMessage]);
 
   const handleResolveClick = (conflict: Conflict) => {
     // In a real scenario, we would fetch the actual file content diff here.
@@ -126,7 +158,19 @@ export function SyncMonitor() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Sync Monitor</h2>
+        <div className="flex items-center gap-4">
+          <h2 className="text-3xl font-bold tracking-tight">Sync Monitor</h2>
+          {isConnected ? (
+            <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">
+              <div className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse" />
+              Live
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-gray-500">
+              Connecting...
+            </Badge>
+          )}
+        </div>
         <Button onClick={fetchData} variant="outline" size="sm">
           <RefreshCw className="mr-2 h-4 w-4" /> Refresh
         </Button>
