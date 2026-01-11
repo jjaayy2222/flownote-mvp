@@ -1,3 +1,5 @@
+// web_ui/src/components/para/GraphView.tsx
+
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
@@ -12,6 +14,10 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { useWebSocket } from '@/hooks/useWebSocket';
+import { getWebSocketUrl } from '@/config/websocket';
+import { isWebSocketEvent, WS_EVENT_TYPE } from '@/types/websocket';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000';
 
@@ -47,6 +53,29 @@ export default function GraphView() {
     fetchData();
   }, [fetchData]);
 
+  // WebSocket Integration
+  const { isConnected, lastMessage } = useWebSocket(getWebSocketUrl(), {
+    autoConnect: true,
+    reconnect: true,
+  });
+
+  // Handle WebSocket events
+  useEffect(() => {
+    if (!lastMessage) return;
+
+    // 런타임 타입 가드
+    if (!isWebSocketEvent(lastMessage)) return;
+
+    // 싱글 소스 상수(WS_EVENT_TYPE)를 사용하여 이벤트 처리
+    if (lastMessage.type === WS_EVENT_TYPE.GRAPH_UPDATED) {
+      console.log('[GraphView] Graph updated event received, reloading data...');
+      fetchData();
+      toast.info("Graph data updated", {
+        description: "Real-time sync from backend"
+      });
+    }
+  }, [lastMessage, fetchData]);
+
   // Helper to determine node type label
   const getNodeTypeLabel = (node: Node) => {
     if (node.type === "input") return "Category";
@@ -73,7 +102,19 @@ export default function GraphView() {
   }
 
   return (
-    <div className="h-[600px] w-full border border-gray-200 rounded-lg shadow-sm bg-white">
+    <div className="relative h-[600px] w-full border border-gray-200 rounded-lg shadow-sm bg-white">
+      <div className="absolute top-4 right-4 z-10 pointer-events-none">
+        {isConnected ? (
+          <Badge variant="outline" className="bg-white/90 backdrop-blur text-green-600 border-green-200 shadow-sm">
+            <div className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse" />
+            Live
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="bg-white/90 backdrop-blur text-gray-500 shadow-sm">
+            Connecting...
+          </Badge>
+        )}
+      </div>
       <ReactFlow
         nodes={nodes}
         edges={edges}
