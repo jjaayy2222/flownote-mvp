@@ -18,6 +18,8 @@ import { Badge } from "@/components/ui/badge";
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { getWebSocketUrl } from '@/config/websocket';
 import { isWebSocketEvent, WS_EVENT_TYPE } from '@/types/websocket';
+import { logger } from '@/lib/logger';
+import { UI_CONFIG } from '@/config/ui';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000';
 
@@ -61,7 +63,6 @@ export default function GraphView() {
 
   // Reference for throttling toasts
   const lastToastTimeRef = useRef<number>(0);
-  const TOAST_THROTTLE_MS = 3000;
 
   // Handle WebSocket events
   useEffect(() => {
@@ -72,18 +73,16 @@ export default function GraphView() {
 
     // 싱글 소스 상수(WS_EVENT_TYPE)를 사용하여 이벤트 처리
     if (lastMessage.type === WS_EVENT_TYPE.GRAPH_UPDATED) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('[GraphView] Graph updated event received, reloading data...');
-      }
+      logger.debug('[GraphView] Graph updated event received, reloading data...');
       
       fetchData();
 
       // Toast Throttling & Stacking Prevention
       const now = Date.now();
-      if (now - lastToastTimeRef.current > TOAST_THROTTLE_MS) {
+      if (now - lastToastTimeRef.current > UI_CONFIG.TOAST.THROTTLE_MS) {
         toast.info("Graph data updated", {
           description: "Real-time sync from backend",
-          id: 'live-graph-update', // 동일 ID 사용으로 스택킹 방지
+          id: UI_CONFIG.TOAST.IDS.GRAPH_UPDATE, // 동일 ID 사용으로 스택킹 방지
         });
         lastToastTimeRef.current = now;
       }
