@@ -21,13 +21,11 @@ import { isWebSocketEvent, WS_EVENT_TYPE } from '@/types/websocket';
 import { logger } from '@/lib/logger';
 import { UI_CONFIG } from '@/config/ui';
 import { API_BASE } from '@/lib/api';
+import { getToastThrottleDelay } from '@/lib/ui';
 
-// Review Reflection: Calculate throttle duration outside component to avoid recalculation
-// Ensures robustness by validating nonnegative value with Math.max
-const GRAPH_UPDATE_THROTTLE = Math.max(
-  0,
-  UI_CONFIG.TOAST.THROTTLE_MS.GRAPH_UPDATE ?? UI_CONFIG.TOAST.THROTTLE_MS.DEFAULT ?? 3000
-);
+// Review Reflection: Use centralized helper to calculate throttle duration
+// Encapsulates fallback logic and safety checks
+const GRAPH_UPDATE_THROTTLE = getToastThrottleDelay('GRAPH_UPDATE');
 
 interface GraphData {
   nodes: Node[];

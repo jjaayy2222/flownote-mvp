@@ -16,6 +16,7 @@ export const UI_CONFIG = {
       DEFAULT: 2000,
       GRAPH_UPDATE: 3000,
       SYNC_UPDATE: 3000,
+      FALLBACK: 3000,
     },
     
     /** Specific IDs for toasts to prevent stacking (de-duplication) */
