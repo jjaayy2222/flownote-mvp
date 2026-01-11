@@ -132,7 +132,12 @@ export const WS_EVENT_TYPE = {
  * 유효한 WebSocket 이벤트 타입 목록 (Runtime Check용)
  * WS_EVENT_TYPE 객체에서 자동으로 파생됩니다.
  */
-export const WEBSOCKET_EVENT_TYPES = Object.values(WS_EVENT_TYPE);
+/**
+ * 유효한 WebSocket 이벤트 타입 목록 (Runtime Check용)
+ * WS_EVENT_TYPE 객체에서 자동으로 파생됩니다.
+ * Literal Type 정보를 유지하기 위해 readonly 타입을 단언합니다.
+ */
+export const WEBSOCKET_EVENT_TYPES = Object.values(WS_EVENT_TYPE) as readonly WebSocketEventType[];
 
 /**
  * WebSocket 이벤트 타입 문자열
@@ -221,7 +226,14 @@ export const isWebSocketEvent = (message: unknown): message is WebSocketEvent =>
 
   const candidate = message as { type?: unknown; data?: unknown };
 
-  if (typeof candidate.type !== 'string' || !('data' in candidate)) {
+  // 1. type 필드가 문자열인지 확인
+  if (typeof candidate.type !== 'string') {
+    return false;
+  }
+
+  // 2. data 필드 존재 여부 확인
+  // 주의: data의 내부 구조(필드 등)는 검증하지 않는 "얕은 검사"입니다.
+  if (!('data' in candidate)) {
     return false;
   }
 
