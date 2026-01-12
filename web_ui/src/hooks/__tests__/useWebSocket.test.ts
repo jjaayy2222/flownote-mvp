@@ -6,22 +6,34 @@ import { WebSocketStatus } from '@/types/websocket';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 /**
- * Factory to create a minimal Mock CloseEvent.
- * Reduces boilerplate and ensures consistency across close simulation methods.
- * Only includes properties actually relevant to the hook logic.
+ * Factory to create a Mock CloseEvent using native constructor if available.
+ * This ensures the event behaves exactly like a real browser event (timestamps, inheritance).
  */
 function createMockCloseEvent(code: number = 1000, reason: string = ''): CloseEvent {
-  return {
+  if (typeof CloseEvent !== 'undefined') {
+    return new CloseEvent('close', {
+      code,
+      reason,
+      wasClean: true,
+      bubbles: false,
+      cancelable: false,
+    });
+  }
+
+  // Fallback for environments where CloseEvent is not globally defined (unlikely in jsdom)
+  // We use Partial to strictly type the properties we define, then cast to satisfy the handler signature.
+  const fallbackEvent: Partial<CloseEvent> = {
     code,
     reason,
     wasClean: true,
     type: 'close',
-    // Minimal event properties if needed by hook implementation or consumers
-    target: null,
-    currentTarget: null,
     bubbles: false,
     cancelable: false,
-  } as unknown as CloseEvent;
+    target: null,
+    currentTarget: null,
+  };
+  
+  return fallbackEvent as CloseEvent;
 }
 
 // Mock WebSocket Class
@@ -46,7 +58,7 @@ class MockWebSocket {
 
   /**
    * Mock implementation of the close method.
-   * Updates readyState and triggers onclose callback with a consistent event.
+   * Updates readyState and triggers onclose callback with a standard CloseEvent.
    */
   close(code?: number, reason?: string) {
     this.readyState = MockWebSocket.CLOSED;
@@ -87,10 +99,13 @@ describe('useWebSocket Hook', () => {
   beforeEach(() => {
     MockWebSocket.instances = [];
     vi.stubGlobal('WebSocket', MockWebSocket);
+    
+    // Explicitly mock window.WebSocket for jsdom environment consistency
     Object.defineProperty(window, 'WebSocket', {
       writable: true,
       value: MockWebSocket,
     });
+    
     vi.useRealTimers();
   });
 
