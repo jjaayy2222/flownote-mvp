@@ -7,7 +7,8 @@ import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 /**
  * Factory to create a Mock CloseEvent using native constructor if available.
- * This ensures the event behaves exactly like a real browser event (timestamps, inheritance).
+ * If not available (fallback), it creates a generic Event and appends CloseEvent properties
+ * to ensure close structural alignment with real browser events.
  */
 function createMockCloseEvent(code: number = 1000, reason: string = ''): CloseEvent {
   if (typeof CloseEvent !== 'undefined') {
@@ -20,21 +21,70 @@ function createMockCloseEvent(code: number = 1000, reason: string = ''): CloseEv
     });
   }
 
-  // Fallback for environments where CloseEvent is not globally defined (unlikely in jsdom)
-  // We use Partial to strictly type the properties we define, then cast to satisfy the handler signature.
-  const fallbackEvent: Partial<CloseEvent> = {
+  // Fallback for environments where CloseEvent is not globally defined.
+  // We check for Event support first (standard in jsdom/node).
+  if (typeof Event !== 'undefined') {
+    const event = new Event('close', {
+      bubbles: false,
+      cancelable: false,
+    });
+    
+    // Extend the generic Event with CloseEvent specific properties
+    Object.assign(event, {
+      code,
+      reason,
+      wasClean: true,
+    });
+    
+    return event as unknown as CloseEvent;
+  }
+
+  // Absolute fallback (rare edge case)
+  return {
+    type: 'close',
     code,
     reason,
     wasClean: true,
-    type: 'close',
     bubbles: false,
     cancelable: false,
     target: null,
     currentTarget: null,
-  };
-  
-  return fallbackEvent as CloseEvent;
+    timeStamp: Date.now(),
+  } as unknown as CloseEvent;
 }
+
+// Test suite for the helper function itself
+describe('createMockCloseEvent Utility', () => {
+  it('creates a correctly shaped fallback CloseEvent when CloseEvent is undefined', () => {
+    // Generic Event should exist in jsdom
+    expect(typeof Event).not.toBe('undefined');
+
+    const originalCloseEvent = globalThis.CloseEvent;
+
+    // Simulate environment without CloseEvent
+    // @ts-expect-error forcing undefined for test
+    globalThis.CloseEvent = undefined;
+
+    try {
+      const code = 4000;
+      const reason = 'test fallback';
+      const event = createMockCloseEvent(code, reason);
+
+      expect(event).toBeInstanceOf(Event); // Should inherit from Event
+      expect(event.type).toBe('close');
+      expect(event.code).toBe(code);
+      expect(event.reason).toBe(reason);
+      expect(event.wasClean).toBe(true);
+      expect(event.bubbles).toBe(false);
+      expect(event.cancelable).toBe(false);
+      // timeStamp checks inheritance from Event
+      expect(typeof event.timeStamp).toBe('number');
+    } finally {
+      // Restore original CloseEvent
+      globalThis.CloseEvent = originalCloseEvent;
+    }
+  });
+});
 
 // Mock WebSocket Class
 class MockWebSocket {
