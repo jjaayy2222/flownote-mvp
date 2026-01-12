@@ -1,7 +1,28 @@
+// web_ui/src/hooks/__tests__/useWebSocket.test.ts
+
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useWebSocket } from '../useWebSocket';
 import { WebSocketStatus } from '@/types/websocket';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
+
+/**
+ * Factory to create a minimal Mock CloseEvent.
+ * Reduces boilerplate and ensures consistency across close simulation methods.
+ * Only includes properties actually relevant to the hook logic.
+ */
+function createMockCloseEvent(code: number = 1000, reason: string = ''): CloseEvent {
+  return {
+    code,
+    reason,
+    wasClean: true,
+    type: 'close',
+    // Minimal event properties if needed by hook implementation or consumers
+    target: null,
+    currentTarget: null,
+    bubbles: false,
+    cancelable: false,
+  } as unknown as CloseEvent;
+}
 
 // Mock WebSocket Class
 class MockWebSocket {
@@ -23,35 +44,13 @@ class MockWebSocket {
     MockWebSocket.instances.push(this);
   }
 
+  /**
+   * Mock implementation of the close method.
+   * Updates readyState and triggers onclose callback with a consistent event.
+   */
   close(code?: number, reason?: string) {
     this.readyState = MockWebSocket.CLOSED;
-    this.onclose?.({ 
-        code: code || 1000, 
-        reason: reason || '', 
-        wasClean: true, 
-        bubbles: false,
-        cancelBubble: false,
-        cancelable: false,
-        composed: false,
-        currentTarget: null,
-        defaultPrevented: false,
-        eventPhase: 0,
-        isTrusted: true,
-        returnValue: true,
-        srcElement: null,
-        target: null,
-        timeStamp: Date.now(),
-        type: 'close',
-        composedPath: () => [],
-        initEvent: () => {},
-        preventDefault: () => {},
-        stopImmediatePropagation: () => {},
-        stopPropagation: () => {},
-        NONE: 0,
-        CAPTURING_PHASE: 1,
-        AT_TARGET: 2,
-        BUBBLING_PHASE: 3
-    } as unknown as CloseEvent);
+    this.onclose?.(createMockCloseEvent(code, reason));
   }
 
   send(_data: string) {
@@ -72,9 +71,13 @@ class MockWebSocket {
     this.onerror?.(new Event('error'));
   }
   
-  simulateClose() {
+  /**
+   * Helper to simulate a server-initiated close.
+   * Uses the same event factory as the client-initiated close for consistency.
+   */
+  simulateClose(code?: number, reason?: string) {
     this.readyState = MockWebSocket.CLOSED;
-    this.onclose?.({ code: 1000 } as CloseEvent);
+    this.onclose?.(createMockCloseEvent(code, reason));
   }
 }
 

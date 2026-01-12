@@ -1,3 +1,5 @@
+// web_ui/vitest.config.ts
+
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
