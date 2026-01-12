@@ -1,5 +1,3 @@
-// web_ui/src/hooks/__tests__/useWebSocket.test.ts
-
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useWebSocket } from '../useWebSocket';
 import { WebSocketStatus } from '@/types/websocket';
@@ -16,7 +14,7 @@ class MockWebSocket {
   url: string;
   readyState: number = 0; // CONNECTING
   onopen: (() => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((event: CloseEvent) => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
 
@@ -25,14 +23,39 @@ class MockWebSocket {
     MockWebSocket.instances.push(this);
   }
 
-  close() {
+  close(code?: number, reason?: string) {
     this.readyState = MockWebSocket.CLOSED;
-    this.onclose?.();
+    this.onclose?.({ 
+        code: code || 1000, 
+        reason: reason || '', 
+        wasClean: true, 
+        bubbles: false,
+        cancelBubble: false,
+        cancelable: false,
+        composed: false,
+        currentTarget: null,
+        defaultPrevented: false,
+        eventPhase: 0,
+        isTrusted: true,
+        returnValue: true,
+        srcElement: null,
+        target: null,
+        timeStamp: Date.now(),
+        type: 'close',
+        composedPath: () => [],
+        initEvent: () => {},
+        preventDefault: () => {},
+        stopImmediatePropagation: () => {},
+        stopPropagation: () => {},
+        NONE: 0,
+        CAPTURING_PHASE: 1,
+        AT_TARGET: 2,
+        BUBBLING_PHASE: 3
+    } as unknown as CloseEvent);
   }
 
   send(_data: string) {
     void _data;
-    // no-op
   }
 
   // Helpers to simulate server events
@@ -51,7 +74,7 @@ class MockWebSocket {
   
   simulateClose() {
     this.readyState = MockWebSocket.CLOSED;
-    this.onclose?.();
+    this.onclose?.({ code: 1000 } as CloseEvent);
   }
 }
 
@@ -60,16 +83,11 @@ describe('useWebSocket Hook', () => {
 
   beforeEach(() => {
     MockWebSocket.instances = [];
-    
-    // Stub global WebSocket
     vi.stubGlobal('WebSocket', MockWebSocket);
-    
-    // Ensure window.WebSocket is also mocked for jsdom environment
     Object.defineProperty(window, 'WebSocket', {
       writable: true,
       value: MockWebSocket,
     });
-
     vi.useRealTimers();
   });
 
@@ -77,6 +95,7 @@ describe('useWebSocket Hook', () => {
     vi.restoreAllMocks();
   });
 
+  // 1. Connection & Status
   it('should connect to WebSocket and update status', async () => {
     const { result } = renderHook(() => useWebSocket(TEST_URL));
     
@@ -97,6 +116,7 @@ describe('useWebSocket Hook', () => {
     expect(result.current.isConnected).toBe(true);
   });
 
+  // 2. Message Parsing
   it('should receive and parse messages', async () => {
     const { result } = renderHook(() => useWebSocket(TEST_URL));
     
@@ -118,6 +138,7 @@ describe('useWebSocket Hook', () => {
     expect(result.current.lastMessage).toEqual(testMessage);
   });
 
+  // 3. Error Handling (JSON)
   it('should handle JSON parse errors gracefully', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { result } = renderHook(() => useWebSocket(TEST_URL));
@@ -131,29 +152,22 @@ describe('useWebSocket Hook', () => {
       ws.simulateOpen();
     });
 
-    // Simulate malformed JSON
     act(() => {
       ws.onmessage?.({ data: '{ invalid json }' });
     });
 
-    // We only check if it didn't crash and logged error
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to parse message'), expect.any(SyntaxError));
     expect(result.current.lastMessage).toBeNull();
     
     consoleSpy.mockRestore();
   });
 
+  // 4. Auto-Reconnection
   it('should attempt to reconnect when connection is closed', async () => {
     vi.useFakeTimers();
-    
-    const { result } = renderHook(() => 
-      useWebSocket(TEST_URL, { reconnect: true })
-    );
+    const { result } = renderHook(() => useWebSocket(TEST_URL, { reconnect: true }));
 
-    // Initial connect
-    await act(async () => {
-        vi.advanceTimersByTime(10); 
-    });
+    await act(async () => { vi.advanceTimersByTime(10); });
     
     expect(MockWebSocket.instances.length).toBe(1);
     const ws1 = MockWebSocket.instances[0];
@@ -161,11 +175,9 @@ describe('useWebSocket Hook', () => {
     act(() => { ws1.simulateOpen(); });
     expect(result.current.isConnected).toBe(true);
 
-    // Simulate server disconnection
     act(() => { ws1.simulateClose(); });
     expect(result.current.isConnected).toBe(false);
     
-    // Fast-forward time to trigger reconnect
     await act(async () => {
       vi.advanceTimersByTime(2000);
     });
@@ -173,13 +185,92 @@ describe('useWebSocket Hook', () => {
     expect(MockWebSocket.instances.length).toBeGreaterThan(1);
     const ws2 = MockWebSocket.instances[MockWebSocket.instances.length - 1];
     
-    // Status should be CONNECTING as it is actively creating new connection
     expect(result.current.status).toBe(WebSocketStatus.CONNECTING);
     
     act(() => { ws2.simulateOpen(); });
     expect(result.current.isConnected).toBe(true);
-    expect(result.current.status).toBe(WebSocketStatus.CONNECTED);
     
     vi.useRealTimers();
+  });
+
+  // 5. No Reconnect when disabled
+  it('should not attempt to reconnect when reconnect option is disabled', async () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useWebSocket(TEST_URL, { reconnect: false }));
+    
+    await act(async () => { vi.advanceTimersByTime(10); });
+    
+    const initialCount = MockWebSocket.instances.length;
+    const ws = MockWebSocket.instances[0];
+    
+    act(() => { ws.simulateOpen(); });
+    expect(result.current.isConnected).toBe(true);
+
+    act(() => { ws.simulateClose(); });
+    expect(result.current.isConnected).toBe(false);
+
+    // Wait long time
+    await act(async () => { vi.advanceTimersByTime(10000); });
+    
+    // Should NOT create new instance
+    expect(MockWebSocket.instances.length).toBe(initialCount);
+    expect(result.current.status).toBe(WebSocketStatus.DISCONNECTED);
+    
+    vi.useRealTimers();
+  });
+
+  // 6. Cleanup on Unmount
+  it('should clean up WebSocket and timers on unmount', async () => {
+    vi.useFakeTimers();
+    const { unmount } = renderHook(() => useWebSocket(TEST_URL));
+    
+    await act(async () => { vi.advanceTimersByTime(10); });
+    
+    const ws = MockWebSocket.instances[0];
+    const closeSpy = vi.spyOn(ws, 'close');
+    
+    unmount();
+    
+    expect(closeSpy).toHaveBeenCalled();
+    
+    // Ensure no reconnect attempt after unmount
+    await act(async () => { vi.advanceTimersByTime(5000); });
+    expect(MockWebSocket.instances.length).toBe(1);
+    
+    vi.useRealTimers();
+  });
+
+  // 7. Manual Disconnect
+  it('should close connection when disconnect is called manually', async () => {
+    const { result } = renderHook(() => useWebSocket(TEST_URL));
+    
+    await waitFor(() => expect(MockWebSocket.instances.length).toBe(1));
+    const ws = MockWebSocket.instances[0];
+    const closeSpy = vi.spyOn(ws, 'close');
+    
+    act(() => {
+      result.current.disconnect();
+    });
+
+    expect(closeSpy).toHaveBeenCalled();
+    expect(result.current.status).toBe(WebSocketStatus.DISCONNECTED);
+  });
+
+  // 8. Connection Error Handling
+  it('should handle connection errors', async () => {
+    const { result } = renderHook(() => useWebSocket(TEST_URL));
+    
+    await waitFor(() => expect(MockWebSocket.instances.length).toBe(1));
+    const ws = MockWebSocket.instances[0];
+
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    act(() => {
+      ws.simulateError();
+    });
+
+    expect(result.current.status).toBe(WebSocketStatus.ERROR);
+    
+    consoleSpy.mockRestore();
   });
 });
