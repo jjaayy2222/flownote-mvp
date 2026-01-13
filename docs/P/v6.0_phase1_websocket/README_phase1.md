@@ -211,6 +211,13 @@ pytest tests/unit/test_websocket_manager.py -v
 npm test -- useWebSocket.test.ts
 ```
 
+#### **검증 완료 항목 (Frontend)**
+- [x] **Connection Lifecycle**: 연결 수립, 종료, 상태(`CONNECTING`, `OPEN`, `CLOSING`, `CLOSED`) 변화 검증
+- [x] **Message Handling**: 수신 메시지 파싱, JSON 에러 핸들링, 상태 업데이트 검증
+- [x] **Auto-Reconnection**: 연결 종료 시 지수 백오프(Exponential Backoff)를 적용한 재연결 로직 및 옵션(`reconnect: boolean`) 동작 검증
+- [x] **Cleanup & Safety**: 컴포넌트 Unmount 시 소켓 종료 및 타이머 정리, 메모리 누수 방지 검증
+- [x] **Native Event Compatibility**: `jsdom` 및 브라우저 환경의 Native `CloseEvent`/`Event`와의 동작 일치성 검증
+
 ### Integration Tests
 ```bash
 # E2E WebSocket 테스트
@@ -284,6 +291,9 @@ setTimeout(connect, reconnectDelay);
 
 ## 📝 Next Steps
 
+- [x] Frontend WebSocket Client 구현 (Hook & Config)
+- [x] Frontend Unit Tests 작성 (`useWebSocket` Hook)
+- [ ] Frontend Integration Tests (`SyncMonitor`, `GraphView` 컴포넌트 연동)
 - [ ] WebSocket 인증 추가 (JWT)
 - [ ] 메시지 압축 (gzip)
 - [ ] 연결 풀 관리
