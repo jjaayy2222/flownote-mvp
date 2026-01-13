@@ -53,18 +53,25 @@ export interface UseWebSocketReturn<T = unknown> {
 }
 
 /**
- * 보안을 위해 URL에서 쿼리 파라미터 등 민감 정보를 제거합니다.
+ * 보안을 위해 URL에서 쿼리 파라미터, 해시(Fragment) 등 민감 정보를 제거합니다.
  * @param url - 원본 WebSocket URL
  * @returns 민감 정보가 제거된 URL
  */
 const sanitizeUrl = (url: string): string => {
+  if (!url || typeof url !== 'string') {
+    return '[Invalid URL]';
+  }
+
+  const trimmed = url.trim();
+
   try {
-    const parsed = new URL(url);
-    // 프로토콜, 호스트, 경로만 반환 (쿼리 스트링 제외)
+    const parsed = new URL(trimmed);
+    // 프로토콜, 호스트, 경로만 반환 (쿼리 스트링 및 해시 제외)
     return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
   } catch {
-    // URL 파싱 실패 시(상대 경로 등) 쿼리 스트링만 제거하고 나머지는 반환하여 디버깅 힌트 제공
-    return url.split('?')[0];
+    // Fallback: URL 파싱 실패 시(상대 경로, 불완전 URL 등)
+    // 정규식을 사용하여 ?(Query) 또는 #(Hash) 이후의 모든 민감 정보 제거
+    return trimmed.replace(/[?#].*$/, '');
   }
 };
 
@@ -165,7 +172,7 @@ export function useWebSocket<T = unknown>(
 
     try {
       setStatus(WebSocketStatus.CONNECTING);
-      // [Security] URL 로깅 시 민감 정보(쿼리 파라미터 등) 제거
+      // [Security] URL 로깅 시 민감 정보(쿼리 및 해시) 제거
       logger.debug(`[WebSocket:${currentSocketId}] Connecting to:`, sanitizeUrl(url));
       
       ws.current = new WebSocket(url);
