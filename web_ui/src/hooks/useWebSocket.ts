@@ -63,8 +63,8 @@ const sanitizeUrl = (url: string): string => {
     // 프로토콜, 호스트, 경로만 반환 (쿼리 스트링 제외)
     return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
   } catch {
-    // URL 파싱 실패 시(상대 경로 등) 원본을 노출하는 대신 안전한 문구 반환
-    return '[Local/Relative URL]';
+    // URL 파싱 실패 시(상대 경로 등) 쿼리 스트링만 제거하고 나머지는 반환하여 디버깅 힌트 제공
+    return url.split('?')[0];
   }
 };
 
@@ -159,13 +159,12 @@ export function useWebSocket<T = unknown>(
       reconnectTimeoutId.current = null;
     }
 
+    // 새로운 소켓 ID 생성 (연결 시도 시작)
+    socketIdRef.current += 1;
+    const currentSocketId = socketIdRef.current;
+
     try {
       setStatus(WebSocketStatus.CONNECTING);
-      
-      // 새로운 소켓 ID 생성
-      socketIdRef.current += 1;
-      const currentSocketId = socketIdRef.current;
-      
       // [Security] URL 로깅 시 민감 정보(쿼리 파라미터 등) 제거
       logger.debug(`[WebSocket:${currentSocketId}] Connecting to:`, sanitizeUrl(url));
       
@@ -241,7 +240,7 @@ export function useWebSocket<T = unknown>(
         stableOnError(error);
       };
     } catch (error) {
-      logger.error(`[WebSocket] Failed to create connection:`, error);
+      logger.error(`[WebSocket:${currentSocketId}] Failed to create connection:`, error);
       setStatus(WebSocketStatus.ERROR);
     }
   }, [url, stableOnOpen, stableOnClose, stableOnError, stableOnMessage]);
