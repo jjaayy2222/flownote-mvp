@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { WEBSOCKET_CONFIG } from '@/config/websocket';
 import { WebSocketStatus } from '@/types/websocket';
+import { logger } from '@/lib/logger';
 
 /**
  * WebSocket 메시지 타입
@@ -63,8 +64,8 @@ export interface UseWebSocketReturn<T = unknown> {
  * const { isConnected, lastMessage, sendMessage } = useWebSocket(
  *   getWebSocketUrl(),
  *   {
- *     onOpen: () => console.log('Connected'),
- *     onClose: () => console.log('Disconnected'),
+ *     onOpen: () => logger.log('Connected'),
+ *     onClose: () => logger.log('Disconnected'),
  *   }
  * );
  * ```
@@ -144,6 +145,7 @@ export function useWebSocket<T = unknown>(
 
     try {
       setStatus(WebSocketStatus.CONNECTING);
+      logger.debug('[WebSocket] Connecting to:', url);
       
       // 새로운 소켓 ID 생성
       socketIdRef.current += 1;
@@ -155,6 +157,7 @@ export function useWebSocket<T = unknown>(
         // 소켓 ID 확인 (URL 변경으로 인한 오래된 소켓 무시)
         if (currentSocketId !== socketIdRef.current || !isMounted.current) return;
         
+        logger.info('[WebSocket] Connected');
         setStatus(WebSocketStatus.CONNECTED);
         reconnectCountRef.current = 0;
         setReconnectCount(0);
@@ -169,13 +172,14 @@ export function useWebSocket<T = unknown>(
           setLastMessage(message);
           stableOnMessage(message);
         } catch (error) {
-          console.error('[WebSocket] Failed to parse message:', error);
+          logger.error('[WebSocket] Failed to parse message:', error);
         }
       };
 
       ws.current.onclose = () => {
         if (currentSocketId !== socketIdRef.current || !isMounted.current) return;
 
+        logger.info('[WebSocket] Disconnected');
         setStatus(WebSocketStatus.DISCONNECTED);
         stableOnClose();
 
@@ -196,10 +200,12 @@ export function useWebSocket<T = unknown>(
         const shouldAttemptReconnect = maxAttempts === -1 || attempt < maxAttempts;
 
         if (!shouldAttemptReconnect) {
+          logger.error('[WebSocket] Max reconnect attempts reached');
           setStatus(WebSocketStatus.ERROR);
           return;
         }
 
+        logger.debug(`[WebSocket] Reconnecting in ${delay}ms (Attempt ${attempt + 1})`);
         reconnectTimeoutId.current = setTimeout(() => {
           if (!isMounted.current) return;
           
@@ -212,12 +218,12 @@ export function useWebSocket<T = unknown>(
       ws.current.onerror = (error) => {
         if (currentSocketId !== socketIdRef.current || !isMounted.current) return;
 
-        console.error('[WebSocket] Connection error:', error);
+        logger.error('[WebSocket] Connection error:', error);
         setStatus(WebSocketStatus.ERROR);
         stableOnError(error);
       };
     } catch (error) {
-      console.error('[WebSocket] Failed to create connection:', error);
+      logger.error('[WebSocket] Failed to create connection:', error);
       setStatus(WebSocketStatus.ERROR);
     }
   }, [url, stableOnOpen, stableOnClose, stableOnError, stableOnMessage]);
@@ -239,6 +245,7 @@ export function useWebSocket<T = unknown>(
    */
   const disconnect = useCallback(() => {
     manuallyDisconnected.current = true;
+    logger.debug('[WebSocket] Manual disconnect initiated');
 
     // 재연결 타임아웃 정리
     if (reconnectTimeoutId.current) {
@@ -266,10 +273,10 @@ export function useWebSocket<T = unknown>(
         const data = JSON.stringify(message);
         ws.current.send(data);
       } catch (error) {
-        console.error('[WebSocket] Failed to send message:', error);
+        logger.error('[WebSocket] Failed to send message:', error);
       }
     } else {
-      console.warn('[WebSocket] Cannot send message: not connected');
+      logger.warn('[WebSocket] Cannot send message: not connected');
     }
   }, []);
 
@@ -284,6 +291,7 @@ export function useWebSocket<T = unknown>(
 
     return () => {
       isMounted.current = false;
+      logger.debug('[WebSocket] Unmounting hook, cleaning up');
 
       // 타임아웃 정리
       if (reconnectTimeoutId.current) {
