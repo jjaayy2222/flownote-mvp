@@ -58,8 +58,9 @@ export interface UseWebSocketReturn<T = unknown> {
  * @returns 민감 정보가 제거된 URL 또는 유효하지 않은 입력 알림
  */
 const sanitizeUrl = (url: string): string => {
-  // 빈 문자열이나 공백만 있는 경우 처리
-  if (!url || url.trim().length === 0) {
+  // TypeScript 타입 시스템상 url은 string임이 보장됨
+  // 공백을 제외한 실제 콘텐츠가 없는 경우 처리
+  if (url.trim().length === 0) {
     return '[Invalid URL]';
   }
 
