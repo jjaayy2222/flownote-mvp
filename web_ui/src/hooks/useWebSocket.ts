@@ -55,10 +55,11 @@ export interface UseWebSocketReturn<T = unknown> {
 /**
  * 보안을 위해 URL에서 쿼리 파라미터, 해시(Fragment) 등 민감 정보를 제거합니다.
  * @param url - 원본 WebSocket URL
- * @returns 민감 정보가 제거된 URL
+ * @returns 민감 정보가 제거된 URL 또는 유효하지 않은 입력 알림
  */
 const sanitizeUrl = (url: string): string => {
-  if (!url || typeof url !== 'string') {
+  // 빈 문자열이나 공백만 있는 경우 처리
+  if (!url || url.trim().length === 0) {
     return '[Invalid URL]';
   }
 
