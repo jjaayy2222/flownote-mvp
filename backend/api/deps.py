@@ -8,63 +8,61 @@ from fastapi.security import OAuth2PasswordBearer
 # OAuth2 스키마 정의
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-# [Security] Mock User Definition (Centralized)
-MOCK_USER = {"username": "dev_user", "id": 1, "role": "admin"}
+# [Security] Mock User Definitions (Centralized)
+# Separate mocks for different roles to detect permission issues in dev environment.
+MOCK_ADMIN_USER: Dict[str, Any] = {"username": "dev_admin", "id": 1, "role": "admin"}
+MOCK_REGULAR_USER: Dict[str, Any] = {"username": "dev_user", "id": 2, "role": "user"}
+
+# Backwards compatibility alias
+MOCK_USER = MOCK_ADMIN_USER
 
 
-def _ensure_dev_environment():
+def _ensure_dev_environment(
+    status_code: int = status.HTTP_501_NOT_IMPLEMENTED,
+    detail: str = "Authentication Logic is not yet implemented for production.",
+) -> None:
     """
     [Security Guard]
-    프로덕션 환경에서 실수로 인증이 우회되는 것을 방지합니다.
-    환경 변수 `ENVIRONMENT`가 'local' 또는 'development'일 때만 통과합니다.
+    Block mock-based auth outside local/development environments.
     """
+    # Note: Accessing os.getenv directly as config module doesn't expose ENVIRONMENT yet.
     env = os.getenv("ENVIRONMENT", "production")
     if env not in ["local", "development"]:
-        # 실제 구현이 없는 상태에서 프로덕션 호출 시 명확하게 실패
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Authentication Logic is not yet implemented for production.",
-        )
+        raise HTTPException(status_code=status_code, detail=detail)
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
     """
-    HTTP 요청에 대한 JWT 인증 의존성 함수입니다.
+    HTTP requesting user dependency.
+    Returns Admin user in dev environment to facilitate system operations.
     """
-    # 1. Security Check
+    # Default behavior: 501 Not Implemented in production
     _ensure_dev_environment()
 
-    # TODO: [Phase 2] Implement Logic
-    # verify_token(token)
+    # TODO: [Phase 2] verify_token(token)
 
-    return MOCK_USER
+    return MOCK_ADMIN_USER
 
 
 async def get_current_user_ws(
     websocket: WebSocket, token: Optional[str] = Query(None)
 ) -> Dict[str, Any]:
     """
-    WebSocket 연결을 위한 인증 의존성 함수입니다.
-    쿼리 파라미터 `token`을 검증합니다.
+    WebSocket connecting user dependency.
+    Returns Regular user in dev environment to test standard access controls.
     """
-    # 1. Missing Token Handling
     if token is None:
-        # 토큰이 없으면 핸드쉐이크 단계에서 즉시 거부 (401 Unauthorized)
-        # 의도치 않은 익명 접근(Anonymous)을 방지합니다.
+        # Strictly reject missing tokens
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing authentication token via query parameter",
         )
 
-    # 2. Security Check (Environment)
-    try:
-        _ensure_dev_environment()
-    except HTTPException:
-        # WebSocket 연결 시점의 서버 에러/구현 미비는 1011(Internal Error) 또는 403으로 처리
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Auth not implemented"
-        )
+    # WebSocket handshake failure should be 403 or similar, not 501
+    _ensure_dev_environment(
+        status_code=status.HTTP_403_FORBIDDEN, detail="Auth not implemented"
+    )
 
     # TODO: [Phase 2] Verify token logic
 
-    return MOCK_USER
+    return MOCK_REGULAR_USER
