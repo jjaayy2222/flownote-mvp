@@ -1,7 +1,7 @@
 # backend/api/deps.py
 
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable, Union
 from fastapi import Depends, HTTPException, status, WebSocket, Query, WebSocketException
 from fastapi.security import OAuth2PasswordBearer
 
@@ -16,18 +16,23 @@ MOCK_REGULAR_USER: Dict[str, Any] = {"username": "dev_user", "id": 2, "role": "u
 # Note: 'MOCK_USER' alias has been removed to enforce explicit role usage.
 
 
-def _ensure_dev_environment(exception_to_raise: Exception) -> None:
+def _ensure_dev_environment(
+    exception_factory: Callable[[], Union[HTTPException, WebSocketException]],
+) -> None:
     """
     [Security Guard]
     Block mock-based auth outside local/development environments.
-    Accepts a specific exception instance to raise, allowing caller to control
-    whether to fail with HTTPException (for REST) or WebSocketException (for WS).
+
+    Args:
+        exception_factory: A callable that returns the exception to raise.
+                           Using a factory ensures the exception is created
+                           (and stack trace captured) only when actually raised.
     """
     # Note: Accessing os.getenv directly as config module doesn't expose ENVIRONMENT yet.
     # TODO: Route this through backend.config.AppConfig when available.
     env = os.getenv("ENVIRONMENT", "production")
     if env not in ["local", "development"]:
-        raise exception_to_raise
+        raise exception_factory()
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
@@ -37,7 +42,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
     """
     # Default behavior: 501 Not Implemented in production
     _ensure_dev_environment(
-        HTTPException(
+        lambda: HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
             detail="Authentication Logic is not yet implemented for production.",
         )
@@ -64,7 +69,7 @@ async def get_current_user_ws(
 
     # Use WebSocketException for environment guard as well
     _ensure_dev_environment(
-        WebSocketException(
+        lambda: WebSocketException(
             code=status.WS_1008_POLICY_VIOLATION, reason="Auth not implemented"
         )
     )
