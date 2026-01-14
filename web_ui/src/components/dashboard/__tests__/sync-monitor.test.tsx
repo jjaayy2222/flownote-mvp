@@ -130,24 +130,26 @@ describe('SyncMonitor Integration Tests', () => {
     // 2. Validate Obsidian Connection Card Details
     const vaultPathLabel = screen.getByText('Vault Path');
     const vaultPathContainer = vaultPathLabel.closest('div');
-    // Fix: Type assertion for within() compatibility (Element -> HTMLElement)
+    
+    // [Safety] Ensure container exists before accessing it
+    expect(vaultPathContainer).not.toBeNull();
     expect(within(vaultPathContainer as HTMLElement).getByText('/tmp/vault')).toBeTruthy();
 
     const fileCountLabel = screen.getByText('Total Files');
     const fileCountContainer = fileCountLabel.closest('div');
+    
+    // [Safety] Ensure container exists
+    expect(fileCountContainer).not.toBeNull();
     expect(within(fileCountContainer as HTMLElement).getByText('100')).toBeTruthy();
 
     // 3. MCP Status Details
     const mcpTitle = screen.getByText('MCP Server');
     const mcpCard = mcpTitle.closest('div[class*="bg-card"]'); 
     
-    if (mcpCard) {
-        // Fix: Type assertion
-        expect(within(mcpCard as HTMLElement).getByText('Running')).toBeTruthy();
-        expect(within(mcpCard as HTMLElement).getByText('obsidian-client')).toBeTruthy();
-    } else {
-        expect(screen.getByText('obsidian-client')).toBeTruthy();
-    }
+    // [Refactor] Assert MCP card must exist (Removed conditional logic)
+    expect(mcpCard).not.toBeNull();
+    expect(within(mcpCard as HTMLElement).getByText('Running')).toBeTruthy();
+    expect(within(mcpCard as HTMLElement).getByText('obsidian-client')).toBeTruthy();
   });
 
   it('renders conflicts correctly when they exist', async () => {
@@ -212,7 +214,9 @@ describe('SyncMonitor Integration Tests', () => {
     
     // Initial verification
     const fileCountLabel = screen.getByText('Total Files');
-    expect(within(fileCountLabel.closest('div') as HTMLElement).getByText('100')).toBeTruthy();
+    const fileCountContainer = fileCountLabel.closest('div');
+    expect(fileCountContainer).not.toBeNull();
+    expect(within(fileCountContainer as HTMLElement).getByText('100')).toBeTruthy();
 
     // Prepare Update
     mockSyncStatus = { ...MOCK_SYNC_STATUS, file_count: 999 };
@@ -237,8 +241,9 @@ describe('SyncMonitor Integration Tests', () => {
     await waitFor(() => {
         // Verify UI Update specifically in the Total Files section
         const updatedLabel = screen.getByText('Total Files');
-        // Fix: Type assertion
-        expect(within(updatedLabel.closest('div') as HTMLElement).getByText('999')).toBeTruthy();
+        const updatedContainer = updatedLabel.closest('div');
+        expect(updatedContainer).not.toBeNull();
+        expect(within(updatedContainer as HTMLElement).getByText('999')).toBeTruthy();
     });
   });
 });
