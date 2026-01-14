@@ -32,7 +32,8 @@ global.ResizeObserver = class ResizeObserver {
 };
 
 // [Helper] Encapsulate DOM traversal for cleaner tests
-const getContainerByLabel = (
+// Changed name to accurately reflect usage of getByText
+const getContainerByText = (
   text: string | RegExp, 
   selector: string = 'div'
 ): HTMLElement => {
@@ -126,14 +127,14 @@ describe('SyncMonitor Integration Tests', () => {
 
     render(<SyncMonitor />);
 
-    expect(screen.getByText(/loading sync status/i)).toBeTruthy();
+    // getByText implies assertion (throws if not found)
+    screen.getByText(/loading sync status/i);
 
     await act(async () => {
         rejectApi(new Error('Test Cleanup'));
     });
   });
 
-  // [Refactor] Using helper function for concise assertions
   it('renders dashboard with fetched data including details', async () => {
     render(<SyncMonitor />);
 
@@ -142,20 +143,19 @@ describe('SyncMonitor Integration Tests', () => {
     });
 
     // 1. High-level sections
-    expect(screen.getByText('Sync Monitor')).toBeTruthy();
+    screen.getByText('Sync Monitor');
     
     // 2. Validate Obsidian Connection Card Details
-    const vaultPathContainer = getContainerByLabel('Vault Path');
-    expect(within(vaultPathContainer).getByText('/tmp/vault')).toBeTruthy();
+    const vaultPathContainer = getContainerByText('Vault Path');
+    within(vaultPathContainer).getByText('/tmp/vault');
 
-    const fileCountContainer = getContainerByLabel('Total Files');
-    expect(within(fileCountContainer).getByText('100')).toBeTruthy();
+    const fileCountContainer = getContainerByText('Total Files');
+    within(fileCountContainer).getByText('100');
 
     // 3. MCP Status Details
-    // Using specific selector for Card component
-    const mcpCard = getContainerByLabel('MCP Server', 'div[class*="bg-card"]'); 
-    expect(within(mcpCard).getByText('Running')).toBeTruthy();
-    expect(within(mcpCard).getByText('obsidian-client')).toBeTruthy();
+    const mcpCard = getContainerByText('MCP Server', 'div[class*="bg-card"]'); 
+    within(mcpCard).getByText('Running');
+    within(mcpCard).getByText('obsidian-client');
   });
 
   it('renders conflicts correctly when they exist', async () => {
@@ -176,9 +176,9 @@ describe('SyncMonitor Integration Tests', () => {
     });
 
     // Validates that specific conflict details are present
-    expect(screen.getByText('notes/important.md')).toBeTruthy();
-    expect(screen.getByText(/unresolved/i)).toBeTruthy();
-    expect(screen.getByText(/content_mismatch/)).toBeTruthy();
+    screen.getByText('notes/important.md');
+    screen.getByText(/unresolved/i);
+    screen.getByText(/content_mismatch/);
   });
 
   it('shows "Live" badge when WebSocket is connected', async () => {
@@ -188,7 +188,7 @@ describe('SyncMonitor Integration Tests', () => {
         expect(screen.queryByText(/loading sync status/i)).toBeNull();
     });
 
-    expect(screen.getByText('Live')).toBeTruthy();
+    screen.getByText('Live');
   });
 
   it('shows "Connecting..." badge when WebSocket is disconnected', async () => {
@@ -208,7 +208,7 @@ describe('SyncMonitor Integration Tests', () => {
         expect(screen.queryByText(/loading sync status/i)).toBeNull();
     });
 
-    expect(screen.getByText('Connecting...')).toBeTruthy();
+    screen.getByText('Connecting...');
   });
 
   it('updates UI when "sync_status_changed" event is received', async () => {
@@ -219,8 +219,8 @@ describe('SyncMonitor Integration Tests', () => {
     });
     
     // Initial verification
-    const fileCountContainer = getContainerByLabel('Total Files');
-    expect(within(fileCountContainer).getByText('100')).toBeTruthy();
+    const fileCountContainer = getContainerByText('Total Files');
+    within(fileCountContainer).getByText('100');
 
     // Prepare Update
     mockSyncStatus = { ...MOCK_SYNC_STATUS, file_count: 999 };
@@ -244,8 +244,8 @@ describe('SyncMonitor Integration Tests', () => {
 
     await waitFor(() => {
         // Verify UI Update specifically in the Total Files section
-        const updatedContainer = getContainerByLabel('Total Files');
-        expect(within(updatedContainer).getByText('999')).toBeTruthy();
+        const updatedContainer = getContainerByText('Total Files');
+        within(updatedContainer).getByText('999');
     });
   });
 });
