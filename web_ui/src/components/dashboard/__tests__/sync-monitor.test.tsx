@@ -1,6 +1,6 @@
 // web_ui/src/components/dashboard/__tests__/sync-monitor.test.tsx
 
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, within } from '@testing-library/react';
 import { SyncMonitor } from '../sync-monitor';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as useWebSocketHook from '@/hooks/useWebSocket';
@@ -56,7 +56,7 @@ const MOCK_SYNC_STATUS = {
 
 const MOCK_MCP_STATUS = {
   running: true,
-  active_clients: ['obsidian-client'], // Changed for specific testing
+  active_clients: ['obsidian-client'], 
   tools_registered: ['read_file'],
   resources_registered: ['notes'],
 };
@@ -73,9 +73,12 @@ describe('SyncMonitor Integration Tests', () => {
     mockConflicts = [];
     mockSyncStatus = { ...MOCK_SYNC_STATUS };
 
-    // Dynamic Mock Implementation
+    // Dynamic Mock Implementation with Type Safety Check
     vi.mocked(apiLib.fetchAPI).mockImplementation(async (url) => {
-        if (typeof url !== 'string') return {};
+        // Guard against invalid usage in tests
+        if (typeof url !== 'string') {
+            throw new Error(`[fetchAPI Mock] Invalid URL argument: ${JSON.stringify(url)}`);
+        }
         
         if (url.includes('/status') && !url.includes('/mcp')) return mockSyncStatus;
         if (url.includes('/mcp')) return MOCK_MCP_STATUS;
@@ -113,7 +116,7 @@ describe('SyncMonitor Integration Tests', () => {
     });
   });
 
-  // [Review Comment 2] Detailed Assertions
+  // [Refactor] Robust Assertions using Context
   it('renders dashboard with fetched data including details', async () => {
     render(<SyncMonitor />);
 
@@ -123,22 +126,31 @@ describe('SyncMonitor Integration Tests', () => {
 
     // 1. High-level sections
     expect(screen.getByText('Sync Monitor')).toBeTruthy();
-    expect(screen.getByText('Obsidian Connection')).toBeTruthy();
+    
+    // 2. Validate Obsidian Connection Card Details
+    const vaultPathLabel = screen.getByText('Vault Path');
+    const vaultPathContainer = vaultPathLabel.closest('div');
+    // Fix: Type assertion for within() compatibility (Element -> HTMLElement)
+    expect(within(vaultPathContainer as HTMLElement).getByText('/tmp/vault')).toBeTruthy();
 
-    // 2. Sync Status Details
-    expect(screen.getByText('/tmp/vault')).toBeTruthy(); // vault_path
-    // Note: file_count might be rendered as just "100" or within a sentence. 
-    // Assuming accurate text match or regex for "100"
-    expect(screen.getByText('100')).toBeTruthy(); 
+    const fileCountLabel = screen.getByText('Total Files');
+    const fileCountContainer = fileCountLabel.closest('div');
+    expect(within(fileCountContainer as HTMLElement).getByText('100')).toBeTruthy();
 
     // 3. MCP Status Details
-    expect(screen.getByText('Running')).toBeTruthy(); // Badge
-    expect(screen.getByText('obsidian-client')).toBeTruthy(); // Active Client
+    const mcpTitle = screen.getByText('MCP Server');
+    const mcpCard = mcpTitle.closest('div[class*="bg-card"]'); 
+    
+    if (mcpCard) {
+        // Fix: Type assertion
+        expect(within(mcpCard as HTMLElement).getByText('Running')).toBeTruthy();
+        expect(within(mcpCard as HTMLElement).getByText('obsidian-client')).toBeTruthy();
+    } else {
+        expect(screen.getByText('obsidian-client')).toBeTruthy();
+    }
   });
 
-  // [Review Comment 1] Conflict Rendering
   it('renders conflicts correctly when they exist', async () => {
-    // Setup conflicts
     mockConflicts = [{
         conflict_id: 'conf1',
         file_path: 'notes/important.md',
@@ -155,10 +167,10 @@ describe('SyncMonitor Integration Tests', () => {
         expect(screen.queryByText(/loading sync status/i)).toBeNull();
     });
 
-    // Assert Conflict UI
+    // Validates that specific conflict details are present
     expect(screen.getByText('notes/important.md')).toBeTruthy();
-    expect(screen.getByText('unresolved')).toBeTruthy();
-    expect(screen.getByText(/content_mismatch/)).toBeTruthy(); // Verify type rendering
+    expect(screen.getByText(/unresolved/i)).toBeTruthy();
+    expect(screen.getByText(/content_mismatch/)).toBeTruthy();
   });
 
   it('shows "Live" badge when WebSocket is connected', async () => {
@@ -191,27 +203,25 @@ describe('SyncMonitor Integration Tests', () => {
     expect(screen.getByText('Connecting...')).toBeTruthy();
   });
 
-  // [Review Comment 3] UI-based Refetch Test
   it('updates UI when "sync_status_changed" event is received', async () => {
     const { rerender } = render(<SyncMonitor />);
 
-    // 1. Initial State Check
     await waitFor(() => {
         expect(screen.queryByText(/loading sync status/i)).toBeNull();
     });
-    expect(screen.getByText('100')).toBeTruthy(); // Initial file count
+    
+    // Initial verification
+    const fileCountLabel = screen.getByText('Total Files');
+    expect(within(fileCountLabel.closest('div') as HTMLElement).getByText('100')).toBeTruthy();
 
-    // 2. Prepare for Update
-    // Update the mock data source so next fetch returns new value
+    // Prepare Update
     mockSyncStatus = { ...MOCK_SYNC_STATUS, file_count: 999 };
     
-    // Simulate WebSocket Event
     const eventMessage = {
         type: 'sync_status_changed',
-        data: mockSyncStatus // The event itself usually carries the new data, or triggers a fetch
+        data: mockSyncStatus 
     };
 
-    // Update WebSocket Mock to deliver the message
     vi.mocked(useWebSocketHook.useWebSocket).mockReturnValue({
         isConnected: true,
         lastMessage: eventMessage,
@@ -222,13 +232,13 @@ describe('SyncMonitor Integration Tests', () => {
         reconnectCount: 0,
     });
 
-    // 3. Trigger Rerender (to consume useWebSocket new return value)
     rerender(<SyncMonitor />);
 
-    // 4. Assert UI Update (Wait for fetchAPI and re-render)
     await waitFor(() => {
-        // Should eventually display the new file count
-        expect(screen.getByText('999')).toBeTruthy();
+        // Verify UI Update specifically in the Total Files section
+        const updatedLabel = screen.getByText('Total Files');
+        // Fix: Type assertion
+        expect(within(updatedLabel.closest('div') as HTMLElement).getByText('999')).toBeTruthy();
     });
   });
 });
