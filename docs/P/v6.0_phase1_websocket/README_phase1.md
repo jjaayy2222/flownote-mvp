@@ -294,7 +294,7 @@ setTimeout(connect, reconnectDelay);
 - [x] Frontend WebSocket Client 구현 (Hook & Config)
 - [x] Frontend Unit Tests 작성 (`useWebSocket` Hook)
 - [x] Frontend Integration Tests (`SyncMonitor` 컴포넌트 연동 완료)
-- [ ] WebSocket 인증 추가 (JWT)
+- [x] WebSocket 인증 추가 (JWT)
 - [ ] 메시지 압축 (gzip)
 - [ ] 연결 풀 관리
 - [ ] 모니터링 대시보드 (연결 수, 메시지 처리량)
