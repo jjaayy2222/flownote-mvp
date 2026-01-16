@@ -56,8 +56,13 @@ class RedisPubSub:
         if not self.redis:
             await self.connect()
 
-        if self.redis:
-            await self.redis.publish(channel, message)
+        # [Safety Check] Ensure we are connected before publishing
+        if not self.redis:
+            # Connect failed and maybe didn't raise (defensive), or race condition?
+            # But connect() raises on failure, so this is just being explicit.
+            raise ConnectionError("Redis is not connected")
+
+        await self.redis.publish(channel, message)
 
     async def publish_with_fallback(
         self, channel: str, message: str, fallback: Callable[[str], Awaitable[None]]
@@ -67,7 +72,7 @@ class RedisPubSub:
         - ConnectionManager에서 Redis 연결 상태를 일일이 확인하지 않도록 캡슐화
         """
         try:
-            # Lazy connect is handled inside publish
+            # Lazy connect is handled & verified inside publish
             await self.publish(channel, message)
             return
         except Exception as e:
