@@ -4,7 +4,10 @@ import asyncio
 import logging
 from typing import Optional, Callable, Awaitable
 import redis.asyncio as redis
-from redis.exceptions import RedisError
+from redis.exceptions import (
+    ConnectionError as RedisConnectionError,
+    TimeoutError as RedisTimeoutError,
+)
 from backend.config import RedisConfig
 
 logger = logging.getLogger(__name__)
@@ -69,18 +72,18 @@ class RedisPubSub:
     ):
         """
         Redis 메시지 발행 시도, 실패 시 자동으로 Fallback 실행
-        - ConnectionError, RedisError 등 연결/통신 문제만 Fallback 처리
-        - 일반적인 프로그래밍 에러(TypeError 등)는 상위로 전파하여 버그 은폐 방지
+        - 연결/통신 문제(ConnectionError, TimeoutError) 발생 시에만 Fallback 처리
+        - 주의: DataError, TypeError 등 프로그래밍/데이터 오류는 상위로 전파됨 (버그 은폐 방지)
         """
         try:
             # Lazy connect is handled & verified inside publish
             await self.publish(channel, message)
             return
-        except (ConnectionError, RedisError) as e:
-            # ConnectionError: Built-in error (raised explicitly by us or OS issues)
-            # RedisError: Base exception for all redis-py errors
+        except (ConnectionError, RedisConnectionError, RedisTimeoutError) as e:
+            # Catch built-in ConnectionError (raised by us/OS)
+            # AND redis-specific connection/timeout errors (excluding DataError, etc.)
             logger.error(
-                f"Redis publish failed: {e}. Falling back to local broadcast.",
+                f"Redis publish failed (Network/Timeout): {e}. Falling back to local broadcast.",
                 exc_info=True,
             )
 
