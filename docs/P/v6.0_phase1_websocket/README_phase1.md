@@ -296,7 +296,7 @@ setTimeout(connect, reconnectDelay);
 - [x] Frontend Integration Tests (`SyncMonitor` 컴포넌트 연동 완료)
 - [x] WebSocket 인증 추가 (JWT)
 - [ ] 메시지 압축 (gzip)
-- [ ] 연결 풀 관리
+- [x] 연결 풀 관리 (ConnectionManager 구현 완료)
 - [ ] 모니터링 대시보드 (연결 수, 메시지 처리량)
 
 ## 🔗 Related Documentation
