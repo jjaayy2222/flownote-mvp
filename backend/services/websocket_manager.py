@@ -1,3 +1,5 @@
+# backend/services/websocket_manager.py
+
 import asyncio
 from typing import List, Dict, Any, Optional
 from fastapi import WebSocket, WebSocketDisconnect
@@ -73,8 +75,9 @@ class ConnectionManager:
         """
         try:
             await self.disconnect(websocket)
-        except Exception as exc:
-            logger.warning("Error while pruning dead connection: %s", exc)
+        except Exception:
+            # [Fix] Log full traceback so unexpected programmer errors (TypeError, etc.) remain visible
+            logger.warning("Error while pruning dead connection", exc_info=True)
 
     async def broadcast(self, message: str):
         """
@@ -103,9 +106,11 @@ class ConnectionManager:
             )
 
             # Run disconnects concurrently to avoid serial latency issues
-            # Using _prune_connection ensures exceptions are handled individually
+            # Using _prune_connection ensures exceptions are handled individually,
+            # and return_exceptions=True guards against BaseExceptions (like CancelledError) breaking the group
             await asyncio.gather(
-                *(self._prune_connection(dead_ws) for dead_ws in failed_connections)
+                *(self._prune_connection(dead_ws) for dead_ws in failed_connections),
+                return_exceptions=True,
             )
 
 
