@@ -18,24 +18,35 @@ async def websocket_endpoint(
     """
     WebSocket 연결 엔드포인트
 
-    쿼리 파라미터 `token`을 통해 JWT 인증을 수행하며,
-    인증된 사용자만 연결이 허용됩니다.
+    - 쿼리 파라미터 `token`을 통해 JWT 인증 수행 (deps.get_current_user_ws)
+    - ConnectionManager를 통한 연결 수명 주기 관리 (자동 정리 보장)
     """
-    # ConnectionManager를 통해 연결 수락 및 관리
-    await manager.connect(websocket)
+    # [Connection Phase]
+    # 인증된 사용자 정보와 함께 연결 수락
+    await manager.connect(websocket, current_user)
 
     try:
+        # [Communication Phase]
         while True:
             data = await websocket.receive_text()
-            # 받은 메시지를 로깅하고 (필요 시 브로드캐스트)
+            # 로깅: 실제 운영 환경에서는 debug 레벨 권장
             logger.debug(
                 f"Received message from {current_user.get('username')}: {data}"
             )
 
-            # 현재는 단순 Echo 대신 브로드캐스트 예시 주석 처리
-            # await manager.broadcast(f"Broadcasting: {data}")
+            # Simple Echo (Phase 1)
+            # 향후 manager.broadcast() 또는 개별 응답 로직으로 대체
             await websocket.send_text(f"Echo: {data}")
 
     except WebSocketDisconnect:
+        logger.info(
+            f"WebSocket Client Disconnected (Graceful): UserID={current_user.get('id')}"
+        )
+
+    except Exception as e:
+        logger.error(f"WebSocket Error (Unexpected): {e}", exc_info=True)
+
+    finally:
+        # [Cleanup Phase]
+        # 어떤 이유로든 루프가 종료되면 반드시 연결 목록에서 제거
         manager.disconnect(websocket)
-        logger.info(f"WebSocket Client Disconnected: UserID={current_user.get('id')}")
