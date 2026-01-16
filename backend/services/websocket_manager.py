@@ -1,15 +1,11 @@
 # backend/services/websocket_manager.py
-"""
-WebSocket 연결 관리자
-- 활성 연결 목록 관리 및 연결 수명 주기 제어
-- 사용자 정보 매핑을 통한 관찰 가능성(Observability) 제공
-- Concurrency-safe Broadcasting & Dead Connection Pruning
-"""
+
 import asyncio
-from typing import List, Dict, Any, Optional
-from fastapi import WebSocket, WebSocketDisconnect
-from dataclasses import dataclass
 import logging
+from typing import List, Dict, Any, Optional
+from dataclasses import dataclass
+from fastapi import WebSocket, WebSocketDisconnect
+from backend.services.redis_pubsub import redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -26,20 +22,55 @@ class UserContext:
 class ConnectionManager:
     """
     WebSocket 연결 관리자
+    - Redis Pub/Sub 통합으로 멀티 프로세스 브로드캐스트 지원
     - 활성 연결 목록 관리 및 연결 수명 주기 제어
-    - 사용자 정보 매핑을 통한 관찰 가능성(Observability) 제공
     - Concurrency-safe Broadcasting & Dead Connection Pruning
     """
 
     def __init__(self):
-        # WebSocket 객체를 Key로, 사용자 정보를 Value로 저장하여 O(1) 접근 및 매핑 유지
         self.active_connections: Dict[WebSocket, UserContext] = {}
+        self.channel_name = "flownote_sync"
+        self.redis_task: Optional[asyncio.Task] = None
+
+    async def initialize(self):
+        """
+        시스템 시작 시 호출: Redis 연결 및 구독 리스너 실행
+        실패 시 로컬 전용 모드로 동작 (Graceful Degradation)
+        """
+        try:
+            await redis_client.connect()
+            # 구독 리스너를 비동기 태스크로 실행
+            self.redis_task = asyncio.create_task(
+                redis_client.subscribe(self.channel_name, self._local_broadcast)
+            )
+            logger.info(
+                f"ConnectionManager initialized. Listening on Redis channel: {self.channel_name}"
+            )
+        except Exception as e:
+            logger.warning(
+                f"Redis initialization failed ({e}). ConnectionManager running in LOCAL broadcast mode."
+            )
+
+    async def shutdown(self):
+        """시스템 종료 시 호출: 리소스 정리"""
+        if self.redis_task:
+            self.redis_task.cancel()
+            try:
+                await self.redis_task
+            except asyncio.CancelledError:
+                pass
+
+        await redis_client.disconnect()
+
+        # 모든 활성 연결 종료 (Graceful Close)
+        active_sockets = list(self.active_connections.keys())
+        for ws in active_sockets:
+            await self.disconnect(ws)
 
     async def connect(self, websocket: WebSocket, user_info: Dict[str, Any]):
         """클라이언트 연결 수락 및 컨텍스트 저장"""
         await websocket.accept()
 
-        # Convert dict to typed context
         context = UserContext(
             user_id=user_info.get("id", 0),
             username=user_info.get("username", "unknown"),
@@ -62,61 +93,73 @@ class ConnectionManager:
                 f"Active connections: {len(self.active_connections)}"
             )
 
-        # Ensure socket is closed explicitly to prevent zombies
         try:
-            # 1000 Normal Closure
             await websocket.close(code=1000)
         except Exception as exc:
-            # Log unexpected shutdown issues without failing the cleanup path
             logger.debug(
                 "Best-effort WebSocket close failed (possibly already closed or connection lost).",
                 exc_info=exc,
             )
 
     async def _prune_connection(self, websocket: WebSocket) -> None:
-        """
-        [Helper] Dead Connection 안전 제거
-        예외를 내부에서 처리하여 상위 호출자(Broadcast 등)의 흐름을 방해하지 않음
-        """
+        """[Helper] Dead Connection 안전 제거"""
         try:
             await self.disconnect(websocket)
+        except (WebSocketDisconnect, RuntimeError) as exc:
+            logger.warning(f"Connection pruning failed (expected network issue): {exc}")
         except Exception:
-            # [Fix] Log full traceback so unexpected programmer errors (TypeError, etc.) remain visible
-            logger.warning("Error while pruning dead connection", exc_info=True)
+            logger.error(
+                "Error while pruning dead connection (unexpected bug)", exc_info=True
+            )
 
     async def broadcast(self, message: str):
         """
-        모든 활성 연결에 메시지 전송 (Concurrency Safe)
+        메시지 전파 진입점:
+        - Redis 가용 시: Redis Publish -> (Listener) -> _local_broadcast
+        - Redis 불가 시: 직접 _local_broadcast (Fallback)
+        """
+        if redis_client.redis:
+            try:
+                await redis_client.publish(self.channel_name, message)
+            except Exception as e:
+                logger.error(
+                    f"Redis publish failed: {e}. Falling back to local broadcast."
+                )
+                await self._local_broadcast(message)
+        else:
+            await self._local_broadcast(message)
+
+    async def _local_broadcast(self, message: str):
+        """
+        [Internal] 실제 로컬 연결된 클라이언트들에게 메시지 전송
+        (Redis Listener 또는 Local Fallback에 의해 호출됨)
         """
         failed_connections: List[WebSocket] = []
-
-        # [Critical Fix] Take a snapshot of keys to avoid RuntimeError during concurrent modification
         active_sockets = list(self.active_connections.keys())
 
         for connection in active_sockets:
             try:
                 await connection.send_text(message)
             except Exception as e:
-                # Enhance error log with user context
                 context = self.active_connections.get(connection)
                 user_id = f"User({context.user_id})" if context else "Unknown"
                 logger.error(f"Failed to broadcast to {user_id}: {e}")
-
                 failed_connections.append(connection)
 
-        # Prune dead connections found during broadcast
         if failed_connections:
             logger.info(
                 f"Pruning {len(failed_connections)} dead connections found during broadcast."
             )
-
-            # Run disconnects concurrently to avoid serial latency issues
-            # Using _prune_connection ensures exceptions are handled individually,
-            # and return_exceptions=True guards against BaseExceptions (like CancelledError) breaking the group
-            await asyncio.gather(
+            results = await asyncio.gather(
                 *(self._prune_connection(dead_ws) for dead_ws in failed_connections),
                 return_exceptions=True,
             )
+
+            systemic_errors = [r for r in results if isinstance(r, BaseException)]
+            if systemic_errors:
+                logger.error(
+                    f"Systemic failures during connection pruning: {len(systemic_errors)} errors detected."
+                )
 
 
 # 싱글톤 인스턴스 생성
