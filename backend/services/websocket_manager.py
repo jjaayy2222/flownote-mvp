@@ -120,10 +120,18 @@ class ConnectionManager:
                 len(failed_connections),
             )
             # Parallel pruning using asyncio.gather for performance
-            await asyncio.gather(
+            results = await asyncio.gather(
                 *(self._prune_connection(dead_ws) for dead_ws in failed_connections),
                 return_exceptions=True,
             )
+
+            # [Added] Monitor pruning errors for operational visibility
+            errors = [r for r in results if isinstance(r, Exception)]
+            if errors:
+                logger.warning(
+                    f"Errors during connection pruning: {len(errors)} errors occurred. "
+                    f"Sample: {errors[0]}"
+                )
 
 
 # 싱글톤 인스턴스 생성

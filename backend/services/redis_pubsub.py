@@ -14,6 +14,7 @@ class RedisPubSub:
     Redis Pub/Sub 관리자 (Low-level)
     - Redis 연결 관리 (Connect/Disconnect)
     - 채널 구독 및 메시지 발행 직접 수행
+    - Fallback 로직 내재화
     """
 
     def __init__(self):
@@ -46,6 +47,10 @@ class RedisPubSub:
             self.redis = None  # [Fix] Reset reference
             logger.info("Disconnected from Redis")
 
+    def is_connected(self) -> bool:
+        """현재 Redis 연결 상태 확인 (High-level check)"""
+        return self.redis is not None
+
     async def publish(self, channel: str, message: str):
         """Redis 채널에 메시지 발행"""
         if not self.redis:
@@ -53,6 +58,26 @@ class RedisPubSub:
 
         if self.redis:
             await self.redis.publish(channel, message)
+
+    async def publish_with_fallback(
+        self, channel: str, message: str, fallback: Callable[[str], Awaitable[None]]
+    ):
+        """
+        Redis 메시지 발행 시도, 실패 시 자동으로 Fallback 실행
+        - ConnectionManager에서 Redis 연결 상태를 일일이 확인하지 않도록 캡슐화
+        """
+        try:
+            # Lazy connect is handled inside publish
+            await self.publish(channel, message)
+            return
+        except Exception as e:
+            logger.error(
+                f"Redis publish failed: {e}. Falling back to local broadcast.",
+                exc_info=True,
+            )
+
+        # Fallback to local broadcast
+        await fallback(message)
 
     async def subscribe(self, channel: str, callback: Callable[[str], Awaitable[None]]):
         """
@@ -81,9 +106,8 @@ class RedisPubSub:
 class RedisBroadcaster:
     """
     ConnectionManager를 위한 Redis 오케스트레이션 레이어 (High-level)
-    - Redis Task 관리
-    - 연결 실패 시 로컬 Fallback 처리
-    - WebSocket Manager의 복잡성 제거
+    - Redis Task 관리 (Start/Stop Guard)
+    - WebSocket Manager의 복잡성 제거 (Simple Delegation)
     """
 
     def __init__(self, client: RedisPubSub):
@@ -91,18 +115,24 @@ class RedisBroadcaster:
         self._task: Optional[asyncio.Task] = None
 
     async def start(self, channel: str, handler: Callable[[str], Awaitable[None]]):
-        """Connect + start subscribe listener task."""
+        """Redis 연결 및 리스너 Task 시작 (Idempotent: 중복 실행 방지)"""
+        if self._task and not self._task.done():
+            logger.warning(
+                "RedisBroadcaster is already running. Ignoring start request."
+            )
+            return
+
         try:
             await self._client.connect()
             self._task = asyncio.create_task(self._client.subscribe(channel, handler))
             logger.info(f"RedisBroadcaster listening on channel: {channel}")
         except Exception as e:
             logger.warning(
-                f"Redis initialization failed ({e}). Falling back to local mode."
+                f"Redis initialization failed ({e}). System will run in LOCAL-ONLY mode."
             )
 
     async def stop(self):
-        """Cancel subscribe task + disconnect, best-effort."""
+        """Task 취소 및 리소스 정리 (Idempotent)"""
         if self._task:
             self._task.cancel()
             try:
@@ -116,17 +146,8 @@ class RedisBroadcaster:
     async def publish_or_fallback(
         self, channel: str, message: str, fallback: Callable[[str], Awaitable[None]]
     ):
-        """Publish if Redis is available, otherwise call fallback."""
-        if self._client.redis:
-            try:
-                await self._client.publish(channel, message)
-                return
-            except Exception as e:
-                logger.error(
-                    f"Redis publish failed: {e}. Falling back to local broadcast."
-                )
-        # Fallback to local broadcast if Redis is unavailable or failed
-        await fallback(message)
+        """High-level entrypoint: delegate responsibility to RedisPubSub"""
+        await self._client.publish_with_fallback(channel, message, fallback)
 
 
 # 전역 인스턴스
