@@ -1,5 +1,10 @@
 # backend/services/websocket_manager.py
-
+"""
+WebSocket 연결 관리자
+- 활성 연결 목록 관리 및 연결 수명 주기 제어
+- 사용자 정보 매핑을 통한 관찰 가능성(Observability) 제공
+- Concurrency-safe Broadcasting & Dead Connection Pruning
+"""
 import asyncio
 from typing import List, Dict, Any, Optional
 from fastapi import WebSocket, WebSocketDisconnect
