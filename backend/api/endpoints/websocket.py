@@ -19,7 +19,7 @@ async def websocket_endpoint(
     WebSocket 연결 엔드포인트
 
     - 쿼리 파라미터 `token`을 통해 JWT 인증 수행 (deps.get_current_user_ws)
-    - ConnectionManager를 통한 연결 수명 주기 관리 (자동 정리 보장)
+    - ConnectionManager를 통한 연결 수명 주기 및 컨텍스트 관리
     """
     # [Connection Phase]
     # 인증된 사용자 정보와 함께 연결 수락
@@ -39,6 +39,8 @@ async def websocket_endpoint(
             await websocket.send_text(f"Echo: {data}")
 
     except WebSocketDisconnect:
+        # 클라이언트가 연결을 끊은 경우 (여기서는 로그만 남기고, finally에서 정리)
+        # manager.disconnect 호출은 finally 블록이 보장하므로 중복 호출 방지
         logger.info(
             f"WebSocket Client Disconnected (Graceful): UserID={current_user.get('id')}"
         )
@@ -48,5 +50,6 @@ async def websocket_endpoint(
 
     finally:
         # [Cleanup Phase]
-        # 어떤 이유로든 루프가 종료되면 반드시 연결 목록에서 제거
-        manager.disconnect(websocket)
+        # 루프 종료 시 (에러, 연결 끊김 등) 반드시 연결 목록에서 제거 및 소켓 종료
+        # Manager의 disconnect는 idempotent(멱등성)하지 않더라도 내부에서 pop을 사용하므로 안전함
+        await manager.disconnect(websocket)
