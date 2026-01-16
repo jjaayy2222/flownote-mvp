@@ -1,9 +1,7 @@
-# backend/services/websocket_manager.py
-
+import asyncio
 from typing import List, Dict, Any, Optional
 from fastapi import WebSocket, WebSocketDisconnect
 from dataclasses import dataclass
-import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
@@ -68,6 +66,16 @@ class ConnectionManager:
                 exc_info=exc,
             )
 
+    async def _prune_connection(self, websocket: WebSocket) -> None:
+        """
+        [Helper] Dead Connection 안전 제거
+        예외를 내부에서 처리하여 상위 호출자(Broadcast 등)의 흐름을 방해하지 않음
+        """
+        try:
+            await self.disconnect(websocket)
+        except Exception as exc:
+            logger.warning("Error while pruning dead connection: %s", exc)
+
     async def broadcast(self, message: str):
         """
         모든 활성 연결에 메시지 전송 (Concurrency Safe)
@@ -94,18 +102,10 @@ class ConnectionManager:
                 f"Pruning {len(failed_connections)} dead connections found during broadcast."
             )
 
-            async def _safe_disconnect(dead_ws: WebSocket) -> None:
-                """Helper to safely disconnect ensuring no uncaught exceptions stop the gathering"""
-                try:
-                    # Reuse disconnect logic for cleanup
-                    await self.disconnect(dead_ws)
-                except Exception as exc:
-                    logger.warning("Error while pruning dead connection: %s", exc)
-
-            # Run disconnects concurrently to avoid serial latency issues when many clients disconnect at once
+            # Run disconnects concurrently to avoid serial latency issues
+            # Using _prune_connection ensures exceptions are handled individually
             await asyncio.gather(
-                *(_safe_disconnect(dead_ws) for dead_ws in failed_connections),
-                return_exceptions=True,
+                *(self._prune_connection(dead_ws) for dead_ws in failed_connections)
             )
 
 
