@@ -13,6 +13,18 @@ from backend.config import RedisConfig
 
 logger = logging.getLogger(__name__)
 
+# [Constant] Redis Fallback 대상 예외 목록 정의
+# - ConnectionError: Built-in error (OS/System level)
+# - RedisConnectionError: redis-py network failures
+# - RedisTimeoutError: redis-py timeouts
+# - BusyLoadingError: Redis temporary unavailability (loading data)
+REDIS_FALLBACK_ERRORS = (
+    ConnectionError,
+    RedisConnectionError,
+    RedisTimeoutError,
+    BusyLoadingError,
+)
+
 
 class RedisPubSub:
     """
@@ -73,26 +85,17 @@ class RedisPubSub:
     ):
         """
         Redis 메시지 발행 시도, 실패 시 자동으로 Fallback 실행
-        - 연결/통신 문제(ConnectionError, TimeoutError) 또는 일시적 불가(BusyLoadingError) 시 Fallback 처리
+        - 연결/통신 문제(REDIS_FALLBACK_ERRORS) 발생 시에만 Fallback 처리
         - 주의: DataError, TypeError 등 프로그래밍/데이터 오류는 상위로 전파됨 (버그 은폐 방지)
         """
         try:
             # Lazy connect is handled & verified inside publish
             await self.publish(channel, message)
             return
-        except (
-            ConnectionError,
-            RedisConnectionError,
-            RedisTimeoutError,
-            BusyLoadingError,
-        ) as e:
-            # Catch:
-            # 1. Built-in ConnectionError (explicitly raised by us when self.redis is None)
-            # 2. RedisConnectionError (redis-py network issues)
-            # 3. RedisTimeoutError (redis-py timeout)
-            # 4. BusyLoadingError (Redis is starting up/loading data)
+        except REDIS_FALLBACK_ERRORS as e:
+            # Catch network/state related errors defined in REDIS_FALLBACK_ERRORS
             logger.error(
-                f"Redis publish failed (Network/State): {e}. Falling back to local broadcast.",
+                f"Redis publish failed (Network/State: {type(e).__name__}): {e}. Falling back to local broadcast.",
                 exc_info=True,
             )
 
