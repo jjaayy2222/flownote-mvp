@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from collections import Counter
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from fastapi import WebSocket, WebSocketDisconnect
@@ -125,12 +126,14 @@ class ConnectionManager:
                 return_exceptions=True,
             )
 
-            # [Added] Monitor pruning errors for operational visibility
+            # [Added] Monitor pruning errors with aggregation for actionable insights
             errors = [r for r in results if isinstance(r, Exception)]
             if errors:
+                error_counts = Counter(type(e).__name__ for e in errors)
                 logger.warning(
-                    f"Errors during connection pruning: {len(errors)} errors occurred. "
-                    f"Sample: {errors[0]}"
+                    f"Errors during connection pruning: {len(errors)} total. "
+                    f"Breakdown: {dict(error_counts)}. "
+                    f"First Error: {errors[0]}"
                 )
 
 
