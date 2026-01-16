@@ -3,6 +3,7 @@
 from typing import List, Dict, Any, Optional
 from fastapi import WebSocket, WebSocketDisconnect
 from dataclasses import dataclass
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
@@ -60,9 +61,12 @@ class ConnectionManager:
         try:
             # 1000 Normal Closure
             await websocket.close(code=1000)
-        except Exception:
-            # Already closed or connection lost
-            pass
+        except Exception as exc:
+            # Log unexpected shutdown issues without failing the cleanup path
+            logger.debug(
+                "Best-effort WebSocket close failed (possibly already closed or connection lost).",
+                exc_info=exc,
+            )
 
     async def broadcast(self, message: str):
         """
@@ -89,9 +93,20 @@ class ConnectionManager:
             logger.info(
                 f"Pruning {len(failed_connections)} dead connections found during broadcast."
             )
-            for dead_ws in failed_connections:
-                # Reuse disconnect logic for cleanup
-                await self.disconnect(dead_ws)
+
+            async def _safe_disconnect(dead_ws: WebSocket) -> None:
+                """Helper to safely disconnect ensuring no uncaught exceptions stop the gathering"""
+                try:
+                    # Reuse disconnect logic for cleanup
+                    await self.disconnect(dead_ws)
+                except Exception as exc:
+                    logger.warning("Error while pruning dead connection: %s", exc)
+
+            # Run disconnects concurrently to avoid serial latency issues when many clients disconnect at once
+            await asyncio.gather(
+                *(_safe_disconnect(dead_ws) for dead_ws in failed_connections),
+                return_exceptions=True,
+            )
 
 
 # 싱글톤 인스턴스 생성
