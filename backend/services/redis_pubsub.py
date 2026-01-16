@@ -4,6 +4,7 @@ import asyncio
 import logging
 from typing import Optional, Callable, Awaitable
 import redis.asyncio as redis
+from redis.exceptions import RedisError
 from backend.config import RedisConfig
 
 logger = logging.getLogger(__name__)
@@ -40,7 +41,7 @@ class RedisPubSub:
         """리소스 정리 및 연결 종료"""
         if self.pubsub:
             await self.pubsub.close()
-            self.pubsub = None  # [Fix] Reset reference to prevent stale usage
+            self.pubsub = None  # [Fix] Reset reference
 
         if self.redis:
             await self.redis.close()
@@ -58,8 +59,7 @@ class RedisPubSub:
 
         # [Safety Check] Ensure we are connected before publishing
         if not self.redis:
-            # Connect failed and maybe didn't raise (defensive), or race condition?
-            # But connect() raises on failure, so this is just being explicit.
+            # Connect failed and maybe didn't raise? Explicitly raise built-in ConnectionError
             raise ConnectionError("Redis is not connected")
 
         await self.redis.publish(channel, message)
@@ -69,13 +69,16 @@ class RedisPubSub:
     ):
         """
         Redis 메시지 발행 시도, 실패 시 자동으로 Fallback 실행
-        - ConnectionManager에서 Redis 연결 상태를 일일이 확인하지 않도록 캡슐화
+        - ConnectionError, RedisError 등 연결/통신 문제만 Fallback 처리
+        - 일반적인 프로그래밍 에러(TypeError 등)는 상위로 전파하여 버그 은폐 방지
         """
         try:
             # Lazy connect is handled & verified inside publish
             await self.publish(channel, message)
             return
-        except Exception as e:
+        except (ConnectionError, RedisError) as e:
+            # ConnectionError: Built-in error (raised explicitly by us or OS issues)
+            # RedisError: Base exception for all redis-py errors
             logger.error(
                 f"Redis publish failed: {e}. Falling back to local broadcast.",
                 exc_info=True,
@@ -120,7 +123,7 @@ class RedisBroadcaster:
         self._task: Optional[asyncio.Task] = None
 
     async def start(self, channel: str, handler: Callable[[str], Awaitable[None]]):
-        """Redis 연결 및 리스너 Task 시작 (Idempotent: 중복 실행 방지)"""
+        """Redis 연결 및 리스너 Task 시작 (Idempotent)"""
         if self._task and not self._task.done():
             logger.warning(
                 "RedisBroadcaster is already running. Ignoring start request."

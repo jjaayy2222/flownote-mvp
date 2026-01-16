@@ -133,7 +133,7 @@ class ConnectionManager:
                 logger.warning(
                     f"Errors during connection pruning: {len(errors)} total. "
                     f"Breakdown: {dict(error_counts)}. "
-                    f"First Error: {errors[0]}"
+                    f"First Error Detail: {repr(errors[0])}"
                 )
 
 
