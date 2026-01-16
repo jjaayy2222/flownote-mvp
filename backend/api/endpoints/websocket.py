@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from backend.api import deps
+from backend.services.websocket_manager import manager
 import logging
 
 # 로거 설정
@@ -19,20 +20,22 @@ async def websocket_endpoint(
 
     쿼리 파라미터 `token`을 통해 JWT 인증을 수행하며,
     인증된 사용자만 연결이 허용됩니다.
-
-    Note: 현재는 Phase 1 구현 준비 단계로 기본 Echo 로직만 포함되어 있습니다.
-    추후 ConnectionManager 및 Redis Pub/Sub 연동이 필요합니다.
     """
-    # 인증 성공 시 연결 수락
-    await websocket.accept()
-    logger.info(
-        f"WebSocket Client Connected: UserID={current_user.get('id')}, Username={current_user.get('username')}"
-    )
+    # ConnectionManager를 통해 연결 수락 및 관리
+    await manager.connect(websocket)
 
     try:
         while True:
             data = await websocket.receive_text()
-            # TODO: Handle messages (e.g., subscription requests)
-            await websocket.send_text(f"Message received: {data}")
+            # 받은 메시지를 로깅하고 (필요 시 브로드캐스트)
+            logger.debug(
+                f"Received message from {current_user.get('username')}: {data}"
+            )
+
+            # 현재는 단순 Echo 대신 브로드캐스트 예시 주석 처리
+            # await manager.broadcast(f"Broadcasting: {data}")
+            await websocket.send_text(f"Echo: {data}")
+
     except WebSocketDisconnect:
+        manager.disconnect(websocket)
         logger.info(f"WebSocket Client Disconnected: UserID={current_user.get('id')}")
