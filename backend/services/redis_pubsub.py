@@ -11,10 +11,9 @@ logger = logging.getLogger(__name__)
 
 class RedisPubSub:
     """
-    Redis Pub/Sub 관리자
-    - Redis 연결 초기화 및 관리
-    - 채널별 구독 및 비동기 메시지 수신 루프 실행
-    - 시스템 전역 메시지 발행
+    Redis Pub/Sub 관리자 (Low-level)
+    - Redis 연결 관리 (Connect/Disconnect)
+    - 채널 구독 및 메시지 발행 직접 수행
     """
 
     def __init__(self):
@@ -40,8 +39,11 @@ class RedisPubSub:
         """리소스 정리 및 연결 종료"""
         if self.pubsub:
             await self.pubsub.close()
+            self.pubsub = None  # [Fix] Reset reference to prevent stale usage
+
         if self.redis:
             await self.redis.close()
+            self.redis = None  # [Fix] Reset reference
             logger.info("Disconnected from Redis")
 
     async def publish(self, channel: str, message: str):
@@ -74,8 +76,59 @@ class RedisPubSub:
                 raise
             except Exception as e:
                 logger.error(f"Error in Redis listener loop: {e}", exc_info=True)
-                # 에러 발생 후 재연결 로직은 Phase 2 과제 (현재는 종료)
+
+
+class RedisBroadcaster:
+    """
+    ConnectionManager를 위한 Redis 오케스트레이션 레이어 (High-level)
+    - Redis Task 관리
+    - 연결 실패 시 로컬 Fallback 처리
+    - WebSocket Manager의 복잡성 제거
+    """
+
+    def __init__(self, client: RedisPubSub):
+        self._client = client
+        self._task: Optional[asyncio.Task] = None
+
+    async def start(self, channel: str, handler: Callable[[str], Awaitable[None]]):
+        """Connect + start subscribe listener task."""
+        try:
+            await self._client.connect()
+            self._task = asyncio.create_task(self._client.subscribe(channel, handler))
+            logger.info(f"RedisBroadcaster listening on channel: {channel}")
+        except Exception as e:
+            logger.warning(
+                f"Redis initialization failed ({e}). Falling back to local mode."
+            )
+
+    async def stop(self):
+        """Cancel subscribe task + disconnect, best-effort."""
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+
+        await self._client.disconnect()
+
+    async def publish_or_fallback(
+        self, channel: str, message: str, fallback: Callable[[str], Awaitable[None]]
+    ):
+        """Publish if Redis is available, otherwise call fallback."""
+        if self._client.redis:
+            try:
+                await self._client.publish(channel, message)
+                return
+            except Exception as e:
+                logger.error(
+                    f"Redis publish failed: {e}. Falling back to local broadcast."
+                )
+        # Fallback to local broadcast if Redis is unavailable or failed
+        await fallback(message)
 
 
 # 전역 인스턴스
 redis_client = RedisPubSub()
+redis_broadcaster = RedisBroadcaster(redis_client)
