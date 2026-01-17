@@ -69,15 +69,19 @@ const sanitizeUrl = (url: string): string => {
 };
 
 /**
+ * DecompressionStream 지원 여부 확인 (브라우저 호환성 체크)
+ */
+const IS_DECOMPRESSION_SUPPORTED = typeof globalThis.DecompressionStream !== 'undefined';
+
+/**
  * binary 데이터를 수신했을 때(gzip 압축 등)의 처리 로직
  * 
  * @param data - 수신된 binary 데이터 (Blob 또는 ArrayBuffer)
  * @returns 압축 해제된 텍스트 데이터
  */
 async function decompressMessage(data: Blob | ArrayBuffer): Promise<string> {
-  if (typeof globalThis.DecompressionStream === 'undefined') {
-    // Native API 미지원 시 (예: 매우 오래된 브라우저)
-    // 현재 MVP 환경에서는 모던 브라우저를 타겟으로 하므로 에러 발생 또는 라이브러리 폴백 필요
+  if (!IS_DECOMPRESSION_SUPPORTED) {
+    // 런타임 예외 대신 명확한 에러 메시지를 통해 상위 catch에서 처리하도록 유도
     throw new Error('DecompressionStream is not supported in this browser');
   }
 
@@ -173,7 +177,7 @@ export function useWebSocket<T = unknown>(
       
       ws.current = new WebSocket(url);
       
-      // Binary 데이터 처리를 위해 blob 타입 사용 (DecompressionStream 연동)
+      // Binary 데이터 처리를 위해 blob 타입 사용 (DecompressionStream 연동 최적화)
       ws.current.binaryType = 'blob';
 
       ws.current.onopen = () => {
@@ -194,15 +198,34 @@ export function useWebSocket<T = unknown>(
           
           if (typeof event.data === 'string') {
             rawData = event.data;
-          } else {
+          } else if (event.data instanceof Blob) {
             // Binary 데이터 (Blob) 수신 시 압축 해제 시도
+            if (!IS_DECOMPRESSION_SUPPORTED) {
+              logger.warn(`[WebSocket:${currentSocketId}] Compressed binary received but DecompressionStream is not supported. Skipping.`);
+              return;
+            }
             logger.debug(`[WebSocket:${currentSocketId}] Binary message received (${event.data.size} bytes), decompressing...`);
             rawData = await decompressMessage(event.data);
+          } else {
+            // ArrayBuffer 등 기타 바이너리 타입에 대한 방어적 처리
+            const byteLength = (event.data && typeof (event.data as ArrayBuffer).byteLength === 'number')
+              ? (event.data as ArrayBuffer).byteLength
+              : 0;
+
+            if (!IS_DECOMPRESSION_SUPPORTED) {
+              logger.warn(`[WebSocket:${currentSocketId}] Compressed binary received but DecompressionStream is not supported. Skipping.`);
+              return;
+            }
+
+            logger.debug(`[WebSocket:${currentSocketId}] Binary message received (${byteLength} bytes), decompressing...`);
+            rawData = await decompressMessage(event.data as ArrayBuffer);
           }
 
-          const message: WebSocketMessage<T> = JSON.parse(rawData);
-          setLastMessage(message);
-          stableOnMessage(message);
+          if (rawData) {
+            const message: WebSocketMessage<T> = JSON.parse(rawData);
+            setLastMessage(message);
+            stableOnMessage(message);
+          }
         } catch (error) {
           logger.error(`[WebSocket:${currentSocketId}] Failed to process message:`, error);
         }
