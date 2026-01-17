@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from fastapi import WebSocket, WebSocketDisconnect
 from backend.services.redis_pubsub import redis_broadcaster
+from backend.services.compression_service import compress_payload
 
 logger = logging.getLogger(__name__)
 
@@ -102,12 +103,20 @@ class ConnectionManager:
 
     async def _local_broadcast(self, message: str):
         """[Internal] 실제 로컬 연결된 클라이언트들에게 메시지 전송 및 정리"""
+        # 메시지 압축 처리
+        processed_data, is_compressed = compress_payload(message)
+
         failed_connections: List[WebSocket] = []
         active_sockets = list(self.active_connections.keys())
 
         for connection in active_sockets:
             try:
-                await connection.send_text(message)
+                if is_compressed:
+                    # 압축된 경우 Binary 데이터로 전송 (클라이언트에서 해제 필요)
+                    await connection.send_bytes(processed_data)
+                else:
+                    # 압축되지 않은 경우 일반 Text로 전송
+                    await connection.send_text(processed_data)
             except Exception as e:
                 # Log context for better observability
                 context = self.active_connections.get(connection)
