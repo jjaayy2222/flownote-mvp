@@ -54,46 +54,46 @@ export interface UseWebSocketReturn<T = unknown> {
 
 /**
  * 보안을 위해 URL에서 쿼리 파라미터, 해시(Fragment) 등 민감 정보를 제거합니다.
- * @param url - 원본 WebSocket URL
- * @returns 민감 정보가 제거된 URL 또는 유효하지 않은 입력 알림
  */
 const sanitizeUrl = (url: string): string => {
-  // TypeScript 타입 시스템상 url은 string임이 보장됨
-  // 공백을 제외한 실제 콘텐츠가 없는 경우 처리
   if (url.trim().length === 0) {
     return '[Invalid URL]';
   }
-
   const trimmed = url.trim();
-
   try {
     const parsed = new URL(trimmed);
-    // 프로토콜, 호스트, 경로만 반환 (쿼리 스트링 및 해시 제외)
     return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
   } catch {
-    // Fallback: URL 파싱 실패 시(상대 경로, 불완전 URL 등)
-    // 정규식을 사용하여 ?(Query) 또는 #(Hash) 이후의 모든 민감 정보 제거
     return trimmed.replace(/[?#].*$/, '');
   }
 };
 
 /**
+ * binary 데이터를 수신했을 때(gzip 압축 등)의 처리 로직
+ * 
+ * @param data - 수신된 binary 데이터 (Blob 또는 ArrayBuffer)
+ * @returns 압축 해제된 텍스트 데이터
+ */
+async function decompressMessage(data: Blob | ArrayBuffer): Promise<string> {
+  if (typeof globalThis.DecompressionStream === 'undefined') {
+    // Native API 미지원 시 (예: 매우 오래된 브라우저)
+    // 현재 MVP 환경에서는 모던 브라우저를 타겟으로 하므로 에러 발생 또는 라이브러리 폴백 필요
+    throw new Error('DecompressionStream is not supported in this browser');
+  }
+
+  try {
+    const blob = data instanceof Blob ? data : new Blob([data]);
+    const ds = new DecompressionStream('gzip');
+    const decompressedStream = blob.stream().pipeThrough(ds);
+    const response = new Response(decompressedStream);
+    return await response.text();
+  } catch (error) {
+    throw new Error(`Failed to decompress message: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
  * WebSocket 연결을 관리하는 React Hook
- * 
- * @param url - WebSocket 서버 URL
- * @param options - 옵션
- * @returns WebSocket 상태 및 제어 함수
- * 
- * @example
- * ```typescript
- * const { isConnected, lastMessage, sendMessage } = useWebSocket(
- *   getWebSocketUrl(),
- *   {
- *     onOpen: () => logger.info('Connected'),
- *     onClose: () => logger.info('Disconnected'),
- *   }
- * );
- * ```
  */
 export function useWebSocket<T = unknown>(
   url: string,
@@ -155,32 +155,28 @@ export function useWebSocket<T = unknown>(
       return;
     }
 
-    // 수동 연결 시 플래그 초기화
     manuallyDisconnected.current = false;
-    
-    // 연결 시작 시 재연결 카운트 초기화 (새로운 연결 시도 간주)
     reconnectCountRef.current = 0;
     setReconnectCount(0);
 
-    // 이전 타임아웃 정리
     if (reconnectTimeoutId.current) {
       clearTimeout(reconnectTimeoutId.current);
       reconnectTimeoutId.current = null;
     }
 
-    // 새로운 소켓 ID 생성 (연결 시도 시작)
     socketIdRef.current += 1;
     const currentSocketId = socketIdRef.current;
 
     try {
       setStatus(WebSocketStatus.CONNECTING);
-      // [Security] URL 로깅 시 민감 정보(쿼리 및 해시) 제거
       logger.debug(`[WebSocket:${currentSocketId}] Connecting to:`, sanitizeUrl(url));
       
       ws.current = new WebSocket(url);
+      
+      // Binary 데이터 처리를 위해 blob 타입 사용 (DecompressionStream 연동)
+      ws.current.binaryType = 'blob';
 
       ws.current.onopen = () => {
-        // 소켓 ID 확인 (URL 변경으로 인한 오래된 소켓 무시)
         if (currentSocketId !== socketIdRef.current || !isMounted.current) return;
         
         logger.info(`[WebSocket:${currentSocketId}] Connected`);
@@ -190,15 +186,25 @@ export function useWebSocket<T = unknown>(
         stableOnOpen();
       };
 
-      ws.current.onmessage = (event) => {
+      ws.current.onmessage = async (event) => {
         if (currentSocketId !== socketIdRef.current || !isMounted.current) return;
 
         try {
-          const message: WebSocketMessage<T> = JSON.parse(event.data);
+          let rawData: string;
+          
+          if (typeof event.data === 'string') {
+            rawData = event.data;
+          } else {
+            // Binary 데이터 (Blob) 수신 시 압축 해제 시도
+            logger.debug(`[WebSocket:${currentSocketId}] Binary message received (${event.data.size} bytes), decompressing...`);
+            rawData = await decompressMessage(event.data);
+          }
+
+          const message: WebSocketMessage<T> = JSON.parse(rawData);
           setLastMessage(message);
           stableOnMessage(message);
         } catch (error) {
-          logger.error(`[WebSocket:${currentSocketId}] Failed to parse message:`, error);
+          logger.error(`[WebSocket:${currentSocketId}] Failed to process message:`, error);
         }
       };
 
@@ -209,7 +215,6 @@ export function useWebSocket<T = unknown>(
         setStatus(WebSocketStatus.DISCONNECTED);
         stableOnClose();
 
-        // 재연결 로직 - 최신 reconnect 옵션 사용
         if (!reconnectOptionRef.current || manuallyDisconnected.current || !isMounted.current) {
           return;
         }
@@ -259,29 +264,21 @@ export function useWebSocket<T = unknown>(
     connectRef.current = connectImpl;
   }, [connectImpl]);
 
-  /**
-   * WebSocket 연결 함수 (외부 노출)
-   */
   const connect = useCallback(() => {
     connectRef.current?.();
   }, []);
 
-  /**
-   * WebSocket 연결 해제 함수
-   */
   const disconnect = useCallback(() => {
     manuallyDisconnected.current = true;
     const currentSocketId = socketIdRef.current;
     
     logger.debug(`[WebSocket:${currentSocketId}] Manual disconnect initiated`);
 
-    // 재연결 타임아웃 정리
     if (reconnectTimeoutId.current) {
       clearTimeout(reconnectTimeoutId.current);
       reconnectTimeoutId.current = null;
     }
 
-    // WebSocket 연결 종료
     if (ws.current) {
       ws.current.close();
       ws.current = null;
@@ -292,9 +289,6 @@ export function useWebSocket<T = unknown>(
     setReconnectCount(0);
   }, []);
 
-  /**
-   * 메시지 전송 함수
-   */
   const sendMessage = useCallback((message: WebSocketMessage<T>) => {
     const currentSocketId = socketIdRef.current;
     
@@ -324,13 +318,11 @@ export function useWebSocket<T = unknown>(
       const currentSocketId = socketIdRef.current;
       logger.debug(`[WebSocket:${currentSocketId}] Unmounting hook, cleaning up`);
 
-      // 타임아웃 정리
       if (reconnectTimeoutId.current) {
         clearTimeout(reconnectTimeoutId.current);
         reconnectTimeoutId.current = null;
       }
 
-      // WebSocket 정리
       if (ws.current) {
         ws.current.close();
         ws.current = null;
