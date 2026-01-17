@@ -74,19 +74,19 @@ const sanitizeUrl = (url: string): string => {
 const IS_DECOMPRESSION_SUPPORTED = typeof globalThis.DecompressionStream !== 'undefined';
 
 /**
- * binary 데이터를 수신했을 때(gzip 압축 등)의 처리 로직
+ * binary 데이터를 수신했을 때(gzip 압축 등)의 처리 로직 (Low-level)
  * 
  * @param data - 수신된 binary 데이터 (Blob 또는 ArrayBuffer)
  * @returns 압축 해제된 텍스트 데이터
+ * @throws DecompressionStream 미지원 시 에러 또는 압축 해제 실패 시 에러
  */
 async function decompressMessage(data: Blob | ArrayBuffer): Promise<string> {
   if (!IS_DECOMPRESSION_SUPPORTED) {
-    // 런타임 예외 대신 명확한 에러 메시지를 통해 상위 catch에서 처리하도록 유도
     throw new Error('DecompressionStream is not supported in this browser');
   }
 
+  const blob = data instanceof Blob ? data : new Blob([data]);
   try {
-    const blob = data instanceof Blob ? data : new Blob([data]);
     const ds = new DecompressionStream('gzip');
     const decompressedStream = blob.stream().pipeThrough(ds);
     const response = new Response(decompressedStream);
@@ -94,6 +94,22 @@ async function decompressMessage(data: Blob | ArrayBuffer): Promise<string> {
   } catch (error) {
     throw new Error(`Failed to decompress message: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+/**
+ * 바이너리 메시지를 디코딩하고 로깅하는 헬퍼 함수
+ * 
+ * @param data - 수신된 binary 데이터
+ * @param socketId - 로그 식별용 소켓 ID
+ * @returns 디코딩된 텍스트
+ */
+async function decodeBinaryMessage(
+  data: Blob | ArrayBuffer,
+  socketId: number
+): Promise<string> {
+  const blob = data instanceof Blob ? data : new Blob([data]);
+  logger.debug(`[WebSocket:${socketId}] Binary message received (${blob.size} bytes), decompressing...`);
+  return decompressMessage(blob);
 }
 
 /**
@@ -198,35 +214,24 @@ export function useWebSocket<T = unknown>(
           
           if (typeof event.data === 'string') {
             rawData = event.data;
-          } else if (event.data instanceof Blob) {
-            // Binary 데이터 (Blob) 수신 시 압축 해제 시도
-            if (!IS_DECOMPRESSION_SUPPORTED) {
-              logger.warn(`[WebSocket:${currentSocketId}] Compressed binary received but DecompressionStream is not supported. Skipping.`);
-              return;
-            }
-            logger.debug(`[WebSocket:${currentSocketId}] Binary message received (${event.data.size} bytes), decompressing...`);
-            rawData = await decompressMessage(event.data);
           } else {
-            // ArrayBuffer 등 기타 바이너리 타입에 대한 방어적 처리
-            const byteLength = (event.data && typeof (event.data as ArrayBuffer).byteLength === 'number')
-              ? (event.data as ArrayBuffer).byteLength
-              : 0;
-
-            if (!IS_DECOMPRESSION_SUPPORTED) {
-              logger.warn(`[WebSocket:${currentSocketId}] Compressed binary received but DecompressionStream is not supported. Skipping.`);
-              return;
-            }
-
-            logger.debug(`[WebSocket:${currentSocketId}] Binary message received (${byteLength} bytes), decompressing...`);
-            rawData = await decompressMessage(event.data as ArrayBuffer);
+            // Binary 데이터 처리 (헬퍼 사용으로 로직 일원화)
+            rawData = await decodeBinaryMessage(event.data as Blob | ArrayBuffer, currentSocketId);
           }
 
-          if (rawData) {
+          // [Fix] rawData != null 체크를 통해 빈 문자열("") 페이로드도 정상적으로 처리하도록 개선
+          if (rawData != null) {
             const message: WebSocketMessage<T> = JSON.parse(rawData);
             setLastMessage(message);
             stableOnMessage(message);
           }
         } catch (error) {
+          // DecompressionStream 미지원 시 에러 핸들링
+          if (error instanceof Error && error.message === 'DecompressionStream is not supported in this browser') {
+            logger.warn(`[WebSocket:${currentSocketId}] Compressed binary received but DecompressionStream is not supported. Skipping message.`);
+            return;
+          }
+
           logger.error(`[WebSocket:${currentSocketId}] Failed to process message:`, error);
         }
       };
