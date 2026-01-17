@@ -1,6 +1,4 @@
-# 01_18.1.md
-
-## Phase 1: WebSocket 실시간 업데이트
+# Phase 1: WebSocket 실시간 업데이트
 
 ## 📋 Overview
 
@@ -298,7 +296,9 @@ setTimeout(connect, reconnectDelay);
 - [x] Frontend Integration Tests (`SyncMonitor` 컴포넌트 연동 완료)
 - [x] WebSocket 인증 추가 (JWT)
 - [x] Redis Pub/Sub 통합 (분산 서버 지원 완료)
-- [x] 메시지 압축 (gzip) 구현 완료 (1KB 임계값)
+- [x] 메시지 압축 (gzip) 구현 완료
+  - **임계값**: 1KB (`1024 bytes`). 소규모 메시지에 대한 압축 오버헤드와 일반적인 네트워크 MTU를 고려한 설정입니다.
+  - **설정**: `backend/services/compression_service.py`에서 `COMPRESSION_THRESHOLD` 수정 가능
 - [x] 연결 풀 관리 (ConnectionManager 구현 완료)
 - [ ] 모니터링 대시보드 (연결 수, 메시지 처리량)
 
