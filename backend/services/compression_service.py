@@ -4,10 +4,12 @@ import gzip
 import logging
 from typing import Union, Tuple
 
+from backend.config import WebSocketConfig
+
 logger = logging.getLogger(__name__)
 
-# 압축 적용 임계값 (1KB)
-COMPRESSION_THRESHOLD = 1024
+# 압축 적용 임계값 (설정에서 로드)
+COMPRESSION_THRESHOLD = WebSocketConfig.COMPRESSION_THRESHOLD
 
 
 def compress_payload(payload: str) -> Tuple[Union[str, bytes], bool]:

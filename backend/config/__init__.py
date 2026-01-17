@@ -212,6 +212,19 @@ class RedisConfig:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
+# WebSocket 설정
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+class WebSocketConfig:
+    """WebSocket 설정"""
+
+    # 압축 적용 임계값 (기본: 1KB)
+    # 1KB 미만인 경우 gzip 헤더 오버헤드로 인해 오히려 크기가 커질 수 있음을 고려한 기본값입니다.
+    COMPRESSION_THRESHOLD = int(os.getenv("WS_COMPRESSION_THRESHOLD", 1024))
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 경로 설정
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 

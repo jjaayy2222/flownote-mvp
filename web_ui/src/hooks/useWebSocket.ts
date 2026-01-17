@@ -69,20 +69,24 @@ const sanitizeUrl = (url: string): string => {
 };
 
 /**
- * binary 데이터를 수신했을 때(gzip 압축 등)의 처리 로직
+ * DecompressionStream 지원 여부 확인 (브라우저 호환성 체크)
+ */
+const IS_DECOMPRESSION_SUPPORTED = typeof globalThis.DecompressionStream !== 'undefined';
+
+/**
+ * binary 데이터를 수신했을 때(gzip 압축 등)의 처리 로직 (Low-level)
  * 
  * @param data - 수신된 binary 데이터 (Blob 또는 ArrayBuffer)
  * @returns 압축 해제된 텍스트 데이터
+ * @throws DecompressionStream 미지원 시 에러 또는 압축 해제 실패 시 에러
  */
 async function decompressMessage(data: Blob | ArrayBuffer): Promise<string> {
-  if (typeof globalThis.DecompressionStream === 'undefined') {
-    // Native API 미지원 시 (예: 매우 오래된 브라우저)
-    // 현재 MVP 환경에서는 모던 브라우저를 타겟으로 하므로 에러 발생 또는 라이브러리 폴백 필요
+  if (!IS_DECOMPRESSION_SUPPORTED) {
     throw new Error('DecompressionStream is not supported in this browser');
   }
 
+  const blob = data instanceof Blob ? data : new Blob([data]);
   try {
-    const blob = data instanceof Blob ? data : new Blob([data]);
     const ds = new DecompressionStream('gzip');
     const decompressedStream = blob.stream().pipeThrough(ds);
     const response = new Response(decompressedStream);
@@ -90,6 +94,22 @@ async function decompressMessage(data: Blob | ArrayBuffer): Promise<string> {
   } catch (error) {
     throw new Error(`Failed to decompress message: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+/**
+ * 바이너리 메시지를 디코딩하고 로깅하는 헬퍼 함수
+ * 
+ * @param data - 수신된 binary 데이터
+ * @param socketId - 로그 식별용 소켓 ID
+ * @returns 디코딩된 텍스트
+ */
+async function decodeBinaryMessage(
+  data: Blob | ArrayBuffer,
+  socketId: number
+): Promise<string> {
+  const blob = data instanceof Blob ? data : new Blob([data]);
+  logger.debug(`[WebSocket:${socketId}] Binary message received (${blob.size} bytes), decompressing...`);
+  return decompressMessage(blob);
 }
 
 /**
@@ -173,7 +193,7 @@ export function useWebSocket<T = unknown>(
       
       ws.current = new WebSocket(url);
       
-      // Binary 데이터 처리를 위해 blob 타입 사용 (DecompressionStream 연동)
+      // Binary 데이터 처리를 위해 blob 타입 사용 (DecompressionStream 연동 최적화)
       ws.current.binaryType = 'blob';
 
       ws.current.onopen = () => {
@@ -195,15 +215,23 @@ export function useWebSocket<T = unknown>(
           if (typeof event.data === 'string') {
             rawData = event.data;
           } else {
-            // Binary 데이터 (Blob) 수신 시 압축 해제 시도
-            logger.debug(`[WebSocket:${currentSocketId}] Binary message received (${event.data.size} bytes), decompressing...`);
-            rawData = await decompressMessage(event.data);
+            // Binary 데이터 처리 (헬퍼 사용으로 로직 일원화)
+            rawData = await decodeBinaryMessage(event.data as Blob | ArrayBuffer, currentSocketId);
           }
 
-          const message: WebSocketMessage<T> = JSON.parse(rawData);
-          setLastMessage(message);
-          stableOnMessage(message);
+          // [Fix] rawData != null 체크를 통해 빈 문자열("") 페이로드도 정상적으로 처리하도록 개선
+          if (rawData != null) {
+            const message: WebSocketMessage<T> = JSON.parse(rawData);
+            setLastMessage(message);
+            stableOnMessage(message);
+          }
         } catch (error) {
+          // DecompressionStream 미지원 시 에러 핸들링
+          if (error instanceof Error && error.message === 'DecompressionStream is not supported in this browser') {
+            logger.warn(`[WebSocket:${currentSocketId}] Compressed binary received but DecompressionStream is not supported. Skipping message.`);
+            return;
+          }
+
           logger.error(`[WebSocket:${currentSocketId}] Failed to process message:`, error);
         }
       };
