@@ -1,4 +1,6 @@
-# Phase 1: WebSocket 실시간 업데이트
+# 01_18.1.md
+
+## Phase 1: WebSocket 실시간 업데이트
 
 ## 📋 Overview
 
@@ -295,7 +297,8 @@ setTimeout(connect, reconnectDelay);
 - [x] Frontend Unit Tests 작성 (`useWebSocket` Hook)
 - [x] Frontend Integration Tests (`SyncMonitor` 컴포넌트 연동 완료)
 - [x] WebSocket 인증 추가 (JWT)
-- [ ] 메시지 압축 (gzip)
+- [x] Redis Pub/Sub 통합 (분산 서버 지원 완료)
+- [x] 메시지 압축 (gzip) 구현 완료 (1KB 임계값)
 - [x] 연결 풀 관리 (ConnectionManager 구현 완료)
 - [ ] 모니터링 대시보드 (연결 수, 메시지 처리량)
 
