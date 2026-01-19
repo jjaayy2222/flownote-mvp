@@ -230,7 +230,9 @@ class WebSocketConfig:
     METRICS_MAX_TPS = max(1, min(_RAW_MAX_TPS, 1000))
 
     # TPS 계산 시간 윈도우 (기본: 60초)
-    METRICS_WINDOW_SECONDS = int(os.getenv("WS_METRICS_WINDOW_SECONDS", 60))
+    # ZeroDivisionError 및 메모리 폭증 방지를 위해 최소 1초 ~ 최대 3600초(1시간)로 제한합니다.
+    _RAW_WINDOW = int(os.getenv("WS_METRICS_WINDOW_SECONDS", 60))
+    METRICS_WINDOW_SECONDS = max(1, min(_RAW_WINDOW, 3600))
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
