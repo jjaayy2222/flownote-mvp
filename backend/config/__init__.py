@@ -23,6 +23,9 @@ load_dotenv()
 
 from openai import OpenAI
 
+# 로거 설정
+logger = logging.getLogger(__name__)
+
 # 3️⃣ Streamlit 배포 환경에서 덮어쓰기
 try:
     import streamlit as st
@@ -226,6 +229,10 @@ class WebSocketConfig:
         COMPRESSION_THRESHOLD = int(_RAW_COMP_THRESH)
     except (ValueError, TypeError):
         COMPRESSION_THRESHOLD = 1024
+        logger.warning(
+            "Invalid WS_COMPRESSION_THRESHOLD=%r; falling back to default 1024",
+            _RAW_COMP_THRESH,
+        )
 
     # Metrics 관련 설정
     # TPS 계산용 최대 샘플 수 (기본: 초당 100회 브로드캐스트)
@@ -235,7 +242,7 @@ class WebSocketConfig:
         _RAW_MAX_TPS = int(_RAW_MAX_TPS_ENV)
     except (ValueError, TypeError):
         _RAW_MAX_TPS = 100
-        logging.getLogger(__name__).warning(
+        logger.warning(
             "Invalid WS_METRICS_MAX_TPS=%r; falling back to default 100",
             _RAW_MAX_TPS_ENV,
         )
@@ -248,7 +255,7 @@ class WebSocketConfig:
         _RAW_WINDOW = int(_RAW_WINDOW_ENV)
     except (ValueError, TypeError):
         _RAW_WINDOW = 60
-        logging.getLogger(__name__).warning(
+        logger.warning(
             "Invalid WS_METRICS_WINDOW_SECONDS=%r; falling back to default 60 seconds",
             _RAW_WINDOW_ENV,
         )
