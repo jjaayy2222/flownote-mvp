@@ -223,6 +223,11 @@ class WebSocketConfig:
     # 1KB 미만인 경우 gzip 헤더 오버헤드로 인해 오히려 크기가 커질 수 있음을 고려한 기본값입니다.
     COMPRESSION_THRESHOLD = int(os.getenv("WS_COMPRESSION_THRESHOLD", 1024))
 
+    # Metrics 관련 설정
+    # TPS 계산용 최대 샘플 수 (기본: 초당 100회 브로드캐스트 * 60초 = 6000)
+    # 메모리 상한 임계치로 사용됩니다.
+    METRICS_MAX_TPS = int(os.getenv("WS_METRICS_MAX_TPS", 100))
+
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 경로 설정

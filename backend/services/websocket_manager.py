@@ -6,10 +6,10 @@ import time
 from collections import Counter, deque
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
-from fastapi import WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 from backend.services.redis_pubsub import redis_broadcaster
 from backend.services.compression_service import compress_payload
+from backend.config import WebSocketConfig
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +42,14 @@ class ConnectionManager:
         self._total_broadcasts_sent = 0  # [Metrics] 브로드캐스트 이벤트 단위 지표
         self._total_bytes_sent = 0
         self._peak_connections = 0
-        # TPS 계산을 위한 최근 60초 메시지 타임스탬프 큐
-        # 메모리 상한 설정을 위해 maxlen 부여 (초당 100회 브로드캐스트 * 60초 기준)
-        self._message_timestamps = deque(maxlen=6000)
+
+        # [Metrics] TPS 산출을 위한 샘플링 (설정 기반 상한 설정)
+        # 1. 브로드캐스트 이벤트 단위 (Broadcast TPS)
+        self._broadcast_timestamps = deque(maxlen=WebSocketConfig.METRICS_MAX_TPS * 60)
+        # 2. 개별 수신자 발송 단위 (Message/Recipient TPS)
+        self._message_timestamps = deque(
+            maxlen=WebSocketConfig.METRICS_MAX_TPS * 10 * 60
+        )  # 수신자는 보통 이벤트보다 많으므로 10배 여유
 
     async def initialize(self):
         """시스템 시작 시 호출: Redis 오케스트레이션 시작"""
@@ -128,23 +133,30 @@ class ConnectionManager:
         current_time = time.time()
         uptime = current_time - self._start_time
 
-        # TPS 계산 (최근 60초간의 메시지 수 / 60)
-        # 큐에서 만료된 타임스탬프 정리
+        # Broadcast TPS (이벤트 단위)
+        while (
+            self._broadcast_timestamps
+            and self._broadcast_timestamps[0] < current_time - 60
+        ):
+            self._broadcast_timestamps.popleft()
+        broadcast_tps = len(self._broadcast_timestamps) / 60.0
+
+        # Message TPS (수신자 단위)
         while (
             self._message_timestamps and self._message_timestamps[0] < current_time - 60
         ):
             self._message_timestamps.popleft()
-
-        tps = len(self._message_timestamps) / 60.0
+        message_tps = len(self._message_timestamps) / 60.0
 
         return {
             "uptime_seconds": round(uptime, 2),
             "active_connections": len(self.active_connections),
             "peak_connections": self._peak_connections,
-            "total_broadcasts": self._total_broadcasts_sent,  # 이벤트 단위
-            "total_messages": self._total_messages_sent,  # 수신자 단위
+            "total_broadcasts": self._total_broadcasts_sent,
+            "total_messages": self._total_messages_sent,
             "total_bytes": self._total_bytes_sent,
-            "tps": round(tps, 2),
+            "broadcast_tps": round(broadcast_tps, 2),
+            "message_tps": round(message_tps, 2),
         }
 
     async def _local_broadcast(self, message: str):
@@ -169,6 +181,7 @@ class ConnectionManager:
                 # [Metrics] 개별 전송 지표 업데이트
                 self._total_messages_sent += 1
                 self._total_bytes_sent += data_size
+                self._message_timestamps.append(time.time())
 
             except Exception as e:
                 # Log context for better observability
@@ -178,9 +191,8 @@ class ConnectionManager:
                 failed_connections.append(connection)
 
         # [Metrics] 브로드캐스트 이벤트 단위 지표 및 TPS 업데이트
-        # 개별 수신자 성공 여부와 관계없이 시도된 이벤트 및 시간을 기록
         self._total_broadcasts_sent += 1
-        self._message_timestamps.append(time.time())
+        self._broadcast_timestamps.append(time.time())
 
         if failed_connections:
             logger.info(
