@@ -8,7 +8,8 @@ import sys
 from pathlib import Path
 import os
 import logging
-from typing import NamedTuple, TypeVar, Union, Generic
+from dataclasses import dataclass
+from typing import TypeVar, Union, Generic
 from dotenv import load_dotenv
 
 # 1️⃣ 프로젝트 루트 추가
@@ -32,8 +33,9 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", int, float)
 
 
-class ConfigRange(NamedTuple, Generic[T]):
-    """설정값의 범위를 정의하는 구조체"""
+@dataclass(frozen=True)
+class ConfigRange(Generic[T]):
+    """설정값의 범위를 정의하는 구조체 (Immutable)"""
 
     min: T
     max: T
