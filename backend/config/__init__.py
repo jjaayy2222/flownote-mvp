@@ -1,6 +1,4 @@
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # backend/config/__init__.py
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 """
 FlowNote MVP - 통합 설정 (클래스 기반)
@@ -8,16 +6,15 @@ FlowNote MVP - 통합 설정 (클래스 기반)
 
 import sys
 from pathlib import Path
+import os
+import logging
+from typing import NamedTuple, TypeVar, Union, Generic
+from dotenv import load_dotenv
 
 # 1️⃣ 프로젝트 루트 추가
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-
-import os
-import logging
-from typing import NamedTuple, TypeVar, Union
-from dotenv import load_dotenv
 
 # 2️⃣ 로컬 .env 로드 (우선!)
 load_dotenv()
@@ -35,14 +32,14 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", int, float)
 
 
-class ConfigRange(NamedTuple):
+class ConfigRange(NamedTuple, Generic[T]):
     """설정값의 범위를 정의하는 구조체"""
 
-    min: Union[int, float]
-    max: Union[int, float]
+    min: T
+    max: T
 
 
-def _clamp(value: T, r: ConfigRange) -> T:
+def _clamp(value: T, r: ConfigRange[T]) -> T:
     """수치를 허용 범위(ConfigRange) 내로 제한하는 헬퍼 함수"""
     return max(r.min, min(value, r.max))
 
