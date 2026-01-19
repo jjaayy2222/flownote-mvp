@@ -170,7 +170,12 @@ class RedisBroadcaster:
         """Redis 연결 상태 확인 (Safe wrapper)"""
         try:
             return self._client.is_connected()
-        except Exception:
+        except Exception as exc:
+            # 예상치 못한 오류(설정/프로그래밍)를 로그로 남겨 관측성을 유지합니다.
+            logger.warning(
+                "Redis is_connected() check failed; treating as disconnected",
+                exc_info=exc,
+            )
             return False
 
     async def publish_or_fallback(
