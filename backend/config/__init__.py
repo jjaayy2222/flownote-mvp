@@ -16,7 +16,7 @@ sys.path.insert(0, str(project_root))
 
 import os
 import logging
-from collections import namedtuple
+from typing import NamedTuple, TypeVar, Union
 from dotenv import load_dotenv
 
 # 2️⃣ 로컬 .env 로드 (우선!)
@@ -32,13 +32,20 @@ logger = logging.getLogger(__name__)
 # 유틸리티 함수 및 구조체
 # ────────────────────────────────────────────────────────
 
-
-def _clamp(value: int, min_val: int, max_val: int) -> int:
-    """수치를 허용 범위 내로 제한하는 헬퍼 함수"""
-    return max(min_val, min(value, max_val))
+T = TypeVar("T", int, float)
 
 
-ConfigRange = namedtuple("ConfigRange", ["min", "max"])
+class ConfigRange(NamedTuple):
+    """설정값의 범위를 정의하는 구조체"""
+
+    min: Union[int, float]
+    max: Union[int, float]
+
+
+def _clamp(value: T, r: ConfigRange) -> T:
+    """수치를 허용 범위(ConfigRange) 내로 제한하는 헬퍼 함수"""
+    return max(r.min, min(value, r.max))
+
 
 # 3️⃣ Streamlit 배포 환경에서 덮어쓰기
 try:
@@ -272,7 +279,7 @@ class WebSocketConfig:
             _RAW_MAX_TPS_ENV,
             DEFAULT_METRICS_MAX_TPS,
         )
-    METRICS_MAX_TPS = _clamp(_RAW_MAX_TPS, TPS_RANGE.min, TPS_RANGE.max)
+    METRICS_MAX_TPS = _clamp(_RAW_MAX_TPS, TPS_RANGE)
 
     # TPS 계산 시간 윈도우
     _RAW_WINDOW_ENV = os.getenv(
@@ -287,7 +294,7 @@ class WebSocketConfig:
             _RAW_WINDOW_ENV,
             DEFAULT_METRICS_WINDOW_SECONDS,
         )
-    METRICS_WINDOW_SECONDS = _clamp(_RAW_WINDOW, WINDOW_RANGE.min, WINDOW_RANGE.max)
+    METRICS_WINDOW_SECONDS = _clamp(_RAW_WINDOW, WINDOW_RANGE)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
