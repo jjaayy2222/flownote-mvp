@@ -23,8 +23,8 @@ async def get_ws_health():
             "peak": metrics["peak_connections"],
         },
         "performance": {
+            "window_seconds": WebSocketConfig.METRICS_WINDOW_SECONDS,
             "broadcast_tps": metrics["broadcast_tps"],
-            "message_tps": metrics["message_tps"],
             "total_broadcasts": metrics["total_broadcasts"],
             "total_messages": metrics["total_messages"],
             "total_data_bytes": metrics["total_bytes"],

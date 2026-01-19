@@ -45,10 +45,15 @@ class ConnectionManager:
 
         # [Metrics] TPS 산출을 위한 샘플링 (설정 기반 상한 설정)
         # 1. 브로드캐스트 이벤트 단위 (Broadcast TPS)
-        self._broadcast_timestamps = deque(maxlen=WebSocketConfig.METRICS_MAX_TPS * 60)
+        self._broadcast_timestamps = deque(
+            maxlen=WebSocketConfig.METRICS_MAX_TPS
+            * WebSocketConfig.METRICS_WINDOW_SECONDS
+        )
         # 2. 개별 수신자 발송 단위 (Message/Recipient TPS)
         self._message_timestamps = deque(
-            maxlen=WebSocketConfig.METRICS_MAX_TPS * 10 * 60
+            maxlen=WebSocketConfig.METRICS_MAX_TPS
+            * 10
+            * WebSocketConfig.METRICS_WINDOW_SECONDS
         )  # 수신자는 보통 이벤트보다 많으므로 10배 여유
 
     async def initialize(self):
@@ -134,19 +139,21 @@ class ConnectionManager:
         uptime = current_time - self._start_time
 
         # Broadcast TPS (이벤트 단위)
+        window = WebSocketConfig.METRICS_WINDOW_SECONDS
         while (
             self._broadcast_timestamps
-            and self._broadcast_timestamps[0] < current_time - 60
+            and self._broadcast_timestamps[0] < current_time - window
         ):
             self._broadcast_timestamps.popleft()
-        broadcast_tps = len(self._broadcast_timestamps) / 60.0
+        broadcast_tps = len(self._broadcast_timestamps) / float(window)
 
         # Message TPS (수신자 단위)
         while (
-            self._message_timestamps and self._message_timestamps[0] < current_time - 60
+            self._message_timestamps
+            and self._message_timestamps[0] < current_time - window
         ):
             self._message_timestamps.popleft()
-        message_tps = len(self._message_timestamps) / 60.0
+        message_tps = len(self._message_timestamps) / float(window)
 
         return {
             "uptime_seconds": round(uptime, 2),

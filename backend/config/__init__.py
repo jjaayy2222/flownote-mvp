@@ -224,9 +224,13 @@ class WebSocketConfig:
     COMPRESSION_THRESHOLD = int(os.getenv("WS_COMPRESSION_THRESHOLD", 1024))
 
     # Metrics 관련 설정
-    # TPS 계산용 최대 샘플 수 (기본: 초당 100회 브로드캐스트 * 60초 = 6000)
-    # 메모리 상한 임계치로 사용됩니다.
-    METRICS_MAX_TPS = int(os.getenv("WS_METRICS_MAX_TPS", 100))
+    # TPS 계산용 최대 샘플 수 (기본: 초당 100회 브로드캐스트)
+    # 메모리 상한 임계치(Clamping: 1 ~ 1000)를 적용하여 비정상 설정을 방지합니다.
+    _RAW_MAX_TPS = int(os.getenv("WS_METRICS_MAX_TPS", 100))
+    METRICS_MAX_TPS = max(1, min(_RAW_MAX_TPS, 1000))
+
+    # TPS 계산 시간 윈도우 (기본: 60초)
+    METRICS_WINDOW_SECONDS = int(os.getenv("WS_METRICS_WINDOW_SECONDS", 60))
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
