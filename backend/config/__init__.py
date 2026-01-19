@@ -16,6 +16,7 @@ sys.path.insert(0, str(project_root))
 
 import os
 import logging
+from collections import namedtuple
 from dotenv import load_dotenv
 
 # 2️⃣ 로컬 .env 로드 (우선!)
@@ -25,6 +26,19 @@ from openai import OpenAI
 
 # 로거 설정
 logger = logging.getLogger(__name__)
+
+
+# ────────────────────────────────────────────────────────
+# 유틸리티 함수 및 구조체
+# ────────────────────────────────────────────────────────
+
+
+def _clamp(value: int, min_val: int, max_val: int) -> int:
+    """수치를 허용 범위 내로 제한하는 헬퍼 함수"""
+    return max(min_val, min(value, max_val))
+
+
+ConfigRange = namedtuple("ConfigRange", ["min", "max"])
 
 # 3️⃣ Streamlit 배포 환경에서 덮어쓰기
 try:
@@ -228,8 +242,8 @@ class WebSocketConfig:
     DEFAULT_METRICS_MAX_TPS = 100
     DEFAULT_METRICS_WINDOW_SECONDS = 60
 
-    TPS_MIN, TPS_MAX = 1, 1000
-    WINDOW_MIN, WINDOW_MAX = 1, 3600
+    TPS_RANGE = ConfigRange(min=1, max=1000)
+    WINDOW_RANGE = ConfigRange(min=1, max=3600)
 
     # 2️⃣ 설정 파싱 및 검증
     # 압축 적용 임계값 (기본: 1KB)
@@ -258,7 +272,7 @@ class WebSocketConfig:
             _RAW_MAX_TPS_ENV,
             DEFAULT_METRICS_MAX_TPS,
         )
-    METRICS_MAX_TPS = max(TPS_MIN, min(_RAW_MAX_TPS, TPS_MAX))
+    METRICS_MAX_TPS = _clamp(_RAW_MAX_TPS, TPS_RANGE.min, TPS_RANGE.max)
 
     # TPS 계산 시간 윈도우
     _RAW_WINDOW_ENV = os.getenv(
@@ -273,7 +287,7 @@ class WebSocketConfig:
             _RAW_WINDOW_ENV,
             DEFAULT_METRICS_WINDOW_SECONDS,
         )
-    METRICS_WINDOW_SECONDS = max(WINDOW_MIN, min(_RAW_WINDOW, WINDOW_MAX))
+    METRICS_WINDOW_SECONDS = _clamp(_RAW_WINDOW, WINDOW_RANGE.min, WINDOW_RANGE.max)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
