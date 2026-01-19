@@ -3,12 +3,37 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from backend.api import deps
 from backend.services.websocket_manager import manager
+from backend.services.redis_pubsub import redis_broadcaster
 import logging
 
 # 로거 설정
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/health/metrics", tags=["System"])
+async def get_ws_health():
+    """WebSocket 시스템 지표 및 상태 조회 엔드포인트"""
+    metrics = manager.get_metrics()
+    return {
+        "status": "healthy",
+        "connections": {
+            "active": metrics["active_connections"],
+            "peak": metrics["peak_connections"],
+        },
+        "performance": {
+            "tps": metrics["tps"],
+            "total_messages": metrics["total_messages"],
+            "total_data_bytes": metrics["total_bytes"],
+            "total_data_mb": round(metrics["total_bytes"] / (1024 * 1024), 2),
+        },
+        "redis": {
+            "connected": redis_broadcaster._client.is_connected(),
+            "channel": manager.channel_name,
+        },
+        "uptime_seconds": metrics["uptime_seconds"],
+    }
 
 
 @router.websocket("/ws")
@@ -25,6 +50,9 @@ async def websocket_endpoint(
     # 인증된 사용자 정보와 함께 연결 수락
     await manager.connect(websocket, current_user)
 
+    close_code = 1000
+    close_reason = None
+
     try:
         # [Communication Phase]
         while True:
@@ -38,18 +66,19 @@ async def websocket_endpoint(
             # 향후 manager.broadcast() 또는 개별 응답 로직으로 대체
             await websocket.send_text(f"Echo: {data}")
 
-    except WebSocketDisconnect:
-        # 클라이언트가 연결을 끊은 경우 (여기서는 로그만 남기고, finally에서 정리)
-        # manager.disconnect 호출은 finally 블록이 보장하므로 중복 호출 방지
+    except WebSocketDisconnect as e:
+        # 클라이언트가 연결을 끊은 경우
+        close_code = e.code
+        close_reason = e.reason
         logger.info(
-            f"WebSocket Client Disconnected (Graceful): UserID={current_user.get('id')}"
+            f"WebSocket Client Disconnected: UserID={current_user.get('id')}, Code={close_code}"
         )
 
     except Exception as e:
         logger.error(f"WebSocket Error (Unexpected): {e}", exc_info=True)
+        close_code = 1011  # Internal Error
 
     finally:
         # [Cleanup Phase]
         # 루프 종료 시 (에러, 연결 끊김 등) 반드시 연결 목록에서 제거 및 소켓 종료
-        # Manager의 disconnect는 idempotent(멱등성)하지 않더라도 내부에서 pop을 사용하므로 안전함
-        await manager.disconnect(websocket)
+        await manager.disconnect(websocket, code=close_code, reason=close_reason)

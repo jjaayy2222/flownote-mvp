@@ -300,7 +300,8 @@ setTimeout(connect, reconnectDelay);
   - **임계값**: 1KB (`1024 bytes`). 소규모 메시지에 대한 압축 오버헤드와 일반적인 네트워크 MTU를 고려한 설정입니다.
   - **설정**: `backend/services/compression_service.py`에서 `COMPRESSION_THRESHOLD` 수정 가능
 - [x] 연결 풀 관리 (ConnectionManager 구현 완료)
-- [ ] 모니터링 대시보드 (연결 수, 메시지 처리량)
+- [x] 모니터링 및 로깅 강화 (Metrics API & Close Code Tracking 완료)
+- [ ] 대시보드 시각화 (지속 과제: Metrics API 기반 UI 연동)
 
 ## 🔗 Related Documentation
 
