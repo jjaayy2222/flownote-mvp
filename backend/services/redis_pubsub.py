@@ -166,6 +166,13 @@ class RedisBroadcaster:
 
         await self._client.disconnect()
 
+    def is_connected(self) -> bool:
+        """Redis 연결 상태 확인 (Safe wrapper)"""
+        try:
+            return self._client.is_connected()
+        except Exception:
+            return False
+
     async def publish_or_fallback(
         self, channel: str, message: str, fallback: Callable[[str], Awaitable[None]]
     ):

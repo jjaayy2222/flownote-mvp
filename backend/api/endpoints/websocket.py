@@ -24,12 +24,13 @@ async def get_ws_health():
         },
         "performance": {
             "tps": metrics["tps"],
+            "total_broadcasts": metrics["total_broadcasts"],
             "total_messages": metrics["total_messages"],
             "total_data_bytes": metrics["total_bytes"],
             "total_data_mb": round(metrics["total_bytes"] / (1024 * 1024), 2),
         },
         "redis": {
-            "connected": redis_broadcaster._client.is_connected(),
+            "connected": redis_broadcaster.is_connected(),
             "channel": manager.channel_name,
         },
         "uptime_seconds": metrics["uptime_seconds"],

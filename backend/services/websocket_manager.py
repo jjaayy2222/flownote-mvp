@@ -7,6 +7,7 @@ from collections import Counter, deque
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from fastapi import WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 from backend.services.redis_pubsub import redis_broadcaster
 from backend.services.compression_service import compress_payload
 
@@ -38,10 +39,12 @@ class ConnectionManager:
         # [Metrics] 실시간 관측성 강화를 위한 지표 변수
         self._start_time = time.time()
         self._total_messages_sent = 0
+        self._total_broadcasts_sent = 0  # [Metrics] 브로드캐스트 이벤트 단위 지표
         self._total_bytes_sent = 0
         self._peak_connections = 0
         # TPS 계산을 위한 최근 60초 메시지 타임스탬프 큐
-        self._message_timestamps = deque()
+        # 메모리 상한 설정을 위해 maxlen 부여 (초당 100회 브로드캐스트 * 60초 기준)
+        self._message_timestamps = deque(maxlen=6000)
 
     async def initialize(self):
         """시스템 시작 시 호출: Redis 오케스트레이션 시작"""
@@ -94,8 +97,8 @@ class ConnectionManager:
             )
 
         try:
-            # 이미 닫혀있을 수 있으므로 에러 무시
-            if websocket.client_state.value != 2:  # 2 is DISCONNECTED in starlette
+            # WebSocketState.DISCONNECTED(2) 상수를 사용하여 상태 체크 (brittle-fix)
+            if websocket.client_state != WebSocketState.DISCONNECTED:
                 await websocket.close(code=code, reason=reason)
         except Exception as exc:
             # Minimal log mostly for debug since connection might be already closed
@@ -138,7 +141,8 @@ class ConnectionManager:
             "uptime_seconds": round(uptime, 2),
             "active_connections": len(self.active_connections),
             "peak_connections": self._peak_connections,
-            "total_messages": self._total_messages_sent,
+            "total_broadcasts": self._total_broadcasts_sent,  # 이벤트 단위
+            "total_messages": self._total_messages_sent,  # 수신자 단위
             "total_bytes": self._total_bytes_sent,
             "tps": round(tps, 2),
         }
@@ -162,10 +166,9 @@ class ConnectionManager:
                     await connection.send_text(processed_data)
                     data_size = len(processed_data.encode("utf-8"))
 
-                # [Metrics] 지표 업데이트
+                # [Metrics] 개별 전송 지표 업데이트
                 self._total_messages_sent += 1
                 self._total_bytes_sent += data_size
-                self._message_timestamps.append(time.time())
 
             except Exception as e:
                 # Log context for better observability
@@ -173,6 +176,11 @@ class ConnectionManager:
                 user_str = f"User({context.user_id})" if context else "Unknown"
                 logger.error(f"Failed to broadcast to {user_str}: {e}")
                 failed_connections.append(connection)
+
+        # [Metrics] 브로드캐스트 이벤트 단위 지표 및 TPS 업데이트
+        # 개별 수신자 성공 여부와 관계없이 시도된 이벤트 및 시간을 기록
+        self._total_broadcasts_sent += 1
+        self._message_timestamps.append(time.time())
 
         if failed_connections:
             logger.info(
