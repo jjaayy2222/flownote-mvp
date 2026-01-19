@@ -236,10 +236,11 @@ export function useWebSocket<T = unknown>(
         }
       };
 
-      ws.current.onclose = () => {
+      ws.current.onclose = (event) => {
         if (currentSocketId !== socketIdRef.current || !isMounted.current) return;
 
-        logger.info(`[WebSocket:${currentSocketId}] Disconnected`);
+        const { code, reason } = event;
+        logger.info(`[WebSocket:${currentSocketId}] Disconnected (Code: ${code}, Reason: ${reason || 'none'})`);
         setStatus(WebSocketStatus.DISCONNECTED);
         stableOnClose();
 

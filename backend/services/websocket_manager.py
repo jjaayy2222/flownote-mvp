@@ -2,7 +2,8 @@
 
 import asyncio
 import logging
-from collections import Counter
+import time
+from collections import Counter, deque
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from fastapi import WebSocket, WebSocketDisconnect
@@ -34,6 +35,14 @@ class ConnectionManager:
         # Channel name is kept simple here; could be moved to config if needed
         self.channel_name = "flownote_sync"
 
+        # [Metrics] 실시간 관측성 강화를 위한 지표 변수
+        self._start_time = time.time()
+        self._total_messages_sent = 0
+        self._total_bytes_sent = 0
+        self._peak_connections = 0
+        # TPS 계산을 위한 최근 60초 메시지 타임스탬프 큐
+        self._message_timestamps = deque()
+
     async def initialize(self):
         """시스템 시작 시 호출: Redis 오케스트레이션 시작"""
         await redis_broadcaster.start(self.channel_name, self._local_broadcast)
@@ -61,23 +70,33 @@ class ConnectionManager:
         )
 
         self.active_connections[websocket] = context
+
+        # Peak 연결 수 업데이트
+        current_conn = len(self.active_connections)
+        if current_conn > self._peak_connections:
+            self._peak_connections = current_conn
+
         logger.info(
             f"WebSocket Client Connected: {context}. "
-            f"Active connections: {len(self.active_connections)}"
+            f"Active connections: {current_conn}"
         )
 
-    async def disconnect(self, websocket: WebSocket):
+    async def disconnect(
+        self, websocket: WebSocket, code: int = 1000, reason: Optional[str] = None
+    ):
         """클라이언트 연결 해제, 목록 제거 및 명시적 소켓 종료"""
         context = self.active_connections.pop(websocket, None)
 
         if context:
             logger.info(
-                f"WebSocket Client Removed: {context}. "
+                f"WebSocket Client Removed: {context} (Code: {code}, Reason: {reason or 'none'}). "
                 f"Active connections: {len(self.active_connections)}"
             )
 
         try:
-            await websocket.close(code=1000)
+            # 이미 닫혀있을 수 있으므로 에러 무시
+            if websocket.client_state.value != 2:  # 2 is DISCONNECTED in starlette
+                await websocket.close(code=code, reason=reason)
         except Exception as exc:
             # Minimal log mostly for debug since connection might be already closed
             logger.debug("WebSocket close skipped/failed", exc_info=exc)
@@ -101,6 +120,29 @@ class ConnectionManager:
             self.channel_name, message, self._local_broadcast
         )
 
+    def get_metrics(self) -> Dict[str, Any]:
+        """현재 시스템 메트릭 산출"""
+        current_time = time.time()
+        uptime = current_time - self._start_time
+
+        # TPS 계산 (최근 60초간의 메시지 수 / 60)
+        # 큐에서 만료된 타임스탬프 정리
+        while (
+            self._message_timestamps and self._message_timestamps[0] < current_time - 60
+        ):
+            self._message_timestamps.popleft()
+
+        tps = len(self._message_timestamps) / 60.0
+
+        return {
+            "uptime_seconds": round(uptime, 2),
+            "active_connections": len(self.active_connections),
+            "peak_connections": self._peak_connections,
+            "total_messages": self._total_messages_sent,
+            "total_bytes": self._total_bytes_sent,
+            "tps": round(tps, 2),
+        }
+
     async def _local_broadcast(self, message: str):
         """[Internal] 실제 로컬 연결된 클라이언트들에게 메시지 전송 및 정리"""
         # 메시지 압축 처리
@@ -114,9 +156,17 @@ class ConnectionManager:
                 if is_compressed:
                     # 압축된 경우 Binary 데이터로 전송 (클라이언트에서 해제 필요)
                     await connection.send_bytes(processed_data)
+                    data_size = len(processed_data)
                 else:
                     # 압축되지 않은 경우 일반 Text로 전송
                     await connection.send_text(processed_data)
+                    data_size = len(processed_data.encode("utf-8"))
+
+                # [Metrics] 지표 업데이트
+                self._total_messages_sent += 1
+                self._total_bytes_sent += data_size
+                self._message_timestamps.append(time.time())
+
             except Exception as e:
                 # Log context for better observability
                 context = self.active_connections.get(connection)
