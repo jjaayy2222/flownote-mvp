@@ -37,7 +37,7 @@ T = TypeVar("T", int, float)
 class ConfigRange(Generic[T]):
     """
     설정값의 범위를 정의하는 구조체 (Immutable)
-    - slots=True를 통해 메모리 및 속도 최최적화 (Python 3.10+)
+    - slots=True를 통해 메모리 및 속도 최적화 (Python 3.10+)
     - 더 이상 NamedTuple이 아니므로 인덱싱이나 언패킹 대신 속성 접근(.min, .max)을 사용해야 합니다.
     """
 
