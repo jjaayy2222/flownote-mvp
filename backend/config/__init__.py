@@ -223,43 +223,57 @@ class RedisConfig:
 class WebSocketConfig:
     """WebSocket 설정"""
 
+    # 1️⃣ 기본값 및 임계값 정의 (Magic Numbers 제거)
+    DEFAULT_COMPRESSION_THRESHOLD = 1024
+    DEFAULT_METRICS_MAX_TPS = 100
+    DEFAULT_METRICS_WINDOW_SECONDS = 60
+
+    TPS_MIN, TPS_MAX = 1, 1000
+    WINDOW_MIN, WINDOW_MAX = 1, 3600
+
+    # 2️⃣ 설정 파싱 및 검증
     # 압축 적용 임계값 (기본: 1KB)
-    _RAW_COMP_THRESH = os.getenv("WS_COMPRESSION_THRESHOLD", "1024")
+    _RAW_COMP_THRESH = os.getenv(
+        "WS_COMPRESSION_THRESHOLD", str(DEFAULT_COMPRESSION_THRESHOLD)
+    )
     try:
         COMPRESSION_THRESHOLD = int(_RAW_COMP_THRESH)
     except (ValueError, TypeError):
-        COMPRESSION_THRESHOLD = 1024
+        COMPRESSION_THRESHOLD = DEFAULT_COMPRESSION_THRESHOLD
         logger.warning(
-            "Invalid WS_COMPRESSION_THRESHOLD=%r; falling back to default 1024",
+            "Invalid WS_COMPRESSION_THRESHOLD=%r; falling back to default %s",
             _RAW_COMP_THRESH,
+            DEFAULT_COMPRESSION_THRESHOLD,
         )
 
     # Metrics 관련 설정
-    # TPS 계산용 최대 샘플 수 (기본: 초당 100회 브로드캐스트)
-    # 메모리 상한 임계치(Clamping: 1 ~ 1000)를 적용하여 비정상 설정을 방지합니다.
-    _RAW_MAX_TPS_ENV = os.getenv("WS_METRICS_MAX_TPS", "100")
+    # TPS 계산용 최대 샘플 수
+    _RAW_MAX_TPS_ENV = os.getenv("WS_METRICS_MAX_TPS", str(DEFAULT_METRICS_MAX_TPS))
     try:
         _RAW_MAX_TPS = int(_RAW_MAX_TPS_ENV)
     except (ValueError, TypeError):
-        _RAW_MAX_TPS = 100
+        _RAW_MAX_TPS = DEFAULT_METRICS_MAX_TPS
         logger.warning(
-            "Invalid WS_METRICS_MAX_TPS=%r; falling back to default 100",
+            "Invalid WS_METRICS_MAX_TPS=%r; falling back to default %s",
             _RAW_MAX_TPS_ENV,
+            DEFAULT_METRICS_MAX_TPS,
         )
-    METRICS_MAX_TPS = max(1, min(_RAW_MAX_TPS, 1000))
+    METRICS_MAX_TPS = max(TPS_MIN, min(_RAW_MAX_TPS, TPS_MAX))
 
-    # TPS 계산 시간 윈도우 (기본: 60초)
-    # ZeroDivisionError 및 메모리 폭증 방지를 위해 최소 1초 ~ 최대 3600초(1시간)로 제한합니다.
-    _RAW_WINDOW_ENV = os.getenv("WS_METRICS_WINDOW_SECONDS", "60")
+    # TPS 계산 시간 윈도우
+    _RAW_WINDOW_ENV = os.getenv(
+        "WS_METRICS_WINDOW_SECONDS", str(DEFAULT_METRICS_WINDOW_SECONDS)
+    )
     try:
         _RAW_WINDOW = int(_RAW_WINDOW_ENV)
     except (ValueError, TypeError):
-        _RAW_WINDOW = 60
+        _RAW_WINDOW = DEFAULT_METRICS_WINDOW_SECONDS
         logger.warning(
-            "Invalid WS_METRICS_WINDOW_SECONDS=%r; falling back to default 60 seconds",
+            "Invalid WS_METRICS_WINDOW_SECONDS=%r; falling back to default %s seconds",
             _RAW_WINDOW_ENV,
+            DEFAULT_METRICS_WINDOW_SECONDS,
         )
-    METRICS_WINDOW_SECONDS = max(1, min(_RAW_WINDOW, 3600))
+    METRICS_WINDOW_SECONDS = max(WINDOW_MIN, min(_RAW_WINDOW, WINDOW_MAX))
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
