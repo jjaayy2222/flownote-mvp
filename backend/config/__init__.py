@@ -1,5 +1,5 @@
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# backend/config/__init__.py (클래스 기반 리팩토리 + gpt 4.1 추가)
+# backend/config/__init__.py
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 """
@@ -15,6 +15,7 @@ sys.path.insert(0, str(project_root))
 
 
 import os
+import logging
 from dotenv import load_dotenv
 
 # 2️⃣ 로컬 .env 로드 (우선!)
@@ -220,18 +221,37 @@ class WebSocketConfig:
     """WebSocket 설정"""
 
     # 압축 적용 임계값 (기본: 1KB)
-    # 1KB 미만인 경우 gzip 헤더 오버헤드로 인해 오히려 크기가 커질 수 있음을 고려한 기본값입니다.
-    COMPRESSION_THRESHOLD = int(os.getenv("WS_COMPRESSION_THRESHOLD", 1024))
+    _RAW_COMP_THRESH = os.getenv("WS_COMPRESSION_THRESHOLD", "1024")
+    try:
+        COMPRESSION_THRESHOLD = int(_RAW_COMP_THRESH)
+    except (ValueError, TypeError):
+        COMPRESSION_THRESHOLD = 1024
 
     # Metrics 관련 설정
     # TPS 계산용 최대 샘플 수 (기본: 초당 100회 브로드캐스트)
     # 메모리 상한 임계치(Clamping: 1 ~ 1000)를 적용하여 비정상 설정을 방지합니다.
-    _RAW_MAX_TPS = int(os.getenv("WS_METRICS_MAX_TPS", 100))
+    _RAW_MAX_TPS_ENV = os.getenv("WS_METRICS_MAX_TPS", "100")
+    try:
+        _RAW_MAX_TPS = int(_RAW_MAX_TPS_ENV)
+    except (ValueError, TypeError):
+        _RAW_MAX_TPS = 100
+        logging.getLogger(__name__).warning(
+            "Invalid WS_METRICS_MAX_TPS=%r; falling back to default 100",
+            _RAW_MAX_TPS_ENV,
+        )
     METRICS_MAX_TPS = max(1, min(_RAW_MAX_TPS, 1000))
 
     # TPS 계산 시간 윈도우 (기본: 60초)
     # ZeroDivisionError 및 메모리 폭증 방지를 위해 최소 1초 ~ 최대 3600초(1시간)로 제한합니다.
-    _RAW_WINDOW = int(os.getenv("WS_METRICS_WINDOW_SECONDS", 60))
+    _RAW_WINDOW_ENV = os.getenv("WS_METRICS_WINDOW_SECONDS", "60")
+    try:
+        _RAW_WINDOW = int(_RAW_WINDOW_ENV)
+    except (ValueError, TypeError):
+        _RAW_WINDOW = 60
+        logging.getLogger(__name__).warning(
+            "Invalid WS_METRICS_WINDOW_SECONDS=%r; falling back to default 60 seconds",
+            _RAW_WINDOW_ENV,
+        )
     METRICS_WINDOW_SECONDS = max(1, min(_RAW_WINDOW, 3600))
 
 

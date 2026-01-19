@@ -19,23 +19,23 @@ async def get_ws_health():
     return {
         "status": "healthy",
         "connections": {
-            "active": metrics["active_connections"],
-            "peak": metrics["peak_connections"],
+            "active": metrics.get("active_connections", 0),
+            "peak": metrics.get("peak_connections", 0),
         },
         "performance": {
             "window_seconds": WebSocketConfig.METRICS_WINDOW_SECONDS,
-            "broadcast_tps": metrics["broadcast_tps"],
-            "message_tps": metrics["message_tps"],
-            "total_broadcasts": metrics["total_broadcasts"],
-            "total_messages": metrics["total_messages"],
-            "total_data_bytes": metrics["total_bytes"],
-            "total_data_mb": round(metrics["total_bytes"] / (1024 * 1024), 2),
+            "broadcast_tps": metrics.get("broadcast_tps", 0.0),
+            "message_tps": metrics.get("message_tps", 0.0),
+            "total_broadcasts": metrics.get("total_broadcasts", 0),
+            "total_messages": metrics.get("total_messages", 0),
+            "total_data_bytes": metrics.get("total_bytes", 0),
+            "total_data_mb": round(metrics.get("total_bytes", 0) / (1024 * 1024), 2),
         },
         "redis": {
             "connected": redis_broadcaster.is_connected(),
             "channel": manager.channel_name,
         },
-        "uptime_seconds": metrics["uptime_seconds"],
+        "uptime_seconds": metrics.get("uptime_seconds", 0.0),
     }
 
 
