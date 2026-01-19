@@ -33,9 +33,13 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", int, float)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ConfigRange(Generic[T]):
-    """설정값의 범위를 정의하는 구조체 (Immutable)"""
+    """
+    설정값의 범위를 정의하는 구조체 (Immutable)
+    - slots=True를 통해 메모리 및 속도 최최적화 (Python 3.10+)
+    - 더 이상 NamedTuple이 아니므로 인덱싱이나 언패킹 대신 속성 접근(.min, .max)을 사용해야 합니다.
+    """
 
     min: T
     max: T
