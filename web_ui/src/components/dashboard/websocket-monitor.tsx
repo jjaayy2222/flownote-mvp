@@ -7,15 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Activity, Radio, Database, Clock, TrendingUp } from 'lucide-react';
 
-// Use relative path for production safety (avoids mixed-content issues)
-const getApiUrl = (): string => {
-  if (typeof window === 'undefined') {
-    // Server-side: use environment variable or empty string
-    return process.env.NEXT_PUBLIC_API_BASE || '';
-  }
-  // Client-side: use environment variable or relative path
-  return process.env.NEXT_PUBLIC_API_BASE || '';
-};
+// API URL: Use environment variable or default to relative path for production safety
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE || '';
 
 // Strict typing for better type safety
 type SystemStatus = 'healthy' | 'degraded' | 'down';
@@ -53,8 +46,7 @@ export default function WebSocketMonitor() {
     
     async function fetchMetrics() {
       try {
-        const apiUrl = getApiUrl();
-        const endpoint = apiUrl ? `${apiUrl}/health/metrics` : '/health/metrics';
+        const endpoint = API_BASE_URL ? `${API_BASE_URL}/health/metrics` : '/health/metrics';
         
         const res = await fetch(endpoint, {
           signal: abortController.signal,
@@ -68,8 +60,9 @@ export default function WebSocketMonitor() {
           setError(`Failed to fetch metrics: ${res.status}`);
         }
       } catch (err) {
-        // Ignore AbortError from cleanup
-        if (err instanceof Error && err.name === 'AbortError') {
+        // Ignore AbortError from cleanup (works for both Error and DOMException)
+        // Using unknown for type safety and checking name property existence
+        if (err && typeof err === 'object' && 'name' in err && err.name === 'AbortError') {
           return;
         }
         setError(err instanceof Error ? err.message : 'Unknown error');
@@ -138,7 +131,9 @@ export default function WebSocketMonitor() {
       case 'down':
         return 'destructive';
       default:
-        return 'secondary';
+        // Exhaustive check: this should never be reached if all cases are handled
+        const _exhaustiveCheck: never = status;
+        return _exhaustiveCheck;
     }
   };
 
