@@ -2,6 +2,7 @@
 
 import { SyncMonitor } from "@/components/dashboard/sync-monitor"
 import StatsView from "@/components/dashboard/stats/StatsView"
+import WebSocketMonitor from "@/components/dashboard/websocket-monitor"
 
 export default function Home() {
   return (
@@ -16,7 +17,13 @@ export default function Home() {
          <SyncMonitor />
       </div>
 
-      {/* 2. Stats Section */}
+      {/* 2. WebSocket Monitor Section */}
+      <div>
+         <h2 className="text-xl font-semibold text-slate-800 mb-4">WebSocket System</h2>
+         <WebSocketMonitor />
+      </div>
+
+      {/* 3. Stats Section */}
       <div>
          <h2 className="text-xl font-semibold text-slate-800 mb-4">Analytics Overview</h2>
          <StatsView />
