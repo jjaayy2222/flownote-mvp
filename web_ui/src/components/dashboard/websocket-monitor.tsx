@@ -23,19 +23,31 @@ function isAbortError(err: unknown): err is { name: 'AbortError' } {
   return typeof e.name === 'string' && e.name === 'AbortError';
 }
 
+// Maximum length for error messages to prevent UI overflow
+const MAX_ERROR_LENGTH = 500;
+
+/**
+ * Truncate string to maximum length with ellipsis
+ * @param str - String to truncate
+ * @returns Truncated string if exceeds max length
+ */
+function truncateString(str: string): string {
+  return str.length > MAX_ERROR_LENGTH
+    ? str.substring(0, MAX_ERROR_LENGTH) + '...'
+    : str;
+}
+
 /**
  * Extract meaningful error message from unknown error value
  * Preserves maximum debugging information while avoiding UI overflow
+ * All return paths respect MAX_ERROR_LENGTH
  * @param err - Unknown error value
- * @returns Human-readable error message
+ * @returns Human-readable error message (≤ MAX_ERROR_LENGTH)
  */
 function getErrorMessage(err: unknown): string {
-  // Maximum length for serialized error messages to prevent UI overflow
-  const MAX_ERROR_LENGTH = 500;
-  
   // Standard Error instance
   if (err instanceof Error) {
-    return err.message;
+    return truncateString(err.message);
   }
   
   // Object with message property
@@ -47,7 +59,7 @@ function getErrorMessage(err: unknown): string {
       const trimmed = messageValue.trim();
       // Only use non-empty messages
       if (trimmed.length > 0) {
-        return trimmed;
+        return truncateString(trimmed);
       }
     }
     
@@ -56,9 +68,7 @@ function getErrorMessage(err: unknown): string {
       try {
         const serialized = JSON.stringify(messageValue);
         if (serialized && serialized !== '{}') {
-          return serialized.length > MAX_ERROR_LENGTH
-            ? serialized.substring(0, MAX_ERROR_LENGTH) + '...'
-            : serialized;
+          return truncateString(serialized);
         }
       } catch {
         // JSON.stringify can fail
@@ -72,10 +82,7 @@ function getErrorMessage(err: unknown): string {
       const serialized = JSON.stringify(err);
       // Avoid useless "{}" 
       if (serialized && serialized !== '{}') {
-        // Truncate if too long to prevent UI overflow
-        return serialized.length > MAX_ERROR_LENGTH
-          ? serialized.substring(0, MAX_ERROR_LENGTH) + '...'
-          : serialized;
+        return truncateString(serialized);
       }
     } catch {
       // JSON.stringify can fail for circular references or other reasons
@@ -83,10 +90,7 @@ function getErrorMessage(err: unknown): string {
   }
   
   // Fall back to string conversion
-  const fallback = String(err);
-  return fallback.length > MAX_ERROR_LENGTH
-    ? fallback.substring(0, MAX_ERROR_LENGTH) + '...'
-    : fallback;
+  return truncateString(String(err));
 }
 
 // Strict typing for better type safety
