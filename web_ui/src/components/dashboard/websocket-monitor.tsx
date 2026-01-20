@@ -13,13 +13,16 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE || '';
 /**
  * Type guard to check if an error is an AbortError
  * Works for both Error instances and DOMException
+ * @param err - Unknown error to check
+ * @returns true if err is an AbortError with precise type narrowing
  */
-function isAbortError(err: unknown): err is { name: string } {
+function isAbortError(err: unknown): err is { name: 'AbortError' } {
   return (
     err !== null &&
     typeof err === 'object' &&
     'name' in err &&
-    (err as { name: unknown }).name === 'AbortError'
+    typeof (err as { name: unknown }).name === 'string' &&
+    (err as { name: string }).name === 'AbortError'
   );
 }
 
@@ -77,7 +80,8 @@ export default function WebSocketMonitor() {
         if (isAbortError(err)) {
           return;
         }
-        setError(err instanceof Error ? err.message : 'Unknown error');
+        // Preserve error information for debugging (convert non-Error throws to string)
+        setError(err instanceof Error ? err.message : String(err));
         console.error("Failed to fetch WebSocket metrics", err);
       } finally {
         setLoading(false);
