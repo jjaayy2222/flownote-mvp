@@ -10,6 +10,19 @@ import { Activity, Radio, Database, Clock, TrendingUp } from 'lucide-react';
 // API URL: Use environment variable or default to relative path for production safety
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE || '';
 
+/**
+ * Type guard to check if an error is an AbortError
+ * Works for both Error instances and DOMException
+ */
+function isAbortError(err: unknown): err is { name: string } {
+  return (
+    err !== null &&
+    typeof err === 'object' &&
+    'name' in err &&
+    (err as { name: unknown }).name === 'AbortError'
+  );
+}
+
 // Strict typing for better type safety
 type SystemStatus = 'healthy' | 'degraded' | 'down';
 
@@ -59,10 +72,9 @@ export default function WebSocketMonitor() {
         } else {
           setError(`Failed to fetch metrics: ${res.status}`);
         }
-      } catch (err) {
-        // Ignore AbortError from cleanup (works for both Error and DOMException)
-        // Using unknown for type safety and checking name property existence
-        if (err && typeof err === 'object' && 'name' in err && err.name === 'AbortError') {
+      } catch (err: unknown) {
+        // Ignore AbortError from cleanup
+        if (isAbortError(err)) {
           return;
         }
         setError(err instanceof Error ? err.message : 'Unknown error');
