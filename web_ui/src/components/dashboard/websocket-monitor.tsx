@@ -7,10 +7,21 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Activity, Radio, Database, Clock, TrendingUp } from 'lucide-react';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000';
+// Use relative path for production safety (avoids mixed-content issues)
+const getApiUrl = (): string => {
+  if (typeof window === 'undefined') {
+    // Server-side: use environment variable or empty string
+    return process.env.NEXT_PUBLIC_API_BASE || '';
+  }
+  // Client-side: use environment variable or relative path
+  return process.env.NEXT_PUBLIC_API_BASE || '';
+};
+
+// Strict typing for better type safety
+type SystemStatus = 'healthy' | 'degraded' | 'down';
 
 interface WebSocketMetrics {
-  status: string;
+  status: SystemStatus;
   connections: {
     active: number;
     peak: number;
@@ -37,9 +48,18 @@ export default function WebSocketMonitor() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // AbortController to cancel fetch on unmount
+    const abortController = new AbortController();
+    
     async function fetchMetrics() {
       try {
-        const res = await fetch(`${API_BASE_URL}/health/metrics`);
+        const apiUrl = getApiUrl();
+        const endpoint = apiUrl ? `${apiUrl}/health/metrics` : '/health/metrics';
+        
+        const res = await fetch(endpoint, {
+          signal: abortController.signal,
+        });
+        
         if (res.ok) {
           const json = await res.json();
           setMetrics(json);
@@ -48,6 +68,10 @@ export default function WebSocketMonitor() {
           setError(`Failed to fetch metrics: ${res.status}`);
         }
       } catch (err) {
+        // Ignore AbortError from cleanup
+        if (err instanceof Error && err.name === 'AbortError') {
+          return;
+        }
         setError(err instanceof Error ? err.message : 'Unknown error');
         console.error("Failed to fetch WebSocket metrics", err);
       } finally {
@@ -61,7 +85,10 @@ export default function WebSocketMonitor() {
     // Poll every 5 seconds
     const interval = setInterval(fetchMetrics, 5000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      abortController.abort(); // Cancel any pending fetch on unmount
+    };
   }, []);
 
   const formatUptime = (seconds: number): string => {
@@ -102,6 +129,19 @@ export default function WebSocketMonitor() {
     );
   }
 
+  const getStatusVariant = (status: SystemStatus): "default" | "destructive" | "secondary" => {
+    switch (status) {
+      case 'healthy':
+        return 'default';
+      case 'degraded':
+        return 'secondary';
+      case 'down':
+        return 'destructive';
+      default:
+        return 'secondary';
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* System Status */}
@@ -109,7 +149,7 @@ export default function WebSocketMonitor() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>WebSocket System Status</CardTitle>
-            <Badge variant={metrics.status === "healthy" ? "default" : "destructive"}>
+            <Badge variant={getStatusVariant(metrics.status)}>
               {metrics.status}
             </Badge>
           </div>
