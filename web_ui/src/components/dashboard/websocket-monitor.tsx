@@ -17,13 +17,49 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE || '';
  * @returns true if err is an AbortError with precise type narrowing
  */
 function isAbortError(err: unknown): err is { name: 'AbortError' } {
-  return (
-    err !== null &&
+  if (err === null || typeof err !== 'object') return false;
+  
+  const e = err as { name?: unknown };
+  return typeof e.name === 'string' && e.name === 'AbortError';
+}
+
+/**
+ * Extract meaningful error message from unknown error value
+ * Preserves maximum debugging information
+ * @param err - Unknown error value
+ * @returns Human-readable error message
+ */
+function getErrorMessage(err: unknown): string {
+  // Standard Error instance
+  if (err instanceof Error) {
+    return err.message;
+  }
+  
+  // Object with message property
+  if (
+    err &&
     typeof err === 'object' &&
-    'name' in err &&
-    typeof (err as { name: unknown }).name === 'string' &&
-    (err as { name: string }).name === 'AbortError'
-  );
+    'message' in err &&
+    typeof (err as { message: unknown }).message === 'string'
+  ) {
+    return (err as { message: string }).message;
+  }
+  
+  // Try to serialize object for debugging
+  if (err && typeof err === 'object') {
+    try {
+      const serialized = JSON.stringify(err);
+      // Avoid useless "{}" or "[object Object]"
+      if (serialized && serialized !== '{}') {
+        return serialized;
+      }
+    } catch {
+      // JSON.stringify can fail for circular references or other reasons
+    }
+  }
+  
+  // Fall back to string conversion
+  return String(err);
 }
 
 // Strict typing for better type safety
@@ -80,8 +116,8 @@ export default function WebSocketMonitor() {
         if (isAbortError(err)) {
           return;
         }
-        // Preserve error information for debugging (convert non-Error throws to string)
-        setError(err instanceof Error ? err.message : String(err));
+        // Extract meaningful error message for debugging
+        setError(getErrorMessage(err));
         console.error("Failed to fetch WebSocket metrics", err);
       } finally {
         setLoading(false);
