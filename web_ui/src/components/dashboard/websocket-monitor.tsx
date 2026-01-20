@@ -1,0 +1,246 @@
+// web_ui/src/components/dashboard/websocket-monitor.tsx
+
+'use client';
+
+import React, { useEffect, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Activity, Radio, Database, Clock, TrendingUp } from 'lucide-react';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000';
+
+interface WebSocketMetrics {
+  status: string;
+  connections: {
+    active: number;
+    peak: number;
+  };
+  performance: {
+    window_seconds: number;
+    broadcast_tps: number;
+    message_tps: number;
+    total_broadcasts: number;
+    total_messages: number;
+    total_data_bytes: number;
+    total_data_mb: number;
+  };
+  redis: {
+    connected: boolean;
+    channel: string;
+  };
+  uptime_seconds: number;
+}
+
+export default function WebSocketMonitor() {
+  const [metrics, setMetrics] = useState<WebSocketMetrics | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchMetrics() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/health/metrics`);
+        if (res.ok) {
+          const json = await res.json();
+          setMetrics(json);
+          setError(null);
+        } else {
+          setError(`Failed to fetch metrics: ${res.status}`);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unknown error');
+        console.error("Failed to fetch WebSocket metrics", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    // Initial fetch
+    fetchMetrics();
+
+    // Poll every 5 seconds
+    const interval = setInterval(fetchMetrics, 5000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const formatUptime = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${hours}h ${minutes}m ${secs}s`;
+  };
+
+  if (loading) {
+    return (
+      <div className="p-4 text-center text-muted-foreground">
+        Loading WebSocket metrics...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4">
+        <Card className="border-destructive">
+          <CardHeader>
+            <CardTitle className="text-destructive">Error</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">{error}</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!metrics) {
+    return (
+      <div className="p-4 text-center text-muted-foreground">
+        No metrics available
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* System Status */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>WebSocket System Status</CardTitle>
+            <Badge variant={metrics.status === "healthy" ? "default" : "destructive"}>
+              {metrics.status}
+            </Badge>
+          </div>
+          <CardDescription>
+            Real-time monitoring of WebSocket infrastructure
+          </CardDescription>
+        </CardHeader>
+      </Card>
+
+      {/* Key Metrics Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Active Connections */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Active Connections
+            </CardTitle>
+            <Radio className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{metrics.connections.active}</div>
+            <p className="text-xs text-muted-foreground">
+              Peak: {metrics.connections.peak}
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Broadcast TPS */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Broadcast TPS
+            </CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {metrics.performance.broadcast_tps.toFixed(2)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Events/sec ({metrics.performance.window_seconds}s window)
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Message TPS */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Message TPS
+            </CardTitle>
+            <Activity className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {metrics.performance.message_tps.toFixed(2)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Messages/sec (per recipient)
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Data Transferred */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Data Transferred
+            </CardTitle>
+            <Database className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {metrics.performance.total_data_mb.toFixed(2)} MB
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {metrics.performance.total_data_bytes.toLocaleString()} bytes
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Detailed Performance Stats */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Performance Details</CardTitle>
+          <CardDescription>Cumulative statistics since system start</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div>
+              <div className="text-sm font-medium text-muted-foreground">Total Broadcasts</div>
+              <div className="text-2xl font-bold">{metrics.performance.total_broadcasts.toLocaleString()}</div>
+            </div>
+            <div>
+              <div className="text-sm font-medium text-muted-foreground">Total Messages</div>
+              <div className="text-2xl font-bold">{metrics.performance.total_messages.toLocaleString()}</div>
+            </div>
+            <div>
+              <div className="text-sm font-medium text-muted-foreground">Uptime</div>
+              <div className="text-2xl font-bold">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-5 w-5 text-muted-foreground" />
+                  <span className="text-lg">{formatUptime(metrics.uptime_seconds)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Redis Status */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Redis Pub/Sub Status</CardTitle>
+          <CardDescription>Backend message broker connectivity</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium">Connection Status</div>
+              <div className="text-xs text-muted-foreground mt-1">
+                Channel: <code className="text-xs bg-muted px-1 py-0.5 rounded">{metrics.redis.channel}</code>
+              </div>
+            </div>
+            <Badge variant={metrics.redis.connected ? "default" : "destructive"}>
+              {metrics.redis.connected ? "Connected" : "Disconnected"}
+            </Badge>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
