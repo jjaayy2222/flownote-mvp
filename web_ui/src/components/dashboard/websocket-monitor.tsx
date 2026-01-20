@@ -25,33 +25,57 @@ function isAbortError(err: unknown): err is { name: 'AbortError' } {
 
 /**
  * Extract meaningful error message from unknown error value
- * Preserves maximum debugging information
+ * Preserves maximum debugging information while avoiding UI overflow
  * @param err - Unknown error value
  * @returns Human-readable error message
  */
 function getErrorMessage(err: unknown): string {
+  // Maximum length for serialized error messages to prevent UI overflow
+  const MAX_ERROR_LENGTH = 500;
+  
   // Standard Error instance
   if (err instanceof Error) {
     return err.message;
   }
   
   // Object with message property
-  if (
-    err &&
-    typeof err === 'object' &&
-    'message' in err &&
-    typeof (err as { message: unknown }).message === 'string'
-  ) {
-    return (err as { message: string }).message;
+  if (err && typeof err === 'object' && 'message' in err) {
+    const messageValue = (err as { message: unknown }).message;
+    
+    // String message (most common case)
+    if (typeof messageValue === 'string') {
+      const trimmed = messageValue.trim();
+      // Only use non-empty messages
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+    
+    // Nested message object (e.g., { message: { detail: "..." } })
+    if (messageValue && typeof messageValue === 'object') {
+      try {
+        const serialized = JSON.stringify(messageValue);
+        if (serialized && serialized !== '{}') {
+          return serialized.length > MAX_ERROR_LENGTH
+            ? serialized.substring(0, MAX_ERROR_LENGTH) + '...'
+            : serialized;
+        }
+      } catch {
+        // JSON.stringify can fail
+      }
+    }
   }
   
-  // Try to serialize object for debugging
+  // Try to serialize entire object for debugging
   if (err && typeof err === 'object') {
     try {
       const serialized = JSON.stringify(err);
-      // Avoid useless "{}" or "[object Object]"
+      // Avoid useless "{}" 
       if (serialized && serialized !== '{}') {
-        return serialized;
+        // Truncate if too long to prevent UI overflow
+        return serialized.length > MAX_ERROR_LENGTH
+          ? serialized.substring(0, MAX_ERROR_LENGTH) + '...'
+          : serialized;
       }
     } catch {
       // JSON.stringify can fail for circular references or other reasons
@@ -59,7 +83,10 @@ function getErrorMessage(err: unknown): string {
   }
   
   // Fall back to string conversion
-  return String(err);
+  const fallback = String(err);
+  return fallback.length > MAX_ERROR_LENGTH
+    ? fallback.substring(0, MAX_ERROR_LENGTH) + '...'
+    : fallback;
 }
 
 // Strict typing for better type safety
