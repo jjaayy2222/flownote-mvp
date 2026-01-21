@@ -182,10 +182,8 @@ class ConnectionManager:
         active_sockets = list(self.active_connections.keys())
 
         # 인코딩 한 번만 수행 (최적화)
-        encoded_data = None
         if not is_compressed:
-            encoded_data = processed_data.encode("utf-8")
-            data_size = len(encoded_data)
+            data_size = len(processed_data.encode("utf-8"))
         else:
             data_size = len(processed_data)
 
