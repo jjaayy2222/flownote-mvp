@@ -1,6 +1,4 @@
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# backend/config.py (클래스 기반 리팩토리 + gpt 4.1 추가)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# backend/config/__init__.py
 
 """
 FlowNote MVP - 통합 설정 (클래스 기반)
@@ -8,19 +6,49 @@ FlowNote MVP - 통합 설정 (클래스 기반)
 
 import sys
 from pathlib import Path
+import os
+import logging
+from dataclasses import dataclass
+from typing import TypeVar, Union, Generic
+from dotenv import load_dotenv
 
 # 1️⃣ 프로젝트 루트 추가
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 
-import os
-from dotenv import load_dotenv
-
 # 2️⃣ 로컬 .env 로드 (우선!)
 load_dotenv()
 
 from openai import OpenAI
+
+# 로거 설정
+logger = logging.getLogger(__name__)
+
+
+# ────────────────────────────────────────────────────────
+# 유틸리티 함수 및 구조체
+# ────────────────────────────────────────────────────────
+
+T = TypeVar("T", int, float)
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigRange(Generic[T]):
+    """
+    설정값의 범위를 정의하는 구조체 (Immutable)
+    - slots=True를 통해 메모리 및 속도 최적화 (Python 3.10+)
+    - 더 이상 NamedTuple이 아니므로 인덱싱이나 언패킹 대신 속성 접근(.min, .max)을 사용해야 합니다.
+    """
+
+    min: T
+    max: T
+
+
+def _clamp(value: T, r: ConfigRange[T]) -> T:
+    """수치를 허용 범위(ConfigRange) 내로 제한하는 헬퍼 함수"""
+    return max(r.min, min(value, r.max))
+
 
 # 3️⃣ Streamlit 배포 환경에서 덮어쓰기
 try:
@@ -198,6 +226,78 @@ class ModelConfig:
         )
 
         print("=" * 50)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Redis 설정
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+class RedisConfig:
+    """Redis 설정"""
+
+    REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+# WebSocket 설정
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+class WebSocketConfig:
+    """WebSocket 설정"""
+
+    # 1️⃣ 기본값 및 임계값 정의 (Magic Numbers 제거)
+    DEFAULT_COMPRESSION_THRESHOLD = 1024
+    DEFAULT_METRICS_MAX_TPS = 100
+    DEFAULT_METRICS_WINDOW_SECONDS = 60
+
+    TPS_RANGE = ConfigRange(min=1, max=1000)
+    WINDOW_RANGE = ConfigRange(min=1, max=3600)
+
+    # 2️⃣ 설정 파싱 및 검증
+    # 압축 적용 임계값 (기본: 1KB)
+    _RAW_COMP_THRESH = os.getenv(
+        "WS_COMPRESSION_THRESHOLD", str(DEFAULT_COMPRESSION_THRESHOLD)
+    )
+    try:
+        COMPRESSION_THRESHOLD = int(_RAW_COMP_THRESH)
+    except (ValueError, TypeError):
+        COMPRESSION_THRESHOLD = DEFAULT_COMPRESSION_THRESHOLD
+        logger.warning(
+            "Invalid WS_COMPRESSION_THRESHOLD=%r; falling back to default %s",
+            _RAW_COMP_THRESH,
+            DEFAULT_COMPRESSION_THRESHOLD,
+        )
+
+    # Metrics 관련 설정
+    # TPS 계산용 최대 샘플 수
+    _RAW_MAX_TPS_ENV = os.getenv("WS_METRICS_MAX_TPS", str(DEFAULT_METRICS_MAX_TPS))
+    try:
+        _RAW_MAX_TPS = int(_RAW_MAX_TPS_ENV)
+    except (ValueError, TypeError):
+        _RAW_MAX_TPS = DEFAULT_METRICS_MAX_TPS
+        logger.warning(
+            "Invalid WS_METRICS_MAX_TPS=%r; falling back to default %s",
+            _RAW_MAX_TPS_ENV,
+            DEFAULT_METRICS_MAX_TPS,
+        )
+    METRICS_MAX_TPS = _clamp(_RAW_MAX_TPS, TPS_RANGE)
+
+    # TPS 계산 시간 윈도우
+    _RAW_WINDOW_ENV = os.getenv(
+        "WS_METRICS_WINDOW_SECONDS", str(DEFAULT_METRICS_WINDOW_SECONDS)
+    )
+    try:
+        _RAW_WINDOW = int(_RAW_WINDOW_ENV)
+    except (ValueError, TypeError):
+        _RAW_WINDOW = DEFAULT_METRICS_WINDOW_SECONDS
+        logger.warning(
+            "Invalid WS_METRICS_WINDOW_SECONDS=%r; falling back to default %s seconds",
+            _RAW_WINDOW_ENV,
+            DEFAULT_METRICS_WINDOW_SECONDS,
+        )
+    METRICS_WINDOW_SECONDS = _clamp(_RAW_WINDOW, WINDOW_RANGE)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
