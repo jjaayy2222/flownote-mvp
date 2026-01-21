@@ -100,6 +100,7 @@ class ConnectionManager:
         websocket: WebSocket,
         code: int = 1000,
         reason: Optional[str] = None,
+        propagate_errors: bool = False,
     ):
         """
         클라이언트 연결 해제, 목록 제거 및 명시적 소켓 종료
