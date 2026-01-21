@@ -100,9 +100,13 @@ class ConnectionManager:
         websocket: WebSocket,
         code: int = 1000,
         reason: Optional[str] = None,
-        propagate_errors: bool = False,
     ):
-        """클라이언트 연결 해제, 목록 제거 및 명시적 소켓 종료"""
+        """
+        클라이언트 연결 해제, 목록 제거 및 명시적 소켓 종료
+
+        Args:
+            propagate_errors: True일 경우 내부 예외를 catch하지 않고 상위로 전파 (Dead Connection 정리 시 사용)
+        """
         context = self.active_connections.pop(websocket, None)
 
         if context:
@@ -141,7 +145,7 @@ class ConnectionManager:
         )
 
     def get_metrics(self) -> Dict[str, Any]:
-        """현재 시스템 메트릭 산출"""
+        """현재 시스템 메트릭 산출 (Broadcast TPS, Message TPS 포함)"""
         current_time = time.time()
         uptime = current_time - self._start_time
 
@@ -181,7 +185,7 @@ class ConnectionManager:
         failed_connections: List[WebSocket] = []
         active_sockets = list(self.active_connections.keys())
 
-        # 인코딩 한 번만 수행 (최적화)
+        # [Optimization] 메시지 사이즈 계산을 위한 인코딩을 루프 외부에서 1회만 수행
         if not is_compressed:
             data_size = len(processed_data.encode("utf-8"))
         else:

@@ -255,7 +255,7 @@ export function SyncMonitor() {
 
 #### **Parallel Broadcasting**
 - `asyncio.gather`를 도입하여 메시지 전송을 병렬화했습니다. 이를 통해 특정 클라이언트의 네트워크 지연이 전체 브로드캐스트 성능을 저하시키는 HoL(Head-of-Line) Blocking 문제를 해결했습니다.
-- 브로드캐스트 메시지의 UTF-8 인코딩을 루프 내부가 아닌 외부에서 1회만 수행하도록 최적화하여 낭비되는 CPU 자원을 절약했습니다.
+- 메시지 사이즈 계산을 위한 UTF-8 인코딩을 루프 외부로 분리하여, 사이즈 측정 시 발생하는 불필요한 중복 연산을 제거했습니다.
 
 #### **Robust Error Handling**
 - `disconnect` 메서드에 `propagate_errors` 플래그를 추가하여, 연결 정리(`_prune_connection`) 시 발생하는 예외를 정확히 포착하고 로깅할 수 있도록 구조를 개선했습니다. `WebSocketDisconnect`를 명시적으로 처리하여 로그의 정확도를 높였습니다.
