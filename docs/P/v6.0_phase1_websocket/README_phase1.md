@@ -186,11 +186,23 @@ export function GraphView() {
 ```typescript
 // web_ui/src/components/dashboard/websocket-monitor.tsx
 
-// Polling interval: Configurable via environment variable
-const METRICS_POLL_INTERVAL = parseInt(
-  process.env.NEXT_PUBLIC_METRICS_POLL_INTERVAL || '5000',
-  10
-);
+// Polling interval configuration with defensive validation
+const DEFAULT_METRICS_POLL_INTERVAL = 5000;  // 5 seconds
+const MIN_POLL_INTERVAL = 1000;              // 1 second minimum
+const MAX_POLL_INTERVAL = 60000;             // 1 minute maximum
+
+const METRICS_POLL_INTERVAL = (() => {
+  const envValue = process.env.NEXT_PUBLIC_METRICS_POLL_INTERVAL;
+  const parsed = envValue ? Number.parseInt(envValue, 10) : NaN;
+  
+  // Validate: must be finite positive number
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_METRICS_POLL_INTERVAL;
+  }
+  
+  // Clamp to safe range [1s, 1min]
+  return Math.max(MIN_POLL_INTERVAL, Math.min(MAX_POLL_INTERVAL, parsed));
+})();
 
 export function WebSocketMonitor() {
   const [metrics, setMetrics] = useState<MetricsData | null>(null);
@@ -202,7 +214,7 @@ export function WebSocketMonitor() {
     const fetchMetrics = async () => {
       try {
         // HTTP REST API call (NOT WebSocket)
-        const res = await fetch('/api/health/metrics', {
+        const res = await fetch('/health/metrics', {
           signal: controller.signal
         });
         const data = await res.json();
@@ -215,7 +227,7 @@ export function WebSocketMonitor() {
       }
     };
 
-    // HTTP Polling: Repeatedly fetch metrics at configured interval
+    // HTTP Polling: Repeatedly fetch metrics at validated interval
     const interval = setInterval(fetchMetrics, METRICS_POLL_INTERVAL);
     fetchMetrics();
 
@@ -234,7 +246,8 @@ export function WebSocketMonitor() {
 - **Why Not WebSocket?**: 지표 데이터는 요청 시점의 스냅샷이므로 polling이 적합합니다. WebSocket은 이벤트 기반 실시간 알림에 사용됩니다.
 
 **주요 기능:**
-- ✅ **HTTP 폴링**: 설정 가능한 간격으로 `/api/health/metrics` 호출 (기본: 5초)
+- ✅ **HTTP 폴링**: 설정 가능한 간격으로 `/health/metrics` 호출 (기본: 5초)
+- ✅ **폴링 간격 검증**: NaN, 음수, 0, 범위 밖 값 방어 (1초 ~ 1분으로 클램핑)
 - ✅ **AbortController**: 컴포넌트 언마운트 시 fetch 취소 (메모리 누수 방지)
 - ✅ **타입 안전성**: SystemStatus 리터럴 타입, exhaustive checking
 - ✅ **에러 처리**: 타입 가드, 메시지 길이 제한(500자), 다층 폴백 전략
@@ -245,20 +258,40 @@ export function WebSocketMonitor() {
 ```bash
 # web_ui/.env.local 파일에 추가
 
-# 폴링 간격 (밀리초 단위, 기본값: 5000)
-# 더 빠른 업데이트가 필요한 경우 값을 줄이세요 (예: 2000 = 2초)
-# 서버 부하를 줄이려면 값을 늘리세요 (예: 10000 = 10초)
+# 폴링 간격 (밀리초 단위)
+# 허용 범위: 1000 ~ 60000 (1초 ~ 1분)
+# 범위 밖 값은 자동으로 가장 가까운 경계값으로 조정됩니다
+# 
+# 기본값: 5000 (5초)
+# 빠른 업데이트: 2000-3000 (2-3초) - 서버 부하 증가
+# 서버 부하 절감: 10000-30000 (10-30초) - 실시간성 감소
 NEXT_PUBLIC_METRICS_POLL_INTERVAL=5000
 ```
 
-**변경 위치**: `/web_ui/src/components/dashboard/websocket-monitor.tsx` (Line 13-21)
+**변경 위치**: `/web_ui/src/components/dashboard/websocket-monitor.tsx` (Line 13-48)
 
-**성능 고려사항**:
-- 짧은 간격(1-2초): 실시간성 ↑, 서버 부하 ↑
-- 긴 간격(10-30초): 실시간성 ↓, 서버 부하 ↓
-- 권장: 5-10초 (운영 환경에 따라 조정)
+**검증 로직 세부사항**:
+```typescript
+// ✅ Valid cases (자동 클램핑)
+'5000'    → 5000      // 정상
+'500'     → 1000      // 최소값으로 클램핑
+'120000'  → 60000     // 최대값으로 클램핑
 
-**코드 품질 개선 (7차 리뷰 반영):**
+// ✅ Invalid cases (기본값 5000으로 폴백)
+''        → 5000      // 빈 문자열
+'abc'     → 5000      // 비숫자
+'-100'    → 5000      // 음수
+'0'       → 5000      // 0 (즉시 실행 방지)
+undefined → 5000      // 환경 변수 미설정
+```
+
+**성능 및 안정성**:
+- **최소 간격 (1초)**: 서버 과부하 방지
+- **최대 간격 (1분)**: 대시보드 실시간성 유지
+- **NaN 방어**: setInterval에 NaN 전달 시 즉시 무한 실행되는 위험 차단
+- **0/음수 방어**: 비정상 동작 방지
+
+**코드 품질 개선 (9차 리뷰 반영):**
 1. AbortController 및 보안 강화
 2. 코드 정제 및 타입 안전성 완성
 3. 타입 가드 및 에러 타입 안전성 강화
@@ -266,7 +299,8 @@ NEXT_PUBLIC_METRICS_POLL_INTERVAL=5000
 5. 에러 처리 구현 개선 (getErrorMessage 헬퍼)
 6. 완벽한 에러 메시지 추출 (중첩 객체, 빈 문자열 처리)
 7. 에러 메시지 처리 최종 최적화 (truncateString 공통 헬퍼)
-```
+8. **폴링 간격 검증 개선 (Number.isFinite + 양수 체크)**
+9. **Min/Max 범위 클램핑 (1초 ~ 1분)**
 
 ## 🚀 Running
 
