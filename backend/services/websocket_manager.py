@@ -7,7 +7,7 @@ from collections import Counter, deque
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from fastapi import WebSocket
-from starlette.websockets import WebSocketState
+from starlette.websockets import WebSocketState, WebSocketDisconnect
 from backend.services.redis_pubsub import redis_broadcaster
 from backend.services.compression_service import compress_payload
 from backend.config import WebSocketConfig
@@ -96,7 +96,11 @@ class ConnectionManager:
         )
 
     async def disconnect(
-        self, websocket: WebSocket, code: int = 1000, reason: Optional[str] = None
+        self,
+        websocket: WebSocket,
+        code: int = 1000,
+        reason: Optional[str] = None,
+        propagate_errors: bool = False,
     ):
         """클라이언트 연결 해제, 목록 제거 및 명시적 소켓 종료"""
         context = self.active_connections.pop(websocket, None)
@@ -114,11 +118,13 @@ class ConnectionManager:
         except Exception as exc:
             # Minimal log mostly for debug since connection might be already closed
             logger.debug("WebSocket close skipped/failed", exc_info=exc)
+            if propagate_errors:
+                raise
 
     async def _prune_connection(self, websocket: WebSocket) -> None:
         """[Helper] Dead Connection 정리 (간소화됨)"""
         try:
-            await self.disconnect(websocket)
+            await self.disconnect(websocket, propagate_errors=True)
         except WebSocketDisconnect:
             # Expected network-level issue; keep log minimal
             logger.debug("WebSocket already disconnected during pruning.")
@@ -175,16 +181,22 @@ class ConnectionManager:
         failed_connections: List[WebSocket] = []
         active_sockets = list(self.active_connections.keys())
 
-        for connection in active_sockets:
+        # 인코딩 한 번만 수행 (최적화)
+        encoded_data = None
+        if not is_compressed:
+            encoded_data = processed_data.encode("utf-8")
+            data_size = len(encoded_data)
+        else:
+            data_size = len(processed_data)
+
+        async def _send_to_connection(connection: WebSocket) -> None:
             try:
                 if is_compressed:
                     # 압축된 경우 Binary 데이터로 전송 (클라이언트에서 해제 필요)
                     await connection.send_bytes(processed_data)
-                    data_size = len(processed_data)
                 else:
                     # 압축되지 않은 경우 일반 Text로 전송
                     await connection.send_text(processed_data)
-                    data_size = len(processed_data.encode("utf-8"))
 
                 # [Metrics] 개별 전송 지표 업데이트
                 self._total_messages_sent += 1
@@ -197,6 +209,13 @@ class ConnectionManager:
                 user_str = f"User({context.user_id})" if context else "Unknown"
                 logger.error(f"Failed to broadcast to {user_str}: {e}")
                 failed_connections.append(connection)
+
+        # 각 연결에 대한 전송을 동시에 수행하여 느린 클라이언트가 전체 브로드캐스트를 지연시키지 않도록 함
+        if active_sockets:
+            await asyncio.gather(
+                *(_send_to_connection(conn) for conn in active_sockets),
+                return_exceptions=True,
+            )
 
         # [Metrics] 브로드캐스트 이벤트 단위 지표 및 TPS 업데이트
         self._total_broadcasts_sent += 1

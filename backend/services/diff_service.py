@@ -18,22 +18,27 @@ def generate_diff(local_content: str, remote_content: str) -> Dict[str, Any]:
             - html (str): Side-by-side HTML diff table
             - stats (dict): {'additions': int, 'deletions': int}
     """
-    # 텍스트를 줄 단위로 분리 (개행 문자 유지)
-    local_lines = local_content.splitlines(keepends=True)
-    remote_lines = remote_content.splitlines(keepends=True)
+    # 텍스트를 줄 단위로 분리 (개행 문자 유지 - Unified 용)
+    local_lines_unified = local_content.splitlines(keepends=True)
+    remote_lines_unified = remote_content.splitlines(keepends=True)
+
+    # 텍스트를 줄 단위로 분리 (개행 문자 제거 - HTML 용)
+    # Side-by-Side 테이블에서 불필요한 줄바꿈 방지
+    local_lines_html = local_content.splitlines()
+    remote_lines_html = remote_content.splitlines()
 
     # 1. Unified Diff 생성
     # fromfile='Local', tofile='Remote'로 명시
     unified_diff_gen = difflib.unified_diff(
-        local_lines, remote_lines, fromfile="Local", tofile="Remote"
+        local_lines_unified, remote_lines_unified, fromfile="Local", tofile="Remote"
     )
     unified_diff_list = list(unified_diff_gen)
     unified_diff_str = "".join(unified_diff_list)
 
     # 2. HTML Diff (Side-by-Side) 생성
     html_diff = difflib.HtmlDiff().make_table(
-        local_lines,
-        remote_lines,
+        local_lines_html,
+        remote_lines_html,
         fromdesc="Local",
         todesc="Remote",
         context=True,  # 변경된 부분 주변만 표시 (False면 전체 파일)
