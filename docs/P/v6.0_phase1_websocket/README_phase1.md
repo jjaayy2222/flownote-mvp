@@ -178,8 +178,19 @@ export function GraphView() {
 ```
 
 #### **WebSocket Monitor Dashboard** (✅ 완료 #10.9.20)
+
+> **⚠️ 통신 방식 안내**: 이 컴포넌트는 **WebSocket을 모니터링하기 위한** 대시보드로, WebSocket 시스템의 지표를 수집합니다. 
+> 지표 수집 자체는 **HTTP REST API를 polling** 방식으로 사용합니다 (`setInterval` + `fetch`).  
+> WebSocket 연결 자체와 혼동하지 마세요 (WebSocket은 `useWebSocket` Hook이 담당).
+
 ```typescript
 // web_ui/src/components/dashboard/websocket-monitor.tsx
+
+// Polling interval: Configurable via environment variable
+const METRICS_POLL_INTERVAL = parseInt(
+  process.env.NEXT_PUBLIC_METRICS_POLL_INTERVAL || '5000',
+  10
+);
 
 export function WebSocketMonitor() {
   const [metrics, setMetrics] = useState<MetricsData | null>(null);
@@ -190,6 +201,7 @@ export function WebSocketMonitor() {
     
     const fetchMetrics = async () => {
       try {
+        // HTTP REST API call (NOT WebSocket)
         const res = await fetch('/api/health/metrics', {
           signal: controller.signal
         });
@@ -203,7 +215,8 @@ export function WebSocketMonitor() {
       }
     };
 
-    const interval = setInterval(fetchMetrics, 5000);
+    // HTTP Polling: Repeatedly fetch metrics at configured interval
+    const interval = setInterval(fetchMetrics, METRICS_POLL_INTERVAL);
     fetchMetrics();
 
     return () => {
@@ -216,12 +229,34 @@ export function WebSocketMonitor() {
 }
 ```
 
+**설계 의도**:
+- **Why HTTP Polling?**: `/health/metrics` 엔드포인트는 REST API로 구현되어 있으며, 시스템 전체 지표를 집계하여 반환합니다.
+- **Why Not WebSocket?**: 지표 데이터는 요청 시점의 스냅샷이므로 polling이 적합합니다. WebSocket은 이벤트 기반 실시간 알림에 사용됩니다.
+
 **주요 기능:**
-- ✅ **실시간 지표**: 5초마다 `/api/health/metrics` 폴링
+- ✅ **HTTP 폴링**: 설정 가능한 간격으로 `/api/health/metrics` 호출 (기본: 5초)
 - ✅ **AbortController**: 컴포넌트 언마운트 시 fetch 취소 (메모리 누수 방지)
 - ✅ **타입 안전성**: SystemStatus 리터럴 타입, exhaustive checking
 - ✅ **에러 처리**: 타입 가드, 메시지 길이 제한(500자), 다층 폴백 전략
 - ✅ **보안**: 상대 경로 사용 (Mixed-Content 방지)
+
+**폴링 간격 설정 방법**:
+
+```bash
+# web_ui/.env.local 파일에 추가
+
+# 폴링 간격 (밀리초 단위, 기본값: 5000)
+# 더 빠른 업데이트가 필요한 경우 값을 줄이세요 (예: 2000 = 2초)
+# 서버 부하를 줄이려면 값을 늘리세요 (예: 10000 = 10초)
+NEXT_PUBLIC_METRICS_POLL_INTERVAL=5000
+```
+
+**변경 위치**: `/web_ui/src/components/dashboard/websocket-monitor.tsx` (Line 13-21)
+
+**성능 고려사항**:
+- 짧은 간격(1-2초): 실시간성 ↑, 서버 부하 ↑
+- 긴 간격(10-30초): 실시간성 ↓, 서버 부하 ↓
+- 권장: 5-10초 (운영 환경에 따라 조정)
 
 **코드 품질 개선 (7차 리뷰 반영):**
 1. AbortController 및 보안 강화
