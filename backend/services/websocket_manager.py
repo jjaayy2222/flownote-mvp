@@ -103,10 +103,14 @@ class ConnectionManager:
         propagate_errors: bool = False,
     ):
         """
-        클라이언트 연결 해제, 목록 제거 및 명시적 소켓 종료
+        클라이언트 연결을 해제하고 리소스를 정리합니다.
 
         Args:
-            propagate_errors: True일 경우 내부 예외를 catch하지 않고 상위로 전파 (Dead Connection 정리 시 사용)
+            websocket (WebSocket): 연결을 해제할 대상 WebSocket 객체
+            code (int): WebSocket 종료 코드 (기본값: 1000)
+            reason (Optional[str]): 종료 사유 (옵션)
+            propagate_errors (bool): True일 경우 내부 예외를 포착하지 않고 호출자에게 전파합니다.
+                                    주로 Dead Connection 정리(_prune_connection) 시 사용됩니다.
         """
         context = self.active_connections.pop(websocket, None)
 
