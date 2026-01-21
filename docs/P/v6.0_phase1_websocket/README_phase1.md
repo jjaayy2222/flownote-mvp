@@ -177,6 +177,62 @@ export function GraphView() {
 }
 ```
 
+#### **WebSocket Monitor Dashboard** (✅ 완료 #10.9.20)
+```typescript
+// web_ui/src/components/dashboard/websocket-monitor.tsx
+
+export function WebSocketMonitor() {
+  const [metrics, setMetrics] = useState<MetricsData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    
+    const fetchMetrics = async () => {
+      try {
+        const res = await fetch('/api/health/metrics', {
+          signal: controller.signal
+        });
+        const data = await res.json();
+        setMetrics(data);
+        setError(null);
+      } catch (err: unknown) {
+        if (!isAbortError(err)) {
+          setError(getErrorMessage(err));
+        }
+      }
+    };
+
+    const interval = setInterval(fetchMetrics, 5000);
+    fetchMetrics();
+
+    return () => {
+      clearInterval(interval);
+      controller.abort();
+    };
+  }, []);
+  
+  // Real-time display: connections, TPS, throughput, status
+}
+```
+
+**주요 기능:**
+- ✅ **실시간 지표**: 5초마다 `/api/health/metrics` 폴링
+- ✅ **AbortController**: 컴포넌트 언마운트 시 fetch 취소 (메모리 누수 방지)
+- ✅ **타입 안전성**: SystemStatus 리터럴 타입, exhaustive checking
+- ✅ **에러 처리**: 타입 가드, 메시지 길이 제한(500자), 다층 폴백 전략
+- ✅ **보안**: 상대 경로 사용 (Mixed-Content 방지)
+
+**코드 품질 개선 (7차 리뷰 반영):**
+1. AbortController 및 보안 강화
+2. 코드 정제 및 타입 안전성 완성
+3. 타입 가드 및 에러 타입 안전성 강화
+4. 타입 정확성 및 디버깅 정보 보존
+5. 에러 처리 구현 개선 (getErrorMessage 헬퍼)
+6. 완벽한 에러 메시지 추출 (중첩 객체, 빈 문자열 처리)
+7. 에러 메시지 처리 최종 최적화 (truncateString 공통 헬퍼)
+```
+
 ## 🚀 Running
 
 ### Backend
@@ -301,7 +357,10 @@ setTimeout(connect, reconnectDelay);
   - **설정**: `backend/services/compression_service.py`에서 `COMPRESSION_THRESHOLD` 수정 가능
 - [x] 연결 풀 관리 (ConnectionManager 구현 완료)
 - [x] 모니터링 및 로깅 강화 (Metrics API & Close Code Tracking 완료)
-- [ ] 대시보드 시각화 (지속 과제: Metrics API 기반 UI 연동)
+- [x] 대시보드 시각화 (**완료 #10.9.20**: WebSocket Monitor 컴포넌트 구현 및 7차 코드리뷰 반영)
+  - **Component**: `web_ui/src/components/dashboard/websocket-monitor.tsx`
+  - **Features**: 실시간 지표(연결 수, TPS, 처리량), AbortController, 타입 안전성, 에러 처리 최적화
+  - **Code Quality**: TypeScript 타입 가드, exhaustive checking, 에러 메시지 길이 제한(500자)
 
 ## 🔗 Related Documentation
 
