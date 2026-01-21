@@ -186,23 +186,26 @@ export function GraphView() {
 ```typescript
 // web_ui/src/components/dashboard/websocket-monitor.tsx
 
-// Polling interval configuration with defensive validation
-const DEFAULT_METRICS_POLL_INTERVAL = 5000;  // 5 seconds
-const MIN_POLL_INTERVAL = 1000;              // 1 second minimum
-const MAX_POLL_INTERVAL = 60000;             // 1 minute maximum
+// Polling interval constants (Exported for single source of truth)
+export const DEFAULT_METRICS_POLL_INTERVAL = 5000;  // 5 seconds
+export const MIN_POLL_INTERVAL = 1000;              // 1 second minimum
+export const MAX_POLL_INTERVAL = 60000;             // 1 minute maximum
 
-const METRICS_POLL_INTERVAL = (() => {
-  const envValue = process.env.NEXT_PUBLIC_METRICS_POLL_INTERVAL;
+// Extracted helper for validation logic reuse and testing
+export function getMetricsPollInterval(envValue?: string): number {
   const parsed = envValue ? Number.parseInt(envValue, 10) : NaN;
   
-  // Validate: must be finite positive number
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return DEFAULT_METRICS_POLL_INTERVAL;
   }
   
-  // Clamp to safe range [1s, 1min]
   return Math.max(MIN_POLL_INTERVAL, Math.min(MAX_POLL_INTERVAL, parsed));
-})();
+}
+
+// Configured interval for this instance
+const METRICS_POLL_INTERVAL = getMetricsPollInterval(
+  process.env.NEXT_PUBLIC_METRICS_POLL_INTERVAL
+);
 
 export function WebSocketMonitor() {
   const [metrics, setMetrics] = useState<MetricsData | null>(null);
@@ -301,6 +304,7 @@ undefined → 5000      // 환경 변수 미설정
 7. 에러 메시지 처리 최종 최적화 (truncateString 공통 헬퍼)
 8. **폴링 간격 검증 개선 (Number.isFinite + 양수 체크)**
 9. **Min/Max 범위 클램핑 (1초 ~ 1분)**
+10. **Refactoring (3차 개선)**: `getMetricsPollInterval` 함수 추출 및 상수 Export로 테스트 편의성/모듈성 확보
 
 ## 🚀 Running
 

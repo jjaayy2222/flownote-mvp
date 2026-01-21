@@ -13,30 +13,28 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE || '';
 /**
  * Default polling interval for metrics fetch (milliseconds)
  */
-const DEFAULT_METRICS_POLL_INTERVAL = 5000;
+export const DEFAULT_METRICS_POLL_INTERVAL = 5000;
 
 /**
  * Minimum allowed polling interval (1 second)
  * Prevents excessive server load from too-frequent polling
  */
-const MIN_POLL_INTERVAL = 1000;
+export const MIN_POLL_INTERVAL = 1000;
 
 /**
  * Maximum allowed polling interval (1 minute)
  * Ensures dashboard remains reasonably up-to-date
  */
-const MAX_POLL_INTERVAL = 60000;
+export const MAX_POLL_INTERVAL = 60000;
 
 /**
- * Polling interval for metrics fetch (milliseconds)
- * Can be configured via NEXT_PUBLIC_METRICS_POLL_INTERVAL environment variable
- * Falls back to DEFAULT_METRICS_POLL_INTERVAL if:
- * - Environment variable is missing, invalid, or non-numeric
- * - Parsed value is negative, zero, or NaN
- * Clamped to [MIN_POLL_INTERVAL, MAX_POLL_INTERVAL] range
+ * Helper to validate and normalize polling interval from env var
+ * Extracted for testability and reuse
+ * 
+ * @param envValue - Raw environment variable string
+ * @returns Validated interval in milliseconds, clamped to safe range
  */
-const METRICS_POLL_INTERVAL = (() => {
-  const envValue = process.env.NEXT_PUBLIC_METRICS_POLL_INTERVAL;
+export function getMetricsPollInterval(envValue?: string): number {
   const parsed = envValue ? Number.parseInt(envValue, 10) : NaN;
   
   // Validate: must be finite positive number
@@ -46,7 +44,14 @@ const METRICS_POLL_INTERVAL = (() => {
   
   // Clamp to safe range
   return Math.max(MIN_POLL_INTERVAL, Math.min(MAX_POLL_INTERVAL, parsed));
-})();
+}
+
+/**
+ * Validated polling interval for this application instance
+ */
+const METRICS_POLL_INTERVAL = getMetricsPollInterval(
+  process.env.NEXT_PUBLIC_METRICS_POLL_INTERVAL
+);
 
 /**
  * Type guard to check if an error is an AbortError
