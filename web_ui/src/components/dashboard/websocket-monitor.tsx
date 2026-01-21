@@ -11,6 +11,16 @@ import { Activity, Radio, Database, Clock, TrendingUp } from 'lucide-react';
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE || '';
 
 /**
+ * Polling interval for metrics fetch (milliseconds)
+ * Can be configured via NEXT_PUBLIC_METRICS_POLL_INTERVAL environment variable
+ * Default: 5000ms (5 seconds)
+ */
+const METRICS_POLL_INTERVAL = parseInt(
+  process.env.NEXT_PUBLIC_METRICS_POLL_INTERVAL || '5000',
+  10
+);
+
+/**
  * Type guard to check if an error is an AbortError
  * Works for both Error instances and DOMException
  * @param err - Unknown error to check
@@ -158,8 +168,8 @@ export default function WebSocketMonitor() {
     // Initial fetch
     fetchMetrics();
 
-    // Poll every 5 seconds
-    const interval = setInterval(fetchMetrics, 5000);
+    // Poll at configured interval (default: 5 seconds)
+    const interval = setInterval(fetchMetrics, METRICS_POLL_INTERVAL);
 
     return () => {
       clearInterval(interval);
