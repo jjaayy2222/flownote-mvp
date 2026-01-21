@@ -11,14 +11,42 @@ import { Activity, Radio, Database, Clock, TrendingUp } from 'lucide-react';
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE || '';
 
 /**
+ * Default polling interval for metrics fetch (milliseconds)
+ */
+const DEFAULT_METRICS_POLL_INTERVAL = 5000;
+
+/**
+ * Minimum allowed polling interval (1 second)
+ * Prevents excessive server load from too-frequent polling
+ */
+const MIN_POLL_INTERVAL = 1000;
+
+/**
+ * Maximum allowed polling interval (1 minute)
+ * Ensures dashboard remains reasonably up-to-date
+ */
+const MAX_POLL_INTERVAL = 60000;
+
+/**
  * Polling interval for metrics fetch (milliseconds)
  * Can be configured via NEXT_PUBLIC_METRICS_POLL_INTERVAL environment variable
- * Default: 5000ms (5 seconds)
+ * Falls back to DEFAULT_METRICS_POLL_INTERVAL if:
+ * - Environment variable is missing, invalid, or non-numeric
+ * - Parsed value is negative, zero, or NaN
+ * Clamped to [MIN_POLL_INTERVAL, MAX_POLL_INTERVAL] range
  */
-const METRICS_POLL_INTERVAL = parseInt(
-  process.env.NEXT_PUBLIC_METRICS_POLL_INTERVAL || '5000',
-  10
-);
+const METRICS_POLL_INTERVAL = (() => {
+  const envValue = process.env.NEXT_PUBLIC_METRICS_POLL_INTERVAL;
+  const parsed = envValue ? Number.parseInt(envValue, 10) : NaN;
+  
+  // Validate: must be finite positive number
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_METRICS_POLL_INTERVAL;
+  }
+  
+  // Clamp to safe range
+  return Math.max(MIN_POLL_INTERVAL, Math.min(MAX_POLL_INTERVAL, parsed));
+})();
 
 /**
  * Type guard to check if an error is an AbortError
