@@ -183,26 +183,54 @@ export function GraphView() {
 > 지표 수집 자체는 **HTTP REST API를 polling** 방식으로 사용합니다 (`setInterval` + `fetch`).  
 > WebSocket 연결 자체와 혼동하지 마세요 (WebSocket은 `useWebSocket` Hook이 담당).
 
+**1. 설정 모듈 분리 (Config/Util)**
 ```typescript
-// web_ui/src/components/dashboard/websocket-monitor.tsx
+// web_ui/src/config/monitoring.ts
 
-// Polling interval constants (Exported for single source of truth)
-export const DEFAULT_METRICS_POLL_INTERVAL = 5000;  // 5 seconds
-export const MIN_POLL_INTERVAL = 1000;              // 1 second minimum
-export const MAX_POLL_INTERVAL = 60000;             // 1 minute maximum
+/**
+ * Default polling interval for metrics fetch (milliseconds)
+ */
+export const DEFAULT_METRICS_POLL_INTERVAL = 5000;
 
-// Extracted helper for validation logic reuse and testing
+/**
+ * Minimum allowed polling interval (1 second)
+ * Prevents excessive server load from too-frequent polling
+ */
+export const MIN_POLL_INTERVAL = 1000;
+
+/**
+ * Maximum allowed polling interval (1 minute)
+ * Ensures dashboard remains reasonably up-to-date
+ */
+export const MAX_POLL_INTERVAL = 60000;
+
+/**
+ * Helper to validate and normalize polling interval from env var
+ * Extracted for testability and reuse
+ * 
+ * @param envValue - Raw environment variable string
+ * @returns Validated interval in milliseconds, clamped to safe range
+ */
 export function getMetricsPollInterval(envValue?: string): number {
   const parsed = envValue ? Number.parseInt(envValue, 10) : NaN;
   
+  // Validate: must be finite positive number
   if (!Number.isFinite(parsed) || parsed <= 0) {
     return DEFAULT_METRICS_POLL_INTERVAL;
   }
   
+  // Clamp to safe range
   return Math.max(MIN_POLL_INTERVAL, Math.min(MAX_POLL_INTERVAL, parsed));
 }
+```
 
-// Configured interval for this instance
+**2. 대시보드 컴포넌트 (Component)**
+```typescript
+// web_ui/src/components/dashboard/websocket-monitor.tsx
+
+import { getMetricsPollInterval } from '@/config/monitoring';
+
+// Validated polling interval for this application instance
 const METRICS_POLL_INTERVAL = getMetricsPollInterval(
   process.env.NEXT_PUBLIC_METRICS_POLL_INTERVAL
 );
@@ -210,6 +238,7 @@ const METRICS_POLL_INTERVAL = getMetricsPollInterval(
 export function WebSocketMonitor() {
   const [metrics, setMetrics] = useState<MetricsData | null>(null);
   const [error, setError] = useState<string | null>(null);
+```
 
   useEffect(() => {
     const controller = new AbortController();
