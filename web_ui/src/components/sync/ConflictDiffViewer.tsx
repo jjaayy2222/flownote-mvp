@@ -3,10 +3,11 @@
 'use client';
 
 import React from 'react';
+import type { ConflictResolutionStrategy } from '../../types/sync';
 
 interface ConflictDiffViewerProps {
   conflictId: string;
-  onResolve?: (strategy: 'keep_local' | 'keep_remote' | 'keep_both') => void;
+  onResolve?: (strategy: ConflictResolutionStrategy) => void;
 }
 
 /**
