@@ -365,7 +365,7 @@ const DiffEditor = dynamic(
 - [x] Backend Diff Endpoint 추가 (`GET /conflicts/{id}/diff`)
 - [x] Frontend Dependency 설치 (`@monaco-editor/react`, `react-markdown`)
 - [x] Frontend Component Scaffolding (`ConflictDiffViewer.tsx`)
-- [x] Frontend Refactoring: Resolution Strategy 강타입 적용 (`types/sync.ts`)
+- [x] Frontend Refactoring: Strategy Constants 도입 및 Backend Protocol 통일 (`types/sync.ts`, `backend/api`)
 - [ ] Frontend Integration (API 연동 및 Diff 렌더링)
 
 ### Integration Checklist
