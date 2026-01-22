@@ -365,7 +365,11 @@ const DiffEditor = dynamic(
 - [x] Backend Diff Endpoint 추가 (`GET /conflicts/{id}/diff`)
 - [x] Frontend Dependency 설치 (`@monaco-editor/react`, `react-markdown`)
 - [x] Frontend Component Scaffolding (`ConflictDiffViewer.tsx`)
+- [x] Frontend Refactoring: Resolution Strategy 강타입 적용 (`types/sync.ts`)
 - [ ] Frontend Integration (API 연동 및 Diff 렌더링)
+
+### Integration Checklist
+- [ ] `ConflictDiffViewer` 연동 시 `onResolve` 핸들러가 `keep_both` 케이스를 처리하는지 확인 필수.
 
 ## 📝 Future Tasks
 - [ ] 3-way Merge 알고리즘 연구 및 적용
