@@ -213,7 +213,6 @@ async def get_conflict_diff(conflict_id: str):
 
 
 @router.post("/conflicts/{conflict_id}/resolve")
-@router.post("/conflicts/{conflict_id}/resolve")
 async def resolve_conflict(
     conflict_id: str,
     resolution_method: ResolutionStrategy,
