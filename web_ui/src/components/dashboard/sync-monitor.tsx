@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { RefreshCw, CheckCircle2, XCircle, FileText, Server } from "lucide-react"
 import { ConflictResolver } from "@/components/dashboard/conflict-resolver"
 import { toast } from "sonner"
+import { CONFLICT_STATUS } from '@/types/sync';
 
 // Types
 interface SyncStatus {
@@ -290,8 +291,8 @@ export function SyncMonitor() {
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold">{conflict.file_path}</span>
-                      <Badge variant={conflict.status === 'resolved' ? 'default' : 'destructive'} 
-                             className={conflict.status === 'resolved' ? 'bg-green-500' : ''}>
+                      <Badge variant={conflict.status === CONFLICT_STATUS.RESOLVED ? 'default' : 'destructive'} 
+                             className={conflict.status === CONFLICT_STATUS.RESOLVED ? 'bg-green-500' : ''}>
                         {conflict.status}
                       </Badge>
                     </div>
@@ -310,7 +311,7 @@ export function SyncMonitor() {
                         <div>L: {conflict.local_hash.substring(0, 7)}</div>
                         <div>R: {conflict.remote_hash.substring(0, 7)}</div>
                     </div>
-                    {conflict.status !== 'resolved' && (
+                    {conflict.status !== CONFLICT_STATUS.RESOLVED && (
                         <Button size="sm" onClick={() => handleResolveClick(conflict)}>Resolve</Button>
                     )}
                   </div>

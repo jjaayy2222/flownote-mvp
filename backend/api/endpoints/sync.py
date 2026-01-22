@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
+from enum import Enum
 import logging
 
 from backend.services.obsidian_sync import ObsidianSyncService
@@ -60,6 +61,14 @@ class ConflictLogResponse(BaseModel):
     status: str
     resolution_method: Optional[str]
     notes: Optional[str]
+
+
+class ResolutionStrategy(str, Enum):
+    """충돌 해결 전략"""
+
+    KEEP_LOCAL = "keep_local"
+    KEEP_REMOTE = "keep_remote"
+    KEEP_BOTH = "keep_both"
 
 
 class ConflictDiffResponse(BaseModel):
@@ -204,9 +213,10 @@ async def get_conflict_diff(conflict_id: str):
 
 
 @router.post("/conflicts/{conflict_id}/resolve")
+@router.post("/conflicts/{conflict_id}/resolve")
 async def resolve_conflict(
     conflict_id: str,
-    resolution_method: str,  # "keep_local", "keep_remote", "keep_both"
+    resolution_method: ResolutionStrategy,
 ):
     """
     충돌 해결
