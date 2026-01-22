@@ -206,14 +206,14 @@ async def get_conflict_diff(conflict_id: str):
 @router.post("/conflicts/{conflict_id}/resolve")
 async def resolve_conflict(
     conflict_id: str,
-    resolution_method: str,  # "local", "remote", "both"
+    resolution_method: str,  # "keep_local", "keep_remote", "keep_both"
 ):
     """
     충돌 해결
 
     Args:
         conflict_id: 충돌 ID
-        resolution_method: 해결 방법 (local, remote, both)
+        resolution_method: 해결 방법 (keep_local, keep_remote, keep_both)
 
     Returns:
         dict: 해결 결과
