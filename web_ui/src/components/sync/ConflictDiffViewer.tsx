@@ -12,7 +12,7 @@ interface ConflictDiffViewerProps {
 /**
  * Conflict Diff Viewer Component
  * - Displays side-by-side or inline diffs
- * - Provides resolution actions
+ * - Provides resolution actions (Local, Remote, Both)
  */
 export function ConflictDiffViewer({ conflictId, onResolve }: ConflictDiffViewerProps) {
   return (
@@ -30,16 +30,25 @@ export function ConflictDiffViewer({ conflictId, onResolve }: ConflictDiffViewer
 
       <div className="actions flex justify-end gap-2">
         <button 
+          type="button"
           className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90"
           onClick={() => onResolve?.('keep_local')}
         >
           Keep Local
         </button>
         <button 
+          type="button"
           className="px-4 py-2 bg-secondary text-secondary-foreground rounded hover:bg-secondary/80"
           onClick={() => onResolve?.('keep_remote')}
         >
           Keep Remote
+        </button>
+        <button 
+          type="button"
+          className="px-4 py-2 border border-input bg-background hover:bg-accent hover:text-accent-foreground rounded"
+          onClick={() => onResolve?.('keep_both')}
+        >
+          Keep Both
         </button>
       </div>
     </div>

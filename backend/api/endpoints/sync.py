@@ -171,7 +171,6 @@ async def get_conflicts(
             conflicts = [c for c in conflicts if c["status"] == status]
 
         return conflicts[:limit]
-        return conflicts[:limit]
     except Exception as e:
         logger.error(f"Failed to get conflicts: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -185,19 +184,19 @@ async def get_conflict_diff(conflict_id: str):
     try:
         # TODO: 실제 프로덕션에서는 DB에서 conflict_id로 경로 정보 조회
         # 여기서는 테스트를 위해 더미 데이터 생성 (프론트엔드 연동용 Mock)
-        
+
         # Mock Data
         local_content = "# Hello FlowNote\n\nThis is the local version of the document.\nIt contains some changes that are unique to my machine."
         remote_content = "# Hello FlowNote\n\nThis is the remote version of the document.\nIt contains some changes that were synced from the server."
-        
+
         diff_result = generate_diff(local_content, remote_content)
-        
+
         return ConflictDiffResponse(
             conflict_id=conflict_id,
             local_content=local_content,
             remote_content=remote_content,
             diff=diff_result,
-            file_type="markdown"
+            file_type="markdown",
         )
     except Exception as e:
         logger.error(f"Failed to generate diff: {e}", exc_info=True)
