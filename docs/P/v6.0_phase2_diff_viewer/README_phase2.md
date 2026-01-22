@@ -368,6 +368,7 @@ const DiffEditor = dynamic(
 - [x] Frontend Refactoring: Strategy Constants 도입 및 Backend Protocol 통일
 - [x] Backend Refactoring: `ResolutionStrategy` Enum 위 도입 (Validation 강화)
 - [x] Frontend Refactoring: `SyncMonitor` 및 `api.ts` 매직 스트링 제거 (Status 상수 적용)
+- [x] Backend Fix: 중복 Route Decorator 제거 및 최종 점검 완료
 - [ ] Frontend Integration (API 연동 및 Diff 렌더링)
 
 ### Integration Checklist
