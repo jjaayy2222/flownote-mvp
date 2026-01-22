@@ -354,12 +354,24 @@ const DiffEditor = dynamic(
 );
 ```
 
-## 📝 Next Steps
+## 📅 Task Progress
 
-- [ ] 3-way Merge 지원
-- [ ] 충돌 이력 저장 및 통계
-- [ ] AI 기반 자동 해결 제안
-- [ ] 대용량 파일 Diff 최적화
+### Day 1 (01/22)
+- [x] Backend Diff Service 구현 (`diff_service.py`)
+- [x] Backend Unit Tests 작성 (`test_diff_service.py`)
+- [x] WebSocket Monitor 최적화 (Phase 1 Code Review 반영)
+
+### Day 2 (01/23)
+- [x] Backend Diff Endpoint 추가 (`GET /conflicts/{id}/diff`)
+- [x] Frontend Dependency 설치 (`@monaco-editor/react`, `react-markdown`)
+- [x] Frontend Component Scaffolding (`ConflictDiffViewer.tsx`)
+- [ ] Frontend Integration (API 연동 및 Diff 렌더링)
+
+## 📝 Future Tasks
+- [ ] 3-way Merge 알고리즘 연구 및 적용
+- [ ] 충돌 이력(History) 저장 기능
+- [ ] AI 기반 충돌 해결 가이드 제공
+- [ ] 대용량 파일 Diff 렌더링 최적화
 
 ## 🔗 Related Documentation
 
