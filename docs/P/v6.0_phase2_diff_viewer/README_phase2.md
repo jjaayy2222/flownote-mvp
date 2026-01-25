@@ -378,7 +378,7 @@ const DiffEditor = dynamic(
 - [x] Frontend: Monaco Diff Editor UI 구현 (DiffEditor Integration)
 - [x] Frontend: Conflict Resolution API Integration (GET /diff)
 - [x] Frontend Refactoring: Retry Logic 개선 & Type Safety 강화 (DiffResult)
-- [x] Frontend Refactoring: Race Condition 방지 (AbortController)
+- [x] Frontend Refactoring: Race Condition 방지 & Custom Hook 도입 (`useFetch`)
 - [ ] Frontend: Resolution Action 핸들링 및 E2E Test
 - [ ] Phase 2 Final Review & Merge
 
