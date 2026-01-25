@@ -1,11 +1,10 @@
-// web_ui/src/components/sync/ConflictDiffViewer.tsx
-
 'use client';
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useCallback } from 'react';
 import { DiffEditor } from '@monaco-editor/react';
 import { CONFLICT_RESOLUTION_STRATEGIES, type ConflictResolutionStrategy, type ConflictDiffResponse } from '../../types/sync';
 import { API_BASE, fetchAPI } from '@/lib/api';
+import { useFetch } from '@/hooks/useFetch';
 
 interface ConflictDiffViewerProps {
   conflictId: string;
@@ -14,62 +13,23 @@ interface ConflictDiffViewerProps {
 
 /**
  * Conflict Diff Viewer Component
- * - Fetches diff data from backend
- * - Displays side-by-side diff using Monaco DiffEditor
- * - Provides resolution actions (Local, Remote, Both)
+ * - Displays side-by-side or inline diffs
+ * - Uses useFetch hook for abortable async requests
  */
 export function ConflictDiffViewer({ conflictId, onResolve }: ConflictDiffViewerProps) {
-  const [data, setData] = useState<ConflictDiffResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const abortControllerRef = useRef<AbortController | null>(null);
-
-  const loadDiff = useCallback(async () => {
-    if (!conflictId) return;
-
-    // Cancel previous request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    
-    // Create new controller
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-    
-    try {
-      setLoading(true);
-      setError(null);
-      // GET /api/sync/conflicts/{id}/diff
-      const response = await fetchAPI<ConflictDiffResponse>(
-        `${API_BASE}/api/sync/conflicts/${conflictId}/diff`,
-        { signal: controller.signal }
-      );
-      setData(response);
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        console.log('Diff fetch aborted');
-        return;
-      }
-      console.error('Failed to load diff:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load diff data');
-    } finally {
-      // Only unset loading if this request wasn't aborted (or is the latest one)
-      if (abortControllerRef.current === controller) {
-        setLoading(false);
-        abortControllerRef.current = null;
-      }
-    }
+  // Stable fetch function to pass to useFetch
+  const fetchDiff = useCallback(async (signal: AbortSignal) => {
+    if (!conflictId) return null;
+    return fetchAPI<ConflictDiffResponse>(
+      `${API_BASE}/api/sync/conflicts/${conflictId}/diff`, 
+      { signal }
+    );
   }, [conflictId]);
 
-  useEffect(() => {
-    loadDiff();
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, [loadDiff]);
+  const { data, loading, error, refetch } = useFetch<ConflictDiffResponse | null>(
+    fetchDiff,
+    [] // fetchDiff is already stable
+  );
 
   if (loading) {
     return (
@@ -86,7 +46,7 @@ export function ConflictDiffViewer({ conflictId, onResolve }: ConflictDiffViewer
         <span className="text-sm">{error}</span>
         <button 
            type="button"
-           onClick={loadDiff}
+           onClick={refetch}
            disabled={loading}
            className="mt-4 px-4 py-2 bg-white border border-red-200 rounded hover:bg-red-50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
         >

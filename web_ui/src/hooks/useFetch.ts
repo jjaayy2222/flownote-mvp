@@ -35,7 +35,8 @@ export function useFetch<T>(
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    setState(prev => ({ ...prev, loading: true, error: null }));
+    // Reset data to avoid showing stale content
+    setState(prev => ({ ...prev, loading: true, error: null, data: null }));
 
     try {
       const result = await fetchFn(controller.signal);
@@ -61,7 +62,8 @@ export function useFetch<T>(
         abortControllerRef.current = null;
       }
     }
-  }, [...deps]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchFn, ...deps]);
 
   useEffect(() => {
     fetchData();
