@@ -2,7 +2,7 @@
 
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { DiffEditor } from '@monaco-editor/react';
 import { CONFLICT_RESOLUTION_STRATEGIES, type ConflictResolutionStrategy, type ConflictDiffResponse } from '../../types/sync';
 import { API_BASE, fetchAPI } from '@/lib/api';
@@ -23,25 +23,52 @@ export function ConflictDiffViewer({ conflictId, onResolve }: ConflictDiffViewer
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   const loadDiff = useCallback(async () => {
     if (!conflictId) return;
+
+    // Cancel previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    
+    // Create new controller
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     
     try {
       setLoading(true);
       setError(null);
       // GET /api/sync/conflicts/{id}/diff
-      const response = await fetchAPI<ConflictDiffResponse>(`${API_BASE}/api/sync/conflicts/${conflictId}/diff`);
+      const response = await fetchAPI<ConflictDiffResponse>(
+        `${API_BASE}/api/sync/conflicts/${conflictId}/diff`,
+        { signal: controller.signal }
+      );
       setData(response);
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        console.log('Diff fetch aborted');
+        return;
+      }
       console.error('Failed to load diff:', err);
       setError(err instanceof Error ? err.message : 'Failed to load diff data');
     } finally {
-      setLoading(false);
+      // Only unset loading if this request wasn't aborted (or is the latest one)
+      if (abortControllerRef.current === controller) {
+        setLoading(false);
+        abortControllerRef.current = null;
+      }
     }
   }, [conflictId]);
 
   useEffect(() => {
     loadDiff();
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [loadDiff]);
 
   if (loading) {
@@ -60,7 +87,8 @@ export function ConflictDiffViewer({ conflictId, onResolve }: ConflictDiffViewer
         <button 
            type="button"
            onClick={loadDiff}
-           className="mt-4 px-4 py-2 bg-white border border-red-200 rounded hover:bg-red-50 text-sm"
+           disabled={loading}
+           className="mt-4 px-4 py-2 bg-white border border-red-200 rounded hover:bg-red-50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Retry
         </button>
