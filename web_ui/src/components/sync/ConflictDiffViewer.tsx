@@ -1,6 +1,8 @@
+// web_ui/src/components/sync/ConflictDiffViewer.tsx
+
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { DiffEditor } from '@monaco-editor/react';
 import { CONFLICT_RESOLUTION_STRATEGIES, type ConflictResolutionStrategy, type ConflictDiffResponse } from '../../types/sync';
 import { API_BASE, fetchAPI } from '@/lib/api';
@@ -21,26 +23,26 @@ export function ConflictDiffViewer({ conflictId, onResolve }: ConflictDiffViewer
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function loadDiff() {
-      if (!conflictId) return;
-      
-      try {
-        setLoading(true);
-        setError(null);
-        // GET /api/sync/conflicts/{id}/diff
-        const response = await fetchAPI<ConflictDiffResponse>(`${API_BASE}/api/sync/conflicts/${conflictId}/diff`);
-        setData(response);
-      } catch (err) {
-        console.error('Failed to load diff:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load diff data');
-      } finally {
-        setLoading(false);
-      }
+  const loadDiff = useCallback(async () => {
+    if (!conflictId) return;
+    
+    try {
+      setLoading(true);
+      setError(null);
+      // GET /api/sync/conflicts/{id}/diff
+      const response = await fetchAPI<ConflictDiffResponse>(`${API_BASE}/api/sync/conflicts/${conflictId}/diff`);
+      setData(response);
+    } catch (err) {
+      console.error('Failed to load diff:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load diff data');
+    } finally {
+      setLoading(false);
     }
-
-    loadDiff();
   }, [conflictId]);
+
+  useEffect(() => {
+    loadDiff();
+  }, [loadDiff]);
 
   if (loading) {
     return (
@@ -57,7 +59,7 @@ export function ConflictDiffViewer({ conflictId, onResolve }: ConflictDiffViewer
         <span className="text-sm">{error}</span>
         <button 
            type="button"
-           onClick={() => window.location.reload()}
+           onClick={loadDiff}
            className="mt-4 px-4 py-2 bg-white border border-red-200 rounded hover:bg-red-50 text-sm"
         >
           Retry
@@ -81,8 +83,9 @@ export function ConflictDiffViewer({ conflictId, onResolve }: ConflictDiffViewer
         <DiffEditor
           height="100%"
           language={data.file_type || 'markdown'}
-          original={data.remote_content} // Original = Remote (Incoming)
-          modified={data.local_content}  // Modified = Local (Current)
+          // Mapping: Original -> Remote (Incoming/Left), Modified -> Local (Current/Right)
+          original={data.remote_content}
+          modified={data.local_content}
           options={{
             readOnly: true,
             renderSideBySide: true,
