@@ -24,6 +24,17 @@ export const CONFLICT_STATUS = {
 export type ConflictStatus = typeof CONFLICT_STATUS[keyof typeof CONFLICT_STATUS];
 
 // Models
+export interface DiffStats {
+  additions: number;
+  deletions: number;
+}
+
+export interface DiffResult {
+  unified: string;
+  html: string;
+  stats: DiffStats;
+}
+
 export interface ConflictLog {
   id: string;
   filePath: string;
@@ -36,6 +47,6 @@ export interface ConflictDiffResponse {
   conflict_id: string;
   local_content: string;
   remote_content: string;
-  diff: Record<string, unknown>;
+  diff: DiffResult;
   file_type: string;
 }
