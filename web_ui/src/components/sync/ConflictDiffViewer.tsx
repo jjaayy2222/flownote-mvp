@@ -1,6 +1,8 @@
+// web_ui/src/components/sync/ConflictDiffViewer.tsx  
+
 'use client';
 
-import React, { useCallback } from 'react';
+import React from 'react';
 import { DiffEditor } from '@monaco-editor/react';
 import { CONFLICT_RESOLUTION_STRATEGIES, type ConflictResolutionStrategy, type ConflictDiffResponse } from '../../types/sync';
 import { API_BASE, fetchAPI } from '@/lib/api';
@@ -17,18 +19,17 @@ interface ConflictDiffViewerProps {
  * - Uses useFetch hook for abortable async requests
  */
 export function ConflictDiffViewer({ conflictId, onResolve }: ConflictDiffViewerProps) {
-  // Stable fetch function to pass to useFetch
-  const fetchDiff = useCallback(async (signal: AbortSignal) => {
-    if (!conflictId) return null;
-    return fetchAPI<ConflictDiffResponse>(
-      `${API_BASE}/api/sync/conflicts/${conflictId}/diff`, 
-      { signal }
-    );
-  }, [conflictId]);
-
+  // Use custom hook for data fetching
+  // Dependencies ([conflictId]) explicitly control when the fetch occurs
   const { data, loading, error, refetch } = useFetch<ConflictDiffResponse | null>(
-    fetchDiff,
-    [] // fetchDiff is already stable
+    async (signal) => {
+      if (!conflictId) return null;
+      return fetchAPI<ConflictDiffResponse>(
+        `${API_BASE}/api/sync/conflicts/${conflictId}/diff`, 
+        { signal }
+      );
+    },
+    [conflictId]
   );
 
   if (loading) {

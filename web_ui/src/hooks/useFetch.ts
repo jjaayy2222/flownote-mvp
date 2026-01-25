@@ -12,7 +12,7 @@ interface FetchState<T> {
  * Custom hook for abortable fetch
  * - Handles AbortController automatically
  * - Prevents race conditions
- * - Initial loading state is true
+ * - Uses partial "latest ref" pattern to avoid unnecessary re-fetches when fetchFn identity changes
  */
 export function useFetch<T>(
   fetchFn: (signal: AbortSignal) => Promise<T>,
@@ -25,6 +25,15 @@ export function useFetch<T>(
   });
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  
+  // Use a ref to store the latest fetch function.
+  // This allows us to exclude fetchFn from the effect dependency array,
+  // preventing re-fetches when the function is recreated (e.g. inline functions) 
+  // but dependencies haven't changed.
+  const fetchFnRef = useRef(fetchFn);
+  useEffect(() => {
+    fetchFnRef.current = fetchFn;
+  }, [fetchFn]);
 
   const fetchData = useCallback(async () => {
     // Cancel previous request
@@ -39,7 +48,7 @@ export function useFetch<T>(
     setState(prev => ({ ...prev, loading: true, error: null, data: null }));
 
     try {
-      const result = await fetchFn(controller.signal);
+      const result = await fetchFnRef.current(controller.signal);
       
       // Update state only if this is the latest request
       if (abortControllerRef.current === controller) {
@@ -62,8 +71,10 @@ export function useFetch<T>(
         abortControllerRef.current = null;
       }
     }
+    // We intentionally spread deps here to trigger re-fetch only when deps change.
+    // fetchFnRef is stable, so we don't need to include it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchFn, ...deps]);
+  }, [...deps]);
 
   useEffect(() => {
     fetchData();
