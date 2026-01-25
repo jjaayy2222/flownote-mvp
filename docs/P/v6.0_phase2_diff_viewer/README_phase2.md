@@ -371,11 +371,14 @@ const DiffEditor = dynamic(
 - [x] Backend Fix: 중복 Route Decorator 제거 및 최종 점검 완료
 - [ ] Frontend Integration (API 연동 및 Diff 렌더링)
 
-### Day 3 (01/24-25)
-- [ ] Frontend: Monaco Diff Editor 연동 (`@monaco-editor/react`)
-- [ ] Frontend: Diff API 호출 및 데이터 바인딩
-- [ ] Frontend: Resolution Action 핸들링 (Local/Remote/Both)
-- [ ] Integration: End-to-End Test (SyncMonitor -> DiffViewer flow)
+### Day 3 (01/24)
+- [x] Frontend Integration 계획 수립 및 문서화
+
+### Day 4 (01/25)
+- [x] Frontend: Monaco Diff Editor UI 구현 (DiffEditor Integration)
+- [x] Frontend: Conflict Resolution API Integration (GET /diff)
+- [ ] Frontend: Resolution Action 핸들링 및 E2E Test
+- [ ] Phase 2 Final Review & Merge
 
 ### Integration Checklist
 - [ ] `ConflictDiffViewer` 연동 시 `onResolve` 핸들러가 `keep_both` 케이스를 처리하는지 확인 필수.

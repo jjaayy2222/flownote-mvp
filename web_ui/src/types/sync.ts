@@ -31,3 +31,11 @@ export interface ConflictLog {
   resolutionStrategy?: ConflictResolutionStrategy;
   timestamp?: string;
 }
+
+export interface ConflictDiffResponse {
+  conflict_id: string;
+  local_content: string;
+  remote_content: string;
+  diff: Record<string, unknown>;
+  file_type: string;
+}
