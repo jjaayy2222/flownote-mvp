@@ -323,7 +323,7 @@ export function SyncMonitor() {
 
       {/* Conflict Resolver Dialog (Integrated Diff Viewer) */}
       <Sheet open={!!selectedConflictId} onOpenChange={(open) => !open && setSelectedConflictId(null)}>
-        <SheetContent className="w-full sm:max-w-[90vw] md:w-[1000px] p-0">
+        <SheetContent className="w-full sm:max-w-[90vw] md:max-w-[1000px] p-0">
             <div className="h-full flex flex-col p-6">
                 <SheetHeader className="mb-4">
                     <SheetTitle>Resolve Conflict</SheetTitle>
