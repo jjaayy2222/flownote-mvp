@@ -379,8 +379,12 @@ const DiffEditor = dynamic(
 - [x] Frontend: Conflict Resolution API Integration (GET /diff)
 - [x] Frontend Refactoring: Retry Logic 개선 & Type Safety 강화 (DiffResult)
 - [x] Frontend Refactoring: Race Condition 방지 & Custom Hook 도입 (`useFetch`)
-- [ ] Frontend: Resolution Action 핸들링 및 E2E Test
-- [ ] Phase 2 Final Review & Merge
+- [ ] Frontend: Resolution Action 핸들링 및 E2E Test (-> Day 5 이동)
+
+### Day 5 (01/26) - Integration Flow
+- [x] Integration: `SyncMonitor` 내 `ConflictDiffViewer` 연동 (Sheet UI)
+- [x] Logic: `POST /resolve` API 호출 및 상태 갱신 로직 구현
+- [ ] Test: End-to-End Conflict Resolution Flow 검증
 
 ### Integration Checklist
 - [ ] `ConflictDiffViewer` 연동 시 `onResolve` 핸들러가 `keep_both` 케이스를 처리하는지 확인 필수.
