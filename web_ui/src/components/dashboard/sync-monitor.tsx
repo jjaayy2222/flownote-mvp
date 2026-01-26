@@ -138,8 +138,8 @@ export function SyncMonitor() {
 
       try {
         // Call backend API to resolve conflict
-        // Backend expects query parameter: ?resolution_method=...
-        await fetchAPI(`${API_BASE}/api/sync/conflicts/${selectedConflictId}/resolve?resolution_method=${strategy}`, {
+        const params = new URLSearchParams({ resolution_method: strategy });
+        await fetchAPI(`${API_BASE}/api/sync/conflicts/${selectedConflictId}/resolve?${params.toString()}`, {
             method: 'POST',
         });
         
@@ -323,7 +323,7 @@ export function SyncMonitor() {
 
       {/* Conflict Resolver Dialog (Integrated Diff Viewer) */}
       <Sheet open={!!selectedConflictId} onOpenChange={(open) => !open && setSelectedConflictId(null)}>
-        <SheetContent className="w-[90%] sm:max-w-[1200px] min-w-[800px] p-0">
+        <SheetContent className="w-full sm:max-w-[90vw] md:w-[1000px] p-0">
             <div className="h-full flex flex-col p-6">
                 <SheetHeader className="mb-4">
                     <SheetTitle>Resolve Conflict</SheetTitle>
