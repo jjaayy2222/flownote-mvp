@@ -3,38 +3,12 @@
 import pytest
 from fastapi.testclient import TestClient
 from backend.main import app
+from tests.test_utils import validate_422_error_structure
 
 client = TestClient(app)
 
 # Shared Constant
 MOCK_CONFLICT_ID = "mock-conflict-123"
-
-
-def validate_422_error(response, expected_loc: tuple):
-    """
-    Helper function to validate FastAPI 422 Validation Error structure.
-    Checks if the response contains proper validation error details
-    pointing to the expected location (e.g., query param name).
-    """
-    error_body = response.json()
-    assert "detail" in error_body, "Error response missing 'detail' field"
-
-    detail = error_body["detail"]
-    assert isinstance(detail, list), "'detail' should be a list"
-    assert len(detail) > 0, "'detail' list is empty"
-
-    # Validate structure of ALL error items to prevent KeyError later
-    # This ensures every item is a dict and has the 'loc' key
-    assert all(
-        isinstance(e, dict) and "loc" in e for e in detail
-    ), "All error items must be dicts with a 'loc' field"
-
-    # Verify exact location match
-    # Pydantic validation errors return location as a list
-    error_locs = [tuple(e["loc"]) for e in detail]
-    assert (
-        expected_loc in error_locs
-    ), f"Expected error at {expected_loc}, found locations: {error_locs}"
 
 
 def test_get_diff_schema():
@@ -96,4 +70,4 @@ def test_resolve_conflict_scenarios(method, expected_status):
         assert result["conflict_id"] == MOCK_CONFLICT_ID
     elif expected_status == 422:
         # Use helper function to validate error structure robustly
-        validate_422_error(response, ("query", "resolution_method"))
+        validate_422_error_structure(response, ("query", "resolution_method"))
