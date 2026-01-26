@@ -11,9 +11,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { RefreshCw, CheckCircle2, XCircle, FileText, Server } from "lucide-react"
-import { ConflictResolver } from "@/components/dashboard/conflict-resolver"
 import { toast } from "sonner"
-import { CONFLICT_STATUS } from '@/types/sync';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { ConflictDiffViewer } from "@/components/sync/ConflictDiffViewer"
+import { type ConflictResolutionStrategy, CONFLICT_STATUS } from '@/types/sync';
 
 // Types
 interface SyncStatus {
@@ -54,12 +55,7 @@ export function SyncMonitor() {
   const [error, setError] = useState<string | null>(null);
   
   // State for Conflict Resolution
-  const [selectedConflict, setSelectedConflict] = useState<{
-    id: string; 
-    path: string; 
-    localContent: string; 
-    remoteContent: string
-  } | null>(null);
+  const [selectedConflictId, setSelectedConflictId] = useState<string | null>(null);
 
   const fetchData = async () => {
     try {
@@ -134,27 +130,30 @@ export function SyncMonitor() {
   }, [lastMessage]);
 
   const handleResolveClick = (conflict: Conflict) => {
-    // In a real scenario, we would fetch the actual file content diff here.
-    // For Phase 6 Mockup, we use placeholder text.
-    setSelectedConflict({
-        id: conflict.conflict_id,
-        path: conflict.file_path,
-        localContent: `# Local Version\n\nThis is the current content of ${conflict.file_path} on your local machine.\n\n- It has some local edits.\n- Last modified: Today`,
-        remoteContent: `# Remote Version\n\nThis is the incoming content for ${conflict.file_path} from the remote vault.\n\n- It has conflicting changes.\n- Last modified: Yesterday`
-    });
+    setSelectedConflictId(conflict.conflict_id);
   };
 
-  const handleResolution = async (decision: 'local' | 'remote' | 'both') => {
-      // TODO: Call backend API to resolve conflict
-      console.log(`Resolving conflict ${selectedConflict?.id} with decision: ${decision}`);
-      
-      toast.success(`Resolved conflict: Keeping ${decision} version`, {
-        description: `File: ${selectedConflict?.path}`
-      });
-      
-      setSelectedConflict(null);
-      // Refresh list
-      fetchData();
+  const handleResolution = async (strategy: ConflictResolutionStrategy) => {
+      if (!selectedConflictId) return;
+
+      try {
+        // Call backend API to resolve conflict
+        // Backend expects query parameter: ?resolution_method=...
+        await fetchAPI(`${API_BASE}/api/sync/conflicts/${selectedConflictId}/resolve?resolution_method=${strategy}`, {
+            method: 'POST',
+        });
+        
+        toast.success(`Resolved conflict successfully`, {
+            description: `Strategy: ${strategy}`
+        });
+        
+        setSelectedConflictId(null);
+        // Refresh list
+        fetchData();
+      } catch (err) {
+        console.error('Resolution failed:', err);
+        toast.error('Failed to resolve conflict');
+      }
   };
 
   if (loading && !syncStatus) {
@@ -322,13 +321,24 @@ export function SyncMonitor() {
         </CardContent>
       </Card>
 
-      {/* Conflict Resolver Dialog */}
-      <ConflictResolver 
-        isOpen={!!selectedConflict} 
-        onClose={() => setSelectedConflict(null)}
-        conflict={selectedConflict}
-        onResolve={handleResolution}
-      />
+      {/* Conflict Resolver Dialog (Integrated Diff Viewer) */}
+      <Sheet open={!!selectedConflictId} onOpenChange={(open) => !open && setSelectedConflictId(null)}>
+        <SheetContent className="w-[90%] sm:max-w-[1200px] min-w-[800px] p-0">
+            <div className="h-full flex flex-col p-6">
+                <SheetHeader className="mb-4">
+                    <SheetTitle>Resolve Conflict</SheetTitle>
+                </SheetHeader>
+                <div className="flex-1 overflow-hidden">
+                    {selectedConflictId && (
+                        <ConflictDiffViewer 
+                            conflictId={selectedConflictId} 
+                            onResolve={handleResolution}
+                        />
+                    )}
+                </div>
+            </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
