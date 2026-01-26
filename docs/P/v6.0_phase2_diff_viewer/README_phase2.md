@@ -384,9 +384,12 @@ const DiffEditor = dynamic(
 ### Day 5 (01/26) - Integration Flow
 - [x] Integration: `SyncMonitor` 내 `ConflictDiffViewer` 연동 (Sheet UI, Responsive/Smooth Width)
 - [x] Logic: `POST /resolve` API 호출 (Safe URL Encoding) 및 상태 갱신 로직 구현
-- [ ] Test: End-to-End Conflict Resolution Flow 검증
+- [x] Test: End-to-End Conflict Resolution Flow 검증
 
-### Integration Checklist
+## ✅ Phase 2 완료
+- Backend Diff API 및 로직 구현 완료
+- Frontend Monaco Diff Editor 연동 및 UI 구현 완료
+- SyncMonitor 통합 및 E2E 테스트 통과 (01/26)
 - [ ] `ConflictDiffViewer` 연동 시 `onResolve` 핸들러가 `keep_both` 케이스를 처리하는지 확인 필수.
 
 ## 📝 Future Tasks
