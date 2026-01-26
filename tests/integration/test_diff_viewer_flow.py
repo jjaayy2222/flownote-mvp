@@ -1,4 +1,4 @@
-# tests/intergration/test_diff_viewer_flow.py
+# tests/intergration/test_diff_viewer_flown.py
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,6 +8,33 @@ client = TestClient(app)
 
 # Shared Constant
 MOCK_CONFLICT_ID = "mock-conflict-123"
+
+
+def validate_422_error(response, expected_loc: tuple):
+    """
+    Helper function to validate FastAPI 422 Validation Error structure.
+    Checks if the response contains proper validation error details
+    pointing to the expected location (e.g., query param name).
+    """
+    error_body = response.json()
+    assert "detail" in error_body, "Error response missing 'detail' field"
+
+    detail = error_body["detail"]
+    assert isinstance(detail, list), "'detail' should be a list"
+    assert len(detail) > 0, "'detail' list is empty"
+
+    # Validate structure of ALL error items to prevent KeyError later
+    # This ensures every item is a dict and has the 'loc' key
+    assert all(
+        isinstance(e, dict) and "loc" in e for e in detail
+    ), "All error items must be dicts with a 'loc' field"
+
+    # Verify exact location match
+    # Pydantic validation errors return location as a list
+    error_locs = [tuple(e["loc"]) for e in detail]
+    assert (
+        expected_loc in error_locs
+    ), f"Expected error at {expected_loc}, found locations: {error_locs}"
 
 
 def test_get_diff_schema():
@@ -68,25 +95,5 @@ def test_resolve_conflict_scenarios(method, expected_status):
         assert result["method"] == method
         assert result["conflict_id"] == MOCK_CONFLICT_ID
     elif expected_status == 422:
-        # Verify validation error structure robustly
-        error_body = response.json()
-        assert "detail" in error_body, "Error response missing 'detail' field"
-
-        detail = error_body["detail"]
-        assert isinstance(detail, list), "'detail' should be a list"
-        assert len(detail) > 0, "'detail' list is empty"
-
-        # Use defensive assertions before accessing keys
-        first_error = detail[0]
-        assert isinstance(first_error, dict), "Error item should be a dict"
-        assert "loc" in first_error, "Error item missing 'loc' field"
-
-        # Verify exact location match: ['query', 'resolution_method']
-        # Convert lists to tuples for easy comparison
-        error_locs = [tuple(e["loc"]) for e in detail]
-        assert (
-            "query",
-            "resolution_method",
-        ) in error_locs, (
-            f"Expected error in query param 'resolution_method', found: {error_locs}"
-        )
+        # Use helper function to validate error structure robustly
+        validate_422_error(response, ("query", "resolution_method"))
