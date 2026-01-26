@@ -6,6 +6,9 @@ from backend.main import app
 
 client = TestClient(app)
 
+# Shared Constant
+MOCK_CONFLICT_ID = "mock-conflict-123"
+
 
 def test_get_diff_schema():
     """
@@ -13,12 +16,11 @@ def test_get_diff_schema():
     Ensures that the backend provides all necessary data fields
     expected by the frontend ConflictDiffViewer.
     """
-    conflict_id = "mock-conflict-123"
-    response = client.get(f"/api/sync/conflicts/{conflict_id}/diff")
+    response = client.get(f"/api/sync/conflicts/{MOCK_CONFLICT_ID}/diff")
     assert response.status_code == 200
 
     data = response.json()
-    assert data["conflict_id"] == conflict_id
+    assert data["conflict_id"] == MOCK_CONFLICT_ID
     assert "local_content" in data
     assert "remote_content" in data
 
@@ -52,11 +54,9 @@ def test_resolve_conflict_scenarios(method, expected_status):
     Uses parametrization to cover all valid options and an invalid case.
     Also uses `params` for safe query parameter encoding.
     """
-    conflict_id = "mock-conflict-123"
-
     # Use 'params' argument for safe URL encoding instead of string interpolation
     response = client.post(
-        f"/api/sync/conflicts/{conflict_id}/resolve",
+        f"/api/sync/conflicts/{MOCK_CONFLICT_ID}/resolve",
         params={"resolution_method": method},
     )
 
@@ -66,4 +66,9 @@ def test_resolve_conflict_scenarios(method, expected_status):
         result = response.json()
         assert result["status"] == "resolved"
         assert result["method"] == method
-        assert result["conflict_id"] == conflict_id
+        assert result["conflict_id"] == MOCK_CONFLICT_ID
+    elif expected_status == 422:
+        # Verify that the error is related to the resolution_method parameter
+        detail = response.json()["detail"]
+        # Error detail structure: [{'type': 'enum', 'loc': ['query', 'resolution_method'], ...}]
+        assert any("resolution_method" in e["loc"] for e in detail)
