@@ -384,7 +384,7 @@ const DiffEditor = dynamic(
 ### Day 5 (01/26) - Integration Flow
 - [x] Integration: `SyncMonitor` 내 `ConflictDiffViewer` 연동 (Sheet UI, Responsive/Smooth Width)
 - [x] Logic: `POST /resolve` API 호출 (Safe URL Encoding) 및 상태 갱신 로직 구현
-- [x] Test: Integration Test 강화 (Parametrization, Schema Deep Check)
+- [x] Test: Integration Test 강화 (Parametrization, Schema Deep Check, Error Validation)
 
 ## ✅ Phase 2 완료
 - Backend Diff API 및 로직 구현 완료
