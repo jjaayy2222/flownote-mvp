@@ -1,17 +1,13 @@
-# tests/test_utils.py
-
-
-def validate_422_error_structure(response, expected_loc: tuple):
+def validate_pydantic_error_structure(error_body: dict, expected_loc: tuple):
     """
-    Helper function to validate FastAPI 422 Validation Error structure.
-    Checks if the response contains proper validation error details
+    Helper function to validate Standard Pydantic/FastAPI Validation Error structure.
+    Checks if the error body contains proper validation error details
     pointing to the expected location.
 
     Args:
-        response: The response object from TestClient
+        error_body: The parsed JSON body of the error response (dict)
         expected_loc: Tuple representing the expected error location (e.g. ("query", "param_name"))
     """
-    error_body = response.json()
     assert "detail" in error_body, "Error response missing 'detail' field"
 
     detail = error_body["detail"]

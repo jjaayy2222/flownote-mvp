@@ -3,7 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from backend.main import app
-from tests.test_utils import validate_422_error_structure
+from tests.test_utils import validate_pydantic_error_structure
 
 client = TestClient(app)
 
@@ -69,5 +69,9 @@ def test_resolve_conflict_scenarios(method, expected_status):
         assert result["method"] == method
         assert result["conflict_id"] == MOCK_CONFLICT_ID
     elif expected_status == 422:
-        # Use helper function to validate error structure robustly
-        validate_422_error_structure(response, ("query", "resolution_method"))
+        # Explicitly assert status code for clarity, even if checked above
+        assert response.status_code == 422
+        # Use helper function with parsed JSON body
+        validate_pydantic_error_structure(
+            response.json(), ("query", "resolution_method")
+        )
