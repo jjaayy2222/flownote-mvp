@@ -1,4 +1,4 @@
-# tests/integration/test_diff_viewer_flow.py
+# tests/intergration/test_diff_viewer_flow.py
 
 import pytest
 from fastapi.testclient import TestClient
@@ -68,7 +68,25 @@ def test_resolve_conflict_scenarios(method, expected_status):
         assert result["method"] == method
         assert result["conflict_id"] == MOCK_CONFLICT_ID
     elif expected_status == 422:
-        # Verify that the error is related to the resolution_method parameter
-        detail = response.json()["detail"]
-        # Error detail structure: [{'type': 'enum', 'loc': ['query', 'resolution_method'], ...}]
-        assert any("resolution_method" in e["loc"] for e in detail)
+        # Verify validation error structure robustly
+        error_body = response.json()
+        assert "detail" in error_body, "Error response missing 'detail' field"
+
+        detail = error_body["detail"]
+        assert isinstance(detail, list), "'detail' should be a list"
+        assert len(detail) > 0, "'detail' list is empty"
+
+        # Use defensive assertions before accessing keys
+        first_error = detail[0]
+        assert isinstance(first_error, dict), "Error item should be a dict"
+        assert "loc" in first_error, "Error item missing 'loc' field"
+
+        # Verify exact location match: ['query', 'resolution_method']
+        # Convert lists to tuples for easy comparison
+        error_locs = [tuple(e["loc"]) for e in detail]
+        assert (
+            "query",
+            "resolution_method",
+        ) in error_locs, (
+            f"Expected error in query param 'resolution_method', found: {error_locs}"
+        )
