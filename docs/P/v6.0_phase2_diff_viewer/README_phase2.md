@@ -4,6 +4,7 @@
 
 v6.0 Phase 2에서는 파일 충돌 발생 시 양쪽 버전을 시각적으로 비교하고 선택할 수 있는 UI를 구현합니다.
 
+<a id="goals"></a>
 ## 🎯 목표
 
 - 충돌 파일의 차이점을 명확하게 시각화
@@ -392,7 +393,7 @@ const DiffEditor = dynamic(
 - [x] Schema Deep Validation 및 Error Structure 검증 완료
 - [x] Phase 2 완료 확인 및 문서화
 
-## ✅ Phase 2 완료 (2026-01-27)
+## ✅ Phase 2 완료
 
 ### 구현 범위
 Phase 2의 모든 계획된 기능이 구현 완료되었습니다:
@@ -432,7 +433,7 @@ pytest tests/integration/test_diff_viewer_flow.py
 4. **테스트 재사용성**: 공통 Validation Helper 분리 (`validate_pydantic_error_structure`)
 
 ### DoD (Definition of Done) 달성 확인
-[목표](#-목표) 섹션에서 정의한 모든 완료 조건이 충족되었습니다:
+위의 [목표](#goals) 섹션에서 정의한 모든 완료 조건이 충족되었습니다:
 - ✅ 충돌 파일 차이점의 시각적 비교 (Monaco Diff Editor)
 - ✅ 3가지 해결 옵션 정상 동작 및 API 연동
 - ✅ Markdown Syntax Highlighting 지원
