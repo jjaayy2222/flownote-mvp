@@ -394,44 +394,48 @@ const DiffEditor = dynamic(
 
 ## ✅ Phase 2 완료 (2026-01-27)
 
-### 구현 완료 항목
-- ✅ **Backend Diff API**: `/api/sync/conflicts/{id}/diff` 엔드포인트 구현
-- ✅ **Backend Resolution API**: `/api/sync/conflicts/{id}/resolve` 엔드포인트 구현
-- ✅ **Diff Service**: Python `difflib` 기반 Unified/Side-by-Side Diff 생성
-- ✅ **Frontend Diff Viewer**: Monaco Diff Editor 통합 (`ConflictDiffViewer.tsx`)
-- ✅ **Custom Hook**: `useFetch` - Abortable async data fetching with race condition prevention
-- ✅ **SyncMonitor Integration**: Sheet UI를 통한 Diff Viewer 모달 표시
-- ✅ **Resolution Logic**: 3가지 전략 (`keep_local`, `keep_remote`, `keep_both`) 구현 및 API 호출
-- ✅ **Integration Tests**: Parametrized tests with deep schema validation
-- ✅ **Test Utilities**: `validate_pydantic_error_structure` helper for robust error validation
+### 구현 범위
+Phase 2의 모든 계획된 기능이 구현 완료되었습니다:
+- **Backend**: Diff API 및 Resolution API (상세 내용: [1. Backend Diff API](#1-backend-diff-api) 참조)
+- **Frontend**: Monaco Diff Editor 기반 UI 컴포넌트 (상세 내용: [2. Frontend Diff Viewer Component](#2-frontend-diff-viewer-component) 참조)
+- **Integration**: SyncMonitor와의 통합 및 실시간 상태 갱신 (상세 내용: [3. SyncMonitor 통합](#3-syncmonitor-통합) 참조)
 
-### 테스트 결과
+### 테스트 검증
+모든 핵심 시나리오에 대한 Integration Test가 작성되고 통과되었습니다.
+
+**테스트 커버리지** (예시 실행 결과):
 ```bash
-# Integration Test (01/27)
+# 아래는 2026-01-27 시점의 테스트 실행 예시입니다.
+# 실제 테스트 수는 기능 추가에 따라 변경될 수 있습니다.
 pytest tests/integration/test_diff_viewer_flow.py
 ========================= 5 passed, 1 warning in 0.61s =========================
-
-Test Coverage:
-- ✅ GET /api/sync/conflicts/{id}/diff - 200 OK with valid diff data
-- ✅ POST /api/sync/conflicts/{id}/resolve?resolution_method=keep_local - 200 OK
-- ✅ POST /api/sync/conflicts/{id}/resolve?resolution_method=keep_remote - 200 OK
-- ✅ POST /api/sync/conflicts/{id}/resolve?resolution_method=keep_both - 200 OK
-- ✅ POST /api/sync/conflicts/{id}/resolve?resolution_method=invalid - 422 Validation Error
 ```
 
-### 주요 개선 사항
-1. **Race Condition 방지**: `useFetch` Hook의 AbortController 패턴 적용
-2. **URL 안전성**: `URLSearchParams` 사용으로 쿼리 파라미터 인코딩 보장
-3. **반응형 UI**: Sheet 컴포넌트의 Smooth Width Transition (모바일 대응)
-4. **테스트 품질**: Parametrization, Deep Schema Validation, Robust Error Handling
-5. **코드 재사용성**: Test Helper 함수 분리 (`tests/test_utils.py`)
+**검증된 시나리오:**
+- ✅ Diff 데이터 조회 (`GET /api/sync/conflicts/{id}/diff`)
+- ✅ 충돌 해결 - Local 유지 (`POST /resolve?resolution_method=keep_local`)
+- ✅ 충돌 해결 - Remote 유지 (`POST /resolve?resolution_method=keep_remote`)
+- ✅ 충돌 해결 - 양쪽 유지 (`POST /resolve?resolution_method=keep_both`)
+- ✅ 잘못된 Resolution Method에 대한 422 Validation Error
 
-### 완료 조건 (DoD) 달성
-- ✅ 충돌 파일의 차이점을 시각적으로 명확히 확인 가능 (Monaco Diff Editor)
-- ✅ 3가지 해결 옵션 모두 정상 동작 (`keep_local`, `keep_remote`, `keep_both`)
-- ✅ Markdown 파일 Syntax Highlighting 지원
-- ✅ Integration Test 통과 (Backend API + Frontend Component)
-- ✅ 반응형 UI 구현 (모바일/데스크톱 대응)
+**테스트 품질 개선:**
+- Parametrized tests로 중복 제거
+- Deep schema validation (nested fields 검증)
+- Robust error structure validation (`tests/test_utils.py` helper 활용)
+
+### 주요 개선 사항
+개발 과정에서 도출된 품질 개선 항목:
+
+1. **Race Condition 방지**: `useFetch` Custom Hook의 AbortController 패턴
+2. **URL 안전성**: `URLSearchParams`를 통한 쿼리 파라미터 인코딩
+3. **반응형 UI**: Sheet 컴포넌트의 Smooth Width Transition (모바일 대응)
+4. **테스트 재사용성**: 공통 Validation Helper 분리 (`validate_pydantic_error_structure`)
+
+### DoD (Definition of Done) 달성 확인
+[목표](#-목표) 섹션에서 정의한 모든 완료 조건이 충족되었습니다:
+- ✅ 충돌 파일 차이점의 시각적 비교 (Monaco Diff Editor)
+- ✅ 3가지 해결 옵션 정상 동작 및 API 연동
+- ✅ Markdown Syntax Highlighting 지원
 
 ## 📝 Future Tasks
 - [ ] 3-way Merge 알고리즘 연구 및 적용
