@@ -13,5 +13,8 @@
     "graph": "그래프 뷰",
     "stats": "통계",
     "preferences": "설정"
+  },
+  "sidebar": {
+    "language": "언어"
   }
 }
