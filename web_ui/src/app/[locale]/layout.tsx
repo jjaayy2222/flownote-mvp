@@ -13,10 +13,10 @@ export default async function LocaleLayout({
   params: { locale }
 }: {
   children: React.ReactNode;
-  params: { locale: string };
+  params: { locale: Locale };
 }) {
   // 지원하지 않는 locale인 경우 404
-  if (!locales.includes(locale as Locale)) {
+  if (!locales.includes(locale)) {
     notFound();
   }
 
@@ -28,12 +28,8 @@ export default async function LocaleLayout({
   }
 
   return (
-    <html lang={locale}>
-      <body>
-        <NextIntlClientProvider locale={locale} messages={messages}>
-          {children}
-        </NextIntlClientProvider>
-      </body>
-    </html>
+    <NextIntlClientProvider locale={locale} messages={messages}>
+      {children}
+    </NextIntlClientProvider>
   );
 }
