@@ -27,9 +27,14 @@ export function LanguageSwitcher({ className }: { className?: string }) {
       // 기존 로케일 세그먼트가 존재하면 교체
       segments[localeIndex] = newLocale;
     } else {
-      // 로케일 세그먼트가 없으면 (기본 로케일 등으로 생략된 경우) 맨 앞에 추가
-      // segments[0]은 빈 문자열이므로 index 1에 삽입
-      segments.splice(1, 0, newLocale);
+      // 로케일 세그먼트가 없으면 (기본 로케일 등으로 생략된 경우)
+      // 루트 경로('/')인 경우 Trailing Slash 방지를 위해 덮어쓰기
+      if (segments.length === 2 && segments[1] === '') {
+        segments[1] = newLocale;
+      } else {
+        // 그 외의 경우 맨 앞에 locale 추가
+        segments.splice(1, 0, newLocale);
+      }
     }
     
     let newPath = segments.join('/');
