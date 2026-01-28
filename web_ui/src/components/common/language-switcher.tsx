@@ -19,14 +19,17 @@ export function LanguageSwitcher({ className }: { className?: string }) {
     if (!pathname) return;
 
     // 2. Pathname 재구성 (Locale 교체)
-    // next-intl 미들웨어 설정을 따름 (prefix: always -> /ko/dashboard)
+    // 하드코딩된 인덱스 대신 현재 경로에서 로케일 세그먼트를 동적으로 탐색하여 교체
     const segments = pathname.split('/');
-    if (segments.length > 1) {
-      segments[1] = newLocale;
+    const localeIndex = segments.findIndex(seg => (locales as readonly string[]).includes(seg));
+
+    if (localeIndex !== -1) {
+      // 기존 로케일 세그먼트가 존재하면 교체
+      segments[localeIndex] = newLocale;
     } else {
-      // 예상치 못한 경로 구조일 경우 (예: /) 안전하게 locale 추가
-      // 실제로는 미들웨어가 먼저 리다이렉트하므로 이 분기에 도달할 확률은 낮음
-      segments.splice(1, 0, newLocale); 
+      // 로케일 세그먼트가 없으면 (기본 로케일 등으로 생략된 경우) 맨 앞에 추가
+      // segments[0]은 빈 문자열이므로 index 1에 삽입
+      segments.splice(1, 0, newLocale);
     }
     
     let newPath = segments.join('/');
