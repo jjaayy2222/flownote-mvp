@@ -13,5 +13,8 @@
     "graph": "Graph View",
     "stats": "Statistics",
     "preferences": "Preferences"
+  },
+  "sidebar": {
+    "language": "Language"
   }
 }
