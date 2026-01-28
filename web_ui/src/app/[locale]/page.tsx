@@ -1,11 +1,9 @@
 // web_ui/src/app/[locale]/page.tsx
 
-'use client';
+import { getTranslations } from 'next-intl/server';
 
-import { useTranslations } from 'next-intl';
-
-export default function HomePage() {
-  const t = useTranslations('common');
+export default async function HomePage() {
+  const t = await getTranslations('common');
 
   return (
     <div className="p-8">
