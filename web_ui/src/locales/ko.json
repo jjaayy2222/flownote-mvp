@@ -1,0 +1,17 @@
+{
+  "common": {
+    "loading": "콘텐츠를 불러오는 중입니다...",
+    "error": "오류가 발생했습니다",
+    "save": "저장",
+    "cancel": "취소",
+    "delete": "삭제",
+    "confirm": "확인",
+    "close": "닫기"
+  },
+  "navigation": {
+    "dashboard": "대시보드",
+    "graph": "그래프 뷰",
+    "stats": "통계",
+    "preferences": "설정"
+  }
+}
