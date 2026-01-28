@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { NavItem } from "./nav-item";
 import { mainNavItems, settingsItems } from "@/config/navigation";
+import { LanguageSwitcher } from "@/components/common/language-switcher";
 
 export function Sidebar({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
@@ -23,6 +24,13 @@ export function Sidebar({ className, ...props }: React.HTMLAttributes<HTMLDivEle
             {settingsItems.map(item => (
               <NavItem key={item.href} {...item} />
             ))}
+          </div>
+        </div>
+        
+        <div className="px-3 py-2 mt-auto">
+          <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">Language</h2>
+          <div className="px-4">
+            <LanguageSwitcher />
           </div>
         </div>
       </ScrollArea>
