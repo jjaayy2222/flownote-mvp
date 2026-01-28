@@ -1,0 +1,17 @@
+{
+  "common": {
+    "loading": "Loading content...",
+    "error": "An error occurred",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "confirm": "Confirm",
+    "close": "Close"
+  },
+  "navigation": {
+    "dashboard": "Dashboard",
+    "graph": "Graph View",
+    "stats": "Statistics",
+    "preferences": "Preferences"
+  }
+}
