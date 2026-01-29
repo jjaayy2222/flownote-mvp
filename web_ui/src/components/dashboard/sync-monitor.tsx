@@ -46,7 +46,7 @@ interface Conflict {
   remote_hash: string;
 }
 
-const POLLING_INTERVAL = 5000;
+
 
 export function SyncMonitor() {
   const t = useTranslations('sync_monitor');
