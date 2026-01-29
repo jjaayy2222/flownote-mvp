@@ -10,9 +10,11 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
+from enum import Enum
 import logging
 
 from backend.services.obsidian_sync import ObsidianSyncService
+from backend.services.diff_service import generate_diff
 from backend.config.mcp_config import mcp_config
 from backend.models.external_sync import SyncStatus, ExternalToolType
 from pydantic import BaseModel
@@ -59,6 +61,24 @@ class ConflictLogResponse(BaseModel):
     status: str
     resolution_method: Optional[str]
     notes: Optional[str]
+
+
+class ResolutionStrategy(str, Enum):
+    """충돌 해결 전략"""
+
+    KEEP_LOCAL = "keep_local"
+    KEEP_REMOTE = "keep_remote"
+    KEEP_BOTH = "keep_both"
+
+
+class ConflictDiffResponse(BaseModel):
+    """Diff 조회 응답"""
+
+    conflict_id: str
+    local_content: str
+    remote_content: str
+    diff: Dict[str, Any]
+    file_type: str
 
 
 # ==========================================
@@ -165,17 +185,44 @@ async def get_conflicts(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/conflicts/{conflict_id}/diff", response_model=ConflictDiffResponse)
+async def get_conflict_diff(conflict_id: str):
+    """
+    충돌 파일의 Diff 데이터 반환
+    """
+    try:
+        # TODO: 실제 프로덕션에서는 DB에서 conflict_id로 경로 정보 조회
+        # 여기서는 테스트를 위해 더미 데이터 생성 (프론트엔드 연동용 Mock)
+
+        # Mock Data
+        local_content = "# Hello FlowNote\n\nThis is the local version of the document.\nIt contains some changes that are unique to my machine."
+        remote_content = "# Hello FlowNote\n\nThis is the remote version of the document.\nIt contains some changes that were synced from the server."
+
+        diff_result = generate_diff(local_content, remote_content)
+
+        return ConflictDiffResponse(
+            conflict_id=conflict_id,
+            local_content=local_content,
+            remote_content=remote_content,
+            diff=diff_result,
+            file_type="markdown",
+        )
+    except Exception as e:
+        logger.error(f"Failed to generate diff: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/conflicts/{conflict_id}/resolve")
 async def resolve_conflict(
     conflict_id: str,
-    resolution_method: str,  # "local", "remote", "both"
+    resolution_method: ResolutionStrategy,
 ):
     """
     충돌 해결
 
     Args:
         conflict_id: 충돌 ID
-        resolution_method: 해결 방법 (local, remote, both)
+        resolution_method: 해결 방법 (keep_local, keep_remote, keep_both)
 
     Returns:
         dict: 해결 결과

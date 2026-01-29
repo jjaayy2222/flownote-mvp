@@ -2,16 +2,20 @@
 
 "use client"
 
-import React, { useState } from 'react';
-import { useVisibilityPolling } from '@/hooks/use-visibility-polling';
+import React, { useState, useEffect } from 'react';
+import { useWebSocket } from '@/hooks/useWebSocket';
+import { getWebSocketUrl } from '@/config/websocket';
+import { WebSocketEvent, isWebSocketEvent } from '@/types/websocket';
 import { API_BASE, fetchAPI } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { RefreshCw, CheckCircle2, XCircle, FileText, Server } from "lucide-react"
-import { ConflictResolver } from "@/components/dashboard/conflict-resolver"
 import { toast } from "sonner"
 import { useTranslations, useLocale } from "next-intl"
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { ConflictDiffViewer } from "@/components/sync/ConflictDiffViewer"
+import { type ConflictResolutionStrategy, CONFLICT_STATUS } from '@/types/sync';
 
 // Types
 interface SyncStatus {
@@ -54,12 +58,7 @@ export function SyncMonitor() {
   const [error, setError] = useState<string | null>(null);
   
   // State for Conflict Resolution
-  const [selectedConflict, setSelectedConflict] = useState<{
-    id: string; 
-    path: string; 
-    localContent: string; 
-    remoteContent: string
-  } | null>(null);
+  const [selectedConflictId, setSelectedConflictId] = useState<string | null>(null);
 
   const fetchData = async () => {
     try {
@@ -83,31 +82,81 @@ export function SyncMonitor() {
     }
   };
 
-  // Optimized polling with visibility check
-  useVisibilityPolling(fetchData, POLLING_INTERVAL);
+  // WebSocket Integration
+  const { isConnected, lastMessage } = useWebSocket(getWebSocketUrl(), {
+    autoConnect: true,
+    reconnect: true,
+  });
+
+  // Initial fetch
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  // Handle WebSocket events
+  useEffect(() => {
+    if (!lastMessage) return;
+
+    // 런타임 타입 검증 (Type Guard) - 안전성 강화
+    if (!isWebSocketEvent(lastMessage)) {
+      console.warn('[SyncMonitor] Received invalid WebSocket message structure:', lastMessage);
+      return;
+    }
+
+    // 타입 가드 통과 후 lastMessage는 WebSocketEvent로 자동 추론됨
+    const event: WebSocketEvent = lastMessage;
+
+    switch (event.type) {
+      case 'sync_status_changed':
+        console.log('[SyncMonitor] Sync status changed, refreshing data...');
+        fetchData();
+        break;
+      case 'conflict_detected':
+        console.log('[SyncMonitor] Conflict detected, refreshing list...');
+        fetchData();
+        toast.warning('New conflict detected!', {
+          description: `Conflict ID: ${event.data.id}`
+        });
+        break;
+      case 'file_classified':
+      case 'graph_updated':
+        // 이 컴포넌트에서는 모니터링하지 않는 이벤트
+        break;
+      default:
+        // Exhaustiveness Check (Dead Code in Runtime): 
+        // 모든 케이스가 처리되지 않으면 여기서 컴파일 에러가 발생합니다.
+        // 런타임에는 이 분기에 도달할 수 없습니다 (isWebSocketEvent 가드가 보장).
+        const _exhaustiveCheck: never = event;
+        void _exhaustiveCheck;
+        break;
+    }
+  }, [lastMessage]);
 
   const handleResolveClick = (conflict: Conflict) => {
-    // In a real scenario, we would fetch the actual file content diff here.
-    // For Phase 6 Mockup, we use placeholder text.
-    setSelectedConflict({
-        id: conflict.conflict_id,
-        path: conflict.file_path,
-        localContent: `# Local Version\n\nThis is the current content of ${conflict.file_path} on your local machine.\n\n- It has some local edits.\n- Last modified: Today`,
-        remoteContent: `# Remote Version\n\nThis is the incoming content for ${conflict.file_path} from the remote vault.\n\n- It has conflicting changes.\n- Last modified: Yesterday`
-    });
+    setSelectedConflictId(conflict.conflict_id);
   };
 
-  const handleResolution = async (decision: 'local' | 'remote' | 'both') => {
-      // TODO: Call backend API to resolve conflict
-      console.log(`Resolving conflict ${selectedConflict?.id} with decision: ${decision}`);
-      
-      toast.success(t('conflicts.resolved_toast', { decision }), {
-        description: `${t('conflicts.file')}: ${selectedConflict?.path}`
-      });
-      
-      setSelectedConflict(null);
-      // Refresh list
-      fetchData();
+  const handleResolution = async (strategy: ConflictResolutionStrategy) => {
+      if (!selectedConflictId) return;
+
+      try {
+        // Call backend API to resolve conflict
+        const params = new URLSearchParams({ resolution_method: strategy });
+        await fetchAPI(`${API_BASE}/api/sync/conflicts/${selectedConflictId}/resolve?${params.toString()}`, {
+            method: 'POST',
+        });
+        
+        toast.success(t('conflicts.resolved_toast', { decision: strategy }), {
+            description: `${t('conflicts.file')}: ${selectedConflictId}`
+        });
+        
+        setSelectedConflictId(null);
+        // Refresh list
+        fetchData();
+      } catch (err) {
+        console.error('Resolution failed:', err);
+        toast.error('Failed to resolve conflict');
+      }
   };
 
   if (loading && !syncStatus) {
@@ -129,7 +178,19 @@ export function SyncMonitor() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">{t('title')}</h2>
+        <div className="flex items-center gap-4">
+          <h2 className="text-3xl font-bold tracking-tight">{t('title')}</h2>
+          {isConnected ? (
+            <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">
+              <div className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse" />
+              Live
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-gray-500">
+              Connecting...
+            </Badge>
+          )}
+        </div>
         <Button onClick={fetchData} variant="outline" size="sm">
           <RefreshCw className="mr-2 h-4 w-4" /> {t('refresh')}
         </Button>
@@ -237,8 +298,8 @@ export function SyncMonitor() {
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold">{conflict.file_path}</span>
-                      <Badge variant={conflict.status === 'resolved' ? 'default' : 'destructive'} 
-                             className={conflict.status === 'resolved' ? 'bg-green-500' : ''}>
+                      <Badge variant={conflict.status === CONFLICT_STATUS.RESOLVED ? 'default' : 'destructive'} 
+                             className={conflict.status === CONFLICT_STATUS.RESOLVED ? 'bg-green-500' : ''}>
                         {conflict.status}
                       </Badge>
                     </div>
@@ -260,7 +321,7 @@ export function SyncMonitor() {
                         <div>L: {conflict.local_hash.substring(0, 7)}</div>
                         <div>R: {conflict.remote_hash.substring(0, 7)}</div>
                     </div>
-                    {conflict.status !== 'resolved' && (
+                    {conflict.status !== CONFLICT_STATUS.RESOLVED && (
                         <Button size="sm" onClick={() => handleResolveClick(conflict)}>{t('conflicts.resolve_btn')}</Button>
                     )}
                   </div>
@@ -271,13 +332,24 @@ export function SyncMonitor() {
         </CardContent>
       </Card>
 
-      {/* Conflict Resolver Dialog */}
-      <ConflictResolver 
-        isOpen={!!selectedConflict} 
-        onClose={() => setSelectedConflict(null)}
-        conflict={selectedConflict}
-        onResolve={handleResolution}
-      />
+      {/* Conflict Resolver Dialog (Integrated Diff Viewer) */}
+      <Sheet open={!!selectedConflictId} onOpenChange={(open) => !open && setSelectedConflictId(null)}>
+        <SheetContent className="w-full sm:max-w-[90vw] md:max-w-[1000px] p-0">
+            <div className="h-full flex flex-col p-6">
+                <SheetHeader className="mb-4">
+                    <SheetTitle>{t('conflicts.resolve_btn')}</SheetTitle>
+                </SheetHeader>
+                <div className="flex-1 overflow-hidden">
+                    {selectedConflictId && (
+                        <ConflictDiffViewer 
+                            conflictId={selectedConflictId} 
+                            onResolve={handleResolution}
+                        />
+                    )}
+                </div>
+            </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
