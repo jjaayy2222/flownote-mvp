@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { RefreshCw, CheckCircle2, XCircle, FileText, Server } from "lucide-react"
 import { ConflictResolver } from "@/components/dashboard/conflict-resolver"
 import { toast } from "sonner"
-import { useTranslations } from "next-intl"
+import { useTranslations, useLocale } from "next-intl"
 
 // Types
 interface SyncStatus {
@@ -46,6 +46,7 @@ const POLLING_INTERVAL = 5000;
 
 export function SyncMonitor() {
   const t = useTranslations('sync_monitor');
+  const locale = useLocale();
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [mcpStatus, setMcpStatus] = useState<MCPStatus | null>(null);
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
@@ -160,7 +161,12 @@ export function SyncMonitor() {
               <div className="flex justify-between items-center border-b pb-2">
                 <span className="text-sm font-medium text-muted-foreground">{t('connection.last_sync')}</span>
                 <span className="text-sm">
-                  {syncStatus?.last_sync ? new Date(syncStatus.last_sync).toLocaleString() : t('connection.never')}
+                  {syncStatus?.last_sync 
+                    ? new Intl.DateTimeFormat(locale, {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      }).format(new Date(syncStatus.last_sync))
+                    : t('connection.never')}
                 </span>
               </div>
               <div className="flex justify-between items-center pb-2">
@@ -237,7 +243,10 @@ export function SyncMonitor() {
                       </Badge>
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      {conflict.conflict_type} • {new Date(conflict.timestamp).toLocaleString()}
+                      {conflict.conflict_type} • {new Intl.DateTimeFormat(locale, {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      }).format(new Date(conflict.timestamp))}
                     </div>
                     {conflict.resolution_method && (
                        <div className="text-xs text-muted-foreground mt-1">
