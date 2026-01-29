@@ -14,9 +14,12 @@ import {
 } from "@/components/ui/sheet";
 import { NavItem } from "./nav-item";
 import { mainNavItems, settingsItems } from "@/config/navigation";
+import { useTranslations } from "next-intl";
 
 export function MobileNav() {
   const [open, setOpen] = React.useState(false);
+  const t = useTranslations('sidebar');
+  const tNav = useTranslations('navigation');
 
   return (
     <div className="md:hidden flex items-center p-4 border-b bg-white sticky top-0 z-50">
@@ -29,30 +32,30 @@ export function MobileNav() {
         </SheetTrigger>
         <SheetContent side="left" className="pr-0">
           <SheetHeader>
-            <SheetTitle className="text-left px-2">FlowNote</SheetTitle>
+            <SheetTitle className="text-left px-2">{t('title')}</SheetTitle>
           </SheetHeader>
           <div className="space-y-4 py-4">
              <div className="px-3 py-2">
               <div className="space-y-1">
                 {mainNavItems.map(item => (
-                  <NavItem key={item.href} {...item} onClick={() => setOpen(false)} />
+                  <NavItem key={item.href} {...item} label={tNav(item.label)} onClick={() => setOpen(false)} />
                 ))}
               </div>
             </div>
              <div className="px-3 py-2">
                <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">
-                Settings
+                {t('settings')}
               </h2>
               <div className="space-y-1">
                 {settingsItems.map(item => (
-                  <NavItem key={item.href} {...item} onClick={() => setOpen(false)} />
+                  <NavItem key={item.href} {...item} label={tNav(item.label)} onClick={() => setOpen(false)} />
                 ))}
               </div>
             </div>
           </div>
         </SheetContent>
       </Sheet>
-      <div className="font-semibold text-lg">FlowNote Dashboard</div>
+      <div className="font-semibold text-lg">{t('title')}</div>
     </div>
   );
 }

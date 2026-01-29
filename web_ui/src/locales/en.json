@@ -12,9 +12,49 @@
     "dashboard": "Dashboard",
     "graph": "Graph View",
     "stats": "Statistics",
-    "preferences": "Preferences"
+    "preferences": "Preferences",
+    "github": "GitHub"
   },
   "sidebar": {
+    "title": "FlowNote",
+    "settings": "Settings",
     "language": "Language"
+  },
+  "dashboard": {
+    "title": "FlowNote v6.0 - Phase 3: i18n",
+    "complete": "i18n infrastructure setup complete! ✅"
+  },
+  "sync_monitor": {
+    "title": "Sync Monitor",
+    "refresh": "Refresh",
+    "loading": "Loading sync status...",
+    "error_title": "Error",
+    "retry": "Retry",
+    "connection": {
+      "title": "Obsidian Connection",
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "vault_path": "Vault Path",
+      "last_sync": "Last Sync",
+      "never": "Never",
+      "total_files": "Total Files"
+    },
+    "mcp": {
+      "title": "MCP Server",
+      "running": "Running",
+      "stopped": "Stopped",
+      "active_clients": "Active Clients",
+      "no_clients": "No clients connected",
+      "registered_tools": "Registered Tools"
+    },
+    "conflicts": {
+      "title": "Conflict History",
+      "description": "Recent synchronization conflicts and their resolution status.",
+      "no_conflicts": "No conflicts detected. All systems normal.",
+      "resolve_btn": "Resolve",
+      "resolved_via": "Resolved via",
+      "resolved_toast": "Resolved conflict: Keeping {decision} version",
+      "file": "File"
+    }
   }
 }
