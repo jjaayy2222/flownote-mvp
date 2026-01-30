@@ -57,7 +57,6 @@ web_ui/src/
 │       ├── mobile-nav.tsx      # Mobile Navigation
 │       └── sidebar.tsx         # Desktop Sidebar
 └── config/
-└── config/
     └── navigation.ts           # Navigation Config (Menu Items)
 
 ### **2.3 Internationalization (i18n)** (New!)
