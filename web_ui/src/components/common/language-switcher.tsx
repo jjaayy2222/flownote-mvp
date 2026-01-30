@@ -1,7 +1,6 @@
-// web_ui/src/components/common/language-switcher.tsx
-
 'use client';
 
+import { Suspense } from 'react';
 import { useLocale } from 'next-intl';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -10,7 +9,7 @@ import { type Locale, localeNames, locales } from '@/i18n/config';
 
 import { createPathWithLocale } from '@/lib/i18n-utils';
 
-export function LanguageSwitcher({ className }: { className?: string }) {
+function LanguageSwitcherContent({ className }: { className?: string }) {
   const locale = useLocale();
   const router = useRouter();
   const pathname = usePathname();
@@ -48,5 +47,13 @@ export function LanguageSwitcher({ className }: { className?: string }) {
         </Button>
       ))}
     </div>
+  );
+}
+
+export function LanguageSwitcher(props: { className?: string }) {
+  return (
+    <Suspense fallback={<div className="h-9 w-[120px] animate-pulse bg-slate-100 rounded-md" />}>
+      <LanguageSwitcherContent {...props} />
+    </Suspense>
   );
 }
