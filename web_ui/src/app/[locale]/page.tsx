@@ -3,13 +3,12 @@
 import { getTranslations } from 'next-intl/server';
 
 export default async function HomePage() {
-  const t = await getTranslations('common');
+  const t = await getTranslations('dashboard');
 
   return (
     <div className="p-8">
-      <h1 className="text-2xl font-bold mb-4">FlowNote v6.0 - Phase 3: i18n</h1>
-      <p className="mb-2">{t('loading')}</p>
-      <p className="text-green-600">i18n infrastructure setup complete! ✅</p>
+      <h1 className="text-2xl font-bold mb-4">{t('title')}</h1>
+      <p className="text-green-600">{t('complete')}</p>
     </div>
   );
 }
