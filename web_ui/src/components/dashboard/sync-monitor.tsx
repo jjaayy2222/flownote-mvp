@@ -15,7 +15,7 @@ import { toast } from "sonner"
 import { useTranslations, useLocale } from "next-intl"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { ConflictDiffViewer } from "@/components/sync/ConflictDiffViewer"
-import { type ConflictResolutionStrategy, CONFLICT_STATUS } from '@/types/sync';
+import { type ConflictResolutionStrategy, CONFLICT_STATUS, CONFLICT_RESOLUTION_STRATEGIES } from '@/types/sync';
 
 // Types
 interface SyncStatus {
@@ -146,7 +146,20 @@ export function SyncMonitor() {
             method: 'POST',
         });
         
-        toast.success(t('conflicts.resolved_toast', { decision: strategy }), {
+        let decisionLabel: string = strategy;
+        switch (strategy) {
+          case CONFLICT_RESOLUTION_STRATEGIES.KEEP_LOCAL:
+            decisionLabel = t('conflicts.strategies.keep_local');
+            break;
+          case CONFLICT_RESOLUTION_STRATEGIES.KEEP_REMOTE:
+            decisionLabel = t('conflicts.strategies.keep_remote');
+            break;
+          case CONFLICT_RESOLUTION_STRATEGIES.KEEP_BOTH:
+            decisionLabel = t('conflicts.strategies.keep_both');
+            break;
+        }
+
+        toast.success(t('conflicts.resolved_toast', { decision: decisionLabel }), {
             description: `${t('conflicts.file')}: ${selectedConflictId}`
         });
         
