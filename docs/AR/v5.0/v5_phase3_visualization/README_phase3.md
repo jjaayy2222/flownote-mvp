@@ -68,6 +68,10 @@ web_ui/src/
         - **Language Switcher**: 현재 페이지 및 쿼리 파라미터를 유지하며 즉시 언어 전환
         - **Component Translations**: Sidebar, MobileNav, Dashboard, SyncMonitor 등 주요 UI 다국어화
         - **Locale-aware Formatting**: 날짜(`Intl.DateTimeFormat`) 및 숫자 자동 포맷팅
+    - **Translation Namespaces**:
+        - `common`, `navigation`: 공통 UI 요소
+        - `dashboard`, `stats`, `graph`: 페이지별 콘텐츠
+        - `sync_monitor`: 동기화 및 충돌 해결 전략
 ```
 
 ## 🚀 Testing Features
