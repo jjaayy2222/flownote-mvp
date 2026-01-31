@@ -70,8 +70,9 @@
       "file": "File",
       "strategies": {
         "keep_local": "Keep Local",
-        "keep_remote": "Keep Remote",
-        "keep_both": "Keep Both"
+        "keep_remote": "Keep Remote", 
+        "keep_both": "Keep Both",
+        "unknown": "Unknown Strategy"
       }
     }
   }
