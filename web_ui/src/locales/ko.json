@@ -6,7 +6,9 @@
     "cancel": "취소",
     "delete": "삭제",
     "confirm": "확인",
-    "close": "닫기"
+    "close": "닫기",
+    "reset": "뷰 초기화",
+    "legend": "범례"
   },
   "navigation": {
     "dashboard": "대시보드",
@@ -25,11 +27,7 @@
     "complete": "다국어 인프라 설정 완료! ✅"
   },
   "graph": {
-    "title": "PARA 그래프 뷰",
-    "controls": {
-      "reset": "뷰 초기화",
-      "legend": "범례"
-    }
+    "title": "PARA 그래프 뷰"
   },
   "stats": {
     "title": "통계",
@@ -71,9 +69,9 @@
       "resolved_toast": "충돌 해결됨: {decision} 버전을 유지합니다",
       "file": "파일",
       "strategies": {
-        "local": "로컬 유지",
-        "remote": "원격 유지",
-        "both": "둘 다 유지"
+        "keep_local": "로컬 유지",
+        "keep_remote": "원격 유지",
+        "keep_both": "둘 다 유지"
       }
     }
   }
