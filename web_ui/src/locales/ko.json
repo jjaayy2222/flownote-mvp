@@ -24,6 +24,21 @@
     "title": "FlowNote v6.0 - 3단계: 다국어(i18n) 적용",
     "complete": "다국어 인프라 설정 완료! ✅"
   },
+  "graph": {
+    "title": "PARA 그래프 뷰",
+    "controls": {
+      "reset": "뷰 초기화",
+      "legend": "범례"
+    }
+  },
+  "stats": {
+    "title": "통계",
+    "charts": {
+      "activity": "활동 히트맵",
+      "trend": "주간 트렌드",
+      "distribution": "PARA 분포"
+    }
+  },
   "sync_monitor": {
     "title": "동기화 모니터",
     "refresh": "새로고침",
@@ -54,7 +69,12 @@
       "resolve_btn": "해결",
       "resolved_via": "해결 방법",
       "resolved_toast": "충돌 해결됨: {decision} 버전을 유지합니다",
-      "file": "파일"
+      "file": "파일",
+      "strategies": {
+        "local": "로컬 유지",
+        "remote": "원격 유지",
+        "both": "둘 다 유지"
+      }
     }
   }
 }

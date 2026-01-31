@@ -24,6 +24,21 @@
     "title": "FlowNote v6.0 - Phase 3: i18n",
     "complete": "i18n infrastructure setup complete! ✅"
   },
+  "graph": {
+    "title": "PARA Graph View",
+    "controls": {
+      "reset": "Reset View",
+      "legend": "Legend"
+    }
+  },
+  "stats": {
+    "title": "Statistics",
+    "charts": {
+      "activity": "Activity Heatmap",
+      "trend": "Weekly Trend",
+      "distribution": "PARA Distribution"
+    }
+  },
   "sync_monitor": {
     "title": "Sync Monitor",
     "refresh": "Refresh",
@@ -54,7 +69,12 @@
       "resolve_btn": "Resolve",
       "resolved_via": "Resolved via",
       "resolved_toast": "Resolved conflict: Keeping {decision} version",
-      "file": "File"
+      "file": "File",
+      "strategies": {
+        "local": "Keep Local",
+        "remote": "Keep Remote",
+        "both": "Keep Both"
+      }
     }
   }
 }
