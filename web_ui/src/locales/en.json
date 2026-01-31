@@ -6,7 +6,9 @@
     "cancel": "Cancel",
     "delete": "Delete",
     "confirm": "Confirm",
-    "close": "Close"
+    "close": "Close",
+    "reset": "Reset View",
+    "legend": "Legend"
   },
   "navigation": {
     "dashboard": "Dashboard",
@@ -25,11 +27,7 @@
     "complete": "i18n infrastructure setup complete! ✅"
   },
   "graph": {
-    "title": "PARA Graph View",
-    "controls": {
-      "reset": "Reset View",
-      "legend": "Legend"
-    }
+    "title": "PARA Graph View"
   },
   "stats": {
     "title": "Statistics",
@@ -71,9 +69,9 @@
       "resolved_toast": "Resolved conflict: Keeping {decision} version",
       "file": "File",
       "strategies": {
-        "local": "Keep Local",
-        "remote": "Keep Remote",
-        "both": "Keep Both"
+        "keep_local": "Keep Local",
+        "keep_remote": "Keep Remote",
+        "keep_both": "Keep Both"
       }
     }
   }
