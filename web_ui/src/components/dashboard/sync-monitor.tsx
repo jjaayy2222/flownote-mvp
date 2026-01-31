@@ -1,4 +1,4 @@
-// web_ui/src/components/dashboard/sync-monitor.tsx
+// web_ui/src/components/dashboard/sync-monitor.tsx 
 
 "use client"
 
