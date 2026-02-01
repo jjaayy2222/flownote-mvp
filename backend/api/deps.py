@@ -92,36 +92,60 @@ def get_locale(
     accept_language: Optional[str] = Header(default=None, alias="Accept-Language")
 ) -> str:
     """
-    Parses the Accept-Language header to determine the preferred locale.
-    Handles q-factors (quality values) and fallback to default locale.
-    Example header: "fr-CH, fr;q=0.9, en;q=0.8, de;q=0.7, *;q=0.5"
+    Parses Accept-Language header to determine preferred locale.
+    Handles q-factors (quality values), additional parameters, and fallback.
     """
     if not accept_language:
         return DEFAULT_LOCALE
 
-    # Parse languages and q-values
-    languages = []
+    # Map primary language to its highest q-value found for deduplication
+    lang_map = {}
+
     for part in accept_language.split(","):
         part = part.strip()
         if not part:
             continue
 
-        if ";q=" in part:
-            part_split = part.split(";q=")
-            lang = part_split[0]
-            try:
-                q_value = float(part_split[1])
-            except ValueError:
-                q_value = 1.0  # Default fallback if parsing fails
-        else:
-            lang = part
-            q_value = 1.0
+        # Split off parameters, e.g. "en-US;q=0.8;v=1" -> ["en-US", "q=0.8", "v=1"]
+        segments = [segment.strip() for segment in part.split(";") if segment.strip()]
+        if not segments:
+            continue
+
+        lang = segments[0]
+        params = segments[1:]
+
+        # Default q-value is 1.0 if not specified
+        q_value = 1.0
+
+        for param in params:
+            # Check for q-factor parameter
+            if param.lower().startswith("q="):
+                try:
+                    parts = param.split("=", 1)
+                    if len(parts) == 2:
+                        raw_q = parts[1].strip()
+                        if raw_q:
+                            q_value = float(raw_q)
+                        else:
+                            q_value = 0.0  # Empty value treating as lowest priority
+                    else:
+                        q_value = 0.0  # Malformed
+                except ValueError:
+                    q_value = 0.0  # Parsing failed
+
+                # Once we found the q parameter (valid or not), we stop looking for it in this part
+                break
 
         # Normalize: "en-US" -> "en"
         primary_lang = lang.split("-")[0].strip()
-        languages.append((primary_lang, q_value))
 
-    # Sort by q-value descending
+        if primary_lang:
+            # Keep the highest q-value for this language
+            current_max = lang_map.get(primary_lang, 0.0)
+            lang_map[primary_lang] = max(current_max, q_value)
+
+    # Convert to list and sort by q-value descending
+    languages = list(lang_map.items())
     languages.sort(key=lambda x: x[1], reverse=True)
 
     # Find first supported locale
