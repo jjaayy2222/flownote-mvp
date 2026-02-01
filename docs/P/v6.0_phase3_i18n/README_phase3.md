@@ -389,12 +389,12 @@ npm run test:i18n
 ## 📊 번역 완료율
 
 ### Frontend
-- [ ] Navigation (100%)
-- [ ] Dashboard (100%)
-- [ ] Graph View (100%)
-- [ ] Stats (100%)
-- [ ] Settings (100%)
-- [ ] Error Messages (100%)
+- [x] Navigation (100%)
+- [x] Dashboard (100%)
+- [x] Graph View (100%)
+- [x] Stats (100%)
+- [x] Settings (100%)
+- [x] Error Messages (100%)
 
 ### Backend
 - [ ] API 응답 메시지 (100%)
