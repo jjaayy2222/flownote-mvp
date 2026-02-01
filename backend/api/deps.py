@@ -2,8 +2,17 @@
 
 import os
 from typing import Optional, Dict, Any, Callable, Union
-from fastapi import Depends, HTTPException, status, WebSocket, Query, WebSocketException
+from fastapi import (
+    Depends,
+    HTTPException,
+    status,
+    WebSocket,
+    Query,
+    WebSocketException,
+    Header,
+)
 from fastapi.security import OAuth2PasswordBearer
+from backend.services.i18n_service import SUPPORTED_LOCALES, DEFAULT_LOCALE
 
 # OAuth2 스키마 정의
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -77,3 +86,25 @@ async def get_current_user_ws(
     # TODO: [Phase 2] Verify token logic
 
     return MOCK_REGULAR_USER
+
+
+def get_locale(
+    accept_language: str = Header(default=DEFAULT_LOCALE, alias="Accept-Language")
+) -> str:
+    """
+    Parses the Accept-Language header to determine the preferred locale.
+    Returns the first matching supported locale or the default locale.
+    """
+    if not accept_language:
+        return DEFAULT_LOCALE
+
+    # e.g. "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
+    # Simple parsing: check the first preferred language
+    preferred = accept_language.split(",")[0].strip()
+    # Handle "ko-KR" -> "ko"
+    primary_tag = preferred.split("-")[0]
+
+    if primary_tag in SUPPORTED_LOCALES:
+        return primary_tag
+
+    return DEFAULT_LOCALE
