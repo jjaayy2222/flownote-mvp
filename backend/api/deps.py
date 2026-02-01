@@ -116,6 +116,7 @@ def get_locale(
 
         # Default q-value is 1.0 if not specified
         q_value = 1.0
+        is_valid_q = True
 
         for param in params:
             # Check for q-factor parameter
@@ -130,19 +131,23 @@ def get_locale(
                             if 0.0 <= parsed_q <= 1.0:
                                 q_value = parsed_q
                             else:
-                                q_value = 0.0  # Out of range -> lowest priority
+                                is_valid_q = False  # Out of range -> invalidate entry
                         else:
-                            q_value = 0.0  # Empty value
+                            is_valid_q = False  # Empty value -> invalidate entry
                     else:
-                        q_value = 0.0  # Malformed
+                        is_valid_q = False  # Malformed
                 except ValueError:
-                    q_value = 0.0  # Parsing failed
+                    is_valid_q = False  # Parsing failed
 
                 # Once we found the q parameter (valid or not), we stop looking for it in this part
                 break
 
+        if not is_valid_q:
+            continue  # Skip invalid entry
+
         # Normalize: "en-US" -> "en"
-        # Note: We prioritize the primary tag because our SUPPORTED_LOCALES rely on generic codes ('en', 'ko').
+        # Note: We prioritize the primary tag. If the mapped primary tag is not in SUPPORTED_LOCALES,
+        # it will be skipped during the final matching loop, falling back to DEFAULT_LOCALE.
         primary_lang = lang.split("-")[0].strip()
 
         if primary_lang:
