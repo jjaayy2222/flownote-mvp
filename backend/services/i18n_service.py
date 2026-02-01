@@ -1,6 +1,10 @@
 # backend/services/i18n_service.py
 
+import logging
 from typing import Dict, Any
+
+# Setup logger for i18n debugging
+logger = logging.getLogger(__name__)
 
 MESSAGES: Dict[str, Dict[str, str]] = {
     "ko": {
@@ -29,6 +33,7 @@ def get_message(key: str, locale: str = DEFAULT_LOCALE, **kwargs: Any) -> str:
     """
     Retrieve a localized message based on the key and locale.
     Supports simple string formatting using kwargs.
+    Logs a warning if formatting parameters are missing.
     """
     if locale not in SUPPORTED_LOCALES:
         locale = DEFAULT_LOCALE
@@ -42,5 +47,10 @@ def get_message(key: str, locale: str = DEFAULT_LOCALE, **kwargs: Any) -> str:
 
     try:
         return template.format(**kwargs)
-    except KeyError:
-        return template  # Return template as-is if formatting fails
+    except KeyError as e:
+        # Log the error to aid debugging without crashing the request
+        logger.warning(
+            f"[i18n] Failed to format message. Key: '{key}', Locale: '{locale}', "
+            f"Error: Missing placeholder {e}. Returning raw template."
+        )
+        return template
