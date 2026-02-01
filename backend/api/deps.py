@@ -89,22 +89,44 @@ async def get_current_user_ws(
 
 
 def get_locale(
-    accept_language: str = Header(default=DEFAULT_LOCALE, alias="Accept-Language")
+    accept_language: Optional[str] = Header(default=None, alias="Accept-Language")
 ) -> str:
     """
     Parses the Accept-Language header to determine the preferred locale.
-    Returns the first matching supported locale or the default locale.
+    Handles q-factors (quality values) and fallback to default locale.
+    Example header: "fr-CH, fr;q=0.9, en;q=0.8, de;q=0.7, *;q=0.5"
     """
     if not accept_language:
         return DEFAULT_LOCALE
 
-    # e.g. "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
-    # Simple parsing: check the first preferred language
-    preferred = accept_language.split(",")[0].strip()
-    # Handle "ko-KR" -> "ko"
-    primary_tag = preferred.split("-")[0]
+    # Parse languages and q-values
+    languages = []
+    for part in accept_language.split(","):
+        part = part.strip()
+        if not part:
+            continue
 
-    if primary_tag in SUPPORTED_LOCALES:
-        return primary_tag
+        if ";q=" in part:
+            part_split = part.split(";q=")
+            lang = part_split[0]
+            try:
+                q_value = float(part_split[1])
+            except ValueError:
+                q_value = 1.0  # Default fallback if parsing fails
+        else:
+            lang = part
+            q_value = 1.0
+
+        # Normalize: "en-US" -> "en"
+        primary_lang = lang.split("-")[0].strip()
+        languages.append((primary_lang, q_value))
+
+    # Sort by q-value descending
+    languages.sort(key=lambda x: x[1], reverse=True)
+
+    # Find first supported locale
+    for lang, _ in languages:
+        if lang in SUPPORTED_LOCALES:
+            return lang
 
     return DEFAULT_LOCALE
