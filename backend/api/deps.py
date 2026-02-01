@@ -88,6 +88,54 @@ async def get_current_user_ws(
     return MOCK_REGULAR_USER
 
 
+def _parse_language_entry(part: str) -> Optional[tuple[str, float]]:
+    """
+    Helper to parse a single Accept-Language entry.
+    Returns (primary_lang, q_value) tuple, or None if the entry is invalid.
+    """
+    part = part.strip()
+    if not part:
+        return None
+
+    # Split off parameters, e.g. "en-US;q=0.8;v=1" -> ["en-US", "q=0.8", "v=1"]
+    segments = [s.strip() for s in part.split(";") if s.strip()]
+    if not segments:
+        return None
+
+    lang = segments[0]
+    params = segments[1:]
+    q_value = 1.0
+
+    for param in params:
+        # Check for q-factor parameter
+        if param.lower().startswith("q="):
+            try:
+                parts = param.split("=", 1)
+                if len(parts) != 2:
+                    return None  # Malformed q-parameter
+
+                raw_q = parts[1].strip()
+                if not raw_q:
+                    return None  # Empty value
+
+                parsed_q = float(raw_q)
+                # RFC 7231: q-value must be in range [0.0, 1.0]
+                if 0.0 <= parsed_q <= 1.0:
+                    q_value = parsed_q
+                    break  # Valid q found, stop scanning parameters
+                else:
+                    return None  # Out of range
+            except ValueError:
+                return None  # Parsing failed
+
+    # Normalize: "en-US" -> "en"
+    primary_lang = lang.split("-")[0].strip()
+    if not primary_lang:
+        return None
+
+    return primary_lang, q_value
+
+
 def get_locale(
     accept_language: Optional[str] = Header(default=None, alias="Accept-Language")
 ) -> str:
@@ -102,58 +150,15 @@ def get_locale(
     lang_map = {}
 
     for part in accept_language.split(","):
-        part = part.strip()
-        if not part:
+        entry = _parse_language_entry(part)
+        if not entry:
             continue
 
-        # Split off parameters, e.g. "en-US;q=0.8;v=1" -> ["en-US", "q=0.8", "v=1"]
-        segments = [segment.strip() for segment in part.split(";") if segment.strip()]
-        if not segments:
-            continue
+        primary_lang, q_value = entry
 
-        lang = segments[0]
-        params = segments[1:]
-
-        # Default q-value is 1.0 if not specified
-        q_value = 1.0
-        is_valid_q = True
-
-        for param in params:
-            # Check for q-factor parameter
-            if param.lower().startswith("q="):
-                try:
-                    parts = param.split("=", 1)
-                    if len(parts) == 2:
-                        raw_q = parts[1].strip()
-                        if raw_q:
-                            parsed_q = float(raw_q)
-                            # RFC 7231: q-value must be in range [0.0, 1.0]
-                            if 0.0 <= parsed_q <= 1.0:
-                                q_value = parsed_q
-                            else:
-                                is_valid_q = False  # Out of range -> invalidate entry
-                        else:
-                            is_valid_q = False  # Empty value -> invalidate entry
-                    else:
-                        is_valid_q = False  # Malformed
-                except ValueError:
-                    is_valid_q = False  # Parsing failed
-
-                # Once we found the q parameter (valid or not), we stop looking for it in this part
-                break
-
-        if not is_valid_q:
-            continue  # Skip invalid entry
-
-        # Normalize: "en-US" -> "en"
-        # Note: We prioritize the primary tag. If the mapped primary tag is not in SUPPORTED_LOCALES,
-        # it will be skipped during the final matching loop, falling back to DEFAULT_LOCALE.
-        primary_lang = lang.split("-")[0].strip()
-
-        if primary_lang:
-            # Keep the highest q-value for this language
-            current_max = lang_map.get(primary_lang, 0.0)
-            lang_map[primary_lang] = max(current_max, q_value)
+        # Keep the highest q-value for this language
+        current_max = lang_map.get(primary_lang, 0.0)
+        lang_map[primary_lang] = max(current_max, q_value)
 
     # Convert to list and sort by q-value descending
     languages = list(lang_map.items())
