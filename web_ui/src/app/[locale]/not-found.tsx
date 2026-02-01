@@ -1,15 +1,8 @@
 // web_ui/src/app/[locale]/not-found.tsx
+
 import { getTranslations } from 'next-intl/server';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-
-export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
-  const { locale } = await params;
-  const t = await getTranslations({ locale, namespace: 'common.not_found' });
-  return {
-    title: t('title')
-  };
-}
 
 export default async function NotFoundPage() {
   const t = await getTranslations('common.not_found');
