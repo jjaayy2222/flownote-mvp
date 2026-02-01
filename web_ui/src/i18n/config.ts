@@ -9,3 +9,7 @@ export const localeNames: Record<Locale, string> = {
   ko: '한국어',
   en: 'English'
 };
+
+export function isValidLocale(locale: unknown): locale is Locale {
+  return locales.includes(locale as Locale);
+}
