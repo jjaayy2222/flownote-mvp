@@ -10,6 +10,6 @@ export const localeNames: Record<Locale, string> = {
   en: 'English'
 };
 
-export function isValidLocale(locale: unknown): locale is Locale {
-  return locales.includes(locale as Locale);
+export function isValidLocale(locale: string | undefined | null): locale is Locale {
+  return typeof locale === 'string' && (locales as readonly string[]).includes(locale);
 }
