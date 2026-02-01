@@ -75,5 +75,9 @@
         "unknown": "Unknown Strategy"
       }
     }
+  },
+  "metadata": {
+    "title": "FlowNote - AI Knowledge System",
+    "description": "AI-powered Knowledge Management System based on PARA method."
   }
 }
