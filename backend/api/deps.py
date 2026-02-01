@@ -1,7 +1,7 @@
 # backend/api/deps.py
 
 import os
-from typing import Optional, Dict, Any, Callable, Union
+from typing import Optional, Dict, Any, Callable, Union, NamedTuple
 from fastapi import (
     Depends,
     HTTPException,
@@ -88,10 +88,16 @@ async def get_current_user_ws(
     return MOCK_REGULAR_USER
 
 
-def _parse_language_entry(part: str) -> Optional[tuple[str, str, float]]:
+class LanguageEntry(NamedTuple):
+    full_tag: str
+    primary_tag: str
+    q_value: float
+
+
+def _parse_language_entry(part: str) -> Optional[LanguageEntry]:
     """
     Helper to parse a single Accept-Language entry.
-    Returns (full_tag, primary_tag, q_value) tuple, or None if the entry is invalid.
+    Returns LanguageEntry(full_tag, primary_tag, q_value) or None if invalid.
     Wildcard '*' is explicitly ignored to enforce concrete language matching.
     """
     part = part.strip()
@@ -139,7 +145,7 @@ def _parse_language_entry(part: str) -> Optional[tuple[str, str, float]]:
     if not primary_lang:
         return None
 
-    return lang, primary_lang, q_value
+    return LanguageEntry(full_tag=lang, primary_tag=primary_lang, q_value=q_value)
 
 
 def get_locale(
@@ -160,12 +166,9 @@ def get_locale(
         if not entry:
             continue
 
-        # We retrieve full_tag for potential future use, but currently match based on primary_lang
-        _, primary_lang, q_value = entry
-
         # Keep the highest q-value for this language
-        current_max = lang_map.get(primary_lang, 0.0)
-        lang_map[primary_lang] = max(current_max, q_value)
+        current_max = lang_map.get(entry.primary_tag, 0.0)
+        lang_map[entry.primary_tag] = max(current_max, entry.q_value)
 
     # Convert to list and sort by q-value descending
     languages = list(lang_map.items())
