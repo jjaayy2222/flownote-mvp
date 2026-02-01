@@ -3,7 +3,7 @@
 import { NextIntlClientProvider } from 'next-intl';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { locales, type Locale } from '@/i18n/config';
+import { locales, isValidLocale } from '@/i18n/config';
 import { Sidebar } from "@/components/layout/sidebar";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { Toaster } from "@/components/ui/sonner";
@@ -48,7 +48,7 @@ export default async function LocaleLayout({
 }) {
   const { locale } = await params;
   
-  if (!locales.includes(locale as Locale)) {
+  if (!isValidLocale(locale)) {
     notFound();
   }
 
