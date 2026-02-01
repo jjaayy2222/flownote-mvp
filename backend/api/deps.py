@@ -88,10 +88,11 @@ async def get_current_user_ws(
     return MOCK_REGULAR_USER
 
 
-def _parse_language_entry(part: str) -> Optional[tuple[str, float]]:
+def _parse_language_entry(part: str) -> Optional[tuple[str, str, float]]:
     """
     Helper to parse a single Accept-Language entry.
-    Returns (primary_lang, q_value) tuple, or None if the entry is invalid.
+    Returns (full_tag, primary_tag, q_value) tuple, or None if the entry is invalid.
+    Wildcard '*' is explicitly ignored to enforce concrete language matching.
     """
     part = part.strip()
     if not part:
@@ -103,6 +104,11 @@ def _parse_language_entry(part: str) -> Optional[tuple[str, float]]:
         return None
 
     lang = segments[0]
+
+    # Explicitly ignore wildcard '*' as we require concrete supported languages
+    if lang == "*":
+        return None
+
     params = segments[1:]
     q_value = 1.0
 
@@ -133,7 +139,7 @@ def _parse_language_entry(part: str) -> Optional[tuple[str, float]]:
     if not primary_lang:
         return None
 
-    return primary_lang, q_value
+    return lang, primary_lang, q_value
 
 
 def get_locale(
@@ -154,7 +160,8 @@ def get_locale(
         if not entry:
             continue
 
-        primary_lang, q_value = entry
+        # We retrieve full_tag for potential future use, but currently match based on primary_lang
+        _, primary_lang, q_value = entry
 
         # Keep the highest q-value for this language
         current_max = lang_map.get(primary_lang, 0.0)
