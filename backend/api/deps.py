@@ -125,9 +125,14 @@ def get_locale(
                     if len(parts) == 2:
                         raw_q = parts[1].strip()
                         if raw_q:
-                            q_value = float(raw_q)
+                            parsed_q = float(raw_q)
+                            # RFC 7231: q-value must be in range [0.0, 1.0]
+                            if 0.0 <= parsed_q <= 1.0:
+                                q_value = parsed_q
+                            else:
+                                q_value = 0.0  # Out of range -> lowest priority
                         else:
-                            q_value = 0.0  # Empty value treating as lowest priority
+                            q_value = 0.0  # Empty value
                     else:
                         q_value = 0.0  # Malformed
                 except ValueError:
@@ -137,6 +142,7 @@ def get_locale(
                 break
 
         # Normalize: "en-US" -> "en"
+        # Note: We prioritize the primary tag because our SUPPORTED_LOCALES rely on generic codes ('en', 'ko').
         primary_lang = lang.split("-")[0].strip()
 
         if primary_lang:
