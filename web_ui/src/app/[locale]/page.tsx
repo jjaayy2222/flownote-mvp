@@ -2,8 +2,9 @@
 
 import { getTranslations } from 'next-intl/server';
 import { SyncMonitor } from '@/components/dashboard/sync-monitor';
+import { type Locale } from '@/i18n/config';
 
-export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
+export async function generateMetadata({ params }: { params: Promise<{ locale: Locale }> }) {
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: 'dashboard' });
   return {
