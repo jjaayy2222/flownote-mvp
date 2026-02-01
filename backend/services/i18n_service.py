@@ -47,10 +47,10 @@ def get_message(key: str, locale: str = DEFAULT_LOCALE, **kwargs: Any) -> str:
 
     try:
         return template.format(**kwargs)
-    except KeyError as e:
+    except (KeyError, ValueError, IndexError) as e:
         # Log the error to aid debugging without crashing the request
         logger.warning(
             f"[i18n] Failed to format message. Key: '{key}', Locale: '{locale}', "
-            f"Error: Missing placeholder {e}. Returning raw template."
+            f"Error: {e} ({type(e).__name__}). Returning raw template."
         )
         return template
