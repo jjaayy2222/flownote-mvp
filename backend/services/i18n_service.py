@@ -22,6 +22,11 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         "search_results": "{count}개의 검색 결과를 찾았습니다",
         "metadata_updated": "메타데이터가 업데이트되었습니다",
         "metadata_fetched": "메타데이터를 조회했습니다",
+        # Error Messages
+        "bad_request": "잘못된 요청입니다",
+        "forbidden": "접근 권한이 없습니다",
+        "validation_error": "입력값 검증 실패: {detail}",
+        "method_not_allowed": "허용되지 않은 메서드입니다",
     },
     "en": {
         "file_classified": "File classified as {category}.",
@@ -38,6 +43,11 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         "search_results": "Found {count} search results",
         "metadata_updated": "Metadata updated",
         "metadata_fetched": "Metadata fetched",
+        # Error Messages
+        "bad_request": "Bad request",
+        "forbidden": "Access forbidden",
+        "validation_error": "Validation failed: {detail}",
+        "method_not_allowed": "Method not allowed",
     },
 }
 
