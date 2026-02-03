@@ -14,6 +14,13 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         "not_found": "리소스를 찾을 수 없습니다.",
         "unauthorized": "인증되지 않은 접근입니다.",
         "server_error": "서버 내부 오류가 발생했습니다.",
+        # API Endpoint Messages
+        "file_processing": "파일 처리 중: {filename}",
+        "file_upload_success": "파일이 성공적으로 업로드되었습니다: {filename}",
+        "file_upload_failed": "파일 업로드 실패: {error}",
+        "status_ok": "서버가 정상 작동 중입니다",
+        "search_results": "{count}개의 검색 결과를 찾았습니다",
+        "metadata_updated": "메타데이터가 업데이트되었습니다",
     },
     "en": {
         "file_classified": "File classified as {category}.",
@@ -22,6 +29,13 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         "not_found": "Resource not found.",
         "unauthorized": "Unauthorized access.",
         "server_error": "Internal server error.",
+        # API Endpoint Messages
+        "file_processing": "Processing file: {filename}",
+        "file_upload_success": "File uploaded successfully: {filename}",
+        "file_upload_failed": "File upload failed: {error}",
+        "status_ok": "Server is running",
+        "search_results": "Found {count} search results",
+        "metadata_updated": "Metadata updated",
     },
 }
 
