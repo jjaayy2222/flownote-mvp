@@ -27,6 +27,7 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         "forbidden": "접근 권한이 없습니다",
         "validation_error": "입력값 검증 실패: {detail}",
         "method_not_allowed": "허용되지 않은 메서드입니다",
+        "payload_too_large": "업로드 파일 크기가 제한을 초과했습니다 (최대: {max_size}MB)",
     },
     "en": {
         "file_classified": "File classified as {category}.",
@@ -48,6 +49,7 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         "forbidden": "Access forbidden",
         "validation_error": "Validation failed: {detail}",
         "method_not_allowed": "Method not allowed",
+        "payload_too_large": "File size exceeds the limit (max: {max_size}MB)",
     },
 }
 
