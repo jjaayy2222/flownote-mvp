@@ -148,35 +148,49 @@ def _parse_language_entry(part: str) -> Optional[LanguageEntry]:
     return LanguageEntry(full_tag=lang, primary_tag=primary_lang, q_value=q_value)
 
 
-def get_locale(
-    accept_language: Optional[str] = Header(default=None, alias="Accept-Language")
-) -> str:
+def extract_locale_from_header(accept_language: Optional[str]) -> str:
     """
-    Parses Accept-Language header to determine preferred locale.
-    Handles q-factors (quality values), additional parameters, and fallback.
+    Extract locale from Accept-Language header string.
+    This is a public utility that can be used outside of FastAPI dependency injection.
+
+    Args:
+        accept_language: Accept-Language header value
+
+    Returns:
+        Locale string (e.g., "ko", "en") or DEFAULT_LOCALE if none found
     """
     if not accept_language:
         return DEFAULT_LOCALE
 
-    # Map primary language to its highest q-value found for deduplication
-    lang_map = {}
-
+    # Parse all language entries and build a map: primary_tag -> highest q_value
+    lang_map: Dict[str, float] = {}
     for part in accept_language.split(","):
         entry = _parse_language_entry(part)
         if not entry:
             continue
 
-        # Keep the highest q-value for this language
-        current_max = lang_map.get(entry.primary_tag, 0.0)
-        lang_map[entry.primary_tag] = max(current_max, entry.q_value)
+        # Keep only the highest q-value for each primary language
+        if (
+            entry.primary_tag not in lang_map
+            or entry.q_value > lang_map[entry.primary_tag]
+        ):
+            lang_map[entry.primary_tag] = entry.q_value
 
-    # Convert to list and sort by q-value descending
-    languages = list(lang_map.items())
-    languages.sort(key=lambda x: x[1], reverse=True)
-
-    # Find first supported locale
-    for lang, _ in languages:
+    # Sort by q-value (descending) and find first supported locale
+    sorted_langs = sorted(lang_map.items(), key=lambda x: x[1], reverse=True)
+    for lang, _ in sorted_langs:
         if lang in SUPPORTED_LOCALES:
             return lang
 
+    # Fallback to default if no supported locale found
     return DEFAULT_LOCALE
+
+
+def get_locale(
+    accept_language: Optional[str] = Header(default=None, alias="Accept-Language")
+) -> str:
+    """
+    FastAPI dependency to extract locale from Accept-Language header.
+    Uses extract_locale_from_header internally.
+    """
+    return extract_locale_from_header(accept_language)

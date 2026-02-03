@@ -37,25 +37,11 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 
     Accept-Language 헤더를 기반으로 에러 메시지를 현지화합니다.
     """
-    from .deps import get_locale
+    from .deps import extract_locale_from_header
 
-    # Extract locale from request headers
+    # Extract locale from request headers using centralized utility
     accept_language = request.headers.get("Accept-Language")
-    locale = DEFAULT_LOCALE
-
-    # Simple locale extraction (reuse logic from deps.py would be better)
-    if accept_language:
-        try:
-            # Use the get_locale dependency logic
-            from .deps import _parse_language_entry, SUPPORTED_LOCALES
-
-            for part in accept_language.split(","):
-                entry = _parse_language_entry(part)
-                if entry and entry.primary_tag in SUPPORTED_LOCALES:
-                    locale = entry.primary_tag
-                    break
-        except Exception:
-            pass  # Fallback to default locale
+    locale = extract_locale_from_header(accept_language)
 
     # Map status codes to message keys
     status_to_key = {
@@ -64,6 +50,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         403: "forbidden",
         404: "not_found",
         405: "method_not_allowed",
+        413: "payload_too_large",
         422: "validation_error",
         500: "server_error",
     }
@@ -72,7 +59,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 
     # If we have a predefined message key, use it; otherwise use the original detail
     if message_key:
-        detail = get_message(message_key, locale, detail=str(exc.detail))
+        detail = get_message(message_key, locale)
     else:
         detail = exc.detail
 
@@ -89,25 +76,14 @@ async def validation_exception_handler(
     Pydantic 검증 오류 핸들러 (다국어 지원)
     """
     from fastapi.exceptions import RequestValidationError
+    from .deps import extract_locale_from_header
 
     if not isinstance(exc, RequestValidationError):
         raise exc
 
-    # Extract locale
+    # Extract locale using centralized utility
     accept_language = request.headers.get("Accept-Language")
-    locale = DEFAULT_LOCALE
-
-    if accept_language:
-        try:
-            from .deps import _parse_language_entry, SUPPORTED_LOCALES
-
-            for part in accept_language.split(","):
-                entry = _parse_language_entry(part)
-                if entry and entry.primary_tag in SUPPORTED_LOCALES:
-                    locale = entry.primary_tag
-                    break
-        except Exception:
-            pass
+    locale = extract_locale_from_header(accept_language)
 
     # Format validation errors
     errors = exc.errors()
@@ -115,7 +91,13 @@ async def validation_exception_handler(
 
     message = get_message("validation_error", locale, detail=error_details)
 
+    # Use consistent response structure with http_exception_handler
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"status": "error", "message": message, "errors": errors},
+        content={
+            "status": "error",
+            "message": message,
+            "status_code": status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "errors": errors,  # Additional field for validation details
+        },
     )

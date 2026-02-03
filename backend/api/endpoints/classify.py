@@ -7,6 +7,7 @@ from ...api.deps import get_locale
 from ...api.models import FileProcessingResponse
 from ...api.exceptions import localized_http_exception
 from ...services.i18n_service import get_message
+from ...core.config import settings
 
 router = APIRouter(prefix="/classify", tags=["classify"])
 
@@ -17,14 +18,18 @@ async def classify_file(
 ) -> FileProcessingResponse:
     """파일 분류 엔드포인트 (다국어 지원)"""
 
-    # Validation example: Check file size (10MB limit)
-    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+    # Validation: Check file size against global limit
+    max_file_size = settings.MAX_UPLOAD_SIZE
 
     # Read file content to check size
     content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
+    if len(content) > max_file_size:
+        max_size_mb = max_file_size / (1024 * 1024)
         raise localized_http_exception(
-            status_code=400, message_key="bad_request", locale=locale
+            status_code=413,
+            message_key="payload_too_large",
+            locale=locale,
+            max_size=max_size_mb,
         )
 
     # Reset file pointer
