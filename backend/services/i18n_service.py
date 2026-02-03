@@ -21,6 +21,7 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         "status_ok": "서버가 정상 작동 중입니다",
         "search_results": "{count}개의 검색 결과를 찾았습니다",
         "metadata_updated": "메타데이터가 업데이트되었습니다",
+        "metadata_fetched": "메타데이터를 조회했습니다",
     },
     "en": {
         "file_classified": "File classified as {category}.",
@@ -36,6 +37,7 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         "status_ok": "Server is running",
         "search_results": "Found {count} search results",
         "metadata_updated": "Metadata updated",
+        "metadata_fetched": "Metadata fetched",
     },
 }
 

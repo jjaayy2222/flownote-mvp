@@ -13,9 +13,43 @@ from backend.models import (
     FileMetadataInput,
     ClassifyBatchResponse,
     SaveClassificationRequest,
-    SearchRequest
-    )
+    SearchRequest,
+)
 
+
+# Common i18n Response Models
+class BaseResponse(BaseModel):
+    """기본 응답 모델 (다국어 메시지 포함)"""
+
+    status: str
+    message: str
+
+
+class HealthCheckResponse(BaseResponse):
+    """헬스체크 응답"""
+
+    pass
+
+
+class FileProcessingResponse(BaseResponse):
+    """파일 처리 응답"""
+
+    file: str
+
+
+class SearchResponse(BaseResponse):
+    """검색 응답"""
+
+    query: str
+    results: List[Dict[str, Any]] = Field(default_factory=list)
+    count: int = 0
+
+
+class MetadataResponse(BaseResponse):
+    """메타데이터 조회/업데이트 응답"""
+
+    file_id: str
+    metadata: Optional[Dict[str, Any]] = None
 
 
 __all__ = [
@@ -25,9 +59,14 @@ __all__ = [
     "FileMetadataInput",
     "ClassifyBatchRequest",
     "ClassifyBatchResponse",
-    
     # File Management
     "FileMetadata",
     "SaveClassificationRequest",
     "SearchRequest",
+    # i18n Response Models
+    "BaseResponse",
+    "HealthCheckResponse",
+    "FileProcessingResponse",
+    "SearchResponse",
+    "MetadataResponse",
 ]
