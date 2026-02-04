@@ -14,6 +14,10 @@ from fastapi import (
 from fastapi.security import OAuth2PasswordBearer
 from backend.core.config import settings
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # OAuth2 스키마 정의
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -177,6 +181,9 @@ def extract_locale_from_header(accept_language: Optional[str]) -> str:
             lang_map[entry.primary_tag] = entry.q_value
 
     if not lang_map:
+        logger.debug(
+            f"Empty lang_map for header '{accept_language}'. Falling back to default."
+        )
         return settings.DEFAULT_LOCALE
 
     # Sort by q-value (descending) and find first supported locale
@@ -186,6 +193,9 @@ def extract_locale_from_header(accept_language: Optional[str]) -> str:
             return lang
 
     # Fallback to default if no supported locale found
+    logger.debug(
+        f"No supported locale found in '{accept_language}'. Falling back to default."
+    )
     return settings.DEFAULT_LOCALE
 
 
