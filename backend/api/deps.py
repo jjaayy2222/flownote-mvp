@@ -14,10 +14,6 @@ from fastapi import (
 from fastapi.security import OAuth2PasswordBearer
 from backend.core.config import settings
 
-# Locale configuration from settings
-SUPPORTED_LOCALES = settings.SUPPORTED_LOCALES
-DEFAULT_LOCALE = settings.DEFAULT_LOCALE
-
 # OAuth2 스키마 정의
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -164,7 +160,7 @@ def extract_locale_from_header(accept_language: Optional[str]) -> str:
         Locale string (e.g., "ko", "en") or DEFAULT_LOCALE if none found
     """
     if not accept_language:
-        return DEFAULT_LOCALE
+        return settings.DEFAULT_LOCALE
 
     # Parse all language entries and build a map: primary_tag -> highest q_value
     lang_map: Dict[str, float] = {}
@@ -181,13 +177,12 @@ def extract_locale_from_header(accept_language: Optional[str]) -> str:
             lang_map[entry.primary_tag] = entry.q_value
 
     # Sort by q-value (descending) and find first supported locale
-    sorted_langs = sorted(lang_map.items(), key=lambda x: x[1], reverse=True)
     for lang, _ in sorted_langs:
-        if lang in SUPPORTED_LOCALES:
+        if lang in settings.SUPPORTED_LOCALES:
             return lang
 
     # Fallback to default if no supported locale found
-    return DEFAULT_LOCALE
+    return settings.DEFAULT_LOCALE
 
 
 def get_locale(

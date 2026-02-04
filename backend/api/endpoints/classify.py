@@ -8,6 +8,7 @@ from ...api.models import FileProcessingResponse
 from ...api.exceptions import localized_http_exception
 from ...services.i18n_service import get_message
 from ...core.config import settings
+import math
 
 router = APIRouter(prefix="/classify", tags=["classify"])
 
@@ -24,7 +25,7 @@ async def classify_file(
     # Read file content to check size
     content = await file.read()
     if len(content) > max_file_size:
-        max_size_mb = int(max_file_size / (1024 * 1024))
+        max_size_mb = math.ceil(max_file_size / (1024 * 1024))
         raise localized_http_exception(
             status_code=413,
             message_key="payload_too_large",
