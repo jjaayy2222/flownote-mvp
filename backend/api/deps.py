@@ -152,6 +152,16 @@ def _parse_language_entry(part: str) -> Optional[LanguageEntry]:
     return LanguageEntry(full_tag=lang, primary_tag=primary_lang, q_value=q_value)
 
 
+def normalize_locale(locale: Optional[str]) -> Optional[str]:
+    """
+    Normalize locale string (strip and convert to lowercase).
+    Returns None if input is None or empty.
+    """
+    if locale:
+        return locale.strip().lower()
+    return None
+
+
 def extract_locale_from_header(accept_language: Optional[str]) -> str:
     """
     Extract locale from Accept-Language header string.
@@ -182,7 +192,7 @@ def extract_locale_from_header(accept_language: Optional[str]) -> str:
 
     if not lang_map:
         logger.debug(
-            f"Empty lang_map for header '{accept_language}'. Falling back to default."
+            "Empty lang_map for header '%s'. Falling back to default.", accept_language
         )
         return settings.DEFAULT_LOCALE
 
@@ -194,7 +204,7 @@ def extract_locale_from_header(accept_language: Optional[str]) -> str:
 
     # Fallback to default if no supported locale found
     logger.debug(
-        f"No supported locale found in '{accept_language}'. Falling back to default."
+        "No supported locale found in '%s'. Falling back to default.", accept_language
     )
     return settings.DEFAULT_LOCALE
 
