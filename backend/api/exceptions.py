@@ -6,11 +6,12 @@ Custom exception handlers and utilities for i18n error responses
 
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
-from ..services.i18n_service import get_message, DEFAULT_LOCALE
+from ..services.i18n_service import get_message
+from backend.core.config import settings
 
 
 def localized_http_exception(
-    status_code: int, message_key: str, locale: str = DEFAULT_LOCALE, **kwargs
+    status_code: int, message_key: str, locale: str = settings.DEFAULT_LOCALE, **kwargs
 ) -> HTTPException:
     """
     HTTPException을 생성하되, 로케일에 맞는 에러 메시지를 사용합니다.
@@ -18,7 +19,7 @@ def localized_http_exception(
     Args:
         status_code: HTTP 상태 코드
         message_key: i18n 메시지 키
-        locale: 로케일 (기본값: DEFAULT_LOCALE)
+        locale: 로케일 (기본값: settings.DEFAULT_LOCALE)
         **kwargs: 메시지 포맷팅에 사용될 추가 인자
 
     Returns:
@@ -59,7 +60,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 
     # If we have a predefined message key, use it; otherwise use the original detail
     if message_key:
-        detail = get_message(message_key, locale, detail=str(exc.detail))
+        detail = get_message(message_key, locale, detail=exc.detail)
     else:
         detail = exc.detail
 
