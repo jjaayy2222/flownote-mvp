@@ -29,6 +29,9 @@ def localized_http_exception(
     Example:
         raise localized_http_exception(404, "not_found", locale="ko")
     """
+    if locale:
+        locale = locale.strip().lower()
+
     if not locale or locale not in settings.SUPPORTED_LOCALES:
         locale = settings.DEFAULT_LOCALE
 
