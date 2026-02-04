@@ -177,6 +177,7 @@ def extract_locale_from_header(accept_language: Optional[str]) -> str:
             lang_map[entry.primary_tag] = entry.q_value
 
     # Sort by q-value (descending) and find first supported locale
+    sorted_langs = sorted(lang_map.items(), key=lambda x: x[1], reverse=True)
     for lang, _ in sorted_langs:
         if lang in settings.SUPPORTED_LOCALES:
             return lang
