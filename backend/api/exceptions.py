@@ -59,7 +59,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 
     # If we have a predefined message key, use it; otherwise use the original detail
     if message_key:
-        detail = get_message(message_key, locale)
+        detail = get_message(message_key, locale, detail=str(exc.detail))
     else:
         detail = exc.detail
 
