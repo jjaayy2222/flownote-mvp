@@ -12,7 +12,11 @@ from fastapi import (
     Header,
 )
 from fastapi.security import OAuth2PasswordBearer
-from backend.services.i18n_service import SUPPORTED_LOCALES, DEFAULT_LOCALE
+from backend.core.config import settings
+
+# Locale configuration from settings
+SUPPORTED_LOCALES = settings.SUPPORTED_LOCALES
+DEFAULT_LOCALE = settings.DEFAULT_LOCALE
 
 # OAuth2 스키마 정의
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
