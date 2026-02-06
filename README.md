@@ -141,6 +141,27 @@
 - **Mobile Responsive**: 데스크탑/모바일 자동 전환 내비게이션
 - **Accessibility**: ARIA 속성 및 스크린 리더 지원
 
+### 2.9 🔄 **WebSocket 실시간 업데이트** (v6.0 Phase 1)
+- **실시간 동기화**: Polling 방식 제거, WebSocket 기반 양방향 통신
+- **이벤트 기반 업데이트**: 파일 분류, 동기화 상태 변경 시 즉시 UI 반영
+- **네트워크 최적화**: 트래픽 50% 이상 감소
+- **연결 관리**: 자동 재연결, Heartbeat 메커니즘
+- **타입 안전성**: TypeScript 기반 이벤트 타입 정의
+
+### 2.10 🔍 **Conflict Diff Viewer** (v6.0 Phase 2)
+- **시각적 비교**: Monaco Editor 기반 Side-by-Side Diff 뷰어
+- **3가지 해결 옵션**: Keep Local / Keep Remote / Keep Both
+- **Markdown 프리뷰**: 충돌 파일의 렌더링된 결과 미리보기
+- **Syntax Highlighting**: 파일 타입별 구문 강조
+- **인라인 Diff**: 변경사항 라인별 하이라이트
+
+### 2.11 🌍 **다국어 지원 (i18n)** (v6.0 Phase 3)
+- **한국어/영어 완벽 지원**: next-intl 기반 다국어 시스템
+- **동적 언어 전환**: URL 기반 라우팅 (`/ko/dashboard`, `/en/dashboard`)
+- **SEO 최적화**: 언어별 메타데이터 및 sitemap
+- **Backend API i18n**: Accept-Language 헤더 기반 응답 현지화
+- **날짜/숫자 포맷**: 로케일별 자동 포맷팅
+
 ---
 
 ## 3. 💻 기술 스택
@@ -150,6 +171,7 @@
 |------|------|------|
 | **Python** | 3.11.10 | 개발 언어 |
 | **FastAPI** | 0.120.4 | REST API 프레임워크 |
+| **WebSocket** | - | 실시간 양방향 통신 (v6.0) |
 | **LangChain** | 1.0.2 | AI 체인 관리 |
 | **Celery** | 5.4.0 | 비동기 작업 큐 & 스케줄링 |
 | **Redis** | 7.x | 메시지 브로커 & 캐시 |
@@ -168,6 +190,8 @@
 | **React Flow** | ^11.11.4 | 그래프 시각화 |
 | **Recharts** | ^3.6.0 | 차트 라이브러리 |
 | **Sonner** | ^2.0.7 | Toast 알림 |
+| **next-intl** | ^3.x | 다국어 지원 (v6.0) |
+| **Monaco Editor** | ^0.52.x | Diff Viewer (v6.0) |
 
 ### 3.3 LLM & AI
 | 기술 | 모델 | 용도 |
@@ -205,10 +229,24 @@ flownote-mvp/
 │   │   ├── server.py                   # MCP 서버 구현
 │   │   └── tools/                      # MCP Tools (classify, search 등)
 │   │
+│   ├── api/                            # API 엔드포인트
+│   │   ├── endpoints/
+│   │   │   ├── websocket.py            # WebSocket 엔드포인트 (v6.0) ✨
+│   │   │   ├── sync.py                 # 동기화 & Diff API (v6.0) ✨
+│   │   │   └── ...
+│   │   ├── deps.py                     # 의존성 (i18n 로케일 추출) ✨
+│   │   └── exceptions.py               # 다국어 예외 처리 (v6.0) ✨
+│   │
 │   ├── services/                       # 비즈니스 로직 (Service Layer)
 │   │   ├── obsidian_sync.py            # Obsidian 동기화 ✨
 │   │   ├── conflict_resolution_service.py  # 충돌 해결 ✨
+│   │   ├── websocket_manager.py        # WebSocket 연결 관리 (v6.0) ✨
+│   │   ├── diff_service.py             # Diff 생성 (v6.0) ✨
+│   │   ├── i18n_service.py             # 다국어 메시지 (v6.0) ✨
 │   │   └── ...
+│   │
+│   ├── core/                           # 핵심 설정 (v6.0) ✨
+│   │   └── config.py                   # 애플리케이션 설정
 │   │
 │   ├── embedding.py                    # 임베딩 생성
 │   ├── faiss_search.py                 # FAISS 검색
@@ -217,15 +255,30 @@ flownote-mvp/
 │
 ├── web_ui/                             # Next.js Frontend ✨
 │   ├── src/
-│   │   ├── app/                        # App Router
-│   │   │   ├── page.tsx                # Dashboard
-│   │   │   ├── graph/page.tsx          # Graph View
-│   │   │   └── stats/page.tsx          # Statistics
+│   │   ├── app/
+│   │   │   ├── [locale]/               # 다국어 라우팅 (v6.0) ✨
+│   │   │   │   ├── page.tsx            # Dashboard
+│   │   │   │   ├── graph/page.tsx      # Graph View
+│   │   │   │   └── stats/page.tsx      # Statistics
+│   │   │   └── not-found.tsx           # 404 페이지 (i18n) ✨
 │   │   ├── components/                 # React 컴포넌트
-│   │   │   ├── dashboard/              # Dashboard 컴포넌트
+│   │   │   ├── dashboard/
+│   │   │   │   └── SyncMonitor.tsx     # WebSocket 기반 (v6.0) ✨
 │   │   │   ├── para/GraphView.tsx      # Graph View
-│   │   │   └── layout/                 # Navigation
+│   │   │   ├── conflict/               # Conflict Diff Viewer (v6.0) ✨
+│   │   │   │   ├── DiffViewer.tsx
+│   │   │   │   └── ConflictResolver.tsx
+│   │   │   └── layout/
+│   │   │       └── LanguageSwitcher.tsx # 언어 전환 (v6.0) ✨
+│   │   ├── i18n/                       # 다국어 설정 (v6.0) ✨
+│   │   │   └── config.ts
+│   │   ├── locales/                    # 번역 파일 (v6.0) ✨
+│   │   │   ├── ko.json
+│   │   │   └── en.json
+│   │   ├── hooks/                      # Custom Hooks
+│   │   │   └── useWebSocket.ts         # WebSocket Hook (v6.0) ✨
 │   │   └── config/                     # 설정 파일
+│   ├── middleware.ts                   # next-intl 미들웨어 (v6.0) ✨
 │   └── package.json
 │
 ├── data/                               # 데이터 저장소
@@ -233,7 +286,10 @@ flownote-mvp/
 │   └── P/                              # 프로젝트 페이즈 문서
 │       ├── v5_phase1_mcp_server/       # MCP 서버 문서
 │       ├── v5_phase2_frontend/         # Frontend 문서
-│       └── v5_phase3_visualization/    # Visualization 문서
+│       ├── v5_phase3_visualization/    # Visualization 문서
+│       ├── v6.0_phase1_websocket/      # WebSocket 문서 (v6.0) ✨
+│       ├── v6.0_phase2_diff_viewer/    # Diff Viewer 문서 (v6.0) ✨
+│       └── v6.0_phase3_i18n/           # i18n 문서 (v6.0) ✨
 └── README.md                           # 본 문서
 ```
 
@@ -268,6 +324,7 @@ pytest --cov=backend --cov-report=term-missing
 
 ### 6.1 사전 요구사항
 - **Python**: 3.11+
+- **Node.js**: 18+
 - **OpenAI API Key**: [platform.openai.com](https://platform.openai.com/)
 - **Redis Server**: 6.2+ (Celery 브로커용)
 
@@ -289,7 +346,12 @@ brew services start redis
 # 4. 패키지 설치
 pip install -r requirements.txt
 
-# 5. 환경변수 설정
+# 5. Frontend 패키지 설치
+cd web_ui
+npm install
+cd ..
+
+# 6. 환경변수 설정
 cp .env.example .env
 # .env 파일에 OpenAI API 키 및 REDIS_URL 설정
 ```
@@ -315,6 +377,8 @@ python -m uvicorn backend.main:app --reload
 cd web_ui
 npm run dev
 # → http://localhost:3000
+# 한국어: http://localhost:3000/ko
+# 영어: http://localhost:3000/en
 ```
 
 **3. Celery Worker & Beat 실행 (Terminal 3)**
@@ -348,12 +412,26 @@ python -m backend.mcp.server
 1. `Tab 2: 파일 분류` 이동
 2. 파일 업로드 및 분류 시작
 
-### 7.3 **Step 3: 자동화 모니터링 (New!)**
+### 7.3 **Step 3: 실시간 모니터링 (v6.0)**
+1. Dashboard의 Sync Monitor에서 실시간 동기화 상태 확인
+2. WebSocket 연결 상태 및 이벤트 로그 모니터링
+
+### 7.4 **Step 4: 충돌 해결 (v6.0)**
+1. 충돌 발생 시 알림 수신
+2. Diff Viewer에서 변경사항 비교
+3. Keep Local / Keep Remote / Keep Both 중 선택
+
+### 7.5 **Step 5: 언어 전환 (v6.0)**
+1. 우측 상단 언어 스위처 클릭
+2. 한국어/English 선택
+3. URL 자동 변경 및 UI 즉시 업데이트
+
+### 7.6 **Step 6: 자동화 모니터링**
 1. [Flower 대시보드](http://localhost:5555) 접속
 2. `Tasks` 탭에서 자동 재분류/리포트 생성 작업 확인
 3. `System` 탭에서 워커 상태 확인
 
-### 7.4 **Step 4: CLI 사용**
+### 7.7 **Step 7: CLI 사용**
 ```bash
 # 단일 파일 분류
 python -m backend.cli classify "path/to/file.txt" [user_id]
@@ -369,10 +447,13 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 |-------|--------|-----------|------|
 | [#1-10] | ~11/11 | Phase 1-2 (MVP) | ✅ |
 | [#10.4] | 12/16 | Celery 자동화 & 스케줄링 | ✅ |
+| [#10.11] | 02/04 | v6.0 Phase 3 (i18n) | ✅ |
 
 ### 주요 커밋 히스토리
-- `...` - Phase 3 구현
-- `current` - Phase 4 Celery Automation (Worker, Beat, Monitoring)
+- `v5.0` - MCP 서버, Next.js 대시보드, Graph View
+- `v6.0 Phase 1` - WebSocket 실시간 업데이트
+- `v6.0 Phase 2` - Conflict Diff Viewer
+- `v6.0 Phase 3` - 다국어 지원 (i18n) ✅
 
 ---
 
@@ -389,10 +470,34 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 - [x] PARA Graph View & Advanced Stats ✨
 - [x] Mobile Responsive UI ✨
 
-### 🚧 진행 중 (v6.0)
-- [ ] WebSocket 실시간 업데이트
-- [ ] Conflict Diff Viewer
-- [ ] 다국어 지원 (i18n)
+### ✅ 완료된 기능 (v6.0)
+- [x] **Phase 1: WebSocket 실시간 업데이트** ✨
+  - [x] Polling 방식 제거
+  - [x] 양방향 실시간 통신
+  - [x] 자동 재연결 메커니즘
+  - [x] 이벤트 기반 UI 업데이트
+  - [x] 네트워크 트래픽 50% 감소
+
+- [x] **Phase 2: Conflict Diff Viewer** ✨
+  - [x] Monaco Editor 기반 Side-by-Side 비교
+  - [x] 3가지 해결 옵션 (Keep Local/Remote/Both)
+  - [x] Markdown 프리뷰
+  - [x] Syntax Highlighting
+  - [x] 인라인 Diff 표시
+
+- [x] **Phase 3: 다국어 지원 (i18n)** ✨
+  - [x] next-intl 기반 다국어 시스템
+  - [x] 한국어/영어 완벽 지원
+  - [x] URL 기반 언어 라우팅
+  - [x] Backend API 응답 현지화
+  - [x] SEO 메타데이터 다국어화
+  - [x] 날짜/숫자 로케일별 포맷팅
+
+### 🚧 진행 예정 (v7.0)
+- [ ] 추가 언어 지원 (일본어, 중국어)
+- [ ] AI 기반 자동 번역
+- [ ] 고급 검색 필터
+- [ ] 파일 버전 히스토리
 
 ---
 
