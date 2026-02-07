@@ -1,5 +1,9 @@
 # 🎯 FlowNote - AI 기반 PARA 분류 시스템
 
+<p align="center">
+  <a href="./README.md"><strong>한국어</strong></a> | <a href="./README_EN.md">English</a>
+</p>
+
 > **당신의 문서를 AI가 자동으로 분류합니다**  
 > PARA 방식 (Projects, Areas, Resources, Archives)으로 스마트하게 정리
 
@@ -290,7 +294,8 @@ flownote-mvp/
 │       ├── v6.0_phase1_websocket/      # WebSocket 문서 (v6.0) ✨
 │       ├── v6.0_phase2_diff_viewer/    # Diff Viewer 문서 (v6.0) ✨
 │       └── v6.0_phase3_i18n/           # i18n 문서 (v6.0) ✨
-└── README.md                           # 본 문서
+├── README.md                           # 본 문서 (한국어)
+└── README_EN.md                        # 영문 문서
 ```
 
 ---
