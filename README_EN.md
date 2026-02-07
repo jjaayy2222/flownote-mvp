@@ -1,5 +1,9 @@
 # 🎯 FlowNote - AI-Powered PARA Classification System
 
+<p align="center">
+  <a href="./README.md">한국어</a> | <a href="./README_EN.md"><strong>English</strong></a>
+</p>
+
 > **AI automatically organizes your documents**  
 > Smart organization with PARA methodology (Projects, Areas, Resources, Archives)
 
@@ -290,7 +294,8 @@ flownote-mvp/
 │       ├── v6.0_phase1_websocket/      # WebSocket docs (v6.0) ✨
 │       ├── v6.0_phase2_diff_viewer/    # Diff Viewer docs (v6.0) ✨
 │       └── v6.0_phase3_i18n/           # i18n docs (v6.0) ✨
-└── README.md                           # This document
+├── README.md                           # Korean documentation
+└── README_EN.md                        # This document (English)
 ```
 
 ---
