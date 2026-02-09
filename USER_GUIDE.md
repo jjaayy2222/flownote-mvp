@@ -1,4 +1,4 @@
-# 📖 FlowNote 사용자 가이드
+# 📖 FlowNote 사용자 가이드 (v5.0)
 
 <p align="center">
   <a href="./USER_GUIDE.md"><strong>한국어</strong></a> | <a href="./USER_GUIDE_EN.md">English</a>
@@ -291,7 +291,9 @@ WebSocket 기반 실시간 업데이트:
 - 동기화 상태 변경 즉시 표시
 - 네트워크 트래픽 50% 감소
 
----
+#### **MiniMap**
+- 우측 하단 미니맵으로 전체 구조 파악
+- 현재 뷰포트 위치 확인
 
 ## 7. 자동화 기능 설정
 
