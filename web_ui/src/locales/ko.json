@@ -6,12 +6,83 @@
     "cancel": "취소",
     "delete": "삭제",
     "confirm": "확인",
-    "close": "닫기"
+    "close": "닫기",
+    "reset": "뷰 초기화",
+    "legend": "범례",
+    "not_found": {
+      "title": "페이지를 찾을 수 없습니다",
+      "description": "죄송합니다. 요청하신 페이지가 존재하지 않습니다.",
+      "home_btn": "홈으로 돌아가기"
+    }
   },
   "navigation": {
     "dashboard": "대시보드",
     "graph": "그래프 뷰",
     "stats": "통계",
-    "preferences": "설정"
+    "preferences": "설정",
+    "github": "GitHub"
+  },
+  "sidebar": {
+    "title": "플로우노트",
+    "settings": "설정",
+    "language": "언어"
+  },
+  "dashboard": {
+    "title": "FlowNote v6.0 - 3단계: 다국어(i18n) 적용",
+    "complete": "다국어 인프라 설정 완료! ✅"
+  },
+  "graph": {
+    "title": "PARA 그래프 뷰"
+  },
+  "stats": {
+    "title": "통계",
+    "charts": {
+      "activity": "활동 히트맵",
+      "trend": "주간 트렌드",
+      "distribution": "PARA 분포"
+    }
+  },
+  "sync_monitor": {
+    "title": "동기화 모니터",
+    "refresh": "새로고침",
+    "loading": "동기화 상태를 불러오는 중...",
+    "error_title": "오류",
+    "retry": "재시도",
+    "connection": {
+      "title": "Obsidian 연결",
+      "connected": "연결됨",
+      "disconnected": "연결 끊김",
+      "vault_path": "볼트 경로",
+      "last_sync": "마지막 동기화",
+      "never": "없음",
+      "total_files": "총 파일 수"
+    },
+    "mcp": {
+      "title": "MCP 서버",
+      "running": "실행 중",
+      "stopped": "중지됨",
+      "active_clients": "활성 클라이언트",
+      "no_clients": "연결된 클라이언트 없음",
+      "registered_tools": "등록된 도구"
+    },
+    "conflicts": {
+      "title": "충돌 내역",
+      "description": "최근 동기화 충돌 및 해결 상태입니다.",
+      "no_conflicts": "충돌이 감지되지 않았습니다. 모든 시스템이 정상입니다.",
+      "resolve_btn": "해결",
+      "resolved_via": "해결 방법",
+      "resolved_toast": "충돌 해결됨: {decision} 버전을 유지합니다",
+      "file": "파일",
+      "strategies": {
+        "keep_local": "로컬 유지",
+        "keep_remote": "원격 유지", 
+        "keep_both": "둘 다 유지",
+        "unknown": "알 수 없는 전략"
+      }
+    }
+  },
+  "metadata": {
+    "title": "FlowNote - AI 지식 관리 시스템",
+    "description": "PARA 방법론 기반의 AI 지식 관리 시스템. 당신의 제2의 두뇌를 자동화하세요."
   }
 }

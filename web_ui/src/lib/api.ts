@@ -7,9 +7,8 @@
  */
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000';
 
-/**
- * 공통 상태 매핑
- */
+import { CONFLICT_STATUS } from '@/types/sync';
+
 export const STATUS_MAP: Record<string, string> = {
   connected: 'connected',
   disconnected: 'disconnected',
@@ -17,9 +16,9 @@ export const STATUS_MAP: Record<string, string> = {
   stopped: 'stopped',
   success: 'success',
   failed: 'failed',
-  pending: 'pending',
+  pending: CONFLICT_STATUS.PENDING,
   completed: 'completed',
-  resolved: 'resolved',
+  resolved: CONFLICT_STATUS.RESOLVED,
   unknown: 'unknown',
 };
 

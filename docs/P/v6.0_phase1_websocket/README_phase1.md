@@ -177,6 +177,164 @@ export function GraphView() {
 }
 ```
 
+#### **WebSocket Monitor Dashboard** (✅ 완료 #10.9.20)
+
+> **⚠️ 통신 방식 안내**: 이 컴포넌트는 **WebSocket을 모니터링하기 위한** 대시보드로, WebSocket 시스템의 지표를 수집합니다. 
+> 지표 수집 자체는 **HTTP REST API를 polling** 방식으로 사용합니다 (`setInterval` + `fetch`).  
+> WebSocket 연결 자체와 혼동하지 마세요 (WebSocket은 `useWebSocket` Hook이 담당).
+
+**1. 설정 모듈 분리 (Config/Util)**
+```typescript
+// web_ui/src/config/monitoring.ts
+
+/**
+ * Default polling interval for metrics fetch (milliseconds)
+ */
+export const DEFAULT_METRICS_POLL_INTERVAL = 5000;
+
+/**
+ * Minimum allowed polling interval (1 second)
+ * Prevents excessive server load from too-frequent polling
+ */
+export const MIN_POLL_INTERVAL = 1000;
+
+/**
+ * Maximum allowed polling interval (1 minute)
+ * Ensures dashboard remains reasonably up-to-date
+ */
+export const MAX_POLL_INTERVAL = 60000;
+
+/**
+ * Helper to validate and normalize polling interval from env var
+ * Extracted for testability and reuse
+ * 
+ * @param envValue - Raw environment variable string
+ * @returns Validated interval in milliseconds, clamped to safe range
+ */
+export function getMetricsPollInterval(envValue?: string): number {
+  const parsed = envValue ? Number.parseInt(envValue, 10) : NaN;
+  
+  // Validate: must be finite positive number
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_METRICS_POLL_INTERVAL;
+  }
+  
+  // Clamp to safe range
+  return Math.max(MIN_POLL_INTERVAL, Math.min(MAX_POLL_INTERVAL, parsed));
+}
+```
+
+**2. 대시보드 컴포넌트 (Component)**
+```typescript
+// web_ui/src/components/dashboard/websocket-monitor.tsx
+
+import { getMetricsPollInterval } from '@/config/monitoring';
+
+// Validated polling interval for this application instance
+const METRICS_POLL_INTERVAL = getMetricsPollInterval(
+  process.env.NEXT_PUBLIC_METRICS_POLL_INTERVAL
+);
+
+export function WebSocketMonitor() {
+  const [metrics, setMetrics] = useState<MetricsData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+```
+
+  useEffect(() => {
+    const controller = new AbortController();
+    
+    const fetchMetrics = async () => {
+      try {
+        // HTTP REST API call (NOT WebSocket)
+        const res = await fetch('/health/metrics', {
+          signal: controller.signal
+        });
+        const data = await res.json();
+        setMetrics(data);
+        setError(null);
+      } catch (err: unknown) {
+        if (!isAbortError(err)) {
+          setError(getErrorMessage(err));
+        }
+      }
+    };
+
+    // HTTP Polling: Repeatedly fetch metrics at validated interval
+    const interval = setInterval(fetchMetrics, METRICS_POLL_INTERVAL);
+    fetchMetrics();
+
+    return () => {
+      clearInterval(interval);
+      controller.abort();
+    };
+  }, []);
+  
+  // Real-time display: connections, TPS, throughput, status
+}
+```
+
+**설계 의도**:
+- **Why HTTP Polling?**: `/health/metrics` 엔드포인트는 REST API로 구현되어 있으며, 시스템 전체 지표를 집계하여 반환합니다.
+- **Why Not WebSocket?**: 지표 데이터는 요청 시점의 스냅샷이므로 polling이 적합합니다. WebSocket은 이벤트 기반 실시간 알림에 사용됩니다.
+
+**주요 기능:**
+- ✅ **HTTP 폴링**: 설정 가능한 간격으로 `/health/metrics` 호출 (기본: 5초)
+- ✅ **폴링 간격 검증**: NaN, 음수, 0, 범위 밖 값 방어 (1초 ~ 1분으로 클램핑)
+- ✅ **AbortController**: 컴포넌트 언마운트 시 fetch 취소 (메모리 누수 방지)
+- ✅ **타입 안전성**: SystemStatus 리터럴 타입, exhaustive checking
+- ✅ **에러 처리**: 타입 가드, 메시지 길이 제한(500자), 다층 폴백 전략
+- ✅ **보안**: 상대 경로 사용 (Mixed-Content 방지)
+
+**폴링 간격 설정 방법**:
+
+```bash
+# web_ui/.env.local 파일에 추가
+
+# 폴링 간격 (밀리초 단위)
+# 허용 범위: 1000 ~ 60000 (1초 ~ 1분)
+# 범위 밖 값은 자동으로 가장 가까운 경계값으로 조정됩니다
+# 
+# 기본값: 5000 (5초)
+# 빠른 업데이트: 2000-3000 (2-3초) - 서버 부하 증가
+# 서버 부하 절감: 10000-30000 (10-30초) - 실시간성 감소
+NEXT_PUBLIC_METRICS_POLL_INTERVAL=5000
+```
+
+**변경 위치**: `/web_ui/src/components/dashboard/websocket-monitor.tsx` (Line 13-48)
+
+**검증 로직 세부사항**:
+```typescript
+// ✅ Valid cases (자동 클램핑)
+'5000'    → 5000      // 정상
+'500'     → 1000      // 최소값으로 클램핑
+'120000'  → 60000     // 최대값으로 클램핑
+
+// ✅ Invalid cases (기본값 5000으로 폴백)
+''        → 5000      // 빈 문자열
+'abc'     → 5000      // 비숫자
+'-100'    → 5000      // 음수
+'0'       → 5000      // 0 (즉시 실행 방지)
+undefined → 5000      // 환경 변수 미설정
+```
+
+**성능 및 안정성**:
+- **최소 간격 (1초)**: 서버 과부하 방지
+- **최대 간격 (1분)**: 대시보드 실시간성 유지
+- **NaN 방어**: setInterval에 NaN 전달 시 즉시 무한 실행되는 위험 차단
+- **0/음수 방어**: 비정상 동작 방지
+
+**코드 품질 개선 (9차 리뷰 반영):**
+1. AbortController 및 보안 강화
+2. 코드 정제 및 타입 안전성 완성
+3. 타입 가드 및 에러 타입 안전성 강화
+4. 타입 정확성 및 디버깅 정보 보존
+5. 에러 처리 구현 개선 (getErrorMessage 헬퍼)
+6. 완벽한 에러 메시지 추출 (중첩 객체, 빈 문자열 처리)
+7. 에러 메시지 처리 최종 최적화 (truncateString 공통 헬퍼)
+8. **폴링 간격 검증 개선 (Number.isFinite + 양수 체크)**
+9. **Min/Max 범위 클램핑 (1초 ~ 1분)**
+10. **Refactoring (3차 개선)**: `getMetricsPollInterval` 함수 추출 및 상수 Export로 테스트 편의성/모듈성 확보
+
 ## 🚀 Running
 
 ### Backend
@@ -210,6 +368,13 @@ pytest tests/unit/test_websocket_manager.py -v
 # Frontend Hook 테스트
 npm test -- useWebSocket.test.ts
 ```
+
+#### **검증 완료 항목 (Frontend)**
+- [x] **Connection Lifecycle**: 연결 수립, 종료, 상태(`CONNECTING`, `OPEN`, `CLOSING`, `CLOSED`) 변화 검증
+- [x] **Message Handling**: 수신 메시지 파싱, JSON 에러 핸들링, 상태 업데이트 검증
+- [x] **Auto-Reconnection**: 연결 종료 시 지수 백오프(Exponential Backoff)를 적용한 재연결 로직 및 옵션(`reconnect: boolean`) 동작 검증
+- [x] **Cleanup & Safety**: 컴포넌트 Unmount 시 소켓 종료 및 타이머 정리, 메모리 누수 방지 검증
+- [x] **Native Event Compatibility**: `jsdom` 및 브라우저 환경의 Native `CloseEvent`/`Event`와의 동작 일치성 검증
 
 ### Integration Tests
 ```bash
@@ -284,10 +449,20 @@ setTimeout(connect, reconnectDelay);
 
 ## 📝 Next Steps
 
-- [ ] WebSocket 인증 추가 (JWT)
-- [ ] 메시지 압축 (gzip)
-- [ ] 연결 풀 관리
-- [ ] 모니터링 대시보드 (연결 수, 메시지 처리량)
+- [x] Frontend WebSocket Client 구현 (Hook & Config)
+- [x] Frontend Unit Tests 작성 (`useWebSocket` Hook)
+- [x] Frontend Integration Tests (`SyncMonitor` 컴포넌트 연동 완료)
+- [x] WebSocket 인증 추가 (JWT)
+- [x] Redis Pub/Sub 통합 (분산 서버 지원 완료)
+- [x] 메시지 압축 (gzip) 구현 완료
+  - **임계값**: 1KB (`1024 bytes`). 소규모 메시지에 대한 압축 오버헤드와 일반적인 네트워크 MTU를 고려한 설정입니다.
+  - **설정**: `backend/services/compression_service.py`에서 `COMPRESSION_THRESHOLD` 수정 가능
+- [x] 연결 풀 관리 (ConnectionManager 구현 완료)
+- [x] 모니터링 및 로깅 강화 (Metrics API & Close Code Tracking 완료)
+- [x] 대시보드 시각화 (**완료 #10.9.20**: WebSocket Monitor 컴포넌트 구현 및 7차 코드리뷰 반영)
+  - **Component**: `web_ui/src/components/dashboard/websocket-monitor.tsx`
+  - **Features**: 실시간 지표(연결 수, TPS, 처리량), AbortController, 타입 안전성, 에러 처리 최적화
+  - **Code Quality**: TypeScript 타입 가드, exhaustive checking, 에러 메시지 길이 제한(500자)
 
 ## 🔗 Related Documentation
 

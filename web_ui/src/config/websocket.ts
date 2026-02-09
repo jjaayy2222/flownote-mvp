@@ -15,10 +15,43 @@ const logger = createLogger('WebSocket Config');
  * WebSocket URL 유효성 검사
  * 
  * @param url - 검증할 URL
- * @returns ws:// 또는 wss:// 프로토콜로 시작하는 경우 true
+ * @returns 유효한 WebSocket URL인 경우 true
  */
 const isValidWebSocketUrl = (url: string): boolean => {
-  return /^wss?:\/\//.test(url);
+  // 1. 프로토콜 체크
+  if (!/^wss?:\/\//.test(url)) {
+    return false;
+  }
+  
+  // 2. URL 파싱 및 호스트명 검증
+  try {
+    const urlObj = new URL(url);
+    
+    // 호스트명이 비어있으면 유효하지 않음
+    if (!urlObj.hostname) {
+      return false;
+    }
+    
+    // 3. 프로덕션 환경에서는 WSS만 허용
+    if (process.env.NODE_ENV === 'production' && urlObj.protocol === 'ws:') {
+      logger.warn('Insecure WebSocket (ws://) detected in production. Use wss:// instead.');
+      return false;
+    }
+    
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * 개발/테스트 환경 여부 확인
+ * 
+ * @param env - 환경 변수 (기본값: process.env.NODE_ENV)
+ * @returns 개발 또는 테스트 환경인 경우 true
+ */
+export const isNonProductionEnv = (env: string | undefined = process.env.NODE_ENV): boolean => {
+  return env === 'development' || env === 'test';
 };
 
 /**
@@ -28,9 +61,10 @@ const isValidWebSocketUrl = (url: string): boolean => {
  * 1. NEXT_PUBLIC_WS_URL 환경 변수 (유효성 검사 통과 시)
  * 2. window.location 기반 동적 URL (브라우저 환경)
  * 3. NEXT_PUBLIC_WS_FALLBACK_URL 환경 변수 (SSR 환경)
- * 4. ws://localhost:8000/ws (최종 폴백)
+ * 4. ws://localhost:8000/ws (개발/테스트 환경 SSR만)
  * 
  * @returns WebSocket 서버 URL
+ * @throws {Error} 프로덕션 SSR 환경에서 NEXT_PUBLIC_WS_FALLBACK_URL이 설정되지 않은 경우
  * 
  * @example
  * ```typescript
@@ -58,10 +92,30 @@ export const getWebSocketUrl = (): string => {
 
   // 2. SSR 환경 (window 없음)
   if (typeof window === 'undefined') {
-    // SSR 폴백 URL (환경 변수로 설정 가능)
-    const ssrFallback = process.env.NEXT_PUBLIC_WS_FALLBACK_URL || 'ws://localhost:8000/ws';
-    logger.debug('Using SSR fallback URL:', ssrFallback);
-    return ssrFallback;
+    const ssrFallback = process.env.NEXT_PUBLIC_WS_FALLBACK_URL;
+    
+    if (ssrFallback) {
+      logger.debug('Using SSR fallback URL:', ssrFallback);
+      return ssrFallback;
+    }
+    
+    // 개발/테스트 환경에서만 localhost 허용
+    const currentEnv = process.env.NODE_ENV;
+    if (isNonProductionEnv(currentEnv)) {
+      // nosemgrep: javascript.lang.security.detect-insecure-websocket
+      // 개발/테스트 환경 전용: 로컬 개발 서버 연결
+      const devFallback = 'ws://localhost:8000/ws';
+      logger.debug(`Using ${currentEnv || 'unknown'} SSR fallback URL:`, devFallback);
+      return devFallback;
+    }
+    
+    // 프로덕션/스테이징 SSR에서 폴백 URL이 없으면 오류
+    const envName = currentEnv || 'unknown';
+    logger.error(`NEXT_PUBLIC_WS_FALLBACK_URL not set in ${envName} SSR environment`);
+    throw new Error(
+      `WebSocket URL configuration required for ${envName} SSR. ` +
+      'Please set NEXT_PUBLIC_WS_FALLBACK_URL environment variable.'
+    );
   }
 
   // 3. 브라우저 환경 - location 기반 동적 URL
@@ -90,4 +144,4 @@ export const WEBSOCKET_CONFIG = {
 } as const;
 
 // Re-export WebSocket types for convenience
-export { WebSocketStatus, mapReadyStateToStatus } from '@/types/websocket';
+export { WebSocketStatus, mapReadyStateToStatus, type WebSocketReadyState } from '@/types/websocket';

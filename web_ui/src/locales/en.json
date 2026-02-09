@@ -6,12 +6,83 @@
     "cancel": "Cancel",
     "delete": "Delete",
     "confirm": "Confirm",
-    "close": "Close"
+    "close": "Close",
+    "reset": "Reset View",
+    "legend": "Legend",
+    "not_found": {
+      "title": "Page Not Found",
+      "description": "Sorry, the page you are looking for does not exist.",
+      "home_btn": "Go to Home"
+    }
   },
   "navigation": {
     "dashboard": "Dashboard",
     "graph": "Graph View",
     "stats": "Statistics",
-    "preferences": "Preferences"
+    "preferences": "Preferences",
+    "github": "GitHub"
+  },
+  "sidebar": {
+    "title": "FlowNote",
+    "settings": "Settings",
+    "language": "Language"
+  },
+  "dashboard": {
+    "title": "FlowNote v6.0 - Phase 3: i18n",
+    "complete": "i18n infrastructure setup complete! ✅"
+  },
+  "graph": {
+    "title": "PARA Graph View"
+  },
+  "stats": {
+    "title": "Statistics",
+    "charts": {
+      "activity": "Activity Heatmap",
+      "trend": "Weekly Trend",
+      "distribution": "PARA Distribution"
+    }
+  },
+  "sync_monitor": {
+    "title": "Sync Monitor",
+    "refresh": "Refresh",
+    "loading": "Loading sync status...",
+    "error_title": "Error",
+    "retry": "Retry",
+    "connection": {
+      "title": "Obsidian Connection",
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "vault_path": "Vault Path",
+      "last_sync": "Last Sync",
+      "never": "Never",
+      "total_files": "Total Files"
+    },
+    "mcp": {
+      "title": "MCP Server",
+      "running": "Running",
+      "stopped": "Stopped",
+      "active_clients": "Active Clients",
+      "no_clients": "No clients connected",
+      "registered_tools": "Registered Tools"
+    },
+    "conflicts": {
+      "title": "Conflict History",
+      "description": "Recent synchronization conflicts and their resolution status.",
+      "no_conflicts": "No conflicts detected. All systems normal.",
+      "resolve_btn": "Resolve",
+      "resolved_via": "Resolved via",
+      "resolved_toast": "Resolved conflict: Keeping {decision} version",
+      "file": "File",
+      "strategies": {
+        "keep_local": "Keep Local",
+        "keep_remote": "Keep Remote", 
+        "keep_both": "Keep Both",
+        "unknown": "Unknown Strategy"
+      }
+    }
+  },
+  "metadata": {
+    "title": "FlowNote - AI Knowledge System",
+    "description": "AI-powered Knowledge Management System based on PARA method."
   }
 }

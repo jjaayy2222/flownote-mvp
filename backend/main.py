@@ -11,6 +11,10 @@ import logging
 from datetime import datetime, timezone
 import uuid
 
+from contextlib import asynccontextmanager
+from backend.services.websocket_manager import manager
+from backend.api.endpoints.websocket import router as websocket_router
+
 # 마이그레이션 모델 임포트
 from backend.models import HealthCheckResponse, FileMetadata
 
@@ -30,7 +34,20 @@ logger = logging.getLogger(__name__)
 # FastAPI 앱 설정
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("Starting up: Initializing WebSocket Manager & Redis...")
+    await manager.initialize()
+    yield
+    # Shutdown
+    logger.info("Shutting down: Cleaning up resources...")
+    await manager.shutdown()
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="FlowNote API",
     description="""
     ## FlowNote MVP - AI 기반 PARA 분류 및 충돌 해결 API
@@ -77,6 +94,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Exception Handlers (i18n support)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+from fastapi.exceptions import RequestValidationError
+from backend.api.exceptions import http_exception_handler, validation_exception_handler
+
+app.add_exception_handler(HTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+logger.info("✅ 전역 예외 처리기 등록 완료 (i18n 지원)")
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 라우터 등록
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -98,6 +127,9 @@ logger.info("✅ conflict_router 등록 완료 (resolve 전용)")
 
 # sync_router (Phase 3: MCP Integration)
 app.include_router(sync_router)
+
+# websocket_router (Phase 1: Real-time Updates)
+app.include_router(websocket_router)
 logger.info("✅ sync_router 등록 완료 (MCP Sync & Conflict Resolution)")
 
 # automation_router (Phase 4: Celery Automation)

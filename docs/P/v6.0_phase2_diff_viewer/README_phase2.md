@@ -4,6 +4,7 @@
 
 v6.0 Phase 2에서는 파일 충돌 발생 시 양쪽 버전을 시각적으로 비교하고 선택할 수 있는 UI를 구현합니다.
 
+<a id="goals"></a>
 ## 🎯 목표
 
 - 충돌 파일의 차이점을 명확하게 시각화
@@ -249,6 +250,17 @@ export function SyncMonitor() {
 }
 ```
 
+### 4. WebSocket Stability & Performance (Refactored)
+
+리뷰 피드백을 반영하여 WebSocket 통신의 안정성과 성능을 대폭 강화했습니다.
+
+#### **Parallel Broadcasting**
+- `asyncio.gather`를 도입하여 메시지 전송을 병렬화했습니다. 이를 통해 특정 클라이언트의 네트워크 지연이 전체 브로드캐스트 성능을 저하시키는 HoL(Head-of-Line) Blocking 문제를 해결했습니다.
+- 메시지 사이즈 계산을 위한 UTF-8 인코딩을 루프 외부로 분리하여, 사이즈 측정 시 발생하는 불필요한 중복 연산을 제거했습니다.
+
+#### **Robust Error Handling**
+- `disconnect` 메서드에 `propagate_errors` 플래그를 추가하여, 연결 정리(`_prune_connection`) 시 발생하는 예외를 정확히 포착하고 로깅할 수 있도록 구조를 개선했습니다. `WebSocketDisconnect`를 명시적으로 처리하여 로그의 정확도를 높였습니다.
+
 ## 🚀 Running
 
 ### Backend
@@ -343,12 +355,100 @@ const DiffEditor = dynamic(
 );
 ```
 
-## 📝 Next Steps
+## 📅 Task Progress
 
-- [ ] 3-way Merge 지원
-- [ ] 충돌 이력 저장 및 통계
-- [ ] AI 기반 자동 해결 제안
-- [ ] 대용량 파일 Diff 최적화
+### Day 1 (01/22)
+- [x] Backend Diff Service 구현 (`diff_service.py`)
+- [x] Backend Unit Tests 작성 (`test_diff_service.py`)
+- [x] WebSocket Monitor 최적화 (Phase 1 Code Review 반영)
+
+### Day 2 (01/23)
+- [x] Backend Diff Endpoint 추가 (`GET /conflicts/{id}/diff`)
+- [x] Frontend Dependency 설치 (`@monaco-editor/react`, `react-markdown`)
+- [x] Frontend Component Scaffolding (`ConflictDiffViewer.tsx`)
+- [x] Frontend Refactoring: Strategy Constants 도입 및 Backend Protocol 통일
+- [x] Backend Refactoring: `ResolutionStrategy` Enum 위 도입 (Validation 강화)
+- [x] Frontend Refactoring: `SyncMonitor` 및 `api.ts` 매직 스트링 제거 (Status 상수 적용)
+- [x] Backend Fix: 중복 Route Decorator 제거 및 최종 점검 완료
+- [ ] Frontend Integration (API 연동 및 Diff 렌더링)
+
+### Day 3 (01/24)
+- [x] Frontend Integration 계획 수립 및 문서화
+
+### Day 4 (01/25)
+- [x] Frontend: Monaco Diff Editor UI 구현 (DiffEditor Integration)
+- [x] Frontend: Conflict Resolution API Integration (GET /diff)
+- [x] Frontend Refactoring: Retry Logic 개선 & Type Safety 강화 (DiffResult)
+- [x] Frontend Refactoring: Race Condition 방지 & Custom Hook 도입 (`useFetch`)
+- [ ] Frontend: Resolution Action 핸들링 및 E2E Test (-> Day 5 이동)
+
+### Day 5 (01/26) - Integration Flow
+- [x] Integration: `SyncMonitor` 내 `ConflictDiffViewer` 연동 (Sheet UI, Responsive/Smooth Width)
+- [x] Logic: `POST /resolve` API 호출 (Safe URL Encoding) 및 상태 갱신 로직 구현
+- [x] Test: Integration Test 강화 (Parametrization, Schema Deep Check, Robust Error Validation Helper v2)
+
+### Day 6 (01/27) - Final Verification
+- [x] Integration Test 최종 검증 (5 passed, 1 warning)
+- [x] 모든 Resolution Strategy 테스트 통과 (`keep_local`, `keep_remote`, `keep_both`, `invalid_method`)
+- [x] Schema Deep Validation 및 Error Structure 검증 완료
+- [x] Phase 2 완료 확인 및 문서화
+
+### Day 7 (01/27) - Documentation Quality Improvement
+- [x] 문서 중복 제거 및 참조 구조 개선 (DRY 원칙 적용)
+- [x] 테스트 결과 시간 민감 정보 처리 (예시 명시)
+- [x] 헤더 날짜 제거 (Phase 간 일관성 확보)
+- [x] 앵커 링크 안정성 확보 (명시적 HTML 앵커 사용)
+
+## ✅ Phase 2 완료
+
+### 구현 범위
+Phase 2의 모든 계획된 기능이 구현 완료되었습니다:
+- **Backend**: Diff API 및 Resolution API (상세 내용: [1. Backend Diff API](#1-backend-diff-api) 참조)
+- **Frontend**: Monaco Diff Editor 기반 UI 컴포넌트 (상세 내용: [2. Frontend Diff Viewer Component](#2-frontend-diff-viewer-component) 참조)
+- **Integration**: SyncMonitor와의 통합 및 실시간 상태 갱신 (상세 내용: [3. SyncMonitor 통합](#3-syncmonitor-통합) 참조)
+
+### 테스트 검증
+모든 핵심 시나리오에 대한 Integration Test가 작성되고 통과되었습니다.
+
+**테스트 커버리지** (예시 실행 결과):
+```bash
+# 아래는 2026-01-27 시점의 테스트 실행 예시입니다.
+# 실제 테스트 수는 기능 추가에 따라 변경될 수 있습니다.
+pytest tests/integration/test_diff_viewer_flow.py
+========================= 5 passed, 1 warning in 0.61s =========================
+```
+
+**검증된 시나리오:**
+- ✅ Diff 데이터 조회 (`GET /api/sync/conflicts/{id}/diff`)
+- ✅ 충돌 해결 - Local 유지 (`POST /resolve?resolution_method=keep_local`)
+- ✅ 충돌 해결 - Remote 유지 (`POST /resolve?resolution_method=keep_remote`)
+- ✅ 충돌 해결 - 양쪽 유지 (`POST /resolve?resolution_method=keep_both`)
+- ✅ 잘못된 Resolution Method에 대한 422 Validation Error
+
+**테스트 품질 개선:**
+- Parametrized tests로 중복 제거
+- Deep schema validation (nested fields 검증)
+- Robust error structure validation (`tests/test_utils.py` helper 활용)
+
+### 주요 개선 사항
+개발 과정에서 도출된 품질 개선 항목:
+
+1. **Race Condition 방지**: `useFetch` Custom Hook의 AbortController 패턴
+2. **URL 안전성**: `URLSearchParams`를 통한 쿼리 파라미터 인코딩
+3. **반응형 UI**: Sheet 컴포넌트의 Smooth Width Transition (모바일 대응)
+4. **테스트 재사용성**: 공통 Validation Helper 분리 (`validate_pydantic_error_structure`)
+
+### DoD (Definition of Done) 달성 확인
+위의 [목표](#goals) 섹션에서 정의한 모든 완료 조건이 충족되었습니다:
+- ✅ 충돌 파일 차이점의 시각적 비교 (Monaco Diff Editor)
+- ✅ 3가지 해결 옵션 정상 동작 및 API 연동
+- ✅ Markdown Syntax Highlighting 지원
+
+## 📝 Future Tasks
+- [ ] 3-way Merge 알고리즘 연구 및 적용
+- [ ] 충돌 이력(History) 저장 기능
+- [ ] AI 기반 충돌 해결 가이드 제공
+- [ ] 대용량 파일 Diff 렌더링 최적화
 
 ## 🔗 Related Documentation
 
