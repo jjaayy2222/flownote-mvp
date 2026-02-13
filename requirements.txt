@@ -9,7 +9,7 @@ attrs==25.4.0
 billiard==4.2.4
 blinker==1.9.0
 cachetools==5.5.2
-celery==5.3.4
+celery==5.6.2
 certifi==2025.10.5
 cffi==2.0.0
 chardet==5.2.0
@@ -95,7 +95,7 @@ python-dotenv==1.1.1
 python-multipart==0.0.20
 pytz==2025.2
 PyYAML==6.0.3
-redis==4.6.0
+redis==7.1.1
 referencing==0.37.0
 regex==2025.10.23
 requests==2.32.5
@@ -130,3 +130,4 @@ wordcloud==1.9.4
 xxhash==3.6.0
 zipp==3.23.0
 zstandard==0.25.0
+exceptiongroup>=1.0.0; python_version < '3.11'
