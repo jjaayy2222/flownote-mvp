@@ -1,4 +1,4 @@
-# 📖 FlowNote 사용자 가이드 (v5.0)
+# 📖 FlowNote 사용자 가이드 (v6.0)
 
 <p align="center">
   <a href="./USER_GUIDE.md"><strong>한국어</strong></a> | <a href="./USER_GUIDE_EN.md">English</a>
