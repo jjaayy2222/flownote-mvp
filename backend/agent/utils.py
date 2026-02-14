@@ -8,7 +8,12 @@ else:
     try:
         from langchain_core.language_models import BaseChatModel
     except ImportError:
-        BaseChatModel = Any
+        # 런타임에 의존성이 없을 경우를 대비한 더미 클래스 (Type Safety)
+        class BaseChatModel:
+            """Dummy class for type hinting when langchain_core is missing."""
+
+            pass
+
 
 # 실제 구현 시 필요한 라이브러리 임포트 (TODO)
 # from langchain_openai import ChatOpenAI
