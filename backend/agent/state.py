@@ -1,6 +1,11 @@
-# backend/agent/state.py
+from typing import TypedDict, List, NotRequired
 
-from typing import TypedDict, List, Optional, NotRequired
+
+class ClassificationResult(TypedDict):
+    """분류 결과 데이터 구조"""
+
+    category: str
+    confidence: float
 
 
 class AgentState(TypedDict):
@@ -23,13 +28,11 @@ class AgentState(TypedDict):
     file_name: str
 
     # 내부 처리 (선택적)
-    extracted_keywords: NotRequired[List[str]]  # 초기값: []
-    retrieved_context: NotRequired[Optional[str]]  # 초기값: None
-    retry_count: NotRequired[int]  # 초기값: 0
+    extracted_keywords: NotRequired[List[str]]
+    retrieved_context: NotRequired[str]
+    retry_count: NotRequired[int]
 
     # 출력 (선택적)
-    classification_result: NotRequired[
-        Optional[dict]
-    ]  # 초기값: None (Pydantic 모델 or Dict)
-    confidence_score: NotRequired[float]  # 초기값: 0.0
-    reasoning: NotRequired[Optional[str]]  # 초기값: None
+    classification_result: NotRequired[ClassificationResult]
+    confidence_score: NotRequired[float]
+    reasoning: NotRequired[str]

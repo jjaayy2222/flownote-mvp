@@ -1,8 +1,12 @@
-# backend/agent/nodes.py
-
 from typing import Literal, Dict, Any, List, Optional
 from backend.agent.state import AgentState
 from backend.agent.utils import get_llm, extract_keywords, search_similar_docs
+
+# =================================================================
+# Constants
+# =================================================================
+CONFIDENCE_THRESHOLD = 0.7
+MAX_RETRY_COUNT = 3
 
 # =================================================================
 # Node Functions
@@ -13,7 +17,6 @@ def analyze_node(state: AgentState) -> Dict[str, Any]:
     """
     입력 분석 노드: 문서 내용에서 핵심 키워드 추출
     """
-    # 헬퍼 함수 호출 (Stub)
     # file_content는 Required 필드이므로 직접 접근 가능
     keywords = extract_keywords(state["file_content"])
     # State 업데이트: extracted_keywords
@@ -52,7 +55,6 @@ def validate_node(state: AgentState) -> Dict[str, Any]:
     검증 노드: 분류 결과의 신뢰도 및 형식 검사
     """
     # 검증 로직 구현 (현재는 항상 통과 가정)
-    # State 변경 없음
     return {}
 
 
@@ -81,11 +83,11 @@ def should_retry(state: AgentState) -> Literal["end", "retry"]:
     retry_count = state.get("retry_count", 0)
 
     # 1. 신뢰도가 충분히 높으면 종료
-    if confidence >= 0.7:
+    if confidence >= CONFIDENCE_THRESHOLD:
         return "end"
 
     # 2. 최대 재시도 횟수 초과 시 종료
-    if retry_count >= 3:
+    if retry_count >= MAX_RETRY_COUNT:
         return "end"
 
     # 3. 그 외의 경우 재시도 (Reflection 노드로 이동)
