@@ -1,7 +1,12 @@
-# backend/agent/graph.py
-
-from typing import Any, Dict
+from typing import Dict, Any
 from langgraph.graph import StateGraph, END
+
+# Import CompiledStateGraph for type hinting
+try:
+    from langgraph.graph.state import CompiledStateGraph
+except ImportError:
+    # Fallback/Dummy if version structure differs (though likely present in installed version)
+    from typing import Any as CompiledStateGraph
 
 from backend.agent.state import AgentState
 from backend.agent.nodes import (
@@ -14,7 +19,7 @@ from backend.agent.nodes import (
 )
 
 
-def create_workflow() -> Any:
+def create_workflow() -> CompiledStateGraph:
     """
     LangGraph 에이전트 워크플로우를 생성하고 컴파일합니다.
 

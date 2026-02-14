@@ -1,6 +1,11 @@
-# backend/agent/state.py
-
 from typing import TypedDict, List, Optional, NotRequired
+
+
+class ClassificationResult(TypedDict):
+    """분류 결과 데이터 구조"""
+
+    category: str
+    confidence: float
 
 
 class AgentState(TypedDict):
@@ -28,8 +33,6 @@ class AgentState(TypedDict):
     retry_count: NotRequired[int]  # 초기값: 0
 
     # 출력 (선택적)
-    classification_result: NotRequired[
-        Optional[dict]
-    ]  # 초기값: None (Pydantic 모델 or Dict)
+    classification_result: NotRequired[Optional[ClassificationResult]]  # 초기값: None
     confidence_score: NotRequired[float]  # 초기값: 0.0
     reasoning: NotRequired[Optional[str]]  # 초기값: None
