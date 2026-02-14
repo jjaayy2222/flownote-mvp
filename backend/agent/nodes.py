@@ -37,11 +37,7 @@ def classify_node(state: AgentState) -> Dict[str, Any]:
     """
     분류 수행 노드: LLM을 사용하여 PARA 카테고리 분류
     """
-    # TODO: 실제 LLM 호출 및 Pydantic 파싱 로직 구현
-    # llm = get_llm()
-    # if llm:
-    #     result = llm.invoke(...)
-    #     return result.dict()
+    # TODO: 추후 실제 LLM 호출 및 Pydantic 파싱 로직 구현 예정 (현재는 Stub 반환)
 
     # Stub: 현재 단계에서는 항상 기본값 반환 (LLM 연동 전)
     return {
