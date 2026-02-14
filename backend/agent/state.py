@@ -1,4 +1,4 @@
-from typing import TypedDict, List, Optional, NotRequired
+from typing import TypedDict, List, NotRequired
 
 
 class ClassificationResult(TypedDict):
@@ -28,11 +28,11 @@ class AgentState(TypedDict):
     file_name: str
 
     # 내부 처리 (선택적)
-    extracted_keywords: NotRequired[List[str]]  # 초기값: []
-    retrieved_context: NotRequired[Optional[str]]  # 초기값: None
-    retry_count: NotRequired[int]  # 초기값: 0
+    extracted_keywords: NotRequired[List[str]]
+    retrieved_context: NotRequired[str]
+    retry_count: NotRequired[int]
 
     # 출력 (선택적)
-    classification_result: NotRequired[Optional[ClassificationResult]]  # 초기값: None
-    confidence_score: NotRequired[float]  # 초기값: 0.0
-    reasoning: NotRequired[Optional[str]]  # 초기값: None
+    classification_result: NotRequired[ClassificationResult]
+    confidence_score: NotRequired[float]
+    reasoning: NotRequired[str]
