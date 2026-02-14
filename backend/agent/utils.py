@@ -1,17 +1,23 @@
 # backend/agent/utils.py
 
-from typing import List, Optional
+from typing import List, Optional, Any
+
+try:
+    from langchain_core.language_models import BaseChatModel
+except ImportError:
+    # 런타임에 의존성이 없을 경우를 대비한 더미 타입 (Type Hinting)
+    BaseChatModel = Any  # type: ignore
 
 # 실제 구현 시 필요한 라이브러리 임포트 (TODO)
 # from langchain_openai import ChatOpenAI
 
 
-def get_llm():
+def get_llm() -> Optional["BaseChatModel"]:
     """
     LLM 인스턴스를 반환하는 팩토리 함수 (Stub)
 
     Returns:
-        BaseChatModel or None: 초기화된 LLM 인스턴스 (현재는 None 반환)
+        Optional[BaseChatModel]: 초기화된 LLM 인스턴스 (현재는 None 반환)
     """
     # TODO: 실제 구현 시 ChatOpenAI 인스턴스 반환 및 설정
     # llm = ChatOpenAI(model="gpt-4o", temperature=0)
