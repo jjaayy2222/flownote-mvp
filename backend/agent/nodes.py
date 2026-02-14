@@ -39,23 +39,16 @@ def classify_node(state: AgentState) -> Dict[str, Any]:
     """
     llm = get_llm()
 
-    if not llm:
-        # Stub: LLM 미설정 시 기본값 반환
-        return {
-            "classification_result": {"category": "Resources", "confidence": 0.0},
-            "confidence_score": 0.0,
-            "reasoning": "LLM not initialized (Stub)",
-        }
-
     # TODO: 실제 LLM 호출 및 Pydantic 파싱 로직 구현
-    # result = llm.invoke(...)
-    # return result.dict()
+    # if llm:
+    #     result = llm.invoke(...)
+    #     return result.dict()
 
-    # 임시 Stub (구현 전까지 유지)
+    # Stub: 현재 단계에서는 항상 기본값 반환 (LLM 연동 전)
     return {
-        "classification_result": {"category": "Projects", "confidence": 0.0},
+        "classification_result": {"category": "Resources", "confidence": 0.0},
         "confidence_score": 0.0,
-        "reasoning": "LLM implementation pending",
+        "reasoning": "Stub: LLM logic pending implementation",
     }
 
 

@@ -1,12 +1,9 @@
 # backend/agent/utils.py
 
-from typing import List, Optional, Any
+from typing import List, Optional, TYPE_CHECKING, Any
 
-try:
+if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
-except ImportError:
-    # 런타임에 의존성이 없을 경우를 대비한 더미 타입 (Type Hinting)
-    BaseChatModel = Any  # type: ignore
 
 # 실제 구현 시 필요한 라이브러리 임포트 (TODO)
 # from langchain_openai import ChatOpenAI
