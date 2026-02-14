@@ -4,6 +4,11 @@ from typing import List, Optional, TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
+else:
+    try:
+        from langchain_core.language_models import BaseChatModel
+    except ImportError:
+        BaseChatModel = Any
 
 # 실제 구현 시 필요한 라이브러리 임포트 (TODO)
 # from langchain_openai import ChatOpenAI
