@@ -1,6 +1,6 @@
 # backend/agent/state.py
 
-from typing import TypedDict, List, Optional
+from typing import TypedDict, List, Optional, NotRequired
 
 
 class AgentState(TypedDict):
@@ -18,16 +18,18 @@ class AgentState(TypedDict):
         reasoning: LLM의 추론 과정 설명
     """
 
-    # 입력
+    # 입력 (필수)
     file_content: str
     file_name: str
 
-    # 내부 처리
-    extracted_keywords: List[str]  # 초기값: []
-    retrieved_context: Optional[str]  # 초기값: None
-    retry_count: int  # 초기값: 0
+    # 내부 처리 (선택적)
+    extracted_keywords: NotRequired[List[str]]  # 초기값: []
+    retrieved_context: NotRequired[Optional[str]]  # 초기값: None
+    retry_count: NotRequired[int]  # 초기값: 0
 
-    # 출력
-    classification_result: Optional[dict]  # 초기값: None (Pydantic 모델 or Dict)
-    confidence_score: float  # 초기값: 0.0
-    reasoning: Optional[str]  # 초기값: None
+    # 출력 (선택적)
+    classification_result: NotRequired[
+        Optional[dict]
+    ]  # 초기값: None (Pydantic 모델 or Dict)
+    confidence_score: NotRequired[float]  # 초기값: 0.0
+    reasoning: NotRequired[Optional[str]]  # 초기값: None
