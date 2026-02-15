@@ -1,12 +1,45 @@
 from typing import Literal, Dict, Any, List, Optional
+import logging
+
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import PydanticOutputParser
+from pydantic import BaseModel, Field
+
 from backend.agent.state import AgentState
 from backend.agent.utils import get_llm, extract_keywords, search_similar_docs
+
+# Try importing specific exceptions for better error handling
+try:
+    from langchain_core.exceptions import OutputParserException
+except ImportError:
+    # 런타임에 의존성이 구버전이거나 없을 경우를 대비한 더미 클래스
+    class OutputParserException(Exception):
+        pass
+
+
+# =================================================================
+# Logger Setup
+# =================================================================
+logger = logging.getLogger(__name__)
 
 # =================================================================
 # Constants
 # =================================================================
+# Used in conditional edges (should_retry) logic
 CONFIDENCE_THRESHOLD = 0.7
 MAX_RETRY_COUNT = 3
+
+
+# =================================================================
+# Pydantic Models for Output Parsing
+# =================================================================
+class ClassificationOutput(BaseModel):
+    category: str = Field(
+        description="The PARA category (Projects, Areas, Resources, Archives)"
+    )
+    confidence: float = Field(description="Confidence score between 0.0 and 1.0")
+    reasoning: str = Field(description="Reasoning for the classification")
+
 
 # =================================================================
 # Node Functions
@@ -17,8 +50,9 @@ def analyze_node(state: AgentState) -> Dict[str, Any]:
     """
     입력 분석 노드: 문서 내용에서 핵심 키워드 추출
     """
-    # file_content는 Required 필드이므로 직접 접근 가능
-    keywords = extract_keywords(state["file_content"])
+    # 안전한 접근 (데이터 누락 시 빈 문자열 처리하여 에러 방지)
+    content = state.get("file_content", "")
+    keywords = extract_keywords(content)
     # State 업데이트: extracted_keywords
     return {"extracted_keywords": keywords}
 
@@ -30,7 +64,7 @@ def retrieve_node(state: AgentState) -> Dict[str, Any]:
     # NotRequired 필드 안전한 접근
     keywords = state.get("extracted_keywords", [])
 
-    # 헬퍼 함수 호출 (Stub)
+    # 헬퍼 함수 호출 (Stub -> Mock)
     context = search_similar_docs(keywords)
     # State 업데이트: retrieved_context
     return {"retrieved_context": context}
@@ -40,14 +74,93 @@ def classify_node(state: AgentState) -> Dict[str, Any]:
     """
     분류 수행 노드: LLM을 사용하여 PARA 카테고리 분류
     """
-    # TODO: 추후 실제 LLM 호출 및 Pydantic 파싱 로직 구현 예정 (현재는 Stub 반환)
+    llm = get_llm()
 
-    # Stub: 현재 단계에서는 항상 기본값 반환 (LLM 연동 전)
-    return {
-        "classification_result": {"category": "Resources", "confidence": 0.0},
-        "confidence_score": 0.0,
-        "reasoning": "Stub: LLM logic pending implementation",
-    }
+    # LLM 초기화 실패 시 Stub 반환 (안전장치)
+    if not llm:
+        logger.warning("LLM not initialized, returning Stub for classify_node")
+        return {
+            "classification_result": {"category": "Resources", "confidence": 0.0},
+            "confidence_score": 0.0,
+            "reasoning": "LLM initialization failed (Stub)",
+        }
+
+    # Prompt Template
+    template = """
+    You are an expert document classifier.
+    Your task is to classify the following document into one of the PARA method categories:
+    - Projects: Active tasks and projects with a deadline.
+    - Areas: Ongoing responsibilities without a deadline.
+    - Resources: Topics or themes of ongoing interest.
+    - Archives: Completed or inactive items.
+
+    Use the provided extracted keywords and retrieved context to aid your decision.
+    
+    File Name: {file_name}
+    Extracted Keywords: {keywords}
+    Retrieved Context: {context}
+    
+    Document Content (Snippet):
+    {content}
+    
+    {format_instructions}
+    """
+
+    try:
+        # Pydantic Output Parser 설정
+        parser = PydanticOutputParser(pydantic_object=ClassificationOutput)
+
+        # 포맷 지침을 포함한 프롬프트 생성 (Standard LangChain Pattern: .partial chaining)
+        # partial_variables를 직접 인자로 넘기는 것보다 명시적인 체이닝을 권장합니다.
+        prompt = ChatPromptTemplate.from_template(template).partial(
+            format_instructions=parser.get_format_instructions()
+        )
+
+        # 체인 연결: Prompt -> LLM -> Parser
+        chain = prompt | llm | parser
+
+        # 입력 데이터 준비 및 길이 제한
+        content_snippet = state.get("file_content", "")[:3000]
+        keywords_str = ", ".join(state.get("extracted_keywords", []))
+        context_str = state.get("retrieved_context", "")
+
+        # 체인 실행
+        result = chain.invoke(
+            {
+                "file_name": state.get("file_name", "Unknown"),
+                "keywords": keywords_str,
+                "context": context_str,
+                "content": content_snippet,
+            }
+        )
+
+        # Pydantic 모델 -> Dict 변환 (AgentState 호환)
+        return {
+            "classification_result": {
+                "category": result.category,
+                "confidence": result.confidence,
+            },
+            "confidence_score": result.confidence,
+            "reasoning": result.reasoning,
+        }
+
+    except OutputParserException as e:
+        logger.error("Parsing Error in classification", exc_info=True)
+        # 파싱 에러 시 명확한 사유와 함께 실패 처리 (재시도 로직에서 활용 가능)
+        return {
+            "classification_result": {"category": "Unclassified", "confidence": 0.0},
+            "confidence_score": 0.0,
+            "reasoning": f"Output Parsing Error: {str(e)}. Response format invalid.",
+        }
+
+    except Exception as e:
+        logger.error("Unexpected Error in classification", exc_info=True)
+        # 그 외 예상치 못한 에러에 대한 안전장치 (Fail-safe)
+        return {
+            "classification_result": {"category": "Unclassified", "confidence": 0.0},
+            "confidence_score": 0.0,
+            "reasoning": f"Unexpected Classification error: {str(e)}",
+        }
 
 
 def validate_node(state: AgentState) -> Dict[str, Any]:
