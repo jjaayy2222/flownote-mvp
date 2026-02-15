@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 # =================================================================
 # Constants
 # =================================================================
+# Used in conditional edges (should_retry) logic
 CONFIDENCE_THRESHOLD = 0.7
 MAX_RETRY_COUNT = 3
 
@@ -95,14 +96,14 @@ def classify_node(state: AgentState) -> Dict[str, Any]:
     {format_instructions}
     """
 
-    # Pydantic Output Parser 설정
     try:
+        # Pydantic Output Parser 설정
         parser = PydanticOutputParser(pydantic_object=ClassificationOutput)
 
-        # 포맷 지침을 포함한 프롬프트 생성
-        prompt = ChatPromptTemplate.from_template(
-            template,
-            partial_variables={"format_instructions": parser.get_format_instructions()},
+        # 포맷 지침을 포함한 프롬프트 생성 (Standard LangChain Pattern: .partial chaining)
+        # partial_variables를 직접 인자로 넘기는 것보다 명시적인 체이닝을 권장합니다.
+        prompt = ChatPromptTemplate.from_template(template).partial(
+            format_instructions=parser.get_format_instructions()
         )
 
         # 체인 연결: Prompt -> LLM -> Parser
@@ -136,7 +137,6 @@ def classify_node(state: AgentState) -> Dict[str, Any]:
     except Exception as e:
         logger.error("Error in classification", exc_info=True)
         # 실패 시 Stub 반환 (안전장치)
-        # 실제 운영 환경에서는 에러를 로깅하고 재시도하거나 사용자에게 알림
         return {
             "classification_result": {"category": "Unclassified", "confidence": 0.0},
             "confidence_score": 0.0,

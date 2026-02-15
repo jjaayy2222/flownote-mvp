@@ -104,8 +104,10 @@ def _extract_keywords_regex(text: str) -> List[str]:
     if not text:
         return []
 
-    # 간단한 정규식: 대문자로 시작하는 단어 또는 5글자 이상 단어
-    words = re.findall(r"\b[A-Za-z][a-z]{4,}\b|\b[A-Z][a-zA-Z]+\b", text)
+    # Regex 확장: 영어(대문자/긴단어) OR 한글(2글자 이상)
+    # \b pattern for English, generic pattern for Korean
+    pattern = r"\b[A-Za-z][a-z]{4,}\b|\b[A-Z][a-zA-Z]+\b|[가-힣]{2,}"
+    words = re.findall(pattern, text)
 
     # 중복 제거 (순서 유지) 및 상위 10개 반환
     # Python 3.7+ 에서는 dict insertion order가 보장됨
