@@ -1,4 +1,8 @@
 from typing import Literal, Dict, Any, List, Optional
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import PydanticOutputParser
+from pydantic import BaseModel, Field
+
 from backend.agent.state import AgentState
 from backend.agent.utils import get_llm, extract_keywords, search_similar_docs
 
@@ -7,6 +11,18 @@ from backend.agent.utils import get_llm, extract_keywords, search_similar_docs
 # =================================================================
 CONFIDENCE_THRESHOLD = 0.7
 MAX_RETRY_COUNT = 3
+
+
+# =================================================================
+# Pydantic Models for Output Parsing
+# =================================================================
+class ClassificationOutput(BaseModel):
+    category: str = Field(
+        description="The PARA category (Projects, Areas, Resources, Archives)"
+    )
+    confidence: float = Field(description="Confidence score between 0.0 and 1.0")
+    reasoning: str = Field(description="Reasoning for the classification")
+
 
 # =================================================================
 # Node Functions
@@ -30,7 +46,7 @@ def retrieve_node(state: AgentState) -> Dict[str, Any]:
     # NotRequired 필드 안전한 접근
     keywords = state.get("extracted_keywords", [])
 
-    # 헬퍼 함수 호출 (Stub)
+    # 헬퍼 함수 호출 (Stub -> Mock)
     context = search_similar_docs(keywords)
     # State 업데이트: retrieved_context
     return {"retrieved_context": context}
@@ -40,14 +56,84 @@ def classify_node(state: AgentState) -> Dict[str, Any]:
     """
     분류 수행 노드: LLM을 사용하여 PARA 카테고리 분류
     """
-    # TODO: 추후 실제 LLM 호출 및 Pydantic 파싱 로직 구현 예정 (현재는 Stub 반환)
+    llm = get_llm()
 
-    # Stub: 현재 단계에서는 항상 기본값 반환 (LLM 연동 전)
-    return {
-        "classification_result": {"category": "Resources", "confidence": 0.0},
-        "confidence_score": 0.0,
-        "reasoning": "Stub: LLM logic pending implementation",
-    }
+    # LLM 초기화 실패 시 Stub 반환 (안전장치)
+    if not llm:
+        return {
+            "classification_result": {"category": "Resources", "confidence": 0.0},
+            "confidence_score": 0.0,
+            "reasoning": "LLM initialization failed (Stub)",
+        }
+
+    # Prompt Template
+    template = """
+    You are an expert document classifier.
+    Your task is to classify the following document into one of the PARA method categories:
+    - Projects: Active tasks and projects with a deadline.
+    - Areas: Ongoing responsibilities without a deadline.
+    - Resources: Topics or themes of ongoing interest.
+    - Archives: Completed or inactive items.
+
+    Use the provided extracted keywords and retrieved context to aid your decision.
+    
+    File Name: {file_name}
+    Extracted Keywords: {keywords}
+    Retrieved Context: {context}
+    
+    Document Content (Snippet):
+    {content}
+    
+    {format_instructions}
+    """
+
+    # Pydantic Output Parser 설정
+    parser = PydanticOutputParser(pydantic_object=ClassificationOutput)
+
+    # 포맷 지침을 포함한 프롬프트 생성
+    prompt = ChatPromptTemplate.from_template(
+        template,
+        partial_variables={"format_instructions": parser.get_format_instructions()},
+    )
+
+    # 체인 연결: Prompt -> LLM -> Parser
+    chain = prompt | llm | parser
+
+    try:
+        # 입력 데이터 준비 및 길이 제한
+        content_snippet = state["file_content"][:3000]
+        keywords_str = ", ".join(state.get("extracted_keywords", []))
+        context_str = state.get("retrieved_context", "")
+
+        # 체인 실행
+        result = chain.invoke(
+            {
+                "file_name": state["file_name"],
+                "keywords": keywords_str,
+                "context": context_str,
+                "content": content_snippet,
+            }
+        )
+
+        # Pydantic 모델 -> Dict 변환 (AgentState 호환)
+        return {
+            "classification_result": {
+                "category": result.category,
+                "confidence": result.confidence,
+            },
+            "confidence_score": result.confidence,
+            "reasoning": result.reasoning,
+        }
+
+    except Exception as e:
+        print(f"Error in classification: {e}")
+        # 실패 시 Stub 반환 (안전장치)
+        # 실제 운영 환경에서는 에러를 로깅하고 재시도하거나 사용자에게 알림
+        return {
+            "classification_result": {"category": "Unclassified", "confidence": 0.0},
+            "confidence_score": 0.0,
+            "reasoning": f"Classification error: {str(e)}",
+        }
 
 
 def validate_node(state: AgentState) -> Dict[str, Any]:
@@ -55,6 +141,7 @@ def validate_node(state: AgentState) -> Dict[str, Any]:
     검증 노드: 분류 결과의 신뢰도 및 형식 검사
     """
     # 검증 로직 구현 (현재는 항상 통과 가정)
+    # 추후 Issue #464에 따라 세부 구현 예정
     return {}
 
 
