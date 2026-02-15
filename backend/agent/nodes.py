@@ -8,6 +8,15 @@ from pydantic import BaseModel, Field
 from backend.agent.state import AgentState
 from backend.agent.utils import get_llm, extract_keywords, search_similar_docs
 
+# Try importing specific exceptions for better error handling
+try:
+    from langchain_core.exceptions import OutputParserException
+except ImportError:
+    # 런타임에 의존성이 구버전이거나 없을 경우를 대비한 더미 클래스
+    class OutputParserException(Exception):
+        pass
+
+
 # =================================================================
 # Logger Setup
 # =================================================================
@@ -16,6 +25,7 @@ logger = logging.getLogger(__name__)
 # =================================================================
 # Constants
 # =================================================================
+# Used in conditional edges (should_retry) logic
 CONFIDENCE_THRESHOLD = 0.7
 MAX_RETRY_COUNT = 3
 
@@ -68,6 +78,7 @@ def classify_node(state: AgentState) -> Dict[str, Any]:
 
     # LLM 초기화 실패 시 Stub 반환 (안전장치)
     if not llm:
+        logger.warning("LLM not initialized, returning Stub for classify_node")
         return {
             "classification_result": {"category": "Resources", "confidence": 0.0},
             "confidence_score": 0.0,
@@ -95,14 +106,14 @@ def classify_node(state: AgentState) -> Dict[str, Any]:
     {format_instructions}
     """
 
-    # Pydantic Output Parser 설정
     try:
+        # Pydantic Output Parser 설정
         parser = PydanticOutputParser(pydantic_object=ClassificationOutput)
 
-        # 포맷 지침을 포함한 프롬프트 생성
-        prompt = ChatPromptTemplate.from_template(
-            template,
-            partial_variables={"format_instructions": parser.get_format_instructions()},
+        # 포맷 지침을 포함한 프롬프트 생성 (Standard LangChain Pattern: .partial chaining)
+        # partial_variables를 직접 인자로 넘기는 것보다 명시적인 체이닝을 권장합니다.
+        prompt = ChatPromptTemplate.from_template(template).partial(
+            format_instructions=parser.get_format_instructions()
         )
 
         # 체인 연결: Prompt -> LLM -> Parser
@@ -133,14 +144,22 @@ def classify_node(state: AgentState) -> Dict[str, Any]:
             "reasoning": result.reasoning,
         }
 
-    except Exception as e:
-        logger.error("Error in classification", exc_info=True)
-        # 실패 시 Stub 반환 (안전장치)
-        # 실제 운영 환경에서는 에러를 로깅하고 재시도하거나 사용자에게 알림
+    except OutputParserException as e:
+        logger.error("Parsing Error in classification", exc_info=True)
+        # 파싱 에러 시 명확한 사유와 함께 실패 처리 (재시도 로직에서 활용 가능)
         return {
             "classification_result": {"category": "Unclassified", "confidence": 0.0},
             "confidence_score": 0.0,
-            "reasoning": f"Classification error: {str(e)}",
+            "reasoning": f"Output Parsing Error: {str(e)}. Response format invalid.",
+        }
+
+    except Exception as e:
+        logger.error("Unexpected Error in classification", exc_info=True)
+        # 그 외 예상치 못한 에러에 대한 안전장치 (Fail-safe)
+        return {
+            "classification_result": {"category": "Unclassified", "confidence": 0.0},
+            "confidence_score": 0.0,
+            "reasoning": f"Unexpected Classification error: {str(e)}",
         }
 
 
