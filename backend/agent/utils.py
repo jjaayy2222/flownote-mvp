@@ -12,6 +12,12 @@ load_dotenv()
 # 로거 설정
 logger = logging.getLogger(__name__)
 
+# 정규식 패턴 사전 컴파일 (Module Level Constant)
+# 목적: 매 호출마다의 컴파일 오버헤드 제거
+# 패턴: 영어(대문자 시작/긴 단어) 또는 한글(2글자 이상)
+KEYWORD_PATTERN = r"\b[A-Za-z][a-z]{4,}\b|\b[A-Z][a-zA-Z]+\b|[가-힣]{2,}"
+KEYWORD_REGEX = re.compile(KEYWORD_PATTERN)
+
 # 타입 힌팅용 임포트 (런타임 영향 최소화)
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
@@ -104,10 +110,8 @@ def _extract_keywords_regex(text: str) -> List[str]:
     if not text:
         return []
 
-    # Regex 확장: 영어(대문자/긴단어) OR 한글(2글자 이상)
-    # \b pattern for English, generic pattern for Korean
-    pattern = r"\b[A-Za-z][a-z]{4,}\b|\b[A-Z][a-zA-Z]+\b|[가-힣]{2,}"
-    words = re.findall(pattern, text)
+    # 미리 컴파일된 정규식 사용 (Performance Optimization)
+    words = KEYWORD_REGEX.findall(text)
 
     # 중복 제거 (순서 유지) 및 상위 10개 반환
     # Python 3.7+ 에서는 dict insertion order가 보장됨
