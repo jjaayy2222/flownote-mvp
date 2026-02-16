@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"  # Fix for test runner loading extra env vars from .env
 
 
 # Global settings instance
