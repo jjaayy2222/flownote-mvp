@@ -1,17 +1,10 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, TYPE_CHECKING
 from langgraph.graph import StateGraph, END
 
-# Import CompiledStateGraph for type hinting
-try:
+# Type Checking Only Imports
+if TYPE_CHECKING:
     from langgraph.graph.state import CompiledStateGraph
-except ImportError:
-    CompiledStateGraph = Any  # type: ignore
-
-# Import BaseCheckpointSaver for type safety
-try:
     from langgraph.checkpoint.base import BaseCheckpointSaver
-except ImportError:
-    BaseCheckpointSaver = Any  # type: ignore
 
 from backend.agent.state import AgentState
 from backend.agent.nodes import (
@@ -26,8 +19,8 @@ from backend.agent.checkpointer import get_checkpointer
 
 
 def create_workflow(
-    checkpointer: Optional[BaseCheckpointSaver] = None,
-) -> CompiledStateGraph:
+    checkpointer: Optional["BaseCheckpointSaver"] = None,
+) -> "CompiledStateGraph":
     """
     LangGraph 에이전트 워크플로우를 생성하고 컴파일합니다.
 
