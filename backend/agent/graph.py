@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Dict, Any, Optional, TYPE_CHECKING
 from langgraph.graph import StateGraph, END
 
@@ -19,8 +21,8 @@ from backend.agent.checkpointer import get_checkpointer
 
 
 def create_workflow(
-    checkpointer: Optional["BaseCheckpointSaver"] = None,
-) -> "CompiledStateGraph":
+    checkpointer: Optional[BaseCheckpointSaver] = None,
+) -> CompiledStateGraph:
     """
     LangGraph 에이전트 워크플로우를 생성하고 컴파일합니다.
 
