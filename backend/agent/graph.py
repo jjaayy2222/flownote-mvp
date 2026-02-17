@@ -1,14 +1,10 @@
 from typing import Dict, Any, Optional, TYPE_CHECKING
 from langgraph.graph import StateGraph, END
 
-# Type Checking Only Imports (Prevents Runtime ImportErrors & Circular Dependencies)
+# Type Checking Only Imports
 if TYPE_CHECKING:
     from langgraph.graph.state import CompiledStateGraph
-
-    try:
-        from langgraph.checkpoint.base import BaseCheckpointSaver
-    except ImportError:
-        from typing import Any as BaseCheckpointSaver
+    from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from backend.agent.state import AgentState
 from backend.agent.nodes import (
@@ -29,11 +25,11 @@ def create_workflow(
     LangGraph 에이전트 워크플로우를 생성하고 컴파일합니다.
 
     Args:
-        checkpointer (Optional["BaseCheckpointSaver"]): 상태 저장을 위한 체크포인터.
+        checkpointer (Optional[BaseCheckpointSaver]): 상태 저장을 위한 체크포인터.
                                                      None일 경우 get_checkpointer()를 통해 환경에 맞는 Saver를 자동 선택합니다.
 
     Returns:
-        "CompiledStateGraph": 실행 가능한 에이전트 객체 (Persistence 기능 포함)
+        CompiledStateGraph: 실행 가능한 에이전트 객체 (Persistence 기능 포함)
     """
     # 1. StateGraph 생성
     workflow = StateGraph(AgentState)

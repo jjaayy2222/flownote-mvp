@@ -1,15 +1,13 @@
 import os
 import logging
-from typing import Optional, TYPE_CHECKING, Any
-
-from langgraph.checkpoint.memory import MemorySaver
+from typing import Optional, TYPE_CHECKING
 
 # Type Checking Only Imports
+# LangGraph는 필수 의존성이므로 명시적으로 임포트하여 타입 힌트 지원
 if TYPE_CHECKING:
-    try:
-        from langgraph.checkpoint.base import BaseCheckpointSaver
-    except ImportError:
-        BaseCheckpointSaver = Any
+    from langgraph.checkpoint.base import BaseCheckpointSaver
+
+from langgraph.checkpoint.memory import MemorySaver
 
 # 로거 설정
 logger = logging.getLogger(__name__)
