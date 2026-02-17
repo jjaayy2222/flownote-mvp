@@ -1,15 +1,15 @@
 import os
 import logging
-from typing import Optional
-
-# LangGraph Base Class for Type Safety
-try:
-    from langgraph.checkpoint.base import BaseCheckpointSaver
-except ImportError:
-    # Fallback for older versions or if base module moved
-    from typing import Any as BaseCheckpointSaver
+from typing import Optional, TYPE_CHECKING, Any
 
 from langgraph.checkpoint.memory import MemorySaver
+
+# Type Checking Only Imports
+if TYPE_CHECKING:
+    try:
+        from langgraph.checkpoint.base import BaseCheckpointSaver
+    except ImportError:
+        BaseCheckpointSaver = Any
 
 # 로거 설정
 logger = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ except ImportError:
     Redis = None
 
 
-def get_checkpointer() -> BaseCheckpointSaver:
+def get_checkpointer() -> "BaseCheckpointSaver":
     """
     Checkpointer 인스턴스를 반환하는 팩토리 함수.
 
