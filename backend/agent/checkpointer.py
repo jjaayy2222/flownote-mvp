@@ -1,6 +1,13 @@
 import os
 import logging
-from typing import Optional, Any
+from typing import Optional
+
+# LangGraph Base Class for Type Safety
+try:
+    from langgraph.checkpoint.base import BaseCheckpointSaver
+except ImportError:
+    # Fallback for older versions or if base module moved
+    from typing import Any as BaseCheckpointSaver
 
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -17,7 +24,7 @@ except ImportError:
     Redis = None
 
 
-def get_checkpointer() -> Any:
+def get_checkpointer() -> BaseCheckpointSaver:
     """
     Checkpointer 인스턴스를 반환하는 팩토리 함수.
 
@@ -32,16 +39,17 @@ def get_checkpointer() -> Any:
 
     if redis_url and RedisSaver:
         try:
-            # Redis 연결 설정 (Synchronous for now, check langgraph async support if needed)
-            # LangGraph의 RedisSaver는 보통 동기/비동기를 지원하지만,
-            # 여기서는 편의상 동기 클라이언트로 연결합니다. (Graph 실행 모델에 따라 조정 필요)
+            # Redis 연결 설정
             connection = Redis.from_url(redis_url)
             checkpointer = RedisSaver(connection)
-            logger.info(f"Initialized Redis Checkpointer at {redis_url}")
+
+            # Security Fix: Do not log sensitive REDIS_URL
+            logger.info("Initialized Redis Checkpointer successfully.")
             return checkpointer
+
         except Exception as e:
             logger.error(
-                f"Failed to initialize Redis Checkpointer: {e}. Falling back to MemorySaver.",
+                "Failed to initialize Redis Checkpointer. Falling back to MemorySaver.",
                 exc_info=True,
             )
             return MemorySaver()

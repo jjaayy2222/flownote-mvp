@@ -5,8 +5,13 @@ from langgraph.graph import StateGraph, END
 try:
     from langgraph.graph.state import CompiledStateGraph
 except ImportError:
-    # Fallback/Dummy if version structure differs (though likely present in installed version)
     CompiledStateGraph = Any  # type: ignore
+
+# Import BaseCheckpointSaver for type safety
+try:
+    from langgraph.checkpoint.base import BaseCheckpointSaver
+except ImportError:
+    BaseCheckpointSaver = Any  # type: ignore
 
 from backend.agent.state import AgentState
 from backend.agent.nodes import (
@@ -20,13 +25,15 @@ from backend.agent.nodes import (
 from backend.agent.checkpointer import get_checkpointer
 
 
-def create_workflow(checkpointer: Optional[Any] = None) -> CompiledStateGraph:
+def create_workflow(
+    checkpointer: Optional[BaseCheckpointSaver] = None,
+) -> CompiledStateGraph:
     """
     LangGraph 에이전트 워크플로우를 생성하고 컴파일합니다.
 
     Args:
-        checkpointer (Optional[Any]): 상태 저장을 위한 체크포인터.
-                                      None일 경우 get_checkpointer()를 통해 환경에 맞는 Saver를 자동 선택합니다.
+        checkpointer (Optional[BaseCheckpointSaver]): 상태 저장을 위한 체크포인터.
+                                                     None일 경우 get_checkpointer()를 통해 환경에 맞는 Saver를 자동 선택합니다.
 
     Returns:
         CompiledStateGraph: 실행 가능한 에이전트 객체 (Persistence 기능 포함)
@@ -62,8 +69,6 @@ def create_workflow(checkpointer: Optional[Any] = None) -> CompiledStateGraph:
         checkpointer = get_checkpointer()
 
     # 8. Human-in-the-Loop 설정 (Optional)
-    # 신뢰도가 낮은 경우 사용자 개입을 위해 'reflect' 노드 실행 전 중단하도록 설정 가능
-    # interrupt_before = ["reflect"]
     interrupt_before = []
 
     # 9. 그래프 컴파일
