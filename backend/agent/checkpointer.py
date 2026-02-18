@@ -60,7 +60,8 @@ def get_checkpointer() -> BaseCheckpointSaver:
     if redis_url and not _REDIS_AVAILABLE:
         logger.warning(
             "REDIS_URL is set but 'langgraph-checkpoint-redis' is not installed. "
-            "Run: pip install langgraph-checkpoint-redis"
+            "Falling back to MemorySaver. "
+            "To enable Redis persistence, run: pip install langgraph-checkpoint-redis"
         )
 
     logger.info(

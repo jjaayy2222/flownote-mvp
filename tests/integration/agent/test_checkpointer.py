@@ -31,9 +31,35 @@ try:
 except ImportError:
     _REDIS_AVAILABLE = False
 
+
+def _is_redis_reachable() -> bool:
+    """Redis 서버에 실제로 연결 가능하고 RedisJSON을 지원하는지 확인합니다."""
+    if not REDIS_URL:
+        return False
+    try:
+        import redis
+
+        client = redis.from_url(REDIS_URL, socket_connect_timeout=1)
+        if not client.ping():
+            return False
+        # ShallowRedisSaver도 내부적으로 JSON 명령어를 사용하므로 지원 여부 확인
+        # 테스트용 임시 키로 JSON.SET 지원 여부 체크
+        try:
+            client.execute_command("JSON.SET", "__redis_check__", "$", '{"test": 1}')
+            client.delete("__redis_check__")
+            return True
+        except Exception:
+            # RedisJSON 모듈 미설치 시 스킵
+            return False
+    except Exception:
+        return False
+
+
+_REDIS_REACHABLE = _is_redis_reachable()
+
 skip_if_no_redis = pytest.mark.skipif(
-    not (_REDIS_AVAILABLE and REDIS_URL),
-    reason="Redis not available (REDIS_URL not set or langgraph-checkpoint-redis not installed)",
+    not (_REDIS_AVAILABLE and _REDIS_REACHABLE),
+    reason="Redis not available (REDIS_URL not set, package not installed, or server unreachable)",
 )
 
 
@@ -156,6 +182,25 @@ class TestMemorySaverFallback:
         assert isinstance(
             checkpointer, MemorySaver
         ), "Should fall back to MemorySaver when REDIS_URL is not set"
+
+    def test_checkpointer_falls_back_when_redis_unavailable(self, monkeypatch):
+        """REDIS_URL이 설정되어 있지만 langgraph-checkpoint-redis가 없는 경우 MemorySaver로 폴백되는지 검증"""
+        from langgraph.checkpoint.memory import MemorySaver
+        from backend.agent import checkpointer as checkpointer_module
+
+        # REDIS_URL이 설정된 상태에서 Redis 의존성이 없는 상황을 시뮬레이션
+        monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+        monkeypatch.setattr(
+            checkpointer_module,
+            "_REDIS_AVAILABLE",
+            False,
+            raising=False,
+        )
+
+        checkpointer = checkpointer_module.get_checkpointer()
+        assert isinstance(
+            checkpointer, MemorySaver
+        ), "Should fall back to MemorySaver when Redis backend is unavailable"
 
     def test_workflow_runs_with_memory_saver(self, monkeypatch):
         """MemorySaver로도 워크플로우가 정상 실행되는지 검증"""
