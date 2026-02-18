@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import logging
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 # Type Checking Only Imports
 if TYPE_CHECKING:
@@ -16,11 +16,14 @@ logger = logging.getLogger(__name__)
 try:
     # Redis Checkpointer 의존성 확인 (Optional)
     # 실제 사용 시: pip install langgraph-checkpoint-redis
-    from langgraph.checkpoint.redis import RedisSaver
-    from redis import Redis
+    # ShallowRedisSaver: RedisJSON 모듈 없이 동작하는 경량 버전 (기본 Redis 호환)
+    # RedisSaver: RedisJSON 모듈 필요 (고급 기능 지원)
+    from langgraph.checkpoint.redis import ShallowRedisSaver
+
+    _REDIS_AVAILABLE = True
 except ImportError:
-    RedisSaver = None
-    Redis = None
+    ShallowRedisSaver = None
+    _REDIS_AVAILABLE = False
 
 
 def get_checkpointer() -> BaseCheckpointSaver:
@@ -29,6 +32,7 @@ def get_checkpointer() -> BaseCheckpointSaver:
 
     우선순위:
     1. Redis (REDIS_URL 환경변수 존재 + 의존성 설치됨)
+       - ShallowRedisSaver 사용 (기본 Redis 호환, RedisJSON 불필요)
     2. Memory (In-Memory, 개발용 기본값)
 
     Returns:
@@ -36,26 +40,28 @@ def get_checkpointer() -> BaseCheckpointSaver:
     """
     redis_url = os.getenv("REDIS_URL")
 
-    if redis_url and RedisSaver:
+    if redis_url and _REDIS_AVAILABLE:
         try:
-            # Redis 연결 설정
-            connection = Redis.from_url(redis_url)
-            checkpointer = RedisSaver(connection)
-
+            # ShallowRedisSaver: 기본 Redis 명령어만 사용 (JSON.SET 불필요)
             # Security Fix: Do not log sensitive REDIS_URL
-            logger.info("Initialized Redis Checkpointer successfully.")
+            checkpointer = ShallowRedisSaver(redis_url=redis_url)
+            logger.info(
+                "Initialized ShallowRedisSaver (Redis Checkpointer) successfully."
+            )
             return checkpointer
 
-        except Exception as e:
+        except Exception:
             logger.error(
                 "Failed to initialize Redis Checkpointer. Falling back to MemorySaver.",
                 exc_info=True,
             )
             return MemorySaver()
 
-    if redis_url and not RedisSaver:
+    if redis_url and not _REDIS_AVAILABLE:
         logger.warning(
-            "REDIS_URL is set but 'langgraph-checkpoint-redis' or 'redis' is not installed. Using MemorySaver."
+            "REDIS_URL is set but 'langgraph-checkpoint-redis' is not installed. "
+            "Falling back to MemorySaver. "
+            "To enable Redis persistence, run: pip install langgraph-checkpoint-redis"
         )
 
     logger.info(
