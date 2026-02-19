@@ -69,6 +69,12 @@ def create_workflow(
 
     # 8. Human-in-the-Loop 설정
     # interrupt_before가 None이면 빈 리스트로 처리 (중단 없이 자동 실행)
+    # None 또는 list[str] 이외의 타입은 명확한 TypeError로 조기 탐지
+    if interrupt_before is not None and not isinstance(interrupt_before, list):
+        raise TypeError(
+            f"interrupt_before는 list[str] 또는 None이어야 합니다. "
+            f"전달된 타입: {type(interrupt_before).__name__!r}"
+        )
     _interrupt_before = interrupt_before if interrupt_before is not None else []
 
     # 전달된 노드 이름이 실제 그래프 노드 집합에 포함되는지 조기 검증
