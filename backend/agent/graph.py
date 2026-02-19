@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Any, Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 from langgraph.graph import StateGraph, END
 
 # Type Checking Only Imports
@@ -22,16 +22,20 @@ from backend.agent.checkpointer import get_checkpointer
 
 def create_workflow(
     checkpointer: Optional[BaseCheckpointSaver] = None,
+    interrupt_before: list[str] | None = None,
 ) -> CompiledStateGraph:
     """
     LangGraph 에이전트 워크플로우를 생성하고 컴파일합니다.
 
     Args:
         checkpointer (Optional[BaseCheckpointSaver]): 상태 저장을 위한 체크포인터.
-                                                     None일 경우 get_checkpointer()를 통해 환경에 맞는 Saver를 자동 선택합니다.
+            None일 경우 get_checkpointer()를 통해 환경에 맞는 Saver를 자동 선택합니다.
+        interrupt_before (list[str] | None): Human-in-the-Loop를 위해 실행 전 중단할
+            노드 이름 목록. 예: ["reflect"] - validate 후 reflect 진입 전 사용자 개입 허용.
+            None 또는 빈 리스트([])이면 중단 없이 자동 실행됩니다.
 
     Returns:
-        CompiledStateGraph: 실행 가능한 에이전트 객체 (Persistence 기능 포함)
+        CompiledStateGraph: 실행 가능한 에이전트 객체 (Persistence + HitL 기능 포함)
     """
     # 1. StateGraph 생성
     workflow = StateGraph(AgentState)
@@ -63,12 +67,14 @@ def create_workflow(
     if checkpointer is None:
         checkpointer = get_checkpointer()
 
-    # 8. Human-in-the-Loop 설정 (Optional)
-    interrupt_before = []
+    # 8. Human-in-the-Loop 설정
+    # interrupt_before가 None이면 빈 리스트로 처리 (중단 없이 자동 실행)
+    _interrupt_before = interrupt_before if interrupt_before is not None else []
 
     # 9. 그래프 컴파일
     compiled_workflow = workflow.compile(
-        checkpointer=checkpointer, interrupt_before=interrupt_before
+        checkpointer=checkpointer,
+        interrupt_before=_interrupt_before,
     )
 
     return compiled_workflow
