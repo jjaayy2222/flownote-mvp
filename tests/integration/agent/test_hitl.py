@@ -81,6 +81,15 @@ class TestHumanInTheLoop:
             result is not None
         ), "Workflow should run normally with empty interrupt_before"
 
+        # 명시적 빈 리스트를 전달했을 때도 기본 설정과 동일하게
+        # 워크플로우가 완전히 종료(terminal state)되는지 검증
+        # LangGraph의 state.next는 tuple 타입: 완전 종료 시 () 반환
+        state = workflow.get_state(config)
+        assert not state.next, (
+            f"Workflow with interrupt_before=[] should reach terminal state, "
+            f"got state.next={state.next!r}"
+        )
+
     def test_interrupt_before_accepts_none(self):
         """interrupt_before=None 명시 전달 시 정상 실행되는지 검증 (None → [] 정규화 경로 확인)
 
