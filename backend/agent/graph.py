@@ -71,6 +71,17 @@ def create_workflow(
     # interrupt_before가 None이면 빈 리스트로 처리 (중단 없이 자동 실행)
     _interrupt_before = interrupt_before if interrupt_before is not None else []
 
+    # 전달된 노드 이름이 실제 그래프 노드 집합에 포함되는지 조기 검증
+    # 오타나 잘못된 노드 이름을 컴파일 전에 탐지하여 런타임 오류를 방지
+    if _interrupt_before:
+        valid_nodes = set(workflow.nodes.keys())
+        unknown_nodes = [n for n in _interrupt_before if n not in valid_nodes]
+        if unknown_nodes:
+            raise ValueError(
+                f"interrupt_before에 알 수 없는 노드 이름이 포함되어 있습니다: {unknown_nodes}. "
+                f"사용 가능한 노드: {sorted(valid_nodes)}"
+            )
+
     # 9. 그래프 컴파일
     compiled_workflow = workflow.compile(
         checkpointer=checkpointer,
