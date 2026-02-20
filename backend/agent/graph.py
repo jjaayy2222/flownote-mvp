@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from typing import Optional, Sequence, TYPE_CHECKING
+from collections.abc import (
+    Sequence,
+)  # isinstance 체크용: typing.Sequence는 런타임 체크 불가 (Python 3.9+)
+from typing import Optional, TYPE_CHECKING
 from langgraph.graph import StateGraph, END
 
 # Type Checking Only Imports
@@ -69,17 +72,31 @@ def create_workflow(
         checkpointer = get_checkpointer()
 
     # 8. Human-in-the-Loop 설정
-    # - list, tuple 등 합리적인 Sequence[str] 타입은 모두 허용
-    # - str 단독 전달: Sequence이지만 노드명 리스트 의도가 아님 → 문자 단위 순회 방지
-    # - int, bool 등 비이터러블 스칼라: 명확한 TypeError로 조기 탐지
+    # - list, tuple 등 collections.abc.Sequence 구현체는 모두 허용
+    # - str/bytes: Sequence이지만 노드명 리스트 의도가 아님 → 문자/바이트 단위 순회 방지
+    # - set, dict, generator 등 비시퀀스 이터러블: Sequence 계약 불만족 → TypeError
+    # - int, bool 등 비이터러블 스칼라: Sequence 아님 → TypeError
     # - None은 빈 리스트로 정규화하여 중단 없이 자동 실행
     if interrupt_before is not None:
-        if isinstance(interrupt_before, str) or not hasattr(interrupt_before, "__iter__"):
+        if not isinstance(interrupt_before, Sequence) or isinstance(
+            interrupt_before, (str, bytes)
+        ):
             raise TypeError(
-                f"interrupt_before는 Sequence[str] 또는 None이어야 합니다. "
+                "interrupt_before는 Sequence[str] 또는 None이어야 합니다. "
                 f"전달된 타입: {type(interrupt_before).__name__!r}"
             )
-    _interrupt_before: list[str] = list(interrupt_before) if interrupt_before is not None else []
+    _interrupt_before: list[str] = (
+        list(interrupt_before) if interrupt_before is not None else []
+    )
+
+    # 요소 타입 검증: 모든 요소가 str인지 확인 (list[int] 등 혼합 타입 조기 차단)
+    if _interrupt_before:
+        non_str_elements = [n for n in _interrupt_before if not isinstance(n, str)]
+        if non_str_elements:
+            raise TypeError(
+                f"interrupt_before의 모든 요소는 str이어야 합니다. "
+                f"잘못된 요소: {non_str_elements!r}"
+            )
 
     # 전달된 노드 이름이 실제 그래프 노드 집합에 포함되는지 조기 검증
     # 오타나 잘못된 노드 이름을 컴파일 전에 탐지하여 런타임 오류를 방지
