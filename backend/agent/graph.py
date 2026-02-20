@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, Sequence, TYPE_CHECKING
 from langgraph.graph import StateGraph, END
 
 # Type Checking Only Imports
@@ -22,7 +22,7 @@ from backend.agent.checkpointer import get_checkpointer
 
 def create_workflow(
     checkpointer: Optional[BaseCheckpointSaver] = None,
-    interrupt_before: list[str] | None = None,
+    interrupt_before: Sequence[str] | None = None,
 ) -> CompiledStateGraph:
     """
     LangGraph 에이전트 워크플로우를 생성하고 컴파일합니다.
@@ -30,9 +30,10 @@ def create_workflow(
     Args:
         checkpointer (Optional[BaseCheckpointSaver]): 상태 저장을 위한 체크포인터.
             None일 경우 get_checkpointer()를 통해 환경에 맞는 Saver를 자동 선택합니다.
-        interrupt_before (list[str] | None): Human-in-the-Loop를 위해 실행 전 중단할
+        interrupt_before (Sequence[str] | None): Human-in-the-Loop를 위해 실행 전 중단할
             노드 이름 목록. 예: ["reflect"] - validate 후 reflect 진입 전 사용자 개입 허용.
-            None 또는 빈 리스트([])이면 중단 없이 자동 실행됩니다.
+            list, tuple 등 Sequence[str] 타입을 허용합니다.
+            None 또는 빈 시퀀스이면 중단 없이 자동 실행됩니다.
 
     Returns:
         CompiledStateGraph: 실행 가능한 에이전트 객체 (Persistence + HitL 기능 포함)
@@ -68,14 +69,17 @@ def create_workflow(
         checkpointer = get_checkpointer()
 
     # 8. Human-in-the-Loop 설정
-    # interrupt_before가 None이면 빈 리스트로 처리 (중단 없이 자동 실행)
-    # None 또는 list[str] 이외의 타입은 명확한 TypeError로 조기 탐지
-    if interrupt_before is not None and not isinstance(interrupt_before, list):
-        raise TypeError(
-            f"interrupt_before는 list[str] 또는 None이어야 합니다. "
-            f"전달된 타입: {type(interrupt_before).__name__!r}"
-        )
-    _interrupt_before = interrupt_before if interrupt_before is not None else []
+    # - list, tuple 등 합리적인 Sequence[str] 타입은 모두 허용
+    # - str 단독 전달: Sequence이지만 노드명 리스트 의도가 아님 → 문자 단위 순회 방지
+    # - int, bool 등 비이터러블 스칼라: 명확한 TypeError로 조기 탐지
+    # - None은 빈 리스트로 정규화하여 중단 없이 자동 실행
+    if interrupt_before is not None:
+        if isinstance(interrupt_before, str) or not hasattr(interrupt_before, "__iter__"):
+            raise TypeError(
+                f"interrupt_before는 Sequence[str] 또는 None이어야 합니다. "
+                f"전달된 타입: {type(interrupt_before).__name__!r}"
+            )
+    _interrupt_before: list[str] = list(interrupt_before) if interrupt_before is not None else []
 
     # 전달된 노드 이름이 실제 그래프 노드 집합에 포함되는지 조기 검증
     # 오타나 잘못된 노드 이름을 컴파일 전에 탐지하여 런타임 오류를 방지

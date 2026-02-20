@@ -197,21 +197,24 @@ class TestHumanInTheLoop:
             )
 
     def test_interrupt_before_raises_on_invalid_type(self):
-        """interrupt_before에 list가 아닌 잘못된 타입 전달 시 TypeError가 발생하는지 검증.
+        """interrupt_before에 Sequence[str]이 아닌 잘못된 타입 전달 시 TypeError가 발생하는지 검증.
 
-        graph.py의 isinstance 타입 가드가 동작하는지 확인합니다.
-        - str: 이터러블이지만 list[str]로 의도된 파라미터가 아님
+        graph.py의 타입 가드가 동작하는지 확인합니다.
+        - str: Sequence이지만 노드명 리스트로 허용되어서는 안 됨 (문자 단위 순회 방지)
         - int: 이터러블이 아닌 스칼라 값
+
+        match 패턴에 'interrupt_before'를 사용하여 에러 메시지 문구 변경에 미옷도록 합니다.
+        ValueError 테스트들과 동일한 패턴으로 일관성을 유지합니다.
         """
-        # 문자열: 이터러블이지만 노드명 리스트로 허용되어서는 안 됨
-        with pytest.raises(TypeError, match="list\\[str\\]"):
+        # 문자열: Sequence이지만 노드명 리스트로는 허용되어서는 안 됨
+        with pytest.raises(TypeError, match="interrupt_before"):
             create_workflow(
                 checkpointer=MemorySaver(),
                 interrupt_before="reflect",
             )
 
         # 정수: 이터러블이 아닌 스칼라
-        with pytest.raises(TypeError, match="list\\[str\\]"):
+        with pytest.raises(TypeError, match="interrupt_before"):
             create_workflow(
                 checkpointer=MemorySaver(),
                 interrupt_before=123,
