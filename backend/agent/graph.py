@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import (
+    Sequence,
+)  # isinstance 체크용: typing.Sequence는 런타임 체크 불가 (Python 3.9+)
 from typing import Optional, TYPE_CHECKING
 from langgraph.graph import StateGraph, END
 
@@ -22,7 +25,7 @@ from backend.agent.checkpointer import get_checkpointer
 
 def create_workflow(
     checkpointer: Optional[BaseCheckpointSaver] = None,
-    interrupt_before: list[str] | None = None,
+    interrupt_before: Sequence[str] | None = None,
 ) -> CompiledStateGraph:
     """
     LangGraph 에이전트 워크플로우를 생성하고 컴파일합니다.
@@ -30,9 +33,10 @@ def create_workflow(
     Args:
         checkpointer (Optional[BaseCheckpointSaver]): 상태 저장을 위한 체크포인터.
             None일 경우 get_checkpointer()를 통해 환경에 맞는 Saver를 자동 선택합니다.
-        interrupt_before (list[str] | None): Human-in-the-Loop를 위해 실행 전 중단할
+        interrupt_before (Sequence[str] | None): Human-in-the-Loop를 위해 실행 전 중단할
             노드 이름 목록. 예: ["reflect"] - validate 후 reflect 진입 전 사용자 개입 허용.
-            None 또는 빈 리스트([])이면 중단 없이 자동 실행됩니다.
+            list, tuple 등 Sequence[str] 타입을 허용합니다.
+            None 또는 빈 시퀀스이면 중단 없이 자동 실행됩니다.
 
     Returns:
         CompiledStateGraph: 실행 가능한 에이전트 객체 (Persistence + HitL 기능 포함)
@@ -68,8 +72,31 @@ def create_workflow(
         checkpointer = get_checkpointer()
 
     # 8. Human-in-the-Loop 설정
-    # interrupt_before가 None이면 빈 리스트로 처리 (중단 없이 자동 실행)
-    _interrupt_before = interrupt_before if interrupt_before is not None else []
+    # - list, tuple 등 collections.abc.Sequence 구현체는 모두 허용
+    # - str/bytes: Sequence이지만 노드명 리스트 의도가 아님 → 문자/바이트 단위 순회 방지
+    # - set, dict, generator 등 비시퀀스 이터러블: Sequence 계약 불만족 → TypeError
+    # - int, bool 등 비이터러블 스칼라: Sequence 아님 → TypeError
+    # - None은 빈 리스트로 정규화하여 중단 없이 자동 실행
+    if interrupt_before is not None:
+        if not isinstance(interrupt_before, Sequence) or isinstance(
+            interrupt_before, (str, bytes)
+        ):
+            raise TypeError(
+                "interrupt_before는 Sequence[str] 또는 None이어야 합니다. "
+                f"전달된 타입: {type(interrupt_before).__name__!r}"
+            )
+    _interrupt_before: list[str] = (
+        list(interrupt_before) if interrupt_before is not None else []
+    )
+
+    # 요소 타입 검증: 모든 요소가 str인지 확인 (list[int] 등 혼합 타입 조기 차단)
+    if _interrupt_before:
+        non_str_elements = [n for n in _interrupt_before if not isinstance(n, str)]
+        if non_str_elements:
+            raise TypeError(
+                f"interrupt_before의 모든 요소는 str이어야 합니다. "
+                f"잘못된 요소: {non_str_elements!r}"
+            )
 
     # 전달된 노드 이름이 실제 그래프 노드 집합에 포함되는지 조기 검증
     # 오타나 잘못된 노드 이름을 컴파일 전에 탐지하여 런타임 오류를 방지
