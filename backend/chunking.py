@@ -55,76 +55,91 @@ class TextChunker:
 
         self._warned_missing_attrs: Set[Tuple[int, str, str, str]] = set()
 
+    MAX_INVALID_VALUE_REPR_LEN: int = 100
+
+    def _get_splitter_context(self) -> Dict[str, Any]:
+        return {
+            "splitter_id": id(self._splitter),
+            "splitter_type": type(self._splitter).__name__,
+        }
+
+    def _coerce_splitter_int_attr(
+        self, attr_name: str, *, is_private: bool = False
+    ) -> Optional[int]:
+        if not hasattr(self._splitter, attr_name):
+            return None
+
+        val = getattr(self._splitter, attr_name)
+        if val is None:
+            return None
+        if isinstance(val, int) and not isinstance(val, bool):
+            return val
+
+        try:
+            return int(val)  # type: ignore[arg-type]
+        except (ValueError, TypeError):
+            val_repr = repr(val)
+            max_len = self.MAX_INVALID_VALUE_REPR_LEN
+            safe_val = (
+                val_repr[:max_len] + "..." if len(val_repr) > max_len else val_repr
+            )
+
+            context = self._get_splitter_context()
+            context.update(
+                {
+                    "invalid_type": type(val).__name__,
+                    "invalid_value": safe_val,
+                    "private_attr" if is_private else "attr_name": attr_name,
+                }
+            )
+
+            logger.warning(
+                f"Attribute '{attr_name}' on {context['splitter_type']} is not a valid int",
+                extra={"context": context},
+            )
+            return None
+
+    def _log_missing_splitter_attr(self, attr_name: str, private_attr: str) -> None:
+        context = self._get_splitter_context()
+        missing_attr_key = (
+            context["splitter_id"],
+            context["splitter_type"],
+            attr_name,
+            private_attr,
+        )
+        if missing_attr_key in self._warned_missing_attrs:
+            return
+
+        context.update(
+            {
+                "attr_name": attr_name,
+                "private_attr": private_attr,
+            }
+        )
+
+        logger.info(
+            f"Could not find '{attr_name}' or '{private_attr}' on {context['splitter_type']}",
+            extra={"context": context},
+        )
+        self._warned_missing_attrs.add(missing_attr_key)
+
     def _get_splitter_attr(
         self, attr_name: str, fallback_attr: Optional[str] = None
     ) -> Optional[int]:
         """스플리터에서 동적으로 속성을 읽어옵니다 (Public 및 명시적 Fallback 속성 지원)."""
         # 1. Public 속성 시도
-        if hasattr(self._splitter, attr_name):
-            val = getattr(self._splitter, attr_name)
-            if val is None:
-                return None
-            if isinstance(val, int) and not isinstance(val, bool):
-                return val
-            try:
-                return int(val)  # type: ignore
-            except (ValueError, TypeError):
-                logger.warning(
-                    f"Attribute '{attr_name}' on {type(self._splitter).__name__} is not a valid int",
-                    extra={
-                        "context": {
-                            "splitter_id": id(self._splitter),
-                            "splitter_type": type(self._splitter).__name__,
-                            "attr_name": attr_name,
-                            "invalid_type": type(val).__name__,
-                        }
-                    },
-                )
+        val = self._coerce_splitter_int_attr(attr_name, is_private=False)
+        if val is not None:
+            return val
 
         # 2. Private/Fallback 속성 시도
         private_attr = fallback_attr or f"_{attr_name}"
-        if hasattr(self._splitter, private_attr):
-            val = getattr(self._splitter, private_attr)
-            if val is None:
-                return None
-            if isinstance(val, int) and not isinstance(val, bool):
-                return val
-            try:
-                return int(val)  # type: ignore
-            except (ValueError, TypeError):
-                logger.warning(
-                    f"Attribute '{private_attr}' on {type(self._splitter).__name__} is not a valid int",
-                    extra={
-                        "context": {
-                            "splitter_id": id(self._splitter),
-                            "splitter_type": type(self._splitter).__name__,
-                            "private_attr": private_attr,
-                            "invalid_type": type(val).__name__,
-                        }
-                    },
-                )
+        val = self._coerce_splitter_int_attr(private_attr, is_private=True)
+        if val is not None:
+            return val
 
         # 3. 양쪽 모두 없을 경우, 중복 로깅 방지 후 info 레벨로 기록 (침묵 회피)
-        missing_attr_key = (
-            id(self._splitter),
-            type(self._splitter).__name__,
-            attr_name,
-            private_attr,
-        )
-        if missing_attr_key not in self._warned_missing_attrs:
-            logger.info(
-                f"Could not find '{attr_name}' or '{private_attr}' on {type(self._splitter).__name__}",
-                extra={
-                    "context": {
-                        "splitter_id": id(self._splitter),
-                        "splitter_type": type(self._splitter).__name__,
-                        "attr_name": attr_name,
-                        "private_attr": private_attr,
-                    }
-                },
-            )
-            self._warned_missing_attrs.add(missing_attr_key)
-
+        self._log_missing_splitter_attr(attr_name, private_attr)
         return None
 
     @property
