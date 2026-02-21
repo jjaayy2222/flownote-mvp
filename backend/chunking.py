@@ -43,28 +43,30 @@ class TextChunker:
                     f"splitter must be an instance of TextSplitter, got {type(splitter).__name__}"
                 )
             self._splitter = splitter
-            self._chunk_size: Optional[int] = getattr(
-                splitter, "chunk_size", getattr(splitter, "_chunk_size", None)
-            )
-            self._chunk_overlap: Optional[int] = getattr(
-                splitter, "chunk_overlap", getattr(splitter, "_chunk_overlap", None)
-            )
         else:
-            self._chunk_size = chunk_size
-            self._chunk_overlap = chunk_overlap
+            # 중복 키워드 인자 충돌 방지 (방어적 코딩)
+            splitter_kwargs.pop("chunk_size", None)
+            splitter_kwargs.pop("chunk_overlap", None)
+
             self._splitter = RecursiveCharacterTextSplitter(
                 chunk_size=chunk_size, chunk_overlap=chunk_overlap, **splitter_kwargs
             )
 
     @property
     def chunk_size(self) -> Optional[int]:
-        """기본 스플리터 사용 시 설정된 chunk_size 또는 주입된 스플리터의 속성 반환"""
-        return self._chunk_size
+        """현재 스플리터에 설정된 chunk_size 동적 반환 (런타임 변경 반영)"""
+        return getattr(
+            self._splitter, "chunk_size", getattr(self._splitter, "_chunk_size", None)
+        )
 
     @property
     def chunk_overlap(self) -> Optional[int]:
-        """기본 스플리터 사용 시 설정된 chunk_overlap 또는 주입된 스플리터의 속성 반환"""
-        return self._chunk_overlap
+        """현재 스플리터에 설정된 chunk_overlap 동적 반환 (런타임 변경 반영)"""
+        return getattr(
+            self._splitter,
+            "chunk_overlap",
+            getattr(self._splitter, "_chunk_overlap", None),
+        )
 
     def chunk_text(self, text: str) -> List[str]:
         """텍스트를 청크 단위로 분할"""
