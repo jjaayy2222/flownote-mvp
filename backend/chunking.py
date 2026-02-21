@@ -7,29 +7,26 @@ FlowNote MVP - 텍스트 청킹
 """
 
 
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+
 class TextChunker:
-    """텍스트를 작은 청크로 분할"""
+    """텍스트를 작은 청크로 분할 (RecursiveCharacterTextSplitter 기반)"""
     
     def __init__(self, chunk_size: int = 500, chunk_overlap: int = 50):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
+        self._splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
     
     def chunk_text(self, text: str) -> list[str]:
         """텍스트를 청크로 분할"""
         if not text:
             return []
         
-        chunks = []
-        start = 0
-        text_length = len(text)
-        
-        while start < text_length:
-            end = start + self.chunk_size
-            chunk = text[start:end]
-            chunks.append(chunk)
-            start = end - self.chunk_overlap
-        
-        return chunks
+        return self._splitter.split_text(text)
     
     def chunk_with_metadata(self, text: str, metadata: dict = None) -> list[dict]:
         """메타데이터와 함께 청크 생성"""
