@@ -8,13 +8,13 @@ FlowNote MVP - 텍스트 청킹
 
 
 import logging
-from typing import Any, Optional, Dict, List, TypeVar, cast
+from typing import Any, Optional, Dict, List, TypeVar, cast, Set, Tuple
 
 from langchain_text_splitters import TextSplitter, RecursiveCharacterTextSplitter
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T")
+T = TypeVar("T", bound=int)
 
 
 class TextChunker:
@@ -55,7 +55,7 @@ class TextChunker:
                 chunk_size=chunk_size, chunk_overlap=chunk_overlap, **kwargs
             )
 
-        self._warned_missing_attrs = set()
+        self._warned_missing_attrs: Set[Tuple[str, str]] = set()
 
     def _get_splitter_attr(
         self, attr_name: str, fallback_attr: Optional[str] = None
@@ -75,7 +75,8 @@ class TextChunker:
             return cast(Optional[T], getattr(self._splitter, private_attr))
 
         # 3. 양쪽 모두 없을 경우, 중복 로깅 방지 후 info 레벨로 기록 (침묵 회피)
-        if attr_name not in self._warned_missing_attrs:
+        missing_attr_key = (attr_name, private_attr)
+        if missing_attr_key not in self._warned_missing_attrs:
             logger.info(
                 f"Could not find '{attr_name}' or '{private_attr}' on {type(self._splitter).__name__}",
                 extra={
@@ -86,7 +87,7 @@ class TextChunker:
                     }
                 },
             )
-            self._warned_missing_attrs.add(attr_name)
+            self._warned_missing_attrs.add(missing_attr_key)
 
         return None
 
