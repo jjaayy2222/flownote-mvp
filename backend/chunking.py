@@ -24,15 +24,18 @@ class TextChunker:
         *,
         chunk_size: int = 500,
         chunk_overlap: int = 50,
+        **splitter_kwargs: Any,
     ) -> None:
         """
         초기화
         - splitter를 주입하거나 기본 RecursiveCharacterTextSplitter를 사용합니다.
+        - 고급 설정이 필요한 경우 splitter_kwargs를 통해 RecursiveCharacterTextSplitter 옵션을 전달할 수 있습니다.
 
         Args:
             splitter: 의존성 주입을 위한 TextSplitter 객체
             chunk_size: 청크 크기 (기본 스플리터 사용 시)
             chunk_overlap: 청크 중첩 크기 (기본 스플리터 사용 시)
+            splitter_kwargs: (고급) 기본 RecursiveCharacterTextSplitter에 전달할 추가 옵션들
         """
         if splitter is not None:
             if not isinstance(splitter, TextSplitter):
@@ -40,28 +43,36 @@ class TextChunker:
                     f"splitter must be an instance of TextSplitter, got {type(splitter).__name__}"
                 )
             self._splitter = splitter
-            self._chunk_size: Optional[int] = None
-            self._chunk_overlap: Optional[int] = None
+            self._chunk_size: Optional[int] = getattr(
+                splitter, "chunk_size", getattr(splitter, "_chunk_size", None)
+            )
+            self._chunk_overlap: Optional[int] = getattr(
+                splitter, "chunk_overlap", getattr(splitter, "_chunk_overlap", None)
+            )
         else:
             self._chunk_size = chunk_size
             self._chunk_overlap = chunk_overlap
             self._splitter = RecursiveCharacterTextSplitter(
-                chunk_size=chunk_size, chunk_overlap=chunk_overlap
+                chunk_size=chunk_size, chunk_overlap=chunk_overlap, **splitter_kwargs
             )
 
     @property
     def chunk_size(self) -> Optional[int]:
-        """기본 스플리터 사용 시 설정된 chunk_size, 주입된 스플리터면 None"""
+        """기본 스플리터 사용 시 설정된 chunk_size 또는 주입된 스플리터의 속성 반환"""
         return self._chunk_size
 
     @property
     def chunk_overlap(self) -> Optional[int]:
-        """기본 스플리터 사용 시 설정된 chunk_overlap, 주입된 스플리터면 None"""
+        """기본 스플리터 사용 시 설정된 chunk_overlap 또는 주입된 스플리터의 속성 반환"""
         return self._chunk_overlap
 
     def chunk_text(self, text: str) -> List[str]:
         """텍스트를 청크 단위로 분할"""
         if not isinstance(text, str):
+            logger.error(
+                "Invalid text type for chunking",
+                extra={"context": {"type": type(text).__name__}},
+            )
             raise TypeError(f"text must be of type str, got {type(text).__name__}")
         if not text:
             return []
@@ -73,6 +84,10 @@ class TextChunker:
     ) -> List[Dict[str, Any]]:
         """메타데이터와 함께 청크 생성"""
         if metadata is not None and not isinstance(metadata, dict):
+            logger.error(
+                "Invalid metadata type",
+                extra={"context": {"type": type(metadata).__name__}},
+            )
             raise TypeError(
                 f"metadata must be a dictionary, got {type(metadata).__name__}"
             )
