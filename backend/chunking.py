@@ -53,19 +53,39 @@ class TextChunker:
                 chunk_size=chunk_size, chunk_overlap=chunk_overlap, **kwargs
             )
 
-    def _get_splitter_attr(self, attr_name: str) -> Optional[int]:
-        """스플리터에서 동적으로 속성을 읽어옵니다 (Public 및 Private 변수 호환)."""
-        return getattr(
-            self._splitter, attr_name, getattr(self._splitter, f"_{attr_name}", None)
+    def _get_splitter_attr(
+        self, attr_name: str, fallback_attr: Optional[str] = None
+    ) -> Optional[Any]:
+        """스플리터에서 동적으로 속성을 읽어옵니다 (Public 및 명시적 Fallback 속성 지원)."""
+        # 1. Public 속성 시도
+        if hasattr(self._splitter, attr_name):
+            return getattr(self._splitter, attr_name)
+
+        # 2. Private/Fallback 속성 시도
+        private_attr = fallback_attr or f"_{attr_name}"
+        if hasattr(self._splitter, private_attr):
+            return getattr(self._splitter, private_attr)
+
+        # 3. 양쪽 모두 없을 경우, 잠재적 설정 오류를 경고 로깅으로 남김 (침묵 회피)
+        logger.warning(
+            f"Could not find '{attr_name}' or '{private_attr}' on {type(self._splitter).__name__}",
+            extra={
+                "context": {
+                    "splitter_type": type(self._splitter).__name__,
+                    "attr_name": attr_name,
+                    "private_attr": private_attr,
+                }
+            },
         )
+        return None
 
     @property
-    def chunk_size(self) -> Optional[int]:
+    def chunk_size(self) -> Optional[Any]:
         """현재 스플리터에 설정된 chunk_size 동적 반환 (런타임 변경 반영)"""
         return self._get_splitter_attr("chunk_size")
 
     @property
-    def chunk_overlap(self) -> Optional[int]:
+    def chunk_overlap(self) -> Optional[Any]:
         """현재 스플리터에 설정된 chunk_overlap 동적 반환 (런타임 변경 반영)"""
         return self._get_splitter_attr("chunk_overlap")
 
