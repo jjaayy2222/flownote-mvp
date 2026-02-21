@@ -48,8 +48,9 @@ jsonschema-specifications==2025.9.1
 kiwisolver==1.4.9
 kombu==5.6.1
 langchain==1.0.2
-langchain-core==1.0.0
+langchain-core==1.2.14
 langchain-openai==1.0.1
+langchain-text-splitters==1.1.1
 langgraph==1.0.1
 langgraph-checkpoint==3.0.0
 langgraph-checkpoint-redis==0.3.5
