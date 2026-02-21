@@ -55,14 +55,21 @@ class TextChunker:
 
         self._warned_missing_attrs: Set[Tuple[int, str, str, str]] = set()
 
+    MAX_INVALID_VALUE_REPR_LEN: int = 100
+
+    def _get_splitter_context(self) -> Dict[str, Any]:
+        return {
+            "splitter_id": id(self._splitter),
+            "splitter_type": type(self._splitter).__name__,
+        }
+
     def _coerce_splitter_int_attr(
-        self, attr_name: str, *, private: bool = False
+        self, attr_name: str, *, is_private: bool = False
     ) -> Optional[int]:
-        name = f"_{attr_name}" if private else attr_name
-        if not hasattr(self._splitter, name):
+        if not hasattr(self._splitter, attr_name):
             return None
 
-        val = getattr(self._splitter, name)
+        val = getattr(self._splitter, attr_name)
         if val is None:
             return None
         if isinstance(val, int) and not isinstance(val, bool):
@@ -72,44 +79,47 @@ class TextChunker:
             return int(val)  # type: ignore[arg-type]
         except (ValueError, TypeError):
             val_repr = repr(val)
-            safe_val = val_repr[:100] + "..." if len(val_repr) > 100 else val_repr
-            context: Dict[str, Any] = {
-                "splitter_id": id(self._splitter),
-                "splitter_type": type(self._splitter).__name__,
-                "invalid_type": type(val).__name__,
-                "invalid_value": safe_val,
-            }
-            if private:
-                context["private_attr"] = name
-            else:
-                context["attr_name"] = name
+            max_len = self.MAX_INVALID_VALUE_REPR_LEN
+            safe_val = (
+                val_repr[:max_len] + "..." if len(val_repr) > max_len else val_repr
+            )
+
+            context = self._get_splitter_context()
+            context.update(
+                {
+                    "invalid_type": type(val).__name__,
+                    "invalid_value": safe_val,
+                    "private_attr" if is_private else "attr_name": attr_name,
+                }
+            )
 
             logger.warning(
-                f"Attribute '{name}' on {type(self._splitter).__name__} is not a valid int",
+                f"Attribute '{attr_name}' on {context['splitter_type']} is not a valid int",
                 extra={"context": context},
             )
             return None
 
     def _log_missing_splitter_attr(self, attr_name: str, private_attr: str) -> None:
+        context = self._get_splitter_context()
         missing_attr_key = (
-            id(self._splitter),
-            type(self._splitter).__name__,
+            context["splitter_id"],
+            context["splitter_type"],
             attr_name,
             private_attr,
         )
         if missing_attr_key in self._warned_missing_attrs:
             return
 
+        context.update(
+            {
+                "attr_name": attr_name,
+                "private_attr": private_attr,
+            }
+        )
+
         logger.info(
-            f"Could not find '{attr_name}' or '{private_attr}' on {type(self._splitter).__name__}",
-            extra={
-                "context": {
-                    "splitter_id": id(self._splitter),
-                    "splitter_type": type(self._splitter).__name__,
-                    "attr_name": attr_name,
-                    "private_attr": private_attr,
-                }
-            },
+            f"Could not find '{attr_name}' or '{private_attr}' on {context['splitter_type']}",
+            extra={"context": context},
         )
         self._warned_missing_attrs.add(missing_attr_key)
 
@@ -118,13 +128,13 @@ class TextChunker:
     ) -> Optional[int]:
         """스플리터에서 동적으로 속성을 읽어옵니다 (Public 및 명시적 Fallback 속성 지원)."""
         # 1. Public 속성 시도
-        val = self._coerce_splitter_int_attr(attr_name, private=False)
+        val = self._coerce_splitter_int_attr(attr_name, is_private=False)
         if val is not None:
             return val
 
         # 2. Private/Fallback 속성 시도
         private_attr = fallback_attr or f"_{attr_name}"
-        val = self._coerce_splitter_int_attr(private_attr, private=True)
+        val = self._coerce_splitter_int_attr(private_attr, is_private=True)
         if val is not None:
             return val
 
