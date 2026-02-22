@@ -207,8 +207,9 @@ class BM25Retriever:
             외부 호출자는 명시적 빌드가 필요한 경우 public API인 `build_index()`를 사용하세요.
 
         Returns:
-            필터링 과정에서 제거된 문서들의 통계 딕셔너리.
-            (이 통계는 `add_documents` 내부에서 병합되거나, 외부에서 `build_index()` 호출 시 반환되어 활용됩니다.)
+            RebuildStats: 필터링 과정에서 제거된 문서들의 통계 딕셔너리.
+            주의: 이 통계는 `add_documents` 내부에서 처리 결과를 병합하는 데 사용되거나,
+            public API인 `build_index()` 호출 시 반환되어 외부 관측성(Observability)을 위해 활용됩니다.
         """
         stats: RebuildStats = {
             "removed_invalid_type": 0,
@@ -420,7 +421,9 @@ if __name__ == "__main__":
         },
     ]
 
-    retriever.add_documents(docs)
+    # 문서 추가 및 인덱스 빌드 수행
+    # 반환되는 통계(AddDocumentsStats)는 테스트 목적상 로그로 이미 확인되므로 여기선 명시적으로 무시합니다.
+    _ = retriever.add_documents(docs)
 
     query = "대화를 어떻게 관리하나요"
     logger.info("\n🔍 검색 쿼리: '%s'", query)
