@@ -22,13 +22,39 @@ from typing import (
     Any,
     Callable,
     Tuple,
+    TypedDict,
 )
 from rank_bm25 import BM25Okapi
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_SAMPLE_MAX_VISIBLE = 3
 
-def _format_samples(samples: List[str], total_count: int, max_visible: int = 3) -> str:
+
+class FilterStats(TypedDict):
+    """문서 필터링 과정에서 수집된 통계와 샘플 데이터."""
+
+    removed_invalid_type: int
+    removed_empty_token: int
+    invalid_samples: List[str]
+    empty_samples: List[str]
+
+
+class RebuildStats(TypedDict):
+    """인덱스 재구축 시 영구 제외된 문서 통계."""
+
+    removed_invalid_type: int
+    removed_empty_token: int
+
+
+class AddDocumentsStats(TypedDict):
+    """문서 추가 작업 결과 통계."""
+
+    rejected_format: int
+    rebuild_stats: Optional[RebuildStats]
+
+
+def _format_samples(samples: List[str], total_count: int, max_visible: int) -> str:
     """로그에 출력할 샘플 리스트 문자열 포맷팅 헬퍼. 정해진 개수를 초과하면 '...'을 붙입니다."""
     samples_str = ", ".join(samples[:max_visible])
     if total_count > max_visible:
@@ -127,7 +153,7 @@ class BM25Retriever:
 
     def _filter_documents_for_index(
         self,
-    ) -> Tuple[List[Dict[str, Any]], List[List[str]], Dict[str, Any]]:
+    ) -> Tuple[List[Dict[str, Any]], List[List[str]], FilterStats]:
         """
         인덱스 생성을 위한 유효 문서를 필터링하고 통계를 수집합니다.
         """
@@ -163,7 +189,7 @@ class BM25Retriever:
             valid_docs.append(doc)
             corpus.append(tokens)
 
-        stats = {
+        stats: FilterStats = {
             "removed_invalid_type": invalid_type_count,
             "removed_empty_token": empty_count,
             "invalid_samples": invalid_samples,
@@ -171,7 +197,7 @@ class BM25Retriever:
         }
         return valid_docs, corpus, stats
 
-    def _rebuild_index(self) -> Dict[str, int]:
+    def _rebuild_index(self) -> RebuildStats:
         """
         [내부 헬퍼 메서드] 현재 저장된 문서를 기반으로 BM25 인덱스를 재구성합니다.
 
@@ -182,9 +208,9 @@ class BM25Retriever:
 
         Returns:
             필터링 과정에서 제거된 문서들의 통계 딕셔너리.
-            (이 반환값은 외부에서 직접 소비되지 않으며, 주로 `add_documents`의 내부 통계 병합용으로 사용됩니다.)
+            (이 통계는 `add_documents` 내부에서 병합되거나, 외부에서 `build_index()` 호출 시 반환되어 활용됩니다.)
         """
-        stats: Dict[str, int] = {
+        stats: RebuildStats = {
             "removed_invalid_type": 0,
             "removed_empty_token": 0,
         }
@@ -204,7 +230,9 @@ class BM25Retriever:
                 "딕셔너리(dict) 타입이 아닌 비정상 항목 %d개를 인덱스 재빌드 과정에서 영구 제외했습니다. (샘플: %s)",
                 stats["removed_invalid_type"],
                 _format_samples(
-                    filter_stats["invalid_samples"], stats["removed_invalid_type"]
+                    filter_stats["invalid_samples"],
+                    stats["removed_invalid_type"],
+                    DEFAULT_SAMPLE_MAX_VISIBLE,
                 ),
             )
 
@@ -213,7 +241,9 @@ class BM25Retriever:
                 "유효한 키워드 토큰이 없는 문서 %d개를 인덱스에서 제외했습니다. (샘플 출처: %s)",
                 stats["removed_empty_token"],
                 _format_samples(
-                    filter_stats["empty_samples"], stats["removed_empty_token"]
+                    filter_stats["empty_samples"],
+                    stats["removed_empty_token"],
+                    DEFAULT_SAMPLE_MAX_VISIBLE,
                 ),
             )
 
@@ -225,15 +255,18 @@ class BM25Retriever:
         logger.info("BM25 인덱스 빌드 완료 (총 %d개 문서)", len(self.documents))
         return stats
 
-    def build_index(self) -> None:
+    def build_index(self) -> RebuildStats:
         """
         명시적으로 BM25 인덱스를 (재)빌드합니다. 배치 업데이트 후 사용하세요.
+
+        Returns:
+            재빌드 과정에서 필터링 및 제외된 문서들의 통계 결과
         """
-        _ = self._rebuild_index()
+        return self._rebuild_index()
 
     def add_documents(
         self, documents: List[Dict[str, Any]], rebuild: bool = True
-    ) -> Dict[str, Any]:
+    ) -> AddDocumentsStats:
         """
         문서 추가 및 BM25 인덱스 빌드
 
@@ -253,7 +286,7 @@ class BM25Retriever:
               (예: `rebuild=False` 이거나 추가된 문서가 없음).
             - `rebuild_stats` 가 dict 인 경우: 재빌드를 수행했고, 그 결과 통계를 담고 있음.
         """
-        stats: Dict[str, Any] = {"rejected_format": 0, "rebuild_stats": None}
+        stats: AddDocumentsStats = {"rejected_format": 0, "rebuild_stats": None}
         if not documents:
             return stats
 
@@ -284,7 +317,9 @@ class BM25Retriever:
             logger.warning(
                 "형식이 잘못된 문서 %d개를 추가 대상에서 제외했습니다. 샘플: %s",
                 rejected_count,
-                _format_samples(rejected_samples, rejected_count),
+                _format_samples(
+                    rejected_samples, rejected_count, DEFAULT_SAMPLE_MAX_VISIBLE
+                ),
             )
 
         if not valid_docs:
