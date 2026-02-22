@@ -14,7 +14,8 @@ FlowNote MVP - BM25 희소 벡터(키워드) 검색
 """
 
 import logging
-from typing import List, Dict, Optional, Any, Callable
+from collections.abc import Mapping
+from typing import List, Dict, Optional, Any, Callable, Tuple
 from rank_bm25 import BM25Okapi
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ class BM25Retriever:
                 text = str(text) if text is not None else ""
             else:
                 hint = "unknown"
-                if doc_metadata and hasattr(doc_metadata, "get"):
+                if isinstance(doc_metadata, Mapping):
                     hint = doc_metadata.get("source", "unknown")
                 logger.warning(
                     "문자열 또는 단순 스칼라 값이 아닌 데이터가 포함되어 토크나이징을 건너뜁니다. (coerce_all_strings=True 필요)",
@@ -109,32 +110,28 @@ class BM25Retriever:
             )
             return self._default_tokenize(text)
 
-    def _rebuild_index(self):
+    def _filter_documents_for_index(
+        self,
+    ) -> Tuple[List[Dict[str, Any]], List[List[str]], int, int, List[str], List[str]]:
         """
-        [내부 헬퍼 메서드] 현재 저장된 문서를 기반으로 BM25 인덱스를 재구성합니다.
+        인덱스 생성을 위한 유효 문서를 필터링하고 통계를 수집합니다.
 
-        주의:
-            이 메서드는 유효한 키워드가 없는 문서나 딕셔너리가 아닌 항목을
-            `self.documents` 리스트에서 영구적으로 필터링 및 제거 변경(mutate)합니다.
-            외부 호출자는 명시적 빌드가 필요한 경우 public API인 `build_index()`를 사용하세요.
+        Returns:
+            (valid_docs, corpus_tokens, invalid_type_count, empty_token_count, invalid_samples, empty_samples)
         """
-        if not self.documents:
-            self.bm25 = None
-            return
-
-        valid_corpus = []
-        valid_docs = []
-        empty_count = 0
+        valid_docs: List[Dict[str, Any]] = []
+        corpus: List[List[str]] = []
         invalid_type_count = 0
+        empty_count = 0
+        invalid_samples: List[str] = []
+        empty_samples: List[str] = []
 
-        # NOTE:
-        # 현재 구현은 리빌드 호출 시 전체 코퍼스를 기반으로 BM25 인덱스를 재구성합니다.
-        # 대량의 문서가 업데이트될 경우 add_documents(..., rebuild=False) 호출 후
-        # 마지막에 build_index()를 한 번만 호출하는 배치 처리를 권장합니다.
         for doc in self.documents:
-            # 레거시 데이터나 외부 강제 주입 등의 이유로 dict가 아닌 값이 들어왔을 경우 방어
+            # 레거시 데이터나 외부 강제 주입 방어
             if not isinstance(doc, dict):
                 invalid_type_count += 1
+                if len(invalid_samples) < 3:
+                    invalid_samples.append(type(doc).__name__)
                 continue
 
             metadata = doc.get("metadata", {})
@@ -142,36 +139,92 @@ class BM25Retriever:
 
             if not tokens:
                 empty_count += 1
-            else:
-                valid_corpus.append(tokens)
-                valid_docs.append(doc)
+                if len(empty_samples) < 3:
+                    hint = (
+                        metadata.get("source", "unknown")
+                        if isinstance(metadata, Mapping)
+                        else "unknown"
+                    )
+                    empty_samples.append(str(hint))
+                continue
+
+            valid_docs.append(doc)
+            corpus.append(tokens)
+
+        return (
+            valid_docs,
+            corpus,
+            invalid_type_count,
+            empty_count,
+            invalid_samples,
+            empty_samples,
+        )
+
+    def _rebuild_index(self) -> Dict[str, int]:
+        """
+        [내부 헬퍼 메서드] 현재 저장된 문서를 기반으로 BM25 인덱스를 재구성합니다.
+
+        주의:
+            이 메서드는 유효한 키워드가 없는 문서나 딕셔너리가 아닌 항목을
+            `self.documents` 리스트에서 영구적으로 필터링 및 제거 변경(mutate)합니다.
+            외부 호출자는 명시적 빌드가 필요한 경우 public API인 `build_index()`를 사용하세요.
+
+        Returns:
+            필터링 과정에서 제거된 문서들의 통계 딕셔너리
+        """
+        stats = {"removed_invalid_type": 0, "removed_empty_token": 0}
+
+        if not self.documents:
+            self.bm25 = None
+            return stats
+
+        (
+            valid_docs,
+            corpus,
+            invalid_count,
+            empty_count,
+            invalid_samples,
+            empty_samples,
+        ) = self._filter_documents_for_index()
 
         self.documents = valid_docs
+        stats["removed_invalid_type"] = invalid_count
+        stats["removed_empty_token"] = empty_count
 
-        if invalid_type_count > 0:
+        if invalid_count > 0:
             logger.warning(
-                "딕셔너리(dict) 타입이 아닌 비정상 항목 %d개를 인덱스 재빌드 과정에서 영구 제외했습니다.",
-                invalid_type_count,
+                "딕셔너리(dict) 타입이 아닌 비정상 항목 %d개를 인덱스 재빌드 과정에서 영구 제외했습니다. (샘플: %s)",
+                invalid_count,
+                ", ".join(invalid_samples),
             )
 
         if empty_count > 0:
             logger.warning(
-                "유효한 키워드 토큰이 없는 문서 %d개를 인덱스에서 제외했습니다.",
+                "유효한 키워드 토큰이 없는 문서 %d개를 인덱스에서 제외했습니다. (샘플 출처: %s)",
                 empty_count,
+                ", ".join(empty_samples),
             )
 
-        if not self.documents:
+        if not corpus:
             self.bm25 = None
-            return
+            return stats
 
-        self.bm25 = BM25Okapi(valid_corpus)
+        self.bm25 = BM25Okapi(corpus)
         logger.info("BM25 인덱스 빌드 완료 (총 %d개 문서)", len(self.documents))
+        return stats
 
-    def build_index(self):
-        """명시적으로 BM25 인덱스를 (재)빌드합니다. 배치 업데이트 후 사용하세요."""
-        self._rebuild_index()
+    def build_index(self) -> Dict[str, int]:
+        """
+        명시적으로 BM25 인덱스를 (재)빌드합니다. 배치 업데이트 후 사용하세요.
 
-    def add_documents(self, documents: List[Dict[str, Any]], rebuild: bool = True):
+        Returns:
+            제외된 문서들의 통계 딕셔너리
+        """
+        return self._rebuild_index()
+
+    def add_documents(
+        self, documents: List[Dict[str, Any]], rebuild: bool = True
+    ) -> Dict[str, Any]:
         """
         문서 추가 및 BM25 인덱스 빌드
 
@@ -183,29 +236,53 @@ class BM25Retriever:
         Args:
             documents: 문서 dict 리스트 (content, metadata 포함)
             rebuild: 문서 추가 후 즉시 인덱스를 재빌드할지 여부
+
+        Returns:
+            추가 및 재빌드 과정에서 제거된 처리 통계를 담은 딕셔너리
         """
+        stats: Dict[str, Any] = {"rejected_format": 0, "rebuild_stats": {}}
         if not documents:
-            return
+            return stats
 
         initial_count = len(documents)
-        valid_docs = [
-            doc for doc in documents if isinstance(doc, dict) and "content" in doc
-        ]
+        valid_docs = []
+        rejected_samples = []
+
+        for doc in documents:
+            if isinstance(doc, dict) and "content" in doc:
+                valid_docs.append(doc)
+            else:
+                if len(rejected_samples) < 3:
+                    if isinstance(doc, dict):
+                        metadata = doc.get("metadata")
+                        hint = (
+                            metadata.get("source", "unknown")
+                            if isinstance(metadata, Mapping)
+                            else "unknown"
+                        )
+                        rejected_samples.append(f"Content missing (source: {hint})")
+                    else:
+                        rejected_samples.append(type(doc).__name__)
 
         rejected_count = initial_count - len(valid_docs)
+        stats["rejected_format"] = rejected_count
+
         if rejected_count > 0:
             logger.warning(
-                "형식이 잘못된 문서 %d개를 추가 대상에서 제외했습니다 (dict 타입이 아니거나 'content' 키 누락).",
+                "형식이 잘못된 문서 %d개를 추가 대상에서 제외했습니다. 샘플: %s",
                 rejected_count,
+                ", ".join(rejected_samples),
             )
 
         if not valid_docs:
             logger.warning("유효한 문서가 없어 추가 작업을 건너뜁니다.")
-            return
+            return stats
 
         self.documents.extend(valid_docs)
         if rebuild:
-            self._rebuild_index()
+            stats["rebuild_stats"] = self._rebuild_index()
+
+        return stats
 
     def search(
         self, query: str, k: int = 3, filter_zero_score: bool = True
