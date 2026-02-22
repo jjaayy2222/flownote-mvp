@@ -15,10 +15,38 @@ FlowNote MVP - BM25 희소 벡터(키워드) 검색
 
 import logging
 from collections.abc import Mapping
-from typing import List, Dict, Optional, Any, Callable, Tuple
+from typing import (
+    List,
+    Dict,
+    Optional,
+    Any,
+    Callable,
+    Tuple,
+    NamedTuple,
+    TypedDict,
+    Union,
+)
 from rank_bm25 import BM25Okapi
 
 logger = logging.getLogger(__name__)
+
+
+class IndexFilterResult(NamedTuple):
+    """BM25 인덱스 생성 시 문서 필터링 결과를 나타내는 컨테이너."""
+
+    valid_docs: List[Dict[str, Any]]
+    corpus_tokens: List[List[str]]
+    invalid_type_count: int
+    empty_token_count: int
+    invalid_samples: List[str]
+    empty_samples: List[str]
+
+
+class AddDocumentsResult(TypedDict):
+    """문서 추가 후 통계 데이터를 나타내는 타입 딕셔너리."""
+
+    rejected_format: int
+    rebuild_stats: Dict[str, int]
 
 
 class BM25Retriever:
@@ -110,14 +138,12 @@ class BM25Retriever:
             )
             return self._default_tokenize(text)
 
-    def _filter_documents_for_index(
-        self,
-    ) -> Tuple[List[Dict[str, Any]], List[List[str]], int, int, List[str], List[str]]:
+    def _filter_documents_for_index(self) -> IndexFilterResult:
         """
         인덱스 생성을 위한 유효 문서를 필터링하고 통계를 수집합니다.
 
         Returns:
-            (valid_docs, corpus_tokens, invalid_type_count, empty_token_count, invalid_samples, empty_samples)
+            IndexFilterResult: 문서와 코퍼스 및 필터링된 문서 정보
         """
         valid_docs: List[Dict[str, Any]] = []
         corpus: List[List[str]] = []
@@ -151,13 +177,13 @@ class BM25Retriever:
             valid_docs.append(doc)
             corpus.append(tokens)
 
-        return (
-            valid_docs,
-            corpus,
-            invalid_type_count,
-            empty_count,
-            invalid_samples,
-            empty_samples,
+        return IndexFilterResult(
+            valid_docs=valid_docs,
+            corpus_tokens=corpus,
+            invalid_type_count=invalid_type_count,
+            empty_token_count=empty_count,
+            invalid_samples=invalid_samples,
+            empty_samples=empty_samples,
         )
 
     def _rebuild_index(self) -> Dict[str, int]:
@@ -172,22 +198,18 @@ class BM25Retriever:
         Returns:
             필터링 과정에서 제거된 문서들의 통계 딕셔너리
         """
-        stats = {"removed_invalid_type": 0, "removed_empty_token": 0}
+        stats: Dict[str, int] = {"removed_invalid_type": 0, "removed_empty_token": 0}
 
         if not self.documents:
             self.bm25 = None
             return stats
 
-        (
-            valid_docs,
-            corpus,
-            invalid_count,
-            empty_count,
-            invalid_samples,
-            empty_samples,
-        ) = self._filter_documents_for_index()
+        filter_result = self._filter_documents_for_index()
 
-        self.documents = valid_docs
+        self.documents = filter_result.valid_docs
+        invalid_count = filter_result.invalid_type_count
+        empty_count = filter_result.empty_token_count
+
         stats["removed_invalid_type"] = invalid_count
         stats["removed_empty_token"] = empty_count
 
@@ -195,21 +217,21 @@ class BM25Retriever:
             logger.warning(
                 "딕셔너리(dict) 타입이 아닌 비정상 항목 %d개를 인덱스 재빌드 과정에서 영구 제외했습니다. (샘플: %s)",
                 invalid_count,
-                ", ".join(invalid_samples),
+                ", ".join(filter_result.invalid_samples),
             )
 
         if empty_count > 0:
             logger.warning(
                 "유효한 키워드 토큰이 없는 문서 %d개를 인덱스에서 제외했습니다. (샘플 출처: %s)",
                 empty_count,
-                ", ".join(empty_samples),
+                ", ".join(filter_result.empty_samples),
             )
 
-        if not corpus:
+        if not filter_result.corpus_tokens:
             self.bm25 = None
             return stats
 
-        self.bm25 = BM25Okapi(corpus)
+        self.bm25 = BM25Okapi(filter_result.corpus_tokens)
         logger.info("BM25 인덱스 빌드 완료 (총 %d개 문서)", len(self.documents))
         return stats
 
@@ -224,7 +246,7 @@ class BM25Retriever:
 
     def add_documents(
         self, documents: List[Dict[str, Any]], rebuild: bool = True
-    ) -> Dict[str, Any]:
+    ) -> AddDocumentsResult:
         """
         문서 추가 및 BM25 인덱스 빌드
 
@@ -240,7 +262,7 @@ class BM25Retriever:
         Returns:
             추가 및 재빌드 과정에서 제거된 처리 통계를 담은 딕셔너리
         """
-        stats: Dict[str, Any] = {"rejected_format": 0, "rebuild_stats": {}}
+        stats: AddDocumentsResult = {"rejected_format": 0, "rebuild_stats": {}}
         if not documents:
             return stats
 
