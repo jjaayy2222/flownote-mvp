@@ -21,7 +21,14 @@ logger = logging.getLogger(__name__)
 
 
 class BM25Retriever:
-    """BM25 (Rank BM25) 기반 희소 벡터(키워드) 검색"""
+    """
+    BM25 (Rank BM25) 기반 희소 벡터(키워드) 검색
+
+    주의 (Side-Effect):
+        내부 무결성 보장을 위해, 인덱스를 재빌드(rebuild)할 때
+        비정상적인 형식의 데이터나 유효한 키워드 토큰을 생성하지 못하는(비어있는) 문서는
+        상위 호출자의 의도와 상관없이 `self.documents` 배열 리스트에서 영구적으로 제외(Filter-out)됩니다.
+    """
 
     def __init__(
         self,
@@ -105,7 +112,11 @@ class BM25Retriever:
     def _rebuild_index(self):
         """
         [내부 헬퍼 메서드] 현재 저장된 문서를 기반으로 BM25 인덱스를 재구성합니다.
-        외부 호출자는 명시적 빌드가 필요한 경우 public API인 `build_index()`를 사용하세요.
+
+        주의:
+            이 메서드는 유효한 키워드가 없는 문서나 딕셔너리가 아닌 항목을
+            `self.documents` 리스트에서 영구적으로 필터링 및 제거 변경(mutate)합니다.
+            외부 호출자는 명시적 빌드가 필요한 경우 public API인 `build_index()`를 사용하세요.
         """
         if not self.documents:
             self.bm25 = None
@@ -114,12 +125,18 @@ class BM25Retriever:
         valid_corpus = []
         valid_docs = []
         empty_count = 0
+        invalid_type_count = 0
 
         # NOTE:
         # 현재 구현은 리빌드 호출 시 전체 코퍼스를 기반으로 BM25 인덱스를 재구성합니다.
         # 대량의 문서가 업데이트될 경우 add_documents(..., rebuild=False) 호출 후
         # 마지막에 build_index()를 한 번만 호출하는 배치 처리를 권장합니다.
         for doc in self.documents:
+            # 레거시 데이터나 외부 강제 주입 등의 이유로 dict가 아닌 값이 들어왔을 경우 방어
+            if not isinstance(doc, dict):
+                invalid_type_count += 1
+                continue
+
             metadata = doc.get("metadata", {})
             tokens = self._safe_tokenize(doc.get("content", ""), doc_metadata=metadata)
 
@@ -130,6 +147,12 @@ class BM25Retriever:
                 valid_docs.append(doc)
 
         self.documents = valid_docs
+
+        if invalid_type_count > 0:
+            logger.warning(
+                "딕셔너리(dict) 타입이 아닌 비정상 항목 %d개를 인덱스 재빌드 과정에서 영구 제외했습니다.",
+                invalid_type_count,
+            )
 
         if empty_count > 0:
             logger.warning(
@@ -151,6 +174,11 @@ class BM25Retriever:
     def add_documents(self, documents: List[Dict[str, Any]], rebuild: bool = True):
         """
         문서 추가 및 BM25 인덱스 빌드
+
+        주의:
+            성공적으로 추가된 문서라 하더라도, `rebuild=True`에 의해 즉시 실행되거나 향후
+            `build_index()`에 의해 실행되는 인덱스 재구성 과정에서 유효한 검색 토큰(단어)을
+            만들어내지 못하는 문서들은 `self.documents` 배열에서 조용히 제거(Filter-out)됩니다.
 
         Args:
             documents: 문서 dict 리스트 (content, metadata 포함)
