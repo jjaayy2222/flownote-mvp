@@ -44,7 +44,15 @@ class BM25Retriever:
     def _safe_tokenize(self, text: Any) -> List[str]:
         """텍스트를 받아 안전하게 토크나이징을 수행하는 헬퍼 메서드"""
         if not isinstance(text, str):
-            text = str(text) if text is not None else ""
+            # 스칼라(숫자, 불리언)만 안전하게 캐스팅하고 딕셔너리, 리스트 등은 무시
+            if isinstance(text, (int, float, bool)):
+                text = str(text)
+            else:
+                logger.warning(
+                    "문자열 또는 단순 스칼라 값이 아닌 데이터가 포함되어 토크나이징을 건너뜁니다.",
+                    extra={"context": type(text).__name__},
+                )
+                return []
 
         text = text.strip()
         if not text:
@@ -52,19 +60,21 @@ class BM25Retriever:
 
         try:
             tokens = self.tokenizer(text)
-            if not isinstance(tokens, list):
+            try:
+                tokens = list(tokens)
+            except TypeError:
                 logger.warning(
-                    "토크나이저 반환값이 리스트가 아닙니다.",
+                    "토크나이저 반환값을 이터러블(list)로 변환할 수 없습니다. 기본 토크나이저로 대체합니다.",
                     extra={"context": type(tokens).__name__},
                 )
-                return []
+                return self._default_tokenize(text)
             return tokens
         except Exception as e:
             logger.exception(
-                "토크나이징 중 예상치 못한 에러가 발생했습니다.",
+                "토크나이징 중 예상치 못한 에러가 발생했습니다. 기본 토크나이저로 대체합니다.",
                 extra={"context": type(e).__name__},
             )
-            return []
+            return self._default_tokenize(text)
 
     def _rebuild_index(self):
         """현재 저장된 문서를 기반으로 BM25 인덱스를 재구성합니다."""
@@ -73,20 +83,24 @@ class BM25Retriever:
             return
 
         # NOTE:
-        # 현재 구현은 문서가 추가될 때마다 전체 코퍼스를 기반으로 BM25 인덱스를
-        # 다시 빌드합니다. 이는 O(N) 동작이며, 상대적으로 작은/거의 정적인 코퍼스를
-        # 대상으로 하는 간단한 구현입니다. 더 큰 코퍼스나 잦은 업데이트가 필요한
-        # 경우에는 별도의 `build_index()` 단계와 배치 추가 전략을 고려해야 합니다.
+        # 현재 구현은 리빌드 호출 시 전체 코퍼스를 기반으로 BM25 인덱스를 재구성합니다.
+        # 대량의 문서가 업데이트될 경우 add_documents(..., rebuild=False) 호출 후
+        # 마지막에 build_index()를 한 번만 호출하는 배치 처리를 권장합니다.
         corpus = [self._safe_tokenize(doc.get("content", "")) for doc in self.documents]
         self.bm25 = BM25Okapi(corpus)
         logger.info("BM25 인덱스 빌드 완료 (총 %d개 문서)", len(self.documents))
 
-    def add_documents(self, documents: List[Dict[str, Any]]):
+    def build_index(self):
+        """명시적으로 BM25 인덱스를 (재)빌드합니다. 배치 업데이트 후 사용하세요."""
+        self._rebuild_index()
+
+    def add_documents(self, documents: List[Dict[str, Any]], rebuild: bool = True):
         """
         문서 추가 및 BM25 인덱스 빌드
 
         Args:
             documents: 문서 dict 리스트 (content, metadata 포함)
+            rebuild: 문서 추가 후 즉시 인덱스를 재빌드할지 여부
         """
         if not documents:
             return
@@ -99,7 +113,8 @@ class BM25Retriever:
             return
 
         self.documents.extend(valid_docs)
-        self._rebuild_index()
+        if rebuild:
+            self._rebuild_index()
 
     def search(
         self, query: str, k: int = 3, filter_zero_score: bool = True
