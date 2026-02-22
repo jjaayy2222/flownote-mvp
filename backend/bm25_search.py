@@ -4,10 +4,17 @@
 
 """
 FlowNote MVP - BM25 희소 벡터(키워드) 검색
+
+주의:
+- 현재 구현은 `add_documents` 호출 시마다 전체 BM25 인덱스를 재구성합니다.
+- 이는 O(N) 동작이며, 상대적으로 작은 규모의 코퍼스나 업데이트가 많지 않은
+  거의 정적인 코퍼스를 대상으로 설계되었습니다.
+- 대규모 또는 고빈도 업데이트가 필요한 경우, 배치 추가 후 명시적으로 인덱스를
+  빌드하는 별도 워크플로우를 고려하세요.
 """
 
 import logging
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Callable
 from rank_bm25 import BM25Okapi
 
 logger = logging.getLogger(__name__)
@@ -16,16 +23,63 @@ logger = logging.getLogger(__name__)
 class BM25Retriever:
     """BM25 (Rank BM25) 기반 희소 벡터(키워드) 검색"""
 
-    def __init__(self):
+    def __init__(self, tokenizer: Optional[Callable[[str], List[str]]] = None):
         self.bm25: Optional[BM25Okapi] = None
-        self.documents: List[Dict] = []
+        self.documents: List[Dict[str, Any]] = []
 
-    def _tokenize(self, text: str) -> List[str]:
+        # 외부 토크나이저 주입 처리 방어
+        if tokenizer is not None and not callable(tokenizer):
+            logger.warning(
+                "제공된 토크나이저가 호출 가능하지 않습니다. 기본 토크나이저를 사용합니다."
+            )
+            self.tokenizer = self._default_tokenize
+        else:
+            self.tokenizer = tokenizer or self._default_tokenize
+
+    def _default_tokenize(self, text: str) -> List[str]:
         """간단한 띄어쓰기 기반 토크나이징"""
-        if not text or not isinstance(text, str):
+        # _safe_tokenize에서 이미 str 타입 여부 및 빈 문자열을 검증하므로 바로 처리
+        return text.lower().split()
+
+    def _safe_tokenize(self, text: Any) -> List[str]:
+        """텍스트를 받아 안전하게 토크나이징을 수행하는 헬퍼 메서드"""
+        if not isinstance(text, str):
+            text = str(text) if text is not None else ""
+
+        text = text.strip()
+        if not text:
             return []
-        # 영문의 경우 소문자화하여 검색 품질을 높임
-        return text.strip().lower().split()
+
+        try:
+            tokens = self.tokenizer(text)
+            if not isinstance(tokens, list):
+                logger.warning(
+                    "토크나이저 반환값이 리스트가 아닙니다.",
+                    extra={"context": type(tokens).__name__},
+                )
+                return []
+            return tokens
+        except Exception as e:
+            logger.exception(
+                "토크나이징 중 예상치 못한 에러가 발생했습니다.",
+                extra={"context": type(e).__name__},
+            )
+            return []
+
+    def _rebuild_index(self):
+        """현재 저장된 문서를 기반으로 BM25 인덱스를 재구성합니다."""
+        if not self.documents:
+            self.bm25 = None
+            return
+
+        # NOTE:
+        # 현재 구현은 문서가 추가될 때마다 전체 코퍼스를 기반으로 BM25 인덱스를
+        # 다시 빌드합니다. 이는 O(N) 동작이며, 상대적으로 작은/거의 정적인 코퍼스를
+        # 대상으로 하는 간단한 구현입니다. 더 큰 코퍼스나 잦은 업데이트가 필요한
+        # 경우에는 별도의 `build_index()` 단계와 배치 추가 전략을 고려해야 합니다.
+        corpus = [self._safe_tokenize(doc.get("content", "")) for doc in self.documents]
+        self.bm25 = BM25Okapi(corpus)
+        logger.info("BM25 인덱스 빌드 완료 (총 %d개 문서)", len(self.documents))
 
     def add_documents(self, documents: List[Dict[str, Any]]):
         """
@@ -45,11 +99,7 @@ class BM25Retriever:
             return
 
         self.documents.extend(valid_docs)
-
-        # rank_bm25는 점진적 추가가 아닌 전체 데이터 코퍼스를 한 번에 빌드해야 함
-        corpus = [self._tokenize(doc.get("content", "")) for doc in self.documents]
-        self.bm25 = BM25Okapi(corpus)
-        logger.info("BM25 인덱스 빌드 완료 (총 %d개 문서)", len(self.documents))
+        self._rebuild_index()
 
     def search(
         self, query: str, k: int = 3, filter_zero_score: bool = True
@@ -65,10 +115,22 @@ class BM25Retriever:
         Returns:
             검색 결과 리스트 (content, metadata, score 포함)
         """
+        if not isinstance(query, str):
+            logger.warning(
+                "검색 쿼리가 문자열이 아닙니다. 문자열로 변환하여 처리합니다.",
+                extra={"context": type(query).__name__},
+            )
+            query = str(query) if query is not None else ""
+
+        query = query.strip()
         if not self.bm25 or not self.documents or not query:
             return []
 
-        tokenized_query = self._tokenize(query)
+        tokenized_query = self._safe_tokenize(query)
+        # Avoid meaningless searches on empty token lists
+        if not tokenized_query:
+            return []
+
         doc_scores = self.bm25.get_scores(tokenized_query)
 
         # 높은 점수 순으로 정렬
