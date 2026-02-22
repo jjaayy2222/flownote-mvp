@@ -4,10 +4,17 @@
 
 """
 FlowNote MVP - BM25 희소 벡터(키워드) 검색
+
+주의:
+- 현재 구현은 `add_documents` 호출 시마다 전체 BM25 인덱스를 재구성합니다.
+- 이는 O(N) 동작이며, 상대적으로 작은 규모의 코퍼스나 업데이트가 많지 않은
+  거의 정적인 코퍼스를 대상으로 설계되었습니다.
+- 대규모 또는 고빈도 업데이트가 필요한 경우, 배치 추가 후 명시적으로 인덱스를
+  빌드하는 별도 워크플로우를 고려하세요.
 """
 
 import logging
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Callable
 from rank_bm25 import BM25Okapi
 
 logger = logging.getLogger(__name__)
@@ -16,11 +23,12 @@ logger = logging.getLogger(__name__)
 class BM25Retriever:
     """BM25 (Rank BM25) 기반 희소 벡터(키워드) 검색"""
 
-    def __init__(self):
+    def __init__(self, tokenizer: Optional[Callable[[str], List[str]]] = None):
         self.bm25: Optional[BM25Okapi] = None
         self.documents: List[Dict] = []
+        self.tokenizer = tokenizer or self._default_tokenize
 
-    def _tokenize(self, text: str) -> List[str]:
+    def _default_tokenize(self, text: str) -> List[str]:
         """간단한 띄어쓰기 기반 토크나이징"""
         if not text or not isinstance(text, str):
             return []
@@ -46,8 +54,12 @@ class BM25Retriever:
 
         self.documents.extend(valid_docs)
 
-        # rank_bm25는 점진적 추가가 아닌 전체 데이터 코퍼스를 한 번에 빌드해야 함
-        corpus = [self._tokenize(doc.get("content", "")) for doc in self.documents]
+        # NOTE:
+        # 현재 구현은 문서가 추가될 때마다 전체 코퍼스를 기반으로 BM25 인덱스를
+        # 다시 빌드합니다. 이는 O(N) 동작이며, 상대적으로 작은/거의 정적인 코퍼스를
+        # 대상으로 하는 간단한 구현입니다. 더 큰 코퍼스나 잦은 업데이트가 필요한
+        # 경우에는 별도의 `build_index()` 단계와 배치 추가 전략을 고려해야 합니다.
+        corpus = [self.tokenizer(doc.get("content", "")) for doc in self.documents]
         self.bm25 = BM25Okapi(corpus)
         logger.info("BM25 인덱스 빌드 완료 (총 %d개 문서)", len(self.documents))
 
@@ -65,10 +77,17 @@ class BM25Retriever:
         Returns:
             검색 결과 리스트 (content, metadata, score 포함)
         """
+        if query is not None:
+            query = query.strip()
+
         if not self.bm25 or not self.documents or not query:
             return []
 
-        tokenized_query = self._tokenize(query)
+        tokenized_query = self.tokenizer(query)
+        # Avoid meaningless searches on empty token lists
+        if not tokenized_query:
+            return []
+
         doc_scores = self.bm25.get_scores(tokenized_query)
 
         # 높은 점수 순으로 정렬
