@@ -28,6 +28,8 @@ from rank_bm25 import BM25Okapi
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_SAMPLE_MAX_VISIBLE = 3
+
 
 class FilterStats(TypedDict):
     """문서 필터링 과정에서 수집된 통계와 샘플 데이터."""
@@ -206,7 +208,7 @@ class BM25Retriever:
 
         Returns:
             필터링 과정에서 제거된 문서들의 통계 딕셔너리.
-            (이 반환값은 외부에서 직접 소비되지 않으며, 주로 `add_documents`의 내부 통계 병합용으로 사용됩니다.)
+            (이 통계는 `add_documents` 내부에서 병합되거나, 외부에서 `build_index()` 호출 시 반환되어 활용됩니다.)
         """
         stats: RebuildStats = {
             "removed_invalid_type": 0,
@@ -228,7 +230,9 @@ class BM25Retriever:
                 "딕셔너리(dict) 타입이 아닌 비정상 항목 %d개를 인덱스 재빌드 과정에서 영구 제외했습니다. (샘플: %s)",
                 stats["removed_invalid_type"],
                 _format_samples(
-                    filter_stats["invalid_samples"], stats["removed_invalid_type"], 3
+                    filter_stats["invalid_samples"],
+                    stats["removed_invalid_type"],
+                    DEFAULT_SAMPLE_MAX_VISIBLE,
                 ),
             )
 
@@ -237,7 +241,9 @@ class BM25Retriever:
                 "유효한 키워드 토큰이 없는 문서 %d개를 인덱스에서 제외했습니다. (샘플 출처: %s)",
                 stats["removed_empty_token"],
                 _format_samples(
-                    filter_stats["empty_samples"], stats["removed_empty_token"], 3
+                    filter_stats["empty_samples"],
+                    stats["removed_empty_token"],
+                    DEFAULT_SAMPLE_MAX_VISIBLE,
                 ),
             )
 
@@ -311,7 +317,9 @@ class BM25Retriever:
             logger.warning(
                 "형식이 잘못된 문서 %d개를 추가 대상에서 제외했습니다. 샘플: %s",
                 rejected_count,
-                _format_samples(rejected_samples, rejected_count, 3),
+                _format_samples(
+                    rejected_samples, rejected_count, DEFAULT_SAMPLE_MAX_VISIBLE
+                ),
             )
 
         if not valid_docs:
