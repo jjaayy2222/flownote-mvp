@@ -23,9 +23,21 @@ logger = logging.getLogger(__name__)
 class BM25Retriever:
     """BM25 (Rank BM25) 기반 희소 벡터(키워드) 검색"""
 
-    def __init__(self, tokenizer: Optional[Callable[[str], List[str]]] = None):
+    def __init__(
+        self,
+        tokenizer: Optional[Callable[[str], List[str]]] = None,
+        coerce_all_strings: bool = False,
+    ):
+        """
+        BM25 검색 엔진 초기화
+
+        Args:
+            tokenizer: 사용자 지정 토크나이저. 반환되는 이터러블/제너레이터는 즉시 `list()`로 소비됩니다.
+            coerce_all_strings: `dict`나 `list` 등 비문자열 객체가 content로 들어왔을 때, 조용히 건너뛰지 않고 무조건 `str()`로 강제 변환할지 여부.
+        """
         self.bm25: Optional[BM25Okapi] = None
         self.documents: List[Dict[str, Any]] = []
+        self.coerce_all_strings = coerce_all_strings
 
         # 외부 토크나이저 주입 처리 방어
         if tokenizer is not None and not callable(tokenizer):
@@ -41,10 +53,23 @@ class BM25Retriever:
         # _safe_tokenize에서 이미 str 타입 여부 및 빈 문자열을 검증하므로 바로 처리
         return text.lower().split()
 
-    def _safe_tokenize(self, text: Any) -> List[str]:
+    def _safe_tokenize(
+        self, text: Any, doc_metadata: Optional[Dict] = None
+    ) -> List[str]:
         """텍스트를 받아 안전하게 토크나이징을 수행하는 헬퍼 메서드"""
         if not isinstance(text, str):
-            text = str(text) if text is not None else ""
+            # 스칼라(숫자, 불리언)이거나 설정 상 강제 문자열 변환이 켜져있을 경우
+            if self.coerce_all_strings or isinstance(text, (int, float, bool)):
+                text = str(text) if text is not None else ""
+            else:
+                hint = (
+                    doc_metadata.get("source", "unknown") if doc_metadata else "unknown"
+                )
+                logger.warning(
+                    "문자열 또는 단순 스칼라 값이 아닌 데이터가 포함되어 토크나이징을 건너뜁니다. (coerce_all_strings=True 필요)",
+                    extra={"context": type(text).__name__, "doc_source": hint},
+                )
+                return []
 
         text = text.strip()
         if not text:
@@ -52,19 +77,30 @@ class BM25Retriever:
 
         try:
             tokens = self.tokenizer(text)
-            if not isinstance(tokens, list):
+
+            # 토크나이저가 문자열을 반환하면 list('text') -> ['t', 'e', 'x', 't'] 로 산산조각 나는 것을 방지
+            if isinstance(tokens, (str, bytes)):
                 logger.warning(
-                    "토크나이저 반환값이 리스트가 아닙니다.",
+                    "토크나이저 반환값이 문자열/바이트입니다. 문자 단위 분해가 일어나지 않도록 기본 토크나이저로 대체합니다.",
                     extra={"context": type(tokens).__name__},
                 )
-                return []
+                return self._default_tokenize(text)
+
+            try:
+                tokens = list(tokens)
+            except TypeError:
+                logger.warning(
+                    "토크나이저 반환값을 이터러블(list)로 변환할 수 없습니다. 기본 토크나이저로 대체합니다.",
+                    extra={"context": type(tokens).__name__},
+                )
+                return self._default_tokenize(text)
             return tokens
         except Exception as e:
             logger.exception(
-                "토크나이징 중 예상치 못한 에러가 발생했습니다.",
+                "토크나이징 중 예상치 못한 에러가 발생했습니다. 기본 토크나이저로 대체합니다.",
                 extra={"context": type(e).__name__},
             )
-            return []
+            return self._default_tokenize(text)
 
     def _rebuild_index(self):
         """현재 저장된 문서를 기반으로 BM25 인덱스를 재구성합니다."""
@@ -73,20 +109,29 @@ class BM25Retriever:
             return
 
         # NOTE:
-        # 현재 구현은 문서가 추가될 때마다 전체 코퍼스를 기반으로 BM25 인덱스를
-        # 다시 빌드합니다. 이는 O(N) 동작이며, 상대적으로 작은/거의 정적인 코퍼스를
-        # 대상으로 하는 간단한 구현입니다. 더 큰 코퍼스나 잦은 업데이트가 필요한
-        # 경우에는 별도의 `build_index()` 단계와 배치 추가 전략을 고려해야 합니다.
-        corpus = [self._safe_tokenize(doc.get("content", "")) for doc in self.documents]
+        # 현재 구현은 리빌드 호출 시 전체 코퍼스를 기반으로 BM25 인덱스를 재구성합니다.
+        # 대량의 문서가 업데이트될 경우 add_documents(..., rebuild=False) 호출 후
+        # 마지막에 build_index()를 한 번만 호출하는 배치 처리를 권장합니다.
+        corpus = [
+            self._safe_tokenize(
+                doc.get("content", ""), doc_metadata=doc.get("metadata", {})
+            )
+            for doc in self.documents
+        ]
         self.bm25 = BM25Okapi(corpus)
         logger.info("BM25 인덱스 빌드 완료 (총 %d개 문서)", len(self.documents))
 
-    def add_documents(self, documents: List[Dict[str, Any]]):
+    def build_index(self):
+        """명시적으로 BM25 인덱스를 (재)빌드합니다. 배치 업데이트 후 사용하세요."""
+        self._rebuild_index()
+
+    def add_documents(self, documents: List[Dict[str, Any]], rebuild: bool = True):
         """
         문서 추가 및 BM25 인덱스 빌드
 
         Args:
             documents: 문서 dict 리스트 (content, metadata 포함)
+            rebuild: 문서 추가 후 즉시 인덱스를 재빌드할지 여부
         """
         if not documents:
             return
@@ -99,7 +144,8 @@ class BM25Retriever:
             return
 
         self.documents.extend(valid_docs)
-        self._rebuild_index()
+        if rebuild:
+            self._rebuild_index()
 
     def search(
         self, query: str, k: int = 3, filter_zero_score: bool = True
