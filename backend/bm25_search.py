@@ -62,9 +62,9 @@ class BM25Retriever:
             if self.coerce_all_strings or isinstance(text, (int, float, bool)):
                 text = str(text) if text is not None else ""
             else:
-                hint = (
-                    doc_metadata.get("source", "unknown") if doc_metadata else "unknown"
-                )
+                hint = "unknown"
+                if doc_metadata and hasattr(doc_metadata, "get"):
+                    hint = doc_metadata.get("source", "unknown")
                 logger.warning(
                     "문자열 또는 단순 스칼라 값이 아닌 데이터가 포함되어 토크나이징을 건너뜁니다. (coerce_all_strings=True 필요)",
                     extra={"context": type(text).__name__, "doc_source": hint},
@@ -103,22 +103,45 @@ class BM25Retriever:
             return self._default_tokenize(text)
 
     def _rebuild_index(self):
-        """현재 저장된 문서를 기반으로 BM25 인덱스를 재구성합니다."""
+        """
+        [내부 헬퍼 메서드] 현재 저장된 문서를 기반으로 BM25 인덱스를 재구성합니다.
+        외부 호출자는 명시적 빌드가 필요한 경우 public API인 `build_index()`를 사용하세요.
+        """
         if not self.documents:
             self.bm25 = None
             return
+
+        valid_corpus = []
+        valid_docs = []
+        empty_count = 0
 
         # NOTE:
         # 현재 구현은 리빌드 호출 시 전체 코퍼스를 기반으로 BM25 인덱스를 재구성합니다.
         # 대량의 문서가 업데이트될 경우 add_documents(..., rebuild=False) 호출 후
         # 마지막에 build_index()를 한 번만 호출하는 배치 처리를 권장합니다.
-        corpus = [
-            self._safe_tokenize(
-                doc.get("content", ""), doc_metadata=doc.get("metadata", {})
+        for doc in self.documents:
+            metadata = doc.get("metadata", {})
+            tokens = self._safe_tokenize(doc.get("content", ""), doc_metadata=metadata)
+
+            if not tokens:
+                empty_count += 1
+            else:
+                valid_corpus.append(tokens)
+                valid_docs.append(doc)
+
+        self.documents = valid_docs
+
+        if empty_count > 0:
+            logger.warning(
+                "유효한 키워드 토큰이 없는 문서 %d개를 인덱스에서 제외했습니다.",
+                empty_count,
             )
-            for doc in self.documents
-        ]
-        self.bm25 = BM25Okapi(corpus)
+
+        if not self.documents:
+            self.bm25 = None
+            return
+
+        self.bm25 = BM25Okapi(valid_corpus)
         logger.info("BM25 인덱스 빌드 완료 (총 %d개 문서)", len(self.documents))
 
     def build_index(self):
@@ -136,11 +159,20 @@ class BM25Retriever:
         if not documents:
             return
 
+        initial_count = len(documents)
         valid_docs = [
             doc for doc in documents if isinstance(doc, dict) and "content" in doc
         ]
+
+        rejected_count = initial_count - len(valid_docs)
+        if rejected_count > 0:
+            logger.warning(
+                "형식이 잘못된 문서 %d개를 추가 대상에서 제외했습니다 (dict 타입이 아니거나 'content' 키 누락).",
+                rejected_count,
+            )
+
         if not valid_docs:
-            logger.warning("유효한 문서가 없습니다.", extra={"context": len(documents)})
+            logger.warning("유효한 문서가 없어 추가 작업을 건너뜁니다.")
             return
 
         self.documents.extend(valid_docs)
