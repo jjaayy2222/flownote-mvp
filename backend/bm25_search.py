@@ -28,6 +28,14 @@ from rank_bm25 import BM25Okapi
 logger = logging.getLogger(__name__)
 
 
+def _format_samples(samples: List[str], total_count: int, max_visible: int = 3) -> str:
+    """로그에 출력할 샘플 리스트 문자열 포맷팅 헬퍼. 정해진 개수를 초과하면 '...'을 붙입니다."""
+    samples_str = ", ".join(samples[:max_visible])
+    if total_count > max_visible:
+        samples_str += ", ..."
+    return samples_str
+
+
 class BM25Retriever:
     """
     BM25 (Rank BM25) 기반 희소 벡터(키워드) 검색
@@ -173,7 +181,8 @@ class BM25Retriever:
             외부 호출자는 명시적 빌드가 필요한 경우 public API인 `build_index()`를 사용하세요.
 
         Returns:
-            필터링 과정에서 제거된 문서들의 통계 딕셔너리
+            필터링 과정에서 제거된 문서들의 통계 딕셔너리.
+            (이 반환값은 외부에서 직접 소비되지 않으며, 주로 `add_documents`의 내부 통계 병합용으로 사용됩니다.)
         """
         stats: Dict[str, int] = {
             "removed_invalid_type": 0,
@@ -191,23 +200,21 @@ class BM25Retriever:
         stats["removed_empty_token"] = filter_stats["removed_empty_token"]
 
         if stats["removed_invalid_type"] > 0:
-            samples_str = ", ".join(filter_stats["invalid_samples"])
-            if stats["removed_invalid_type"] > 3:
-                samples_str += ", ..."
             logger.warning(
                 "딕셔너리(dict) 타입이 아닌 비정상 항목 %d개를 인덱스 재빌드 과정에서 영구 제외했습니다. (샘플: %s)",
                 stats["removed_invalid_type"],
-                samples_str,
+                _format_samples(
+                    filter_stats["invalid_samples"], stats["removed_invalid_type"]
+                ),
             )
 
         if stats["removed_empty_token"] > 0:
-            samples_str = ", ".join(filter_stats["empty_samples"])
-            if stats["removed_empty_token"] > 3:
-                samples_str += ", ..."
             logger.warning(
                 "유효한 키워드 토큰이 없는 문서 %d개를 인덱스에서 제외했습니다. (샘플 출처: %s)",
                 stats["removed_empty_token"],
-                samples_str,
+                _format_samples(
+                    filter_stats["empty_samples"], stats["removed_empty_token"]
+                ),
             )
 
         if not corpus_tokens:
@@ -274,13 +281,10 @@ class BM25Retriever:
         stats["rejected_format"] = rejected_count
 
         if rejected_count > 0:
-            samples_str = ", ".join(rejected_samples)
-            if rejected_count > 3:
-                samples_str += ", ..."
             logger.warning(
                 "형식이 잘못된 문서 %d개를 추가 대상에서 제외했습니다. 샘플: %s",
                 rejected_count,
-                samples_str,
+                _format_samples(rejected_samples, rejected_count),
             )
 
         if not valid_docs:
