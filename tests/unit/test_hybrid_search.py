@@ -1,5 +1,5 @@
 import pytest
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from backend.hybrid_search import HybridSearcher
 
 
@@ -42,11 +42,14 @@ class StaticRetriever:
 
 
 def _make_doc(
-    content: str, doc_id: str = None, **metadata_overrides: Any
+    content: str, doc_id: Optional[Any] = None, **metadata_overrides: Any
 ) -> Dict[str, Any]:
-    """테스트용 문서 객체 생성 헬퍼 (ID 선택 가능)"""
+    """
+    테스트용 문서 객체 생성 헬퍼 (ID 선택 가능).
+    6차 리뷰 반영: falsy한 ID("", 0 등)가 누락되지 않도록 is not None으로 체크.
+    """
     metadata = {}
-    if doc_id:
+    if doc_id is not None:
         metadata["id"] = doc_id
     metadata.update(metadata_overrides)
     return {"content": content, "metadata": metadata, "score": 1.0}
@@ -199,7 +202,7 @@ def test_one_engine_empty_results():
 def test_hybrid_searcher_deduplicates_hash_key_when_id_missing():
     """
     metadata['id']가 없을 때 (content, source, chunk_index) 해시를 통한 중복 제거 검증.
-    내용(content)이 같더라도 메타데이터가 다르면 별개 문서로 취급되어야 함을 확인.
+    내용(content)이 같더라도 메타데이터가 다르면 별개 문서로 취급되어야 함을 확인 (6차 리뷰 반영).
     """
     shared_content = "same content for all docs"
     shared_source = "shared-source"
@@ -240,6 +243,54 @@ def test_hybrid_searcher_deduplicates_hash_key_when_id_missing():
     variant_sources = {r["metadata"].get("source") for r in results}
     assert "source-faiss" in variant_sources
     assert "source-bm25" in variant_sources
+
+
+def test_hybrid_searcher_deduplicates_partial_metadata_hash():
+    """
+    메타데이터(source, chunk_index)가 일부 누락되었을 때의 해시 기반 중복 제거 검증 (6차 리뷰 반영).
+    """
+    shared_content = "partial metadata content"
+
+    # 1. source만 있고 chunk_index가 없는 경우
+    doc_a = _make_doc(shared_content, source="only-source")
+    doc_b = _make_doc(shared_content, source="only-source")
+
+    # 2. chunk_index만 있고 source가 없는 경우
+    doc_c = _make_doc("other content", chunk_index=99)
+    doc_d = _make_doc("other content", chunk_index=99)
+
+    faiss_retriever = StaticRetriever([doc_a, doc_c])
+    bm25_retriever = StaticRetriever([doc_b, doc_d])
+
+    searcher = HybridSearcher(faiss_retriever, bm25_retriever)
+    results = searcher.search("query", k=10)
+
+    # doc_a/b 병합, doc_c/d 병합 -> 총 2개 결과 기대
+    assert len(results) == 2
+
+    # 각 내용별로 결과가 하나씩만 있는지 확인
+    contents = [r["content"] for r in results]
+    assert contents.count(shared_content) == 1
+    assert contents.count("other content") == 1
+
+
+def test_hybrid_searcher_falsy_id_preservation():
+    """
+    ID가 "" 또는 "0"과 같은 falsy 값일 때도 정상적으로 식별자로 사용되는지 검증 (6차 리뷰 반영).
+    """
+    doc_zero = _make_doc("content 0", doc_id="0")
+    doc_empty = _make_doc("content empty", doc_id="")
+
+    faiss_retriever = StaticRetriever([doc_zero, doc_empty])
+    bm25_retriever = StaticRetriever([])
+
+    searcher = HybridSearcher(faiss_retriever, bm25_retriever)
+    results = searcher.search("query", k=10)
+
+    # 0과 "" ID를 가진 문서가 각각 포함되어야 함
+    ids = [r["metadata"].get("id") for r in results]
+    assert "0" in ids
+    assert "" in ids
 
 
 def test_hybrid_searcher_deduplicates_same_metadata_id():
