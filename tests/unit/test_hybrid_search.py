@@ -291,11 +291,14 @@ def test_hybrid_searcher_falsy_id_preservation():
     searcher = HybridSearcher(faiss_retriever, bm25_retriever)
     results = searcher.search("query", k=10)
 
-    # 0(int), 0.0(float), ""(str) ID를 가진 문서가 각각 포함되어야 함
-    ids = [r["metadata"].get("id") for r in results]
-    assert 0 in ids
-    assert 0.0 in ids
-    assert "" in ids
+    # 0(int), 0.0(float), ""(str) ID를 가진 문서가 각각 타입까지 정확히 보존되어야 함
+    # (Python에서 0 == 0.0 이므로 값만 체크하면 교차 검증이 안 됨)
+    id_and_types = [
+        (r["metadata"].get("id"), type(r["metadata"].get("id"))) for r in results
+    ]
+    assert (0, int) in id_and_types
+    assert (0.0, float) in id_and_types
+    assert ("", str) in id_and_types
 
 
 @pytest.mark.parametrize(
@@ -325,8 +328,9 @@ def test_hybrid_searcher_numeric_and_string_zero_id_merging(faiss_id, bm25_id):
 
     # 논리적으로 동일한 ID이므로 리트리버 순서와 무관하게 1개로 병합되어야 함
     assert len(results) == 1
-    # 병합된 문서의 ID 값은 '0'으로 일관되어야 함
-    assert str(results[0]["metadata"]["id"]) == "0"
+    # 병합된 문서의 ID 값은 입력된 ID 중 하나와 논리적으로 동등(문자열 표현 일치)해야 함
+    merged_id = results[0]["metadata"]["id"]
+    assert str(merged_id) == str(faiss_id)
 
 
 def test_hybrid_searcher_uuid_id_preservation():
