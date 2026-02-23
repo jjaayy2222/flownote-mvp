@@ -282,17 +282,19 @@ def test_hybrid_searcher_falsy_id_preservation():
     (참고: "0"(str)과 0(int)은 동일 키로 취급되어 병합되므로 여기선 충돌하지 않는 조합 확인)
     """
     doc_int_zero = _make_doc("content int 0", doc_id=0)
+    doc_float_zero = _make_doc("content float 0.0", doc_id=0.0)
     doc_empty = _make_doc("content empty", doc_id="")
 
-    faiss_retriever = StaticRetriever([doc_int_zero, doc_empty])
+    faiss_retriever = StaticRetriever([doc_int_zero, doc_float_zero, doc_empty])
     bm25_retriever = StaticRetriever([])
 
     searcher = HybridSearcher(faiss_retriever, bm25_retriever)
     results = searcher.search("query", k=10)
 
-    # 0(int)과 ""(str) ID를 가진 문서가 각각 포함되어야 함
+    # 0(int), 0.0(float), ""(str) ID를 가진 문서가 각각 포함되어야 함
     ids = [r["metadata"].get("id") for r in results]
     assert 0 in ids
+    assert 0.0 in ids
     assert "" in ids
 
 
@@ -305,12 +307,11 @@ def test_hybrid_searcher_falsy_id_preservation():
 )
 def test_hybrid_searcher_numeric_and_string_zero_id_merging(faiss_id, bm25_id):
     """
-    동일 내용에 대해 하나는 문자열 '0', 하나는 숫자 0 ID를 가질 때
-    내부적으로 동일 문서로 인식하여 병합되는지 검증 (Hash 키 변환 로직 확인).
+    동일 문서에 대해 리트리버들이 서로 다른 타입(문자열 '0' vs 숫자 0)의
+    논리적 동일 ID를 반환할 때, 중복 없이 하나로 병합되는지 검증합니다.
 
     두 리트리버(FAISS/BM25)에 할당되는 ID 조합을 파라미터로 주어,
-    리트리버 순서와 무관하게 항상 1개 결과로 병합되는지 확인한다.
-    (내부적으로 str(id) 정규화에 의존함을 명시함)
+    리트리버 순서와 무관하게 일관된 중복 제거 결과가 산출되는지 확인합니다.
     """
     shared_content = "same content zero id"
     doc_a = _make_doc(shared_content, doc_id=faiss_id)
@@ -322,9 +323,9 @@ def test_hybrid_searcher_numeric_and_string_zero_id_merging(faiss_id, bm25_id):
     searcher = HybridSearcher(faiss_retriever, bm25_retriever)
     results = searcher.search("query", k=10)
 
-    # 내부적으로 str(id)를 사용하므로 1개로 병합되어야 함
+    # 논리적으로 동일한 ID이므로 리트리버 순서와 무관하게 1개로 병합되어야 함
     assert len(results) == 1
-    # 병합된 문서의 ID는 값 기준으로 '0'이어야 함 (타입은 첫 발견 문서에 따라 다를 수 있으나 str 변환값은 동일)
+    # 병합된 문서의 ID 값은 '0'으로 일관되어야 함
     assert str(results[0]["metadata"]["id"]) == "0"
 
 
