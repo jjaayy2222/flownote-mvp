@@ -192,6 +192,58 @@ def test_one_engine_empty_results():
     assert results[0]["content"] == "DocA"
 
 
+def test_hybrid_searcher_deduplicates_hash_key_when_id_missing():
+    """
+    metadata['id']가 없을 때 (content, source, chunk_index) 해시를 통한 중복 제거 검증.
+    """
+    # 1. 병합되어야 하는 쌍 (내용, 출처, 인덱스 동일)
+    shared_content = "shared content"
+    shared_source = "shared-source"
+    shared_chunk_idx = 0
+
+    shared_doc_faiss = {
+        "content": shared_content,
+        "metadata": {"source": shared_source, "chunk_index": shared_chunk_idx},
+        "score": 0.8,
+    }
+    shared_doc_bm25 = {
+        "content": shared_content,
+        "metadata": {"source": shared_source, "chunk_index": shared_chunk_idx},
+        "score": 0.9,
+    }
+
+    # 2. 병합되지 않아야 하는 쌍 (내용은 같으나 출처/인덱스 다름)
+    variant_content = "variant content"
+    variant_doc_faiss = {
+        "content": variant_content,
+        "metadata": {"source": "source-faiss", "chunk_index": 0},
+        "score": 0.7,
+    }
+    variant_doc_bm25 = {
+        "content": variant_content,
+        "metadata": {"source": "source-bm25", "chunk_index": 1},
+        "score": 0.6,
+    }
+
+    faiss_retriever = StaticRetriever([shared_doc_faiss, variant_doc_faiss])
+    bm25_retriever = StaticRetriever([shared_doc_bm25, variant_doc_bm25])
+
+    searcher = HybridSearcher(faiss_retriever, bm25_retriever)
+
+    results = searcher.search("query", k=10)
+
+    # shared_doc 1개(병합) + variant 2개(분리) = 총 3개 결과 기대
+    assert len(results) == 3
+
+    # shared_doc 병합 여부 확인
+    shared_results = [r for r in results if r["content"] == shared_content]
+    assert len(shared_results) == 1
+
+    # variant_doc 분리 여부 확인
+    variant_results = [r for r in results if r["content"] == variant_content]
+    assert len(variant_results) == 2
+
+
 def test_hybrid_searcher_deduplicates_same_metadata_id():
     """동일한 metadata['id']를 가지는 문서 중복 제거 검증."""
     shared_doc_faiss = _make_doc("shared content", "doc-1", source="faiss")
