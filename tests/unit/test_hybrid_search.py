@@ -1,5 +1,6 @@
 import pytest
-from typing import List, Dict, Any, Optional, Union
+import uuid
+from typing import List, Dict, Any, Optional, Union, Hashable
 from backend.hybrid_search import HybridSearcher
 
 
@@ -42,11 +43,12 @@ class StaticRetriever:
 
 
 def _make_doc(
-    content: str, doc_id: Optional[Union[str, int]] = None, **metadata_overrides: Any
+    content: str, doc_id: Optional[Hashable] = None, **metadata_overrides: Any
 ) -> Dict[str, Any]:
     """
     테스트용 문서 객체 생성 헬퍼 (ID 선택 가능).
-    falsy한 ID("", 0 등)가 누락되지 않도록 is not None으로 체크합니다.
+    falsy한 ID("", 0, 0.0 등)가 누락되지 않도록 is not None으로 체크하며,
+    Hashable 타입을 지원하여 미래의 다양한 ID 형식(UUID 등)에 대응합니다.
     """
     metadata = {}
     if doc_id is not None:
@@ -276,21 +278,75 @@ def test_hybrid_searcher_deduplicates_partial_metadata_hash():
 
 def test_hybrid_searcher_falsy_id_preservation():
     """
-    ID가 "" 또는 "0"과 같은 falsy 값일 때도 정상적으로 식별자로 사용되는지 검증.
+    ID가 ""(str)와 0(int)과 같은 falsy 값들이 개별적으로 잘 보존되는지 검증.
+    (참고: "0"(str)과 0(int)은 동일 키로 취급되어 병합되므로 여기선 충돌하지 않는 조합 확인)
     """
-    doc_zero = _make_doc("content 0", doc_id="0")
+    doc_int_zero = _make_doc("content int 0", doc_id=0)
     doc_empty = _make_doc("content empty", doc_id="")
 
-    faiss_retriever = StaticRetriever([doc_zero, doc_empty])
+    faiss_retriever = StaticRetriever([doc_int_zero, doc_empty])
     bm25_retriever = StaticRetriever([])
 
     searcher = HybridSearcher(faiss_retriever, bm25_retriever)
     results = searcher.search("query", k=10)
 
-    # 0과 "" ID를 가진 문서가 각각 포함되어야 함
+    # 0(int)과 ""(str) ID를 가진 문서가 각각 포함되어야 함
     ids = [r["metadata"].get("id") for r in results]
-    assert "0" in ids
+    assert 0 in ids
     assert "" in ids
+
+
+@pytest.mark.parametrize(
+    "faiss_id, bm25_id",
+    [
+        ("0", 0),  # FAISS='0', BM25=0
+        (0, "0"),  # FAISS=0, BM25='0' (역순 조합)
+    ],
+)
+def test_hybrid_searcher_numeric_and_string_zero_id_merging(faiss_id, bm25_id):
+    """
+    동일 내용에 대해 하나는 문자열 '0', 하나는 숫자 0 ID를 가질 때
+    내부적으로 동일 문서로 인식하여 병합되는지 검증 (Hash 키 변환 로직 확인).
+
+    두 리트리버(FAISS/BM25)에 할당되는 ID 조합을 파라미터로 주어,
+    리트리버 순서와 무관하게 항상 1개 결과로 병합되는지 확인한다.
+    (내부적으로 str(id) 정규화에 의존함을 명시함)
+    """
+    shared_content = "same content zero id"
+    doc_a = _make_doc(shared_content, doc_id=faiss_id)
+    doc_b = _make_doc(shared_content, doc_id=bm25_id)
+
+    faiss_retriever = StaticRetriever([doc_a])
+    bm25_retriever = StaticRetriever([doc_b])
+
+    searcher = HybridSearcher(faiss_retriever, bm25_retriever)
+    results = searcher.search("query", k=10)
+
+    # 내부적으로 str(id)를 사용하므로 1개로 병합되어야 함
+    assert len(results) == 1
+    # 병합된 문서의 ID는 값 기준으로 '0'이어야 함 (타입은 첫 발견 문서에 따라 다를 수 있으나 str 변환값은 동일)
+    assert str(results[0]["metadata"]["id"]) == "0"
+
+
+def test_hybrid_searcher_uuid_id_preservation():
+    """
+    _make_doc 및 HybridSearcher가 str/int 외의 Hashable 타입(예: UUID)을
+    정상적으로 지원하고 보존하는지 검증.
+    """
+    shared_content = "uuid content"
+    unique_id = uuid.uuid4()
+
+    doc = _make_doc(shared_content, doc_id=unique_id)
+
+    faiss_retriever = StaticRetriever([doc])
+    bm25_retriever = StaticRetriever([])
+
+    searcher = HybridSearcher(faiss_retriever, bm25_retriever)
+    results = searcher.search("query", k=10)
+
+    # UUID 객체가 그대로 메타데이터에 보존되어야 함
+    assert results[0]["metadata"]["id"] == unique_id
+    assert isinstance(results[0]["metadata"]["id"], uuid.UUID)
 
 
 def test_hybrid_searcher_deduplicates_same_metadata_id():
