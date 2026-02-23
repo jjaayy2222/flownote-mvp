@@ -1,4 +1,5 @@
 import pytest
+import uuid
 from typing import List, Dict, Any, Optional, Union, Hashable
 from backend.hybrid_search import HybridSearcher
 
@@ -295,14 +296,25 @@ def test_hybrid_searcher_falsy_id_preservation():
     assert "" in ids
 
 
-def test_hybrid_searcher_numeric_and_string_zero_id_merging():
+@pytest.mark.parametrize(
+    "faiss_id, bm25_id",
+    [
+        ("0", 0),  # FAISS='0', BM25=0
+        (0, "0"),  # FAISS=0, BM25='0' (역순 조합)
+    ],
+)
+def test_hybrid_searcher_numeric_and_string_zero_id_merging(faiss_id, bm25_id):
     """
     동일 내용에 대해 하나는 문자열 '0', 하나는 숫자 0 ID를 가질 때
     내부적으로 동일 문서로 인식하여 병합되는지 검증 (Hash 키 변환 로직 확인).
+
+    두 리트리버(FAISS/BM25)에 할당되는 ID 조합을 파라미터로 주어,
+    리트리버 순서와 무관하게 항상 1개 결과로 병합되는지 확인한다.
+    (내부적으로 str(id) 정규화에 의존함을 명시함)
     """
     shared_content = "same content zero id"
-    doc_a = _make_doc(shared_content, doc_id="0")
-    doc_b = _make_doc(shared_content, doc_id=0)
+    doc_a = _make_doc(shared_content, doc_id=faiss_id)
+    doc_b = _make_doc(shared_content, doc_id=bm25_id)
 
     faiss_retriever = StaticRetriever([doc_a])
     bm25_retriever = StaticRetriever([doc_b])
@@ -312,8 +324,29 @@ def test_hybrid_searcher_numeric_and_string_zero_id_merging():
 
     # 내부적으로 str(id)를 사용하므로 1개로 병합되어야 함
     assert len(results) == 1
-    # 첫 번째로 조회된(FAISS) 문서의 ID 타입이 유지되거나, 최소한 값은 '0'임
+    # 병합된 문서의 ID는 값 기준으로 '0'이어야 함 (타입은 첫 발견 문서에 따라 다를 수 있으나 str 변환값은 동일)
     assert str(results[0]["metadata"]["id"]) == "0"
+
+
+def test_hybrid_searcher_uuid_id_preservation():
+    """
+    _make_doc 및 HybridSearcher가 str/int 외의 Hashable 타입(예: UUID)을
+    정상적으로 지원하고 보존하는지 검증.
+    """
+    shared_content = "uuid content"
+    unique_id = uuid.uuid4()
+
+    doc = _make_doc(shared_content, doc_id=unique_id)
+
+    faiss_retriever = StaticRetriever([doc])
+    bm25_retriever = StaticRetriever([])
+
+    searcher = HybridSearcher(faiss_retriever, bm25_retriever)
+    results = searcher.search("query", k=10)
+
+    # UUID 객체가 그대로 메타데이터에 보존되어야 함
+    assert results[0]["metadata"]["id"] == unique_id
+    assert isinstance(results[0]["metadata"]["id"], uuid.UUID)
 
 
 def test_hybrid_searcher_deduplicates_same_metadata_id():
