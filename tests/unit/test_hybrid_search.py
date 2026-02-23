@@ -41,9 +41,13 @@ class StaticRetriever:
         return self._results[:k]
 
 
-def _make_doc(content: str, doc_id: str, **metadata_overrides: Any) -> Dict[str, Any]:
-    """테스트용 문서 객체 생성 헬퍼"""
-    metadata = {"id": doc_id}
+def _make_doc(
+    content: str, doc_id: str = None, **metadata_overrides: Any
+) -> Dict[str, Any]:
+    """테스트용 문서 객체 생성 헬퍼 (ID 선택 가능)"""
+    metadata = {}
+    if doc_id:
+        metadata["id"] = doc_id
     metadata.update(metadata_overrides)
     return {"content": content, "metadata": metadata, "score": 1.0}
 
@@ -190,6 +194,52 @@ def test_one_engine_empty_results():
     results = searcher.search("test", k=3)
     assert len(results) == 1
     assert results[0]["content"] == "DocA"
+
+
+def test_hybrid_searcher_deduplicates_hash_key_when_id_missing():
+    """
+    metadata['id']가 없을 때 (content, source, chunk_index) 해시를 통한 중복 제거 검증.
+    내용(content)이 같더라도 메타데이터가 다르면 별개 문서로 취급되어야 함을 확인.
+    """
+    shared_content = "same content for all docs"
+    shared_source = "shared-source"
+    shared_chunk_idx = 0
+
+    # 1. 병합되어야 하는 쌍 (내용, 출처, 인덱스 모두 동일)
+    shared_doc_faiss = _make_doc(
+        shared_content, source=shared_source, chunk_index=shared_chunk_idx
+    )
+    shared_doc_bm25 = _make_doc(
+        shared_content, source=shared_source, chunk_index=shared_chunk_idx
+    )
+
+    # 2. 병합되지 않아야 하는 쌍 (내용은 같으나 출처/인덱스가 다름 -> 서로 다른 논리적 문서)
+    variant_doc_faiss = _make_doc(shared_content, source="source-faiss", chunk_index=10)
+    variant_doc_bm25 = _make_doc(shared_content, source="source-bm25", chunk_index=20)
+
+    faiss_retriever = StaticRetriever([shared_doc_faiss, variant_doc_faiss])
+    bm25_retriever = StaticRetriever([shared_doc_bm25, variant_doc_bm25])
+
+    searcher = HybridSearcher(faiss_retriever, bm25_retriever)
+
+    results = searcher.search("query", k=10)
+
+    # shared_doc 1개(병합) + variant 2개(분리) = 총 3개 결과 기대
+    assert len(results) == 3
+
+    # shared_doc 병합 여부 확인 (특정 출처/인덱스 조합이 하나만 존재하는지)
+    shared_results = [
+        r
+        for r in results
+        if r["metadata"].get("source") == shared_source
+        and r["metadata"].get("chunk_index") == shared_chunk_idx
+    ]
+    assert len(shared_results) == 1
+
+    # variant_doc들이 분리되어 존재하는지 확인
+    variant_sources = {r["metadata"].get("source") for r in results}
+    assert "source-faiss" in variant_sources
+    assert "source-bm25" in variant_sources
 
 
 def test_hybrid_searcher_deduplicates_same_metadata_id():
