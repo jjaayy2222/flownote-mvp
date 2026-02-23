@@ -27,6 +27,8 @@ class Retriever(Protocol):
         - content: 문서 내용 (str)
         - metadata: 관련 메타데이터 (dict)
         - score: 검색 점수 (float, 내림차순 정렬 가정)
+          (참고: RRF는 절대 점수가 아닌 순위(Rank)를 기반으로 작동하지만,
+          인터페이스 일관성을 위해 score 필드 포함을 권장합니다.)
         """
         ...
 
@@ -93,13 +95,13 @@ class HybridSearcher:
 
         Args:
             query: 검색 질의
-            k: 최종 반환할 문서 수 (0보다 커야 함)
+            k: 최종 반환할 문서 수 (0 이상)
             faiss_k: FAISS에서 가져올 후보 수 (기본값: k * 2, 0 이상)
             bm25_k: BM25에서 가져올 후보 수 (기본값: k * 2, 0 이상)
             alpha: [0, 1] 범위의 가중치. 1.0에 가까울수록 Dense(FAISS) 결과 비중이 커짐.
 
         Returns:
-            RRF 점수 기반으로 재정렬된 하이브리드 검색 결과 리스트
+            RRF 점수 기반으로 재정렬된 하이브리드 검색 결과 리스트 (content, metadata, score 포함)
         """
         # 검사항목 1: 파라미터 유효 범위 검증
         if not 0.0 <= alpha <= 1.0:

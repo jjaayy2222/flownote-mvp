@@ -27,6 +27,27 @@ class DummyRetriever:
         ]
 
 
+class StaticRetriever:
+    """고정된 검색 결과를 반환하는 리트리버 (테스트용)."""
+
+    def __init__(self, results: List[Dict[str, Any]]):
+        self._results = results
+        self.last_query = None
+        self.last_k = None
+
+    def search(self, query: str, k: int) -> List[Dict[str, Any]]:
+        self.last_query = query
+        self.last_k = k
+        return self._results[:k]
+
+
+def _make_doc(content: str, doc_id: str, **metadata_overrides: Any) -> Dict[str, Any]:
+    """테스트용 문서 객체 생성 헬퍼"""
+    metadata = {"id": doc_id}
+    metadata.update(metadata_overrides)
+    return {"content": content, "metadata": metadata, "score": 1.0}
+
+
 @pytest.fixture
 def hybrid_searcher():
     faiss_retriever = DummyRetriever("faiss")
@@ -136,12 +157,12 @@ def test_hybrid_searcher_rrf_scoring_logic():
     # 문서 A는 FAISS 1위, BM25 없음
     # 문서 B는 FAISS 2위, BM25 1위
     faiss.search = lambda q, k: [
-        {"content": "DocA", "metadata": {"id": "A"}},  # rank 1
-        {"content": "DocB", "metadata": {"id": "B"}},  # rank 2
+        {"content": "DocA", "metadata": {"id": "A"}, "score": 0.9},  # rank 1
+        {"content": "DocB", "metadata": {"id": "B"}, "score": 0.8},  # rank 2
     ]
     bm25.search = lambda q, k: [
-        {"content": "DocB", "metadata": {"id": "B"}},  # rank 1
-        {"content": "DocC", "metadata": {"id": "C"}},  # rank 2
+        {"content": "DocB", "metadata": {"id": "B"}, "score": 20.0},  # rank 1
+        {"content": "DocC", "metadata": {"id": "C"}, "score": 15.0},  # rank 2
     ]
 
     results = searcher.search("test", k=3, alpha=0.5)
@@ -161,9 +182,60 @@ def test_one_engine_empty_results():
     bm25 = DummyRetriever("bm25")
     searcher = HybridSearcher(faiss, bm25)
 
-    faiss.search = lambda q, k: [{"content": "DocA", "metadata": {"id": "A"}}]
+    faiss.search = lambda q, k: [
+        {"content": "DocA", "metadata": {"id": "A"}, "score": 1.0}
+    ]
     bm25.search = lambda q, k: []
 
     results = searcher.search("test", k=3)
     assert len(results) == 1
     assert results[0]["content"] == "DocA"
+
+
+def test_hybrid_searcher_deduplicates_same_metadata_id():
+    """동일한 metadata['id']를 가지는 문서 중복 제거 검증."""
+    shared_doc_faiss = _make_doc("shared content", "doc-1", source="faiss")
+    shared_doc_bm25 = _make_doc("shared content", "doc-1", source="bm25")
+
+    faiss_only_doc = _make_doc("faiss only", "doc-2", source="faiss")
+    bm25_only_doc = _make_doc("bm25 only", "doc-3", source="bm25")
+
+    faiss_retriever = StaticRetriever([shared_doc_faiss, faiss_only_doc])
+    bm25_retriever = StaticRetriever([shared_doc_bm25, bm25_only_doc])
+
+    searcher = HybridSearcher(faiss_retriever, bm25_retriever)
+
+    # 동일 ID에 대해 동일 키 생성 확인
+    key_faiss = searcher._get_doc_key(shared_doc_faiss)
+    key_bm25 = searcher._get_doc_key(shared_doc_bm25)
+    assert key_faiss == key_bm25
+
+    results = searcher.search("query", k=10)
+
+    # doc-1은 한 번만 나타나야 함
+    ids = [doc["metadata"]["id"] for doc in results]
+    assert ids.count("doc-1") == 1
+    assert set(ids) == {"doc-1", "doc-2", "doc-3"}
+
+
+def test_hybrid_searcher_keeps_distinct_docs_with_same_content():
+    """내용(content)은 같지만 ID가 다른 문서 유지 검증."""
+    faiss_doc = _make_doc("same content", "doc-faiss", source="faiss")
+    bm25_doc = _make_doc("same content", "doc-bm25", source="bm25")
+
+    faiss_retriever = StaticRetriever([faiss_doc])
+    bm25_retriever = StaticRetriever([bm25_doc])
+
+    searcher = HybridSearcher(faiss_retriever, bm25_retriever)
+
+    # 다른 ID에 대해 다른 키 생성 확인
+    key_faiss = searcher._get_doc_key(faiss_doc)
+    key_bm25 = searcher._get_doc_key(bm25_doc)
+    assert key_faiss != key_bm25
+
+    results = searcher.search("query", k=10)
+
+    # 내용이 같아도 ID가 다르면 별개 문서로 유지
+    ids = [doc["metadata"]["id"] for doc in results]
+    assert set(ids) == {"doc-faiss", "doc-bm25"}
+    assert len(results) == 2
