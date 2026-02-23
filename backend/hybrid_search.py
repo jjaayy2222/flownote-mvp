@@ -6,9 +6,14 @@
 FlowNote MVP - 하이브리드 검색 및 RRF 병합 모듈
 """
 
+import hashlib
+import logging
 from typing import List, Dict, Any, Optional
+
 from backend.faiss_search import FAISSRetriever
 from backend.bm25_search import BM25Retriever
+
+logger = logging.getLogger(__name__)
 
 
 class HybridSearcher:
@@ -24,11 +29,38 @@ class HybridSearcher:
         Args:
             faiss_retriever: 초기화된 FAISS 리트리버 인스턴스
             bm25_retriever: 초기화된 BM25 리트리버 인스턴스
-            rrf_k: RRF 페널티 상수 (보통 60 사용)
+            rrf_k: RRF 페널티 상수 (기본값: 60, 0보다 커야 함)
         """
+        if rrf_k <= 0:
+            raise ValueError(f"rrf_k must be positive, got {rrf_k}")
+
         self.faiss_retriever = faiss_retriever
         self.bm25_retriever = bm25_retriever
         self.rrf_k = rrf_k
+
+    def _get_doc_key(self, doc: Dict[str, Any]) -> str:
+        """
+        문서 식별을 위한 고유 키 생성 (ID 우선, 없을 경우 해시)
+
+        Comment 1, 2 반영: 단순히 content를 키로 쓰지 않고,
+        메타데이터(source, index)를 조합해 해싱함으로써 내용 중복 시 충돌 방지.
+        """
+        metadata = doc.get("metadata")
+        if isinstance(metadata, dict) and "id" in metadata:
+            return str(metadata["id"])
+
+        # ID가 없는 경우 내용과 메타데이터 정보를 조합해 해시 생성
+        # (단순 content 비교 시 발생하는 충돌 방지)
+        content = str(doc.get("content", ""))
+        source = ""
+        chunk_idx = ""
+        if isinstance(metadata, dict):
+            source = str(metadata.get("source", ""))
+            chunk_idx = str(metadata.get("chunk_index", ""))
+
+        # 구분자(::)를 사용하여 필트간 경계 명확화
+        combined = f"{content}::{source}::{chunk_idx}"
+        return hashlib.sha256(combined.encode()).hexdigest()
 
     def search(
         self,
@@ -46,13 +78,21 @@ class HybridSearcher:
             k: 최종 반환할 문서 수
             faiss_k: FAISS에서 가져올 후보 수 (기본값: k * 2)
             bm25_k: BM25에서 가져올 후보 수 (기본값: k * 2)
-            alpha: FAISS 점수 가중치, (1-alpha)는 BM25 점수 가중치 (기본값: 0.5)
+            alpha: [0, 1] 범위의 FAISS 점수 가중치 (1-alpha는 BM25 가중치)
 
         Returns:
             정렬된 하이브리드 검색 결과 리스트 (content, metadata, score 포함)
         """
-        faiss_candidates = faiss_k or (k * 2)
-        bm25_candidates = bm25_k or (k * 2)
+        # [검토 반영] 0. 파라미터 검증
+        if not 0.0 <= alpha <= 1.0:
+            raise ValueError(f"alpha must be between 0 and 1 (inclusive), got {alpha}")
+
+        if k <= 0:
+            return []
+
+        # Comment 3 반영: None 여부 명시적 확인 (0을 허용하기 위함)
+        faiss_candidates = faiss_k if faiss_k is not None else (k * 2)
+        bm25_candidates = bm25_k if bm25_k is not None else (k * 2)
 
         # 1. 각 검색 엔진에서 결과 가져오기
         faiss_results = self.faiss_retriever.search(query, k=faiss_candidates)
@@ -64,23 +104,22 @@ class HybridSearcher:
 
         # FAISS 결과 RRF에 반영 (가중치: alpha)
         for rank, res in enumerate(faiss_results, 1):
-            # content 값 자체를 임시 고유 식별자로 사용
-            doc_key = res["content"]
+            doc_key = self._get_doc_key(res)
             if doc_key not in rrf_scores:
                 rrf_scores[doc_key] = 0.0
                 merged_docs[doc_key] = {
-                    "content": res["content"],
+                    "content": res.get("content", ""),
                     "metadata": res.get("metadata", {}),
                 }
             rrf_scores[doc_key] += alpha * (1.0 / (self.rrf_k + rank))
 
         # BM25 결과 RRF에 반영 (가중치: 1.0 - alpha)
         for rank, res in enumerate(bm25_results, 1):
-            doc_key = res["content"]
+            doc_key = self._get_doc_key(res)
             if doc_key not in rrf_scores:
                 rrf_scores[doc_key] = 0.0
                 merged_docs[doc_key] = {
-                    "content": res["content"],
+                    "content": res.get("content", ""),
                     "metadata": res.get("metadata", {}),
                 }
             rrf_scores[doc_key] += (1.0 - alpha) * (1.0 / (self.rrf_k + rank))
@@ -94,64 +133,18 @@ class HybridSearcher:
         for doc_key in sorted_keys[:k]:
             doc_info = merged_docs[doc_key].copy()
             doc_info["score"] = rrf_scores[doc_key]
+            # [보안] 로깅이나 반환 시 내부 해시 키(doc_key)는 불필요하므로 포함하지 않음
             final_results.append(doc_info)
 
+        # [운영] 구조화된 로깅
+        logger.info(
+            "Hybrid search completed",
+            extra={
+                "query_len": len(query),
+                "alpha": alpha,
+                "candidates": len(rrf_scores),
+                "returned": len(final_results),
+            },
+        )
+
         return final_results
-
-
-if __name__ == "__main__":
-    import numpy as np
-
-    print("=" * 50)
-    print("하이브리드(RRF) 검색 테스트")
-    print("=" * 50)
-
-    # 더미 데이터 생성
-    docs = [
-        {
-            "content": "FlowNote는 AI를 활용한 대화 관리 도구입니다.",
-            "metadata": {"source": "doc1"},
-        },
-        {
-            "content": "BM25는 키워드 기반의 희소 벡터 검색 알고리즘입니다.",
-            "metadata": {"source": "doc2"},
-        },
-        {
-            "content": "대화 내용에 대한 밀집 벡터 검색은 FAISS를 사용합니다.",
-            "metadata": {"source": "doc3"},
-        },
-        {
-            "content": "하이브리드 검색은 FAISS와 BM25를 결합하여 결과를 제공합니다.",
-            "metadata": {"source": "doc4"},
-        },
-    ]
-
-    # 더미 임베딩 (1536차원) - 텍스트 임베딩 차원 고정을 위해 랜덤 생성
-    np.random.seed(42)
-    embeddings = np.random.rand(4, 1536).astype(np.float32)
-
-    # 1. FAISS 세팅
-    faiss_retriever = FAISSRetriever()
-    faiss_retriever.add_documents(embeddings, docs)
-
-    # 2. BM25 세팅
-    bm25_retriever = BM25Retriever()
-    bm25_retriever.add_documents(docs)
-
-    # 3. HybridSearcher 병합
-    hybrid_searcher = HybridSearcher(faiss_retriever, bm25_retriever)
-
-    query = "대화 검색"
-    print(f"\n🔍 검색 쿼리: '{query}'")
-
-    results = hybrid_searcher.search(query, k=3, alpha=0.5)
-
-    print(f"\n검색 결과 ({len(results)}개):")
-    print("-" * 50)
-    for i, result in enumerate(results, 1):
-        print(f"\n{i}위:")
-        print(f"    - RRF 점수: {result['score']:.4f}")
-        print(f"    - 내용: {result['content']}")
-        print(f"    - 메타데이터: {result['metadata']}")
-
-    print("\n" + "=" * 50)
