@@ -1,5 +1,5 @@
 import pytest
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from backend.hybrid_search import HybridSearcher
 
 
@@ -42,11 +42,11 @@ class StaticRetriever:
 
 
 def _make_doc(
-    content: str, doc_id: Optional[Any] = None, **metadata_overrides: Any
+    content: str, doc_id: Optional[Union[str, int]] = None, **metadata_overrides: Any
 ) -> Dict[str, Any]:
     """
     테스트용 문서 객체 생성 헬퍼 (ID 선택 가능).
-    6차 리뷰 반영: falsy한 ID("", 0 등)가 누락되지 않도록 is not None으로 체크.
+    falsy한 ID("", 0 등)가 누락되지 않도록 is not None으로 체크합니다.
     """
     metadata = {}
     if doc_id is not None:
@@ -202,7 +202,7 @@ def test_one_engine_empty_results():
 def test_hybrid_searcher_deduplicates_hash_key_when_id_missing():
     """
     metadata['id']가 없을 때 (content, source, chunk_index) 해시를 통한 중복 제거 검증.
-    내용(content)이 같더라도 메타데이터가 다르면 별개 문서로 취급되어야 함을 확인 (6차 리뷰 반영).
+    내용(content)이 같더라도 메타데이터가 다르면 별개 문서로 취급되어야 함을 확인합니다.
     """
     shared_content = "same content for all docs"
     shared_source = "shared-source"
@@ -247,7 +247,7 @@ def test_hybrid_searcher_deduplicates_hash_key_when_id_missing():
 
 def test_hybrid_searcher_deduplicates_partial_metadata_hash():
     """
-    메타데이터(source, chunk_index)가 일부 누락되었을 때의 해시 기반 중복 제거 검증 (6차 리뷰 반영).
+    메타데이터(source, chunk_index)가 일부 누락되었을 때의 해시 기반 중복 제거 검증.
     """
     shared_content = "partial metadata content"
 
@@ -276,7 +276,7 @@ def test_hybrid_searcher_deduplicates_partial_metadata_hash():
 
 def test_hybrid_searcher_falsy_id_preservation():
     """
-    ID가 "" 또는 "0"과 같은 falsy 값일 때도 정상적으로 식별자로 사용되는지 검증 (6차 리뷰 반영).
+    ID가 "" 또는 "0"과 같은 falsy 값일 때도 정상적으로 식별자로 사용되는지 검증.
     """
     doc_zero = _make_doc("content 0", doc_id="0")
     doc_empty = _make_doc("content empty", doc_id="")

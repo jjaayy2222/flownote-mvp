@@ -113,13 +113,13 @@ class HybridSearcher:
         if k == 0:
             return []
 
-        # Comment 1 반영: 개별 k 값에 대한 음수 검증
+        # 개별 k 값에 대한 음수 검증
         if faiss_k is not None and faiss_k < 0:
             raise ValueError(f"faiss_k must be non-negative, got {faiss_k}")
         if bm25_k is not None and bm25_k < 0:
             raise ValueError(f"bm25_k must be non-negative, got {bm25_k}")
 
-        # Comment 3 반영: None 여부 명시적 확인 (0을 허용하기 위함)
+        # None 여부 명시적 확인 (0을 허용하기 위함)
         f_k = faiss_k if faiss_k is not None else (k * 2)
         b_k = bm25_k if bm25_k is not None else (k * 2)
 
