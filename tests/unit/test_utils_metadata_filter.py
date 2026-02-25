@@ -54,19 +54,24 @@ def test_check_metadata_match_edge_cases():
 
 
 def test_check_metadata_match_none_semantics():
-    """None 값에 대한 매칭 세만틱 검증 (엄격한 가치 기반 필터링)."""
-    # 1. 필터가 스칼라 None인 경우 -> 모든 값에 대해 매칭 (와일드카드성 동작 유지)
-    assert check_metadata_match({"category": "A"}, {"category": None}) is True
-    assert check_metadata_match({}, {"category": None}) is True
+    """None 값 및 빈 리스트에 대한 매칭 세만틱 검증 (엄격한 필터링 모델)."""
+    # 1. 필터가 명시적인 None인 경우 -> 문서 값이 실제로 None인 경우만 매칭
+    assert check_metadata_match({"category": None}, {"category": None}) is True
+    assert check_metadata_match({"category": "A"}, {"category": None}) is False
 
-    # 2. 필터에 명시적 값이 있는데 문서가 None/누락인 경우 -> 매칭 실패 (방어적)
-    assert check_metadata_match({"category": None}, {"category": "A"}) is False
-    assert check_metadata_match({}, {"category": "A"}) is False
+    # 2. 키 자체가 없는 경우 (필터에서 기대하는데 데이터 없음) -> 매칭 실패 (엄격한 존재성 검증)
+    assert check_metadata_match({}, {"category": None}) is False
 
-    # 3. 필터 리스트에 None과 유효 값이 섞인 경우 -> 유효 값 기준으로만 판정
+    # 3. 필터가 빈 리스트([])인 경우 -> 절대로 매치될 수 없음 (Restrictive)
+    assert check_metadata_match({"tags": ["AI"]}, {"tags": []}) is False
+    assert check_metadata_match({"tags": []}, {"tags": []}) is False
+    assert check_metadata_match({}, {"tags": []}) is False
+
+    # 3. 리스트 내에 None과 값이 섞인 경우 -> 일반적인 교집합 논리 작동 (None 포함)
     doc_none = {"tags": None}
     doc_val = {"tags": ["AI"]}
-    filter_mix = {"tags": ["AI", None]}  # None은 무시되고 "AI"만 필터로 작동
+    filter_mix = {"tags": ["AI", None]}
 
-    assert check_metadata_match(doc_none, filter_mix) is False
-    assert check_metadata_match(doc_val, filter_mix) is True
+    assert check_metadata_match(doc_none, filter_mix) is True  # None끼리 매칭
+    assert check_metadata_match(doc_val, filter_mix) is True  # "AI"끼리 매칭
+    assert check_metadata_match({"tags": ["CV"]}, filter_mix) is False
