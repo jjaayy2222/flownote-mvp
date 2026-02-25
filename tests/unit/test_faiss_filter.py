@@ -1,5 +1,6 @@
 import pytest
 import numpy as np
+import numbers
 from typing import Optional, Dict
 from unittest.mock import patch, MagicMock
 from backend.faiss_search import FAISSRetriever
@@ -48,72 +49,88 @@ def test_faiss_retriever_filtering_no_match(faiss_retriever):
     assert results == []
 
 
-def test_faiss_retriever_post_filtering_fetch_more(faiss_retriever):
-    """필터링을 위해 내부적으로 더 많은 후보군을 가져오는지 로직 검증."""
-    docs = [{"content": f"note {i}", "metadata": {"match": i == 19}} for i in range(20)]
-    embeddings = np.array(
-        [[0.1 + i * 0.01] * 1536 for i in range(20)], dtype=np.float32
-    )
-    faiss_retriever.add_documents(embeddings, docs)
+def test_faiss_retriever_invalid_expansion_types():
+    """확장 배수의 타입 및 범위 유효성 검증."""
+    # 1. 수치형이 아닌 경우 (TypeError)
+    with pytest.raises(TypeError, match="must be a real number"):
+        FAISSRetriever(filter_expansion_factor="10")
 
-    # k=1 이고 기본 확장 10이면 0-9만 보므로 19번 안 나옴
-    results = faiss_retriever.search("query", k=1, metadata_filter={"match": True})
-    assert results == []
+    # 2. 불리언인 경우 (TypeError)
+    with pytest.raises(TypeError, match="must be a real number"):
+        FAISSRetriever(filter_expansion_factor=True)
 
-    # k=2 이면 2*10=20개 보므로 19번 나옴
-    results_k2 = faiss_retriever.search("query", k=2, metadata_filter={"match": True})
-    assert len(results_k2) == 1
-    assert results_k2[0]["content"] == "note 19"
-
-
-def test_faiss_retriever_configurable_expansion(faiss_retriever):
-    """필터 확장 배수가 유동적으로 적용되는지 검증."""
-    docs = [{"content": f"note {i}", "metadata": {"match": i == 19}} for i in range(20)]
-    embeddings = np.array(
-        [[0.1 + i * 0.01] * 1536 for i in range(20)], dtype=np.float32
-    )
-    faiss_retriever.add_documents(embeddings, docs)
-
-    # 1. 기본값 10: k=1 -> 10개 -> 19번 미발견
-    assert faiss_retriever.search("query", k=1, metadata_filter={"match": True}) == []
-
-    # 2. 오버라이드 20: k=1 -> 20개 -> 19번 발견
-    results = faiss_retriever.search(
-        "query", k=1, metadata_filter={"match": True}, filter_expansion_factor=20
-    )
-    assert len(results) == 1
-    assert results[0]["content"] == "note 19"
-
-
-def test_faiss_retriever_invalid_expansion():
-    """유효하지 않은 확장 배수 설정 시 예외 발생 검증."""
-    # 1. 생성 시 검증 (항상 수행)
-    with pytest.raises(ValueError, match="filter_expansion_factor must be >= 1"):
+    # 3. 1 미만인 경우 (ValueError)
+    with pytest.raises(ValueError, match="must be >= 1"):
         FAISSRetriever(filter_expansion_factor=0)
 
-    # 2. 검색 시 검증
+    # 4. 정규화(int 캐스팅) 후 1 미만이 되는 경우 (ValueError)
+    with pytest.raises(ValueError, match="must be >= 1"):
+        FAISSRetriever(filter_expansion_factor=0.5)
+
+
+def test_faiss_retriever_invalid_expansion_search():
+    """검색 시 확장 배수 유효성 검사 (필터 유무에 따른 차이)"""
     retriever = FAISSRetriever()
 
-    # 2-1. metadata_filter가 없으면 잘못된 배수도 무시됨 (정상 작동)
-    retriever.search("query", filter_expansion_factor=-1)
+    # 1. metadata_filter가 None이면 검증 건너뜀 (리뷰어 요청 반영)
+    retriever.search("query", metadata_filter=None, filter_expansion_factor=-1)
 
-    # 2-2. metadata_filter가 있으면 검증 수행
-    with pytest.raises(ValueError, match="filter_expansion_factor must be >= 1"):
-        retriever.search("query", metadata_filter={"id": 1}, filter_expansion_factor=-1)
+    # 2. metadata_filter가 있으면 (빈 딕셔너리 포함) 검증 수행
+    with pytest.raises(ValueError, match="must be >= 1"):
+        retriever.search("query", metadata_filter={}, filter_expansion_factor=-1)
+
+    with pytest.raises(ValueError, match="must be >= 1"):
+        retriever.search("query", metadata_filter={"id": 1}, filter_expansion_factor=0)
 
 
 def test_faiss_retriever_list_metadata_filtering(faiss_retriever):
-    """FAISS에서 리스트형 메타데이터(tags 등) 필터링 검증."""
+    """FAISS에서 리스트형 메타데이터(tags 등)의 다양한 매칭 케이스 검증."""
     docs = [
-        {"content": "AI Note", "metadata": {"tags": ["AI", "NLP"]}},
-        {"content": "Tech Note", "metadata": {"tags": ["Tech", "Coding"]}},
+        {"content": "AI Note", "metadata": {"tags": ["AI", "NLP"], "status": "active"}},
+        {
+            "content": "Tech Note",
+            "metadata": {"tags": ["Tech", "Coding"], "status": "pending"},
+        },
+        {"content": "Solo Note", "metadata": {"tags": "General", "status": "active"}},
+    ]
+    embeddings = np.array([[0.1] * 1536, [0.5] * 1536, [0.9] * 1536], dtype=np.float32)
+    faiss_retriever.add_documents(embeddings, docs)
+
+    # 케이스 1: 리스트(Doc) vs 리스트(Filter) - 교집합
+    results1 = faiss_retriever.search(
+        "query", k=10, metadata_filter={"tags": ["AI", "Search"]}
+    )
+    assert len(results1) == 1
+    assert results1[0]["content"] == "AI Note"
+
+    # 케이스 2: 리스트(Doc) vs 스칼라(Filter) - 포함 여부
+    results2 = faiss_retriever.search("query", k=10, metadata_filter={"tags": "Coding"})
+    assert len(results2) == 1
+    assert results2[0]["content"] == "Tech Note"
+
+    # 케이스 3: 스칼라(Doc) vs 리스트(Filter) - 필터 리스트에 포함 여부
+    results3 = faiss_retriever.search(
+        "query", k=10, metadata_filter={"tags": ["General", "Personal"]}
+    )
+    assert len(results3) == 1
+    assert results3[0]["content"] == "Solo Note"
+
+
+def test_faiss_retriever_unhashable_metadata_filtering(faiss_retriever):
+    """해시 불가능한 객체(dict 등)가 포함된 메타데이터 필터링 검색 검증."""
+    docs = [
+        {
+            "content": "Dict Tag Note",
+            "metadata": {"tags": [{"id": "t1", "name": "AI"}]},
+        },
+        {"content": "Normal Note", "metadata": {"tags": ["Tech"]}},
     ]
     embeddings = np.array([[0.1] * 1536, [0.5] * 1536], dtype=np.float32)
     faiss_retriever.add_documents(embeddings, docs)
 
-    # 리스트 vs 리스트 매칭 (교집합)
+    # 리스트 내에 dict가 있어도 set() 변환 에러 없이 정상 매칭되어야 함
     results = faiss_retriever.search(
-        "query", k=10, metadata_filter={"tags": ["AI", "Search"]}
+        "query", k=10, metadata_filter={"tags": [{"id": "t1", "name": "AI"}]}
     )
     assert len(results) == 1
-    assert results[0]["content"] == "AI Note"
+    assert results[0]["content"] == "Dict Tag Note"
