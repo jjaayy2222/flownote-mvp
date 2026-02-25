@@ -45,7 +45,13 @@ def check_metadata_match(
         if isinstance(filter_value, list):
             if isinstance(doc_value, list):
                 # 리스트 vs 리스트: 교집합이 있는지 확인 (하나라도 겹치면 매칭)
-                if not set(doc_value).intersection(set(filter_value)):
+                # set() 변환은 dict 등 해시 불가능한 요소가 있을 경우 실패하므로 순회 방식으로 체크
+                match_found = False
+                for item in doc_value:
+                    if item in filter_value:
+                        match_found = True
+                        break
+                if not match_found:
                     return False
             else:
                 # 스칼라 vs 리스트: 필터 리스트에 포함되는지 확인

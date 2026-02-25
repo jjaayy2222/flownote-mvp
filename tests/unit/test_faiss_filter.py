@@ -87,12 +87,19 @@ def test_faiss_retriever_configurable_expansion(faiss_retriever):
 
 def test_faiss_retriever_invalid_expansion():
     """유효하지 않은 확장 배수 설정 시 예외 발생 검증."""
+    # 1. 생성 시 검증 (항상 수행)
     with pytest.raises(ValueError, match="filter_expansion_factor must be >= 1"):
         FAISSRetriever(filter_expansion_factor=0)
 
+    # 2. 검색 시 검증
     retriever = FAISSRetriever()
+
+    # 2-1. metadata_filter가 없으면 잘못된 배수도 무시됨 (정상 작동)
+    retriever.search("query", filter_expansion_factor=-1)
+
+    # 2-2. metadata_filter가 있으면 검증 수행
     with pytest.raises(ValueError, match="filter_expansion_factor must be >= 1"):
-        retriever.search("query", filter_expansion_factor=-1)
+        retriever.search("query", metadata_filter={"id": 1}, filter_expansion_factor=-1)
 
 
 def test_faiss_retriever_list_metadata_filtering(faiss_retriever):
