@@ -15,6 +15,7 @@ sys.path.insert(0, str(project_root))
 
 import faiss
 import numpy as np
+import numbers
 from typing import List, Dict, Union, Optional, Any
 from backend.embedding import EmbeddingGenerator
 from backend.utils import check_metadata_match
@@ -24,6 +25,28 @@ class FAISSRetriever:
     """FAISS 기반 벡터 검색"""
 
     DEFAULT_FILTER_EXPANSION_FACTOR = 10  # 필터링 시 후보군 확장 기본 배수
+
+    @staticmethod
+    def _normalize_expansion_factor(value: Any) -> int:
+        """확장 배수 파라미터 유효성 검증 및 정규화 (정수 변환)"""
+        # bool은 numbers.Real의 서브클래스이지만 벡터 검색 배수로는 부적절하므로 차단
+        if isinstance(value, bool) or not isinstance(value, numbers.Real):
+            raise TypeError(
+                f"filter_expansion_factor must be a real number, got {type(value).__name__}"
+            )
+
+        if value < 1:
+            raise ValueError(f"filter_expansion_factor must be >= 1, got {value}")
+
+        normalized = int(value)
+
+        if normalized < 1:
+            # 0.5와 같이 (0.0, 1.0) 사이의 값이 들어온 경우 정수 변환 시 0이 됨
+            raise ValueError(
+                f"filter_expansion_factor must be >= 1 after normalization, got {normalized}"
+            )
+
+        return normalized
 
     def __init__(
         self,
@@ -39,7 +62,9 @@ class FAISSRetriever:
         self.index = faiss.IndexFlatL2(dimension)
         self.documents = []  # dict 객체 저장
         self.embedding_generator = EmbeddingGenerator()
-        self.filter_expansion_factor = filter_expansion_factor
+        self.filter_expansion_factor = self._normalize_expansion_factor(
+            filter_expansion_factor
+        )
 
     def add_documents(
         self,
@@ -93,6 +118,18 @@ class FAISSRetriever:
         Returns:
             검색 결과 리스트 (content, metadata, score 포함)
         """
+        # 1. 파라미터 유효성 검증 (메타데이터 필터링이 활성화된 경우에만 후보군 확장 배수 적용)
+        if metadata_filter:
+            target_factor = (
+                self.filter_expansion_factor
+                if filter_expansion_factor is None
+                else filter_expansion_factor
+            )
+            expansion = self._normalize_expansion_factor(target_factor)
+        else:
+            # 필터링을 사용하지 않는 경우 확장이 필요 없으므로 1로 고정
+            expansion = 1
+
         if self.index.ntotal == 0:
             return []
 
@@ -103,8 +140,6 @@ class FAISSRetriever:
         # NumPy 배열로 변환
         query_vector = np.array([query_embedding], dtype=np.float32)
 
-        # 필터링이 있는 경우, 필터링 후 k개를 맞추기 위해 넉넉하게 후보군을 가져옴
-        expansion = filter_expansion_factor or self.filter_expansion_factor
         search_k = min(self.index.ntotal, k * expansion if metadata_filter else k)
         distances, indices = self.index.search(query_vector, search_k)
 
