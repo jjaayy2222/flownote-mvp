@@ -41,18 +41,17 @@ def check_metadata_match(
     for filter_key, filter_value in metadata_filter.items():
         doc_value = doc_metadata.get(filter_key)
 
-        # 양쪽 값을 모두 리스트로 정규화하여 처리하되, None은 유효 값 매칭에서 제외
+        # 1. 빈 리스트 필터([]) 처리: 어떤 값과도 매칭될 수 없으므로 False (보안적 관점)
+        if isinstance(filter_value, list) and not filter_value:
+            return False
+
+        # 2. 리스트 정규화 및 교집합 검사
         filter_raw = filter_value if isinstance(filter_value, list) else [filter_value]
         doc_raw = doc_value if isinstance(doc_value, list) else [doc_value]
 
-        # None이 아닌 실제 값들만 추출하여 비교 (필터링의 의도는 '실제 값'의 일치여야 함)
-        filter_values = [v for v in filter_raw if v is not None]
-        doc_values = [v for v in doc_raw if v is not None]
-
-        # 만약 필터에 유효한 값이 명시되었는데 문서 값이 없거나 불일치하면 False
-        if filter_values:
-            if not doc_values or not any(v in filter_values for v in doc_values):
-                return False
+        # OR 세만틱: 문서 값 중 하나라도 필터 후보군(None 포함)에 포함되는지 확인
+        if not any(v in filter_raw for v in doc_raw):
+            return False
 
     return True
 
