@@ -19,7 +19,9 @@ class Retriever(Protocol):
     HybridSearcher가 사용하는 모든 리트리버는 이 프로토콜을 준수해야 합니다.
     """
 
-    def search(self, query: str, k: int) -> List[Dict[str, Any]]:
+    def search(
+        self, query: str, k: int, metadata_filter: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
         """
         검색을 수행하고 정렬된 리스트를 반환합니다.
 
@@ -29,6 +31,11 @@ class Retriever(Protocol):
         - score: 검색 점수 (float, 내림차순 정렬 가정)
           (참고: RRF는 절대 점수가 아닌 순위(Rank)를 기반으로 작동하지만,
           인터페이스 일관성을 위해 score 필드 포함을 권장합니다.)
+
+        Args:
+            query: 검색 질의
+            k: 반환할 결과 수
+            metadata_filter: 메타데이터 필터 조건 (예: {"category": "Projects"})
         """
         ...
 
@@ -89,6 +96,7 @@ class HybridSearcher:
         faiss_k: Optional[int] = None,
         bm25_k: Optional[int] = None,
         alpha: float = 0.5,
+        metadata_filter: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """
         하이브리드 검색 수행 후 RRF 점수로 정렬하여 반환
@@ -99,6 +107,7 @@ class HybridSearcher:
             faiss_k: FAISS에서 가져올 후보 수 (기본값: k * 2, 0 이상)
             bm25_k: BM25에서 가져올 후보 수 (기본값: k * 2, 0 이상)
             alpha: [0, 1] 범위의 가중치. 1.0에 가까울수록 Dense(FAISS) 결과 비중이 커짐.
+            metadata_filter: 메타데이터 필터 조건 (예: {"category": "Projects"})
 
         Returns:
             RRF 점수 기반으로 재정렬된 하이브리드 검색 결과 리스트 (content, metadata, score 포함)
@@ -124,8 +133,12 @@ class HybridSearcher:
         b_k = bm25_k if bm25_k is not None else (k * 2)
 
         # 1. 각 검색 엔진에서 결과 가져오기
-        faiss_results = self.faiss_retriever.search(query, k=f_k)
-        bm25_results = self.bm25_retriever.search(query, k=b_k)
+        faiss_results = self.faiss_retriever.search(
+            query, k=f_k, metadata_filter=metadata_filter
+        )
+        bm25_results = self.bm25_retriever.search(
+            query, k=b_k, metadata_filter=metadata_filter
+        )
 
         # 2. RRF 병합 식별을 위한 Dictionary 정리
         rrf_scores: Dict[str, float] = {}

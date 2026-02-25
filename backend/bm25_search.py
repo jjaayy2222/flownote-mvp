@@ -25,6 +25,7 @@ from typing import (
     TypedDict,
 )
 from rank_bm25 import BM25Okapi
+from backend.utils import check_metadata_match
 
 logger = logging.getLogger(__name__)
 
@@ -334,7 +335,11 @@ class BM25Retriever:
         return stats
 
     def search(
-        self, query: str, k: int = 3, filter_zero_score: bool = True
+        self,
+        query: str,
+        k: int = 3,
+        filter_zero_score: bool = True,
+        metadata_filter: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """
         쿼리에 가장 유사한 문서 검색
@@ -343,6 +348,7 @@ class BM25Retriever:
             query: 검색 쿼리
             k: 반환할 결과 수
             filter_zero_score: 점수가 0인 문서(연관성 없음)를 필터링할지 여부
+            metadata_filter: 메타데이터 필터 조건 (예: {"category": "Projects"})
 
         Returns:
             검색 결과 리스트 (content, metadata, score 포함)
@@ -365,9 +371,20 @@ class BM25Retriever:
 
         doc_scores = self.bm25.get_scores(tokenized_query)
 
-        # 높은 점수 순으로 정렬
+        # 필터링 적용할 대상 인덱스 추출
+        candidate_indices = range(len(doc_scores))
+        if metadata_filter:
+            candidate_indices = [
+                i
+                for i in candidate_indices
+                if check_metadata_match(
+                    self.documents[i].get("metadata", {}), metadata_filter
+                )
+            ]
+
+        # 높은 점수 순으로 정렬 (필터링된 후보군 내에서 k개 추출)
         top_k_indices = sorted(
-            range(len(doc_scores)), key=lambda i: doc_scores[i], reverse=True
+            candidate_indices, key=lambda i: doc_scores[i], reverse=True
         )[:k]
 
         results = []
