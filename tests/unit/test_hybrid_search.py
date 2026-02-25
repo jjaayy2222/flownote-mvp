@@ -13,10 +13,14 @@ class DummyRetriever:
         self.name = name
         self.last_k = None
         self.last_query = None
+        self.last_filter = None
 
-    def search(self, query: str, k: int) -> List[Dict[str, Any]]:
+    def search(
+        self, query: str, k: int, metadata_filter: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
         self.last_query = query
         self.last_k = k
+        self.last_filter = metadata_filter
         # HybridSearcher가 기대하는 최소 필드(content, metadata, score)를 맞춰줍니다.
         return [
             {
@@ -35,10 +39,14 @@ class StaticRetriever:
         self._results = results
         self.last_query = None
         self.last_k = None
+        self.last_filter = None
 
-    def search(self, query: str, k: int) -> List[Dict[str, Any]]:
+    def search(
+        self, query: str, k: int, metadata_filter: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
         self.last_query = query
         self.last_k = k
+        self.last_filter = metadata_filter
         return self._results[:k]
 
 
@@ -165,11 +173,11 @@ def test_hybrid_searcher_rrf_scoring_logic():
     # 수동 결과 설정
     # 문서 A는 FAISS 1위, BM25 없음
     # 문서 B는 FAISS 2위, BM25 1위
-    faiss.search = lambda q, k: [
+    faiss.search = lambda q, k, metadata_filter=None: [
         {"content": "DocA", "metadata": {"id": "A"}, "score": 0.9},  # rank 1
         {"content": "DocB", "metadata": {"id": "B"}, "score": 0.8},  # rank 2
     ]
-    bm25.search = lambda q, k: [
+    bm25.search = lambda q, k, metadata_filter=None: [
         {"content": "DocB", "metadata": {"id": "B"}, "score": 20.0},  # rank 1
         {"content": "DocC", "metadata": {"id": "C"}, "score": 15.0},  # rank 2
     ]
@@ -191,10 +199,10 @@ def test_one_engine_empty_results():
     bm25 = DummyRetriever("bm25")
     searcher = HybridSearcher(faiss, bm25)
 
-    faiss.search = lambda q, k: [
+    faiss.search = lambda q, k, metadata_filter=None: [
         {"content": "DocA", "metadata": {"id": "A"}, "score": 1.0}
     ]
-    bm25.search = lambda q, k: []
+    bm25.search = lambda q, k, metadata_filter=None: []
 
     results = searcher.search("test", k=3)
     assert len(results) == 1

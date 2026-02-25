@@ -15,13 +15,13 @@ sys.path.insert(0, str(project_root))
 
 import faiss
 import numpy as np
-from typing import List, Dict, Union
+from typing import List, Dict, Union, Optional
 from backend.embedding import EmbeddingGenerator
 
 
 class FAISSRetriever:
     """FAISS 기반 벡터 검색"""
-    
+
     def __init__(self, dimension: int = 1536):
         """
         Args:
@@ -29,87 +29,120 @@ class FAISSRetriever:
         """
         self.dimension = dimension
         self.index = faiss.IndexFlatL2(dimension)
-        self.documents = []                         # dict 객체 저장
+        self.documents = []  # dict 객체 저장
         self.embedding_generator = EmbeddingGenerator()
-    
+
     def add_documents(
-        self, 
-        embeddings: np.ndarray,         # 순서 변경
-        documents: List[Dict]           # Dict 타입으로 변경
+        self,
+        embeddings: np.ndarray,  # 순서 변경
+        documents: List[Dict],  # Dict 타입으로 변경
     ):
         """
         문서와 임베딩 추가
-        
+
         Args:
             embeddings: 임베딩 벡터 배열
             documents: 문서 dict 리스트 (content, metadata 포함)
         """
         if not documents or embeddings is None:
             return
-        
+
         if len(documents) != len(embeddings):
-            raise ValueError(f"문서 수({len(documents)})와 임베딩 수({len(embeddings)})가 일치하지 않습니다!")
-        
+            raise ValueError(
+                f"문서 수({len(documents)})와 임베딩 수({len(embeddings)})가 일치하지 않습니다!"
+            )
+
         # NumPy 배열로 변환
         if not isinstance(embeddings, np.ndarray):
             embeddings_np = np.array(embeddings, dtype=np.float32)
         else:
             embeddings_np = embeddings.astype(np.float32)
-        
+
         # FAISS 인덱스에 추가
         self.index.add(embeddings_np)
-        
+
         # 문서 dict 그대로 저장
         self.documents.extend(documents)
         print(f"✅ FAISS에 {len(documents)}개 문서 추가 완료")
-    
-    def search(self, query: str, k: int = 3) -> List[Dict]:
+
+    def _check_metadata_match(self, doc_metadata: Dict, metadata_filter: Dict) -> bool:
+        """메타데이터 필터 조건 합치 여부 확인 헬퍼"""
+        for filter_key, filter_value in metadata_filter.items():
+            doc_value = doc_metadata.get(filter_key)
+
+            if isinstance(filter_value, list):
+                if doc_value not in filter_value:
+                    return False
+            else:
+                if doc_value != filter_value:
+                    return False
+        return True
+
+    def search(
+        self, query: str, k: int = 3, metadata_filter: Optional[Dict] = None
+    ) -> List[Dict]:
         """
         쿼리에 가장 유사한 문서 검색
-        
+
         Args:
             query: 검색 쿼리
             k: 반환할 결과 수
-            
+            metadata_filter: 메타데이터 필터 조건 (예: {"category": "Projects"})
+
         Returns:
             검색 결과 리스트 (content, metadata, score 포함)
         """
         if self.index.ntotal == 0:
             return []
-        
+
         # 쿼리 임베딩 생성
         result = self.embedding_generator.generate_embeddings([query])
-        query_embedding = result["embeddings"][0]       # dict에서 첫 번째 임베딩 추출
-        
-        # NumPy 배열로 변환 (FAISS가 기대하는 형태: (1, 1536))
+        query_embedding = result["embeddings"][0]
+
+        # NumPy 배열로 변환
         query_vector = np.array([query_embedding], dtype=np.float32)
-    
-        # 검색
-        distances, indices = self.index.search(query_vector, min(k, self.index.ntotal))
-        
-        # 결과 반환 (dict 구조 유지)
+
+        # 필터링이 있는 경우, 필터링 후 k개를 맞추기 위해 넉넉하게 후보군을 가져옴
+        search_k = min(self.index.ntotal, k * 10 if metadata_filter else k)
+        distances, indices = self.index.search(query_vector, search_k)
+
+        # 결과 반환 및 필터링
         results = []
         for dist, idx in zip(distances[0], indices[0]):
-            if idx < len(self.documents):
-                doc = self.documents[idx]
-                
-                # 유사도 계산 (거리 → 유사도)
-                similarity = 1 / (1 + float(dist))
-                
-                results.append({
-                    "content": doc["content"],              # content 키 사용
-                    "metadata": doc["metadata"],            # metadata 유지
-                    "score": similarity,                    # score로 통일
-                    "distance": float(dist)
-                })
-        
+            if idx < 0 or idx >= len(self.documents):
+                continue
+
+            doc = self.documents[idx]
+
+            # 메타데이터 필터 체크
+            if metadata_filter and not self._check_metadata_match(
+                doc.get("metadata", {}), metadata_filter
+            ):
+                continue
+
+            # 유사도 계산
+            similarity = 1 / (1 + float(dist))
+
+            results.append(
+                {
+                    "content": doc.get("content", ""),
+                    "metadata": doc.get("metadata", {}),
+                    "score": similarity,
+                    "distance": float(dist),
+                }
+            )
+
+            # k개 채워지면 중단
+            if len(results) >= k:
+                break
+
         return results
-    
+
     def clear(self):
         """인덱스 초기화"""
         self.index = faiss.IndexFlatL2(self.dimension)
         self.documents = []
-    
+
     def size(self) -> int:
         """인덱스에 저장된 문서 수"""
         return self.index.ntotal
@@ -123,54 +156,54 @@ if __name__ == "__main__":
     print("=" * 50)
     print("FAISS 검색 테스트")
     print("=" * 50)
-    
+
     # 1. Retriever 초기화
     retriever = FAISSRetriever()
-    
+
     # 2. 테스트 문서 (dict 구조)
     docs = [
         {
             "content": "FlowNote는 AI 대화 관리 도구입니다.",
-            "metadata": {"source": "test.txt", "chunk_index": 0}
+            "metadata": {"source": "test.txt", "chunk_index": 0},
         },
         {
             "content": "대화 내용을 검색하고 분석할 수 있습니다.",
-            "metadata": {"source": "test.txt", "chunk_index": 1}
+            "metadata": {"source": "test.txt", "chunk_index": 1},
         },
         {
             "content": "마크다운으로 대화를 내보낼 수 있습니다.",
-            "metadata": {"source": "test.txt", "chunk_index": 2}
-        }
+            "metadata": {"source": "test.txt", "chunk_index": 2},
+        },
     ]
-    
+
     # 3. 임베딩 생성
     embedding_generator = EmbeddingGenerator()
     texts = [doc["content"] for doc in docs]
-    
+
     # ✅ 수정: result에서 embeddings 추출!
     result = embedding_generator.generate_embeddings(texts)
-    embeddings = result["embeddings"]                   # 추가
-    
+    embeddings = result["embeddings"]  # 추가
+
     print(f"\n✅ 임베딩 생성 완료:")
     print(f" - 청크 수: {len(embeddings)}")
     print(f" - 토큰 수: {result['tokens']}")
     print(f" - 예상 비용: ${result['cost']:.6f}")
     print(f" - 벡터 차원: {len(embeddings[0])}")
-    
+
     # 4. NumPy 배열로 변환 (FAISS가 기대하는 형태)
     embeddings_np = np.array(embeddings, dtype=np.float32)
-    
+
     # 5. 문서 추가
     retriever.add_documents(embeddings_np, docs)
     print(f"\n✅ FAISS 인덱스 추가 완료")
     print(f"    - 총 문서 수: {len(docs)}")
     print(f"    - 인덱스 크기: {retriever.size()}")
-    
+
     # 6. 검색
     query = "대화를 어떻게 관리하나요?"
     print(f"\n🔍 검색 쿼리: '{query}'")
     results = retriever.search(query, k=2)
-    
+
     print(f"\n검색 결과 ({len(results)}개):")
     print("-" * 50)
     for i, result in enumerate(results, 1):
@@ -178,10 +211,8 @@ if __name__ == "__main__":
         print(f"    - 유사도: {result['score']:.4f}")
         print(f"    - 내용: {result['content']}")
         print(f"    - 출처: {result['metadata']['source']}")
-    
+
     print("\n" + "=" * 50)
-
-
 
 
 """result_3
