@@ -41,33 +41,18 @@ def check_metadata_match(
     for filter_key, filter_value in metadata_filter.items():
         doc_value = doc_metadata.get(filter_key)
 
-        # 1. 필터값이 리스트인 경우 (OR 조건: 필터 리스트 중 하나라도 일치하면 OK)
-        if isinstance(filter_value, list):
-            if isinstance(doc_value, list):
-                # 리스트 vs 리스트: 교집합이 있는지 확인 (하나라도 겹치면 매칭)
-                # set() 변환은 dict 등 해시 불가능한 요소가 있을 경우 실패하므로 순회 방식으로 체크
-                match_found = False
-                for item in doc_value:
-                    if item in filter_value:
-                        match_found = True
-                        break
-                if not match_found:
-                    return False
-            else:
-                # 스칼라 vs 리스트: 필터 리스트에 포함되는지 확인
-                if doc_value not in filter_value:
-                    return False
+        # 양쪽 값을 모두 리스트로 정규화하여 처리하되, None은 유효 값 매칭에서 제외
+        filter_raw = filter_value if isinstance(filter_value, list) else [filter_value]
+        doc_raw = doc_value if isinstance(doc_value, list) else [doc_value]
 
-        # 2. 필터값이 스칼라인 경우 (일치 조건)
-        else:
-            if isinstance(doc_value, list):
-                # 리스트 vs 스칼라: 문서 리스트 내에 필터값이 포함되는지 확인
-                if filter_value not in doc_value:
-                    return False
-            else:
-                # 스칼라 vs 스칼라: 단순 값 비교
-                if doc_value != filter_value:
-                    return False
+        # None이 아닌 실제 값들만 추출하여 비교 (필터링의 의도는 '실제 값'의 일치여야 함)
+        filter_values = [v for v in filter_raw if v is not None]
+        doc_values = [v for v in doc_raw if v is not None]
+
+        # 만약 필터에 유효한 값이 명시되었는데 문서 값이 없거나 불일치하면 False
+        if filter_values:
+            if not doc_values or not any(v in filter_values for v in doc_values):
+                return False
 
     return True
 

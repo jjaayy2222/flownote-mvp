@@ -119,7 +119,7 @@ class FAISSRetriever:
             검색 결과 리스트 (content, metadata, score 포함)
         """
         # 1. 파라미터 유효성 검증 (메타데이터 필터링이 활성화된 경우에만 후보군 확장 배수 적용)
-        if metadata_filter:
+        if metadata_filter is not None:
             target_factor = (
                 self.filter_expansion_factor
                 if filter_expansion_factor is None
