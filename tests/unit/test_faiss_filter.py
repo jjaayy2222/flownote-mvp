@@ -86,3 +86,23 @@ def test_faiss_retriever_post_filtering_fetch_more(faiss_retriever):
     results_k2 = faiss_retriever.search("query", k=2, metadata_filter={"match": True})
     assert len(results_k2) == 1
     assert results_k2[0]["content"] == "note 19"
+
+
+def test_faiss_retriever_configurable_expansion(faiss_retriever):
+    """필터 확장 배수가 유동적으로 적용되는지 검증."""
+    # 20개 문서 중 마지막 문서만 매칭
+    docs = [{"content": f"note {i}", "metadata": {"match": i == 19}} for i in range(20)]
+    embeddings = np.array(
+        [[0.1 + i * 0.01] * 1536 for i in range(20)], dtype=np.float32
+    )
+    faiss_retriever.add_documents(embeddings, docs)
+
+    # 1. 인스턴스 기본값(10) 사용 시: k=1 -> 10개 추출 -> 19번 문서 미발견 (빈 결과)
+    assert faiss_retriever.search("query", k=1, metadata_filter={"match": True}) == []
+
+    # 2. search 호출 시 확장 배수 20으로 설정: k=1 -> 20개 추출 -> 19번 문서 발견
+    results = faiss_retriever.search(
+        "query", k=1, metadata_filter={"match": True}, filter_expansion_factor=20
+    )
+    assert len(results) == 1
+    assert results[0]["content"] == "note 19"

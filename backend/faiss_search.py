@@ -15,22 +15,31 @@ sys.path.insert(0, str(project_root))
 
 import faiss
 import numpy as np
-from typing import List, Dict, Union, Optional
+from typing import List, Dict, Union, Optional, Any
 from backend.embedding import EmbeddingGenerator
+from backend.utils import check_metadata_match
 
 
 class FAISSRetriever:
     """FAISS 기반 벡터 검색"""
 
-    def __init__(self, dimension: int = 1536):
+    DEFAULT_FILTER_EXPANSION_FACTOR = 10  # 필터링 시 후보군 확장 기본 배수
+
+    def __init__(
+        self,
+        dimension: int = 1536,
+        filter_expansion_factor: int = DEFAULT_FILTER_EXPANSION_FACTOR,
+    ):
         """
         Args:
             dimension: 임베딩 벡터 차원 (text-embedding-3-small: 1536)
+            filter_expansion_factor: 메타데이터 필터링 시 FAISS에서 초기 추출할 후보군 배수
         """
         self.dimension = dimension
         self.index = faiss.IndexFlatL2(dimension)
         self.documents = []  # dict 객체 저장
         self.embedding_generator = EmbeddingGenerator()
+        self.filter_expansion_factor = filter_expansion_factor
 
     def add_documents(
         self,
@@ -65,21 +74,12 @@ class FAISSRetriever:
         self.documents.extend(documents)
         print(f"✅ FAISS에 {len(documents)}개 문서 추가 완료")
 
-    def _check_metadata_match(self, doc_metadata: Dict, metadata_filter: Dict) -> bool:
-        """메타데이터 필터 조건 합치 여부 확인 헬퍼"""
-        for filter_key, filter_value in metadata_filter.items():
-            doc_value = doc_metadata.get(filter_key)
-
-            if isinstance(filter_value, list):
-                if doc_value not in filter_value:
-                    return False
-            else:
-                if doc_value != filter_value:
-                    return False
-        return True
-
     def search(
-        self, query: str, k: int = 3, metadata_filter: Optional[Dict] = None
+        self,
+        query: str,
+        k: int = 3,
+        metadata_filter: Optional[Dict] = None,
+        filter_expansion_factor: Optional[int] = None,
     ) -> List[Dict]:
         """
         쿼리에 가장 유사한 문서 검색
@@ -88,6 +88,7 @@ class FAISSRetriever:
             query: 검색 쿼리
             k: 반환할 결과 수
             metadata_filter: 메타데이터 필터 조건 (예: {"category": "Projects"})
+            filter_expansion_factor: 이 검색에만 일시적으로 적용할 후보군 확장 배수 (None이면 인스턴스 값 사용)
 
         Returns:
             검색 결과 리스트 (content, metadata, score 포함)
@@ -103,7 +104,8 @@ class FAISSRetriever:
         query_vector = np.array([query_embedding], dtype=np.float32)
 
         # 필터링이 있는 경우, 필터링 후 k개를 맞추기 위해 넉넉하게 후보군을 가져옴
-        search_k = min(self.index.ntotal, k * 10 if metadata_filter else k)
+        expansion = filter_expansion_factor or self.filter_expansion_factor
+        search_k = min(self.index.ntotal, k * expansion if metadata_filter else k)
         distances, indices = self.index.search(query_vector, search_k)
 
         # 결과 반환 및 필터링
@@ -115,7 +117,7 @@ class FAISSRetriever:
             doc = self.documents[idx]
 
             # 메타데이터 필터 체크
-            if metadata_filter and not self._check_metadata_match(
+            if metadata_filter and not check_metadata_match(
                 doc.get("metadata", {}), metadata_filter
             ):
                 continue

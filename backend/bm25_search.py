@@ -25,6 +25,7 @@ from typing import (
     TypedDict,
 )
 from rank_bm25 import BM25Okapi
+from backend.utils import check_metadata_match
 
 logger = logging.getLogger(__name__)
 
@@ -333,21 +334,6 @@ class BM25Retriever:
 
         return stats
 
-    def _check_metadata_match(
-        self, doc_metadata: Dict[str, Any], metadata_filter: Dict[str, Any]
-    ) -> bool:
-        """메타데이터 필터 조건 합치 여부 확인 헬퍼"""
-        for filter_key, filter_value in metadata_filter.items():
-            doc_value = doc_metadata.get(filter_key)
-
-            if isinstance(filter_value, list):
-                if doc_value not in filter_value:
-                    return False
-            else:
-                if doc_value != filter_value:
-                    return False
-        return True
-
     def search(
         self,
         query: str,
@@ -391,7 +377,7 @@ class BM25Retriever:
             candidate_indices = [
                 i
                 for i in candidate_indices
-                if self._check_metadata_match(
+                if check_metadata_match(
                     self.documents[i].get("metadata", {}), metadata_filter
                 )
             ]

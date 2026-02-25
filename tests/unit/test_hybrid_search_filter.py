@@ -1,6 +1,7 @@
 import pytest
 from backend.hybrid_search import HybridSearcher
 from typing import List, Dict, Any, Optional
+from backend.utils import check_metadata_match
 
 
 class StaticRetriever:
@@ -17,22 +18,9 @@ class StaticRetriever:
             filtered = [
                 doc
                 for doc in self._results
-                if self._check_metadata(doc.get("metadata", {}), metadata_filter)
+                if check_metadata_match(doc.get("metadata", {}), metadata_filter)
             ]
         return filtered[:k]
-
-    def _check_metadata(
-        self, doc_metadata: Dict[str, Any], metadata_filter: Dict[str, Any]
-    ) -> bool:
-        for key, value in metadata_filter.items():
-            doc_val = doc_metadata.get(key)
-            if isinstance(value, list):
-                if doc_val not in value:
-                    return False
-            else:
-                if doc_val != value:
-                    return False
-        return True
 
 
 def _make_doc(content: str, **metadata: Any) -> Dict[str, Any]:
