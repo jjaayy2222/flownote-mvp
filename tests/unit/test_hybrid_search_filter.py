@@ -100,3 +100,31 @@ def test_hybrid_searcher_filtering_with_other_metadata():
         "note", k=10, metadata_filter={"source": "manual.pdf", "priority": 2}
     )
     assert results_mismatch == []
+
+
+def test_hybrid_searcher_list_metadata_filtering():
+    """문서 메타데이터가 리스트인 경우(예: tags)의 필터링 검증."""
+    docs = [
+        _make_doc("AI Note", tags=["AI", "NLP"], category="Tech"),
+        _make_doc("Tech Note", tags=["Tech", "Coding"], category="Tech"),
+        _make_doc("General Note", tags=["General"], category="News"),
+    ]
+    retriever = StaticRetriever(docs)
+    searcher = HybridSearcher(retriever, StaticRetriever([]))
+
+    # 1. 리스트(Doc) vs 리스트(Filter): 교집합 존재하면 매칭
+    results = searcher.search("query", k=10, metadata_filter={"tags": ["AI", "Search"]})
+    assert len(results) == 1
+    assert results[0]["content"] == "AI Note"
+
+    # 2. 리스트(Doc) vs 스칼라(Filter): 필터값이 문서 리스트에 포함되면 매칭
+    results = searcher.search("query", k=10, metadata_filter={"tags": "Coding"})
+    assert len(results) == 1
+    assert results[0]["content"] == "Tech Note"
+
+    # 3. 스칼라(Doc) vs 리스트(Filter): 문서값이 필터 리스트에 포함되면 매칭
+    results = searcher.search(
+        "query", k=10, metadata_filter={"category": ["News", "Sports"]}
+    )
+    assert len(results) == 1
+    assert results[0]["content"] == "General Note"

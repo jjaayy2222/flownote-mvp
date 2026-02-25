@@ -35,6 +35,11 @@ class FAISSRetriever:
             dimension: 임베딩 벡터 차원 (text-embedding-3-small: 1536)
             filter_expansion_factor: 메타데이터 필터링 시 FAISS에서 초기 추출할 후보군 배수
         """
+        if filter_expansion_factor < 1:
+            raise ValueError(
+                f"filter_expansion_factor must be >= 1, got {filter_expansion_factor}"
+            )
+
         self.dimension = dimension
         self.index = faiss.IndexFlatL2(dimension)
         self.documents = []  # dict 객체 저장
@@ -93,6 +98,15 @@ class FAISSRetriever:
         Returns:
             검색 결과 리스트 (content, metadata, score 포함)
         """
+        # 1. 파라미터 유효성 검사
+        expansion = (
+            self.filter_expansion_factor
+            if filter_expansion_factor is None
+            else filter_expansion_factor
+        )
+        if expansion < 1:
+            raise ValueError(f"filter_expansion_factor must be >= 1, got {expansion}")
+
         if self.index.ntotal == 0:
             return []
 
@@ -103,8 +117,6 @@ class FAISSRetriever:
         # NumPy 배열로 변환
         query_vector = np.array([query_embedding], dtype=np.float32)
 
-        # 필터링이 있는 경우, 필터링 후 k개를 맞추기 위해 넉넉하게 후보군을 가져옴
-        expansion = filter_expansion_factor or self.filter_expansion_factor
         search_k = min(self.index.ntotal, k * expansion if metadata_filter else k)
         distances, indices = self.index.search(query_vector, search_k)
 
