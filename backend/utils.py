@@ -26,6 +26,8 @@ def check_metadata_match(
     Args:
         doc_metadata: 문서에서 추출한 메타데이터 딕셔너리
         metadata_filter: 적용할 필터 조건 (예: {"category": "Projects", "tags": ["AI", "Tech"]})
+            * 정책: 필터 값이 빈 리스트([])인 경우, 유효한 매칭 후보가 없는 것으로 간주하여
+              해당 조건에 대해 즉시 False를 반환합니다.
 
     Returns:
         bool: 모든 필터 조건을 만족하면 True, 하나라도 불일치하면 False.
@@ -39,20 +41,23 @@ def check_metadata_match(
         return False
 
     for filter_key, filter_value in metadata_filter.items():
-        doc_value = doc_metadata.get(filter_key)
+        # 1. 존재성 확인: 필터에서 요구하는 키가 문서에 아예 없는 경우 실패
+        if filter_key not in doc_metadata:
+            return False
 
-        # 양쪽 값을 모두 리스트로 정규화하여 처리하되, None은 유효 값 매칭에서 제외
+        doc_value = doc_metadata[filter_key]
+
+        # 2. 빈 리스트 필터([]) 처리: 어떤 값과도 매칭될 수 없으므로 False (보안 정책)
+        if isinstance(filter_value, list) and not filter_value:
+            return False
+
+        # 3. 리스트 정규화 및 교집합 검사 (None 포함)
         filter_raw = filter_value if isinstance(filter_value, list) else [filter_value]
         doc_raw = doc_value if isinstance(doc_value, list) else [doc_value]
 
-        # None이 아닌 실제 값들만 추출하여 비교 (필터링의 의도는 '실제 값'의 일치여야 함)
-        filter_values = [v for v in filter_raw if v is not None]
-        doc_values = [v for v in doc_raw if v is not None]
-
-        # 만약 필터에 유효한 값이 명시되었는데 문서 값이 없거나 불일치하면 False
-        if filter_values:
-            if not doc_values or not any(v in filter_values for v in doc_values):
-                return False
+        # OR 세만틱: 문서 값 중 하나라도 필터 후보군에 포함되는지 확인
+        if not any(v in filter_raw for v in doc_raw):
+            return False
 
     return True
 
