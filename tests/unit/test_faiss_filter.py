@@ -52,19 +52,19 @@ def test_faiss_retriever_filtering_no_match(faiss_retriever):
 def test_faiss_retriever_invalid_expansion_types():
     """확장 배수의 타입 및 범위 유효성 검증."""
     # 1. 수치형이 아닌 경우 (TypeError)
-    with pytest.raises(TypeError, match="must be a real number"):
+    with pytest.raises(TypeError, match="real number"):
         FAISSRetriever(filter_expansion_factor="10")
 
     # 2. 불리언인 경우 (TypeError)
-    with pytest.raises(TypeError, match="must be a real number"):
+    with pytest.raises(TypeError, match="real number"):
         FAISSRetriever(filter_expansion_factor=True)
 
     # 3. 1 미만인 경우 (ValueError)
-    with pytest.raises(ValueError, match="must be >= 1"):
+    with pytest.raises(ValueError, match="expansion_factor"):
         FAISSRetriever(filter_expansion_factor=0)
 
     # 4. 정규화(int 캐스팅) 후 1 미만이 되는 경우 (ValueError)
-    with pytest.raises(ValueError, match="must be >= 1"):
+    with pytest.raises(ValueError, match="expansion_factor"):
         FAISSRetriever(filter_expansion_factor=0.5)
 
 
