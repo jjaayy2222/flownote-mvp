@@ -55,14 +55,14 @@ def test_check_metadata_match_edge_cases():
 
 def test_check_metadata_match_none_semantics():
     """None 값 및 빈 리스트에 대한 매칭 세만틱 검증 (엄격한 필터링 모델)."""
-    # 1. 필터가 명시적인 None인 경우 -> 문서 값이 실제로 None이거나 없는 경우만 매칭
+    # 1. 필터가 명시적인 None인 경우 -> 문서 값이 실제로 None인 경우만 매칭
     assert check_metadata_match({"category": None}, {"category": None}) is True
     assert check_metadata_match({"category": "A"}, {"category": None}) is False
-    assert (
-        check_metadata_match({}, {"category": None}) is True
-    )  # .get()이 None이므로 매칭
 
-    # 2. 필터가 빈 리스트([])인 경우 -> 절대로 매치될 수 없음 (Restrictive)
+    # 2. 키 자체가 없는 경우 (필터에서 기대하는데 데이터 없음) -> 매칭 실패 (엄격한 존재성 검증)
+    assert check_metadata_match({}, {"category": None}) is False
+
+    # 3. 필터가 빈 리스트([])인 경우 -> 절대로 매치될 수 없음 (Restrictive)
     assert check_metadata_match({"tags": ["AI"]}, {"tags": []}) is False
     assert check_metadata_match({"tags": []}, {"tags": []}) is False
     assert check_metadata_match({}, {"tags": []}) is False
