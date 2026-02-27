@@ -32,6 +32,10 @@ class HybridSearchResult:
     applied_filter: Optional[Dict[str, Any]]
 
 
+# 기본값 감지를 위한 센티넬 객체
+_DEFAULT = object()
+
+
 class HybridSearchService:
     """
     HybridSearcher를 감싸는 서비스 클래스.
@@ -47,71 +51,135 @@ class HybridSearchService:
         **kwargs: Any,
     ) -> None:
         """
-        하위 호환성을 극대화한 하이브리드 검색 서비스 생성자.
-        위치 인수(Positional Arguments)의 순서 변경에 따른 파괴적 변경을 방지하기 위해
-        전달된 인자의 타입을 체크하여 지능적으로 할당합니다.
+        하위 호환성을 보장하는 지능형 생성자.
+
+        상위 브랜치 리뷰 반영:
+        1. 복잡한 인자 해석 로직을 `_resolve_init_args`로 분리.
+        2. 우선순위 확립: 명시적 키워드 인수 > 위치 인수 > 기본값.
+        3. 충돌 감지: 동일한 필드에 위치/키워드 값이 동시에 들어오면 경고 발생.
         """
-        # 1. 초기값 설정
-        self._rrf_k = rrf_k
-        self._faiss_dim = faiss_dimension
-        self._faiss_ret = faiss_retriever
-        self._bm25_ret = bm25_retriever
-
-        # 2. 위치 인수(*args) 처리 (과거 순서 조합 대응)
-        # Case A: (rrf_k, dim, ret1, ret2)
-        # Case B: (ret1, ret2, rrf_k, dim)
-        for i, arg in enumerate(args):
-            if i == 0:
-                if isinstance(arg, int):
-                    self._rrf_k = arg
-                elif hasattr(arg, "search"):
-                    self._faiss_ret = arg
-            elif i == 1:
-                if isinstance(arg, int):
-                    self._faiss_dim = arg
-                elif hasattr(arg, "search"):
-                    self._bm25_ret = arg
-            elif i == 2:
-                if isinstance(arg, int):
-                    self._rrf_k = arg  # 드문 케이스 대응
-                elif hasattr(arg, "search"):
-                    self._faiss_ret = arg
-            elif i == 3:
-                if hasattr(arg, "search"):
-                    self._bm25_ret = arg
-
-        # 3. 추가 키워드 인수(**kwargs) 처리 (하위 호환용)
-        if "faiss_retriever" in kwargs:
-            self._faiss_ret = kwargs["faiss_retriever"]
-        if "bm25_retriever" in kwargs:
-            self._bm25_ret = kwargs["bm25_retriever"]
-
-        # 4. 인스턴스 할당 (명시적 None 체크 유지)
-        self.faiss_retriever = (
-            self._faiss_ret
-            if self._faiss_ret is not None
-            else FAISSRetriever(dimension=self._faiss_dim)
-        )
-        self.bm25_retriever = (
-            self._bm25_ret if self._bm25_ret is not None else BM25Retriever()
+        # Python의 인자 바인딩 특성상, rrf_k=... 등은 이미 해당 변수에 할당됨.
+        # 위치 인수는 args로 들어옴.
+        resolved = self._resolve_init_args(
+            args,
+            kwargs,
+            rrf_k=rrf_k,
+            faiss_dim=faiss_dimension,
+            faiss_ret=faiss_retriever,
+            bm25_ret=bm25_retriever,
         )
 
-        # 5. 검색기 초기화
+        self.faiss_retriever = resolved["faiss_ret"]
+        self.bm25_retriever = resolved["bm25_ret"]
+        self._resolved_params = resolved  # 테스트 및 디버깅용
+
+        # 통합 검색기 초기화
         self.searcher = HybridSearcher(
             faiss_retriever=self.faiss_retriever,
             bm25_retriever=self.bm25_retriever,
-            rrf_k=self._rrf_k,
+            rrf_k=resolved["rrf_k"],
         )
         logger.info(
             "HybridSearchService initialized (rrf_k=%d, dim=%d, DI=%s)",
-            self._rrf_k,
-            self._faiss_dim,
-            (
-                "Yes"
-                if (self._faiss_ret is not None or self._bm25_ret is not None)
-                else "No"
-            ),
+            resolved["rrf_k"],
+            resolved["faiss_dim"],
+            "Yes" if resolved["is_di"] else "No",
         )
+
+    def _resolve_init_args(
+        self,
+        args: tuple,
+        kwargs: Dict[str, Any],
+        rrf_k: int,
+        faiss_dim: int,
+        faiss_ret: Optional[FAISSRetriever],
+        bm25_ret: Optional[BM25Retriever],
+    ) -> Dict[str, Any]:
+        """위치 인수와 키워드 인수를 병합하고 우선순위를 결정하는 헬퍼."""
+        # 1. 시그니처에 명시된 키워드 인자들을 기본으로 설정
+        res = {
+            "rrf_k": rrf_k,
+            "faiss_dim": faiss_dim,
+            "faiss_ret": faiss_ret,
+            "bm25_ret": bm25_ret,
+        }
+
+        # 2. **kwargs에 포함된 추가 키워드 처리 (별칭 대응)
+        if "faiss_retriever" in kwargs:
+            res["faiss_ret"] = kwargs["faiss_retriever"]
+        if "bm25_retriever" in kwargs:
+            res["bm25_ret"] = kwargs["bm25_retriever"]
+
+        # 3. 위치 인수(*args) 처리 및 충돌 경고
+        # 하위 호환성을 위해 타입을 체크하여 할당하되,
+        # 이미 키워드로 명시적 의사 표현을 한 경우 키워드를 우선함.
+        for i, arg in enumerate(args):
+            is_ret = hasattr(arg, "search")
+            target_key = None
+            val = arg
+
+            if i == 0:
+                target_key = (
+                    "rrf_k" if isinstance(arg, int) else "faiss_ret" if is_ret else None
+                )
+            elif i == 1:
+                target_key = (
+                    "faiss_dim"
+                    if isinstance(arg, int)
+                    else "bm25_ret" if is_ret else None
+                )
+            elif i == 2:
+                target_key = (
+                    "rrf_k" if isinstance(arg, int) else "faiss_ret" if is_ret else None
+                )
+            elif i == 3:
+                target_key = (
+                    "faiss_dim"
+                    if isinstance(arg, int)
+                    else "bm25_ret" if is_ret else None
+                )
+
+            if target_key:
+                # [Review 반영] 우선순위 확립: 명시적 키워드 인수가 이미 존재하면 위치 인수는 무시하고 경고
+                # Python 네이티브 바인딩을 통해 들어온 rrf_k 등도 '명시적'인 것으로 간주
+                if res[target_key] is not None and res[target_key] != val:
+                    # 기본값(60, 1536)과 비교하여 사용자가 직접 값(키워드)을 넣었는지 확인
+                    # (간단한 비교를 위해 현재 값이 기본값과 다르면 명시적 키워드 호출로 간주)
+                    is_modified_by_kw = (
+                        (target_key == "rrf_k" and res[target_key] != 60)
+                        or (target_key == "faiss_dim" and res[target_key] != 1536)
+                        or (
+                            target_key in ["faiss_ret", "bm25_ret"]
+                            and res[target_key] is not None
+                        )
+                    )
+
+                    if is_modified_by_kw:
+                        logger.warning(
+                            "Positional argument at index %d (%s) ignored in favor of explicit keyword argument (%s)",
+                            i,
+                            val,
+                            res[target_key],
+                        )
+                        continue  # 키워드 우선 (덮어쓰지 않음)
+
+                res[target_key] = val
+
+        # 4. 최종 인스턴스화 로직 (None인 경우에만 기본 생성)
+        final_faiss = (
+            res["faiss_ret"]
+            if res["faiss_ret"] is not None
+            else FAISSRetriever(dimension=res["faiss_dim"])
+        )
+        final_bm25 = res["bm25_ret"] if res["bm25_ret"] is not None else BM25Retriever()
+
+        return {
+            "rrf_k": res["rrf_k"],
+            "faiss_dim": res["faiss_dim"],
+            "faiss_ret": final_faiss,
+            "bm25_ret": final_bm25,
+            "is_di": (res["faiss_ret"] is not None or res["bm25_ret"] is not None),
+        }
 
     # ------------------------------------------------------------------
     # 퍼블릭 메서드

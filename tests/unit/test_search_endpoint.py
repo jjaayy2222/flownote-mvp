@@ -129,13 +129,20 @@ class TestHybridSearchServiceInitialization:
         assert svc.faiss_retriever == faiss
         assert svc.bm25_retriever == bm25
 
-    def test_init_with_mixed_args(self, mock_retrievers):
-        """혼합 호출 (ret1, ret2, rrf_k) 확인."""
+    def test_init_with_mixed_args_full_case_b(self, mock_retrievers):
+        """Case B (ret1, ret2, rrf_k, dim) 위치 인수 호출 확인."""
         faiss, bm25 = mock_retrievers
-        svc = HybridSearchService(faiss, bm25, 45)
+        svc = HybridSearchService(faiss, bm25, 45, 1024)
         assert svc.faiss_retriever == faiss
         assert svc.bm25_retriever == bm25
-        assert svc.searcher.rrf_k == 45
+        assert svc._resolved_params["rrf_k"] == 45
+        assert svc._resolved_params["faiss_dim"] == 1024
+
+    def test_init_keyword_precedence(self):
+        """위치 인수보다 키워드 인수가 우선하는지 확인."""
+        # 위치로는 10을 줬지만, 키워드로 99를 준 경우 99가 유지되어야 함 (Keyword Wins)
+        svc = HybridSearchService(10, rrf_k=99)
+        assert svc.searcher.rrf_k == 99
 
 
 class TestHybridSearchServiceLogic:
