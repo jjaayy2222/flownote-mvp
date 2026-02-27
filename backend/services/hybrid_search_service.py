@@ -126,9 +126,10 @@ class HybridSearchService:
         for i, arg in enumerate(args):
             rules = self._POSITION_RULES.get(i)
             if not rules:
-                # [Review 반영] 정의되지 않은 인덱스의 무분별한 인자 전달 차단
+                # [Review 반영] 허용 가능한 최대 위치 인자 수를 _POSITION_RULES에서 유동적으로 계산
+                max_pos = len(self._POSITION_RULES)
                 raise TypeError(
-                    f"HybridSearchService() takes up to 4 positional arguments but {len(args)} were given"
+                    f"HybridSearchService() takes up to {max_pos} positional arguments but {len(args)} were given"
                 )
 
             target_key = None
@@ -176,6 +177,7 @@ class HybridSearchService:
         self, key: str, current_val: Any, new_val: Any
     ) -> bool:
         """키워드 인수가 기본값이 아닌 명시적인 값인지 판별하는 헬퍼."""
+        # 명시적인 키 목록과 기본값 체크 정책 (리뷰 반영: Allowlist & Robustness)
         if key == "rrf_k":
             is_explicit = current_val != self.DEFAULT_RRF_K
         elif key == "faiss_dim":
@@ -184,8 +186,15 @@ class HybridSearchService:
             # 리트리버는 None이 아니면 명시적 주입으로 간주
             is_explicit = current_val is not None
         else:
-            # [Review 반영] 알 수 없는 키에 대한 방어적 에러 처리
-            raise KeyError(f"Unexpected parameter key in validation: {key}")
+            # 알 수 없는 키가 들어온 경우, 내부 로직 오류이므로 개발 환경에서 검지할 수 있도록 assert 사용.
+            # 런타임 환경(-O)에서는 무시되며 기본적으로 '명시적이지 않음'으로 간주하여 호환성 유지.
+            assert key in (
+                "rrf_k",
+                "faiss_dim",
+                "faiss_ret",
+                "bm25_ret",
+            ), f"Missing mapping for parameter key: {key}"
+            return False
 
         return is_explicit and current_val != new_val
 
