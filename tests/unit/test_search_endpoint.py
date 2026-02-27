@@ -72,13 +72,15 @@ def client(hybrid_service):
 
 
 def test_legacy_search_get_compatibility(client: TestClient):
-    """레거시 GET /search/ 엔드포인트 하위 호환성 확인."""
+    """레거시 GET /search/ 엔드포인트의 하위 호환성(필드 구성)을 전체 검증."""
     response = client.get("/search/?q=legacy-query")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "success"
+    assert "message" in data  # 응답 메시지 존재 여부 확인
     assert data["query"] == "legacy-query"
     assert data["results"] == []
+    assert data["count"] == 0  # 검색 결과 개수 필드 복구
 
 
 def test_hybrid_search_post_basic(client: TestClient, hybrid_service):
