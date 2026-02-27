@@ -53,11 +53,15 @@ class HybridSearchService:
             rrf_k: RRF 페널티 상수
             faiss_dimension: FAISS 임베딩 벡터 차원
         """
-        # 의존성 주입 또는 기본 생성
-        self.faiss_retriever = faiss_retriever or FAISSRetriever(
-            dimension=faiss_dimension
+        # 의존성 주입 또는 기본 생성 (None 여부를 명시적으로 확인하여 falsy 객체도 허용)
+        self.faiss_retriever = (
+            faiss_retriever
+            if faiss_retriever is not None
+            else FAISSRetriever(dimension=faiss_dimension)
         )
-        self.bm25_retriever = bm25_retriever or BM25Retriever()
+        self.bm25_retriever = (
+            bm25_retriever if bm25_retriever is not None else BM25Retriever()
+        )
 
         # 통합 검색기 초기화
         self.searcher = HybridSearcher(
@@ -69,7 +73,11 @@ class HybridSearchService:
             "HybridSearchService initialized (rrf_k=%d, dim=%d, DI=%s)",
             rrf_k,
             faiss_dimension,
-            "Yes" if (faiss_retriever or bm25_retriever) else "No",
+            (
+                "Yes"
+                if (faiss_retriever is not None or bm25_retriever is not None)
+                else "No"
+            ),
         )
 
     # ------------------------------------------------------------------
