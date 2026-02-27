@@ -11,23 +11,14 @@
 import logging
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Dict, Any, List, Optional, Protocol, runtime_checkable
+from typing import Dict, Any, List, Optional
 
 from backend.faiss_search import FAISSRetriever
 from backend.bm25_search import BM25Retriever
-from backend.hybrid_search import HybridSearcher
+from backend.hybrid_search import HybridSearcher, Retriever
 from backend.api.models import PARACategory
 
 logger = logging.getLogger(__name__)
-
-
-@runtime_checkable
-class Retriever(Protocol):
-    """리트리버 오리 타이핑(Duck Typing)을 위한 프로토콜."""
-
-    def search(
-        self, query: str, k: int = 3, metadata_filter: Optional[Dict] = None
-    ) -> List[Dict]: ...
 
 
 @dataclass
@@ -135,7 +126,11 @@ class HybridSearchService:
         for i, arg in enumerate(args):
             rules = self._POSITION_RULES.get(i)
             if not rules:
-                continue
+                # [Review 반영] 허용 가능한 최대 위치 인자 수를 _POSITION_RULES에서 유동적으로 계산
+                max_pos = len(self._POSITION_RULES)
+                raise TypeError(
+                    f"HybridSearchService() takes up to {max_pos} positional arguments but {len(args)} were given"
+                )
 
             target_key = None
             for expected_type, key in rules:
@@ -154,6 +149,13 @@ class HybridSearchService:
                     continue
 
                 res[target_key] = arg
+            else:
+                # 타입 매칭 실패 시 경고 (또는 에러)
+                logger.warning(
+                    "Positional argument at index %d (%s) did not match any expected types",
+                    i,
+                    type(arg).__name__,
+                )
 
         # 4. 최종 할당 및 None 체크
         final_faiss = (
@@ -175,12 +177,24 @@ class HybridSearchService:
         self, key: str, current_val: Any, new_val: Any
     ) -> bool:
         """키워드 인수가 기본값이 아닌 명시적인 값인지 판별하는 헬퍼."""
+        # 명시적인 키 목록과 기본값 체크 정책 (리뷰 반영: Allowlist & Robustness)
         if key == "rrf_k":
             is_explicit = current_val != self.DEFAULT_RRF_K
         elif key == "faiss_dim":
             is_explicit = current_val != self.DEFAULT_FAISS_DIMENSION
-        else:  # "faiss_ret" or "bm25_ret"
+        elif key in ("faiss_ret", "bm25_ret"):
+            # 리트리버는 None이 아니면 명시적 주입으로 간주
             is_explicit = current_val is not None
+        else:
+            # 알 수 없는 키가 들어온 경우, 내부 로직 오류이므로 개발 환경에서 검지할 수 있도록 assert 사용.
+            # 런타임 환경(-O)에서는 무시되며 기본적으로 '명시적이지 않음'으로 간주하여 호환성 유지.
+            assert key in (
+                "rrf_k",
+                "faiss_dim",
+                "faiss_ret",
+                "bm25_ret",
+            ), f"Missing mapping for parameter key: {key}"
+            return False
 
         return is_explicit and current_val != new_val
 
