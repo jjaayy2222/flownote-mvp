@@ -41,7 +41,6 @@ class HybridSearchService:
         self,
         rrf_k: int = 60,
         faiss_dimension: int = 1536,
-        *,
         faiss_retriever: Optional[FAISSRetriever] = None,
         bm25_retriever: Optional[BM25Retriever] = None,
     ) -> None:
