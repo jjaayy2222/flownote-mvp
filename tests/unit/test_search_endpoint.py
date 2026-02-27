@@ -135,24 +135,89 @@ def test_hybrid_search_get_basic(client: TestClient, mock_service: MagicMock):
     assert data["count"] == 1
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━
-# HybridSearchService 단위 테스트 (빌드 필터)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# HybridSearchService 단위 테스트 (빌드 필터 & 파라미터 검증)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
-class TestHybridSearchServiceBuildFilter:
-    """HybridSearchService._build_metadata_filter 단위 검증."""
+class TestHybridSearchServiceValidation:
+    """HybridSearchService의 파라미터 검증 및 필터 빌드 로직 단위 검증."""
 
-    def test_no_args_returns_none(self):
+    def test_search_alpha_out_of_range_raises_value_error(self):
+        """alpha가 [0.0, 1.0] 범위를 벗어날 때 ValueError 발생 확인."""
+        with patch("backend.services.hybrid_search_service.FAISSRetriever"), patch(
+            "backend.services.hybrid_search_service.BM25Retriever"
+        ):
+            svc = HybridSearchService()
+            with pytest.raises(ValueError, match="alpha must be between 0.0 and 1.0"):
+                svc.search(query="test", alpha=1.1)
+            with pytest.raises(ValueError, match="alpha must be between 0.0 and 1.0"):
+                svc.search(query="test", alpha=-0.1)
+
+    def test_search_k_min_validation(self):
+        """k가 1 미만일 때 ValueError 발생 확인."""
+        with patch("backend.services.hybrid_search_service.FAISSRetriever"), patch(
+            "backend.services.hybrid_search_service.BM25Retriever"
+        ):
+            svc = HybridSearchService()
+            with pytest.raises(
+                ValueError, match="k must be greater than or equal to 1"
+            ):
+                svc.search(query="test", k=0)
+
+    def test_search_k_boundary_accepts_valid_values(self):
+        """k의 유효 경계값(1, 50)이 정상적으로 허용되는지 확인."""
+        with patch("backend.services.hybrid_search_service.FAISSRetriever"), patch(
+            "backend.services.hybrid_search_service.BM25Retriever"
+        ):
+            svc = HybridSearchService()
+            # 검색 엔진 호출을 모킹하여 실제 임베딩/검색 방지
+            svc.searcher.search = MagicMock(return_value=[])
+
+            # 범위를 벗어나지 않으므로 예외 없이 실행되어야 함
+            svc.search(query="test", k=1)
+            svc.search(query="test", k=50)
+
+            assert svc.searcher.search.call_count == 2
+
+    def test_search_alpha_boundary_accepts_valid_values(self):
+        """alpha의 유효 경계값(0.0, 1.0)이 정상적으로 허용되는지 확인."""
+        with patch("backend.services.hybrid_search_service.FAISSRetriever"), patch(
+            "backend.services.hybrid_search_service.BM25Retriever"
+        ):
+            svc = HybridSearchService()
+            svc.searcher.search = MagicMock(return_value=[])
+
+            # 범위를 벗어나지 않으므로 예외 없이 실행되어야 함
+            svc.search(query="test", alpha=0.0)
+            svc.search(query="test", alpha=1.0)
+
+            assert svc.searcher.search.call_count == 2
+
+    def test_build_filter_no_args_returns_none(self):
         result = HybridSearchService._build_metadata_filter(None, None)
         assert result is None
 
-    def test_category_enum_conversion(self):
+    def test_build_filter_category_enum_conversion(self):
         """Enum이 문자열 값으로 올바르게 변환되는지 확인."""
         result = HybridSearchService._build_metadata_filter(PARACategory.PROJECTS, None)
         assert result == {"category": "Projects"}
 
-    def test_category_and_extra_filter_merged(self):
+    def test_build_filter_category_conflict_raises_value_error(self):
+        """extra_filter의 category와 명시적 category가 다르면 ValueError 발생."""
+        with pytest.raises(ValueError, match="Category conflict"):
+            HybridSearchService._build_metadata_filter(
+                PARACategory.PROJECTS, {"category": "Areas"}
+            )
+
+    def test_build_filter_category_match_is_ok(self):
+        """extra_filter의 category와 명시적 category가 같으면 허용."""
+        result = HybridSearchService._build_metadata_filter(
+            PARACategory.PROJECTS, {"category": "Projects", "other": "val"}
+        )
+        assert result == {"category": "Projects", "other": "val"}
+
+    def test_build_filter_merged(self):
         result = HybridSearchService._build_metadata_filter(
             PARACategory.AREAS, {"source": "b.md"}
         )

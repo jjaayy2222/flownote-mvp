@@ -76,6 +76,12 @@ class HybridSearchService:
         참고: 이 메서드는 CPU/IO bound 작업을 포함하므로
         FastAPI 엔드포인트에서 run_in_threadpool 등을 통해 비동기적으로 실행해야 합니다.
         """
+        # 0. 서비스 레벨 파라미터 검증 (방어적 프로그래밍)
+        if not (0.0 <= alpha <= 1.0):
+            raise ValueError(f"alpha must be between 0.0 and 1.0, got {alpha}")
+        if k < 1:
+            raise ValueError(f"k must be greater than or equal to 1, got {k}")
+
         # 1. PARA 카테고리 검증 및 필터 병합
         effective_filter = self._build_metadata_filter(category, metadata_filter)
 
@@ -114,6 +120,9 @@ class HybridSearchService:
     ) -> Optional[Dict[str, Any]]:
         """
         PARA 카테고리와 추가 필터를 하나의 메타데이터 필터 딕셔너리로 병합.
+
+        Raises:
+            ValueError: extra_filter에 이미 다른 'category'가 존재하는 경우
         """
         merged: Dict[str, Any] = {}
 
@@ -123,7 +132,12 @@ class HybridSearchService:
 
         # PARACategory Enum 값 삽입
         if category is not None:
-            # Enum 멤버가 전달되었는지 확인 (FastAPI가 이미 검증하지만 서비스 레이어에서도 안전하게 처리)
+            # [Review 반영] extra_filter에 이미 category가 존재하고 값이 다른 경우 충돌로 간주
+            if "category" in merged and merged["category"] != category.value:
+                raise ValueError(
+                    f"Category conflict: extra_filter has '{merged['category']}' "
+                    f"but explicit category is '{category.value}'."
+                )
             merged["category"] = category.value
 
         return merged if merged else None

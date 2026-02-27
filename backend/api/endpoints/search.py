@@ -9,7 +9,7 @@
 """
 
 import logging
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.concurrency import run_in_threadpool
@@ -134,7 +134,7 @@ async def _run_hybrid_search(
     k: int,
     alpha: float,
     category: Optional[PARACategory],
-    metadata_filter: Optional[dict],
+    metadata_filter: Optional[Dict[str, Any]],
 ) -> HybridSearchResponse:
     """POST/GET 공통 검색 실행 로직."""
     try:
