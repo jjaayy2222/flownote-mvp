@@ -24,6 +24,7 @@ from backend.routes.onboarding_routes import router as onboarding_router
 from backend.api.endpoints.sync import router as sync_router
 from backend.api.endpoints.automation import router as automation_router
 from backend.api.endpoints.graph import router as graph_router
+from backend.api.endpoints.search import router as search_router
 
 
 # 로깅 설정
@@ -61,6 +62,7 @@ app = FastAPI(
     * `/classifier` - 파일 및 텍스트 분류
     * `/onboarding` - 사용자 온보딩
     * `/conflict` - 충돌 해결
+    * `/search/hybrid` - FAISS+BM25 하이브리드 RAG 검색 (PARA 카테고리 필터 지원)
     * `/health` - 서버 상태 확인
     
     ### 테스트 커버리지
@@ -131,6 +133,10 @@ app.include_router(sync_router)
 # websocket_router (Phase 1: Real-time Updates)
 app.include_router(websocket_router)
 logger.info("✅ sync_router 등록 완료 (MCP Sync & Conflict Resolution)")
+
+# search_router (Phase 2-②: RAG API Integration)
+app.include_router(search_router)
+logger.info("✅ search_router 등록 완료 (Hybrid RAG Search)")
 
 # automation_router (Phase 4: Celery Automation)
 
