@@ -11,7 +11,7 @@
 import logging
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Protocol, runtime_checkable
 
 from backend.faiss_search import FAISSRetriever
 from backend.bm25_search import BM25Retriever
@@ -19,6 +19,15 @@ from backend.hybrid_search import HybridSearcher
 from backend.api.models import PARACategory
 
 logger = logging.getLogger(__name__)
+
+
+@runtime_checkable
+class Retriever(Protocol):
+    """리트리버 오리 타이핑(Duck Typing)을 위한 프로토콜."""
+
+    def search(
+        self, query: str, k: int = 3, metadata_filter: Optional[Dict] = None
+    ) -> List[Dict]: ...
 
 
 @dataclass
@@ -44,6 +53,15 @@ class HybridSearchService:
     # 하위 호환성 및 테스트 정합성을 위한 기본값 상수
     DEFAULT_RRF_K = 60
     DEFAULT_FAISS_DIMENSION = 1536
+
+    # 위치 인수 매핑 규칙 (리뷰 제안: 테이블 기반 접근)
+    # 인덱스별로 (타입, 타겟 키) 리스트 정의
+    _POSITION_RULES = {
+        0: [(int, "rrf_k"), (Retriever, "faiss_ret")],
+        1: [(int, "faiss_dim"), (Retriever, "bm25_ret")],
+        2: [(int, "rrf_k"), (Retriever, "faiss_ret")],
+        3: [(int, "faiss_dim"), (Retriever, "bm25_ret")],
+    }
 
     def __init__(
         self,
@@ -97,12 +115,11 @@ class HybridSearchService:
         kwargs: Dict[str, Any],
         rrf_k: int,
         faiss_dim: int,
-        faiss_ret: Optional[FAISSRetriever],
-        bm25_ret: Optional[BM25Retriever],
+        faiss_ret: Optional[Retriever],
+        bm25_ret: Optional[Retriever],
     ) -> Dict[str, Any]:
         """위치 인수와 키워드 인수를 병합하고 우선순위를 결정하는 헬퍼."""
         # 1. 시그니처에 의해 자동으로 바인딩된 값들로 시작
-        # (호출 시 rrf_k=... 등을 사용했다면 이미 이 값들이 채워져 들어옴)
         res = {
             "rrf_k": rrf_k,
             "faiss_dim": faiss_dim,
@@ -111,46 +128,25 @@ class HybridSearchService:
         }
 
         # 2. **kwargs에 별칭이나 명시되지 않은 키워드가 있는 경우 처리
-        # (리뷰 지적대로 named arg는 args/kwargs가 아닌 개별 변수로 이미 전달됨)
-        if "rrf_k_alias" in kwargs:  # 미래의 확장성을 위한 kwargs 예시
+        if "rrf_k_alias" in kwargs:
             res["rrf_k"] = kwargs["rrf_k_alias"]
 
-        # 3. 위치 인수(*args) 처리
-        # 우선순위 확립: 위치 인수로 명시적 값을 채웠다면, 해당 값을 우선하되
-        # 이미 기본값(Default)이 아닌 다른 '의도적인' 키워드 값이 있다면 경고 후 키워드 우선
+        # 3. 위치 인수(*args) 처리 (테스트 및 레거시 대응)
         for i, arg in enumerate(args):
+            rules = self._POSITION_RULES.get(i)
+            if not rules:
+                continue
+
             target_key = None
-
-            # 타입 체크 강화
-            is_faiss = isinstance(arg, FAISSRetriever)
-            is_bm25 = isinstance(arg, BM25Retriever)
-            is_int = isinstance(arg, int)
-
-            if i == 0:
-                target_key = "rrf_k" if is_int else "faiss_ret" if is_faiss else None
-            elif i == 1:
-                target_key = "faiss_dim" if is_int else "bm25_ret" if is_bm25 else None
-            elif i == 2:
-                target_key = "rrf_k" if is_int else "faiss_ret" if is_faiss else None
-            elif i == 3:
-                target_key = "faiss_dim" if is_int else "bm25_ret" if is_bm25 else None
+            for expected_type, key in rules:
+                if isinstance(arg, expected_type):
+                    target_key = key
+                    break
 
             if target_key:
                 current_val = res[target_key]
-                # 기본값과 다른지(사용자가 키워드로 명명했는지) 체크
-                is_modified_by_kw = (
-                    (target_key == "rrf_k" and current_val != self.DEFAULT_RRF_K)
-                    or (
-                        target_key == "faiss_dim"
-                        and current_val != self.DEFAULT_FAISS_DIMENSION
-                    )
-                    or (
-                        target_key in ["faiss_ret", "bm25_ret"]
-                        and current_val is not None
-                    )
-                )
-
-                if is_modified_by_kw and current_val != arg:
+                # 명시적 키워드 우선순위 체크 (헬퍼 메서드 분리)
+                if self._is_overridden_by_keyword(target_key, current_val, arg):
                     logger.warning(
                         "Positional argument at index %d ignored in favor of explicit keyword argument",
                         i,
@@ -174,6 +170,19 @@ class HybridSearchService:
             "bm25_ret": final_bm25,
             "is_di": (res["faiss_ret"] is not None or res["bm25_ret"] is not None),
         }
+
+    def _is_overridden_by_keyword(
+        self, key: str, current_val: Any, new_val: Any
+    ) -> bool:
+        """키워드 인수가 기본값이 아닌 명시적인 값인지 판별하는 헬퍼."""
+        if key == "rrf_k":
+            is_explicit = current_val != self.DEFAULT_RRF_K
+        elif key == "faiss_dim":
+            is_explicit = current_val != self.DEFAULT_FAISS_DIMENSION
+        else:  # "faiss_ret" or "bm25_ret"
+            is_explicit = current_val is not None
+
+        return is_explicit and current_val != new_val
 
     # ------------------------------------------------------------------
     # 퍼블릭 메서드

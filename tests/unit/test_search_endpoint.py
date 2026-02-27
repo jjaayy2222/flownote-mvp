@@ -48,6 +48,10 @@ def mock_retrievers():
 
     faiss = MagicMock(spec=FAISSRetriever)
     bm25 = MagicMock(spec=BM25Retriever)
+
+    # HybridSearchService가 기대하는 기본 차원을 설정하여 AttributeError 방지
+    faiss.dimension = HybridSearchService.DEFAULT_FAISS_DIMENSION
+
     faiss.search.return_value = []
     bm25.search.return_value = []
     return (faiss, bm25)
@@ -152,13 +156,10 @@ class TestHybridSearchServiceInitialization:
     def test_init_with_mixed_args_full_case_b(self, mock_retrievers):
         """Case B (ret1, ret2, rrf_k, dim) 위치 인수 호출 확인."""
         faiss, bm25 = mock_retrievers
-        # Mock 객체에 dimension 속성이 없는 경우를 대비해 미리 설정 (AttributeError 방지)
-        faiss.dimension = 1536
-
         svc = HybridSearchService(faiss, bm25, 45, 1024)
         assert svc.faiss_retriever is faiss
         assert svc.bm25_retriever is bm25
-        # 내부에 전달된 파라미터 해석 결과가 올바른지 확인 (DI 상황이므로 Mock의 속성이 변하진 않음)
+        # 내부에 전달된 파라미터 해석 결과가 올바른지 확인
         assert svc._resolved_params["rrf_k"] == 45
         assert svc._resolved_params["faiss_dim"] == 1024
         assert svc.searcher.rrf_k == 45
