@@ -39,19 +39,21 @@ class HybridSearchService:
 
     def __init__(
         self,
-        faiss_retriever: Optional[FAISSRetriever] = None,
-        bm25_retriever: Optional[BM25Retriever] = None,
         rrf_k: int = 60,
         faiss_dimension: int = 1536,
+        *,
+        faiss_retriever: Optional[FAISSRetriever] = None,
+        bm25_retriever: Optional[BM25Retriever] = None,
     ) -> None:
         """
         의존성 주입(DI)을 지원하는 생성자.
+        하위 호환성을 위해 rrf_k와 faiss_dimension을 앞쪽에 위치시킵니다.
 
         Args:
-            faiss_retriever: 외부에서 주입할 FAISS 리트리버 (없으면 신규 생성)
-            bm25_retriever: 외부에서 주입할 BM25 리트리버 (없으면 신규 생성)
             rrf_k: RRF 페널티 상수
             faiss_dimension: FAISS 임베딩 벡터 차원
+            faiss_retriever: 외부에서 주입할 FAISS 리트리버 (없으면 신규 생성)
+            bm25_retriever: 외부에서 주입할 BM25 리트리버 (없으면 신규 생성)
         """
         # 의존성 주입 또는 기본 생성 (None 여부를 명시적으로 확인하여 falsy 객체도 허용)
         self.faiss_retriever = (
