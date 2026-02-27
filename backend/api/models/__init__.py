@@ -4,6 +4,8 @@
 API Models Package
 """
 
+from enum import Enum
+from functools import lru_cache
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 
@@ -77,7 +79,23 @@ class MetadataResponse(BaseResponse):
 # Hybrid Search API Models (Step 6: RAG API Integration)
 # ---------------------------------------------------------
 
-PARA_CATEGORIES = ["Projects", "Areas", "Resources", "Archives"]
+
+class PARACategory(str, Enum):
+    """PARA 방법론 카테고리 Enum.
+
+    ``str`` 을 상속하므로 JSON 직렬화 시 문자열로 자동 변환되고,
+    FastAPI/OpenAPI 스펙에 ``enum`` 배열로 노출되어 Swagger UI에서
+    드롭다운 선택이 가능합니다.
+    """
+
+    PROJECTS = "Projects"
+    AREAS = "Areas"
+    RESOURCES = "Resources"
+    ARCHIVES = "Archives"
+
+
+# 하위 호환용 문자열 리스트 (기존 코드 참조 시 사용)
+PARA_CATEGORIES: List[str] = [cat.value for cat in PARACategory]
 
 
 class HybridSearchRequest(BaseModel):
@@ -85,9 +103,9 @@ class HybridSearchRequest(BaseModel):
 
     Attributes:
         query: 검색 질의 문자열
-        k: 반환할 최종 결과 수 (1 이상)
+        k: 반환할 최종 결과 수 (1~50)
         alpha: Dense(FAISS) 검색 가중치 [0.0, 1.0] (기본값 0.5 = 균형)
-        category: PARA 카테고리 필터 (선택). 단일 카테고리 문자열.
+        category: PARA 카테고리 필터 (선택). OpenAPI 스펙에 enum으로 노출.
         metadata_filter: 추가 메타데이터 필터 조건 (카테고리 외 필드 필터링)
     """
 
@@ -99,9 +117,9 @@ class HybridSearchRequest(BaseModel):
         le=1.0,
         description="Dense 검색 가중치 (0.0=BM25 전용, 1.0=FAISS 전용, 0.5=균형)",
     )
-    category: Optional[str] = Field(
+    category: Optional[PARACategory] = Field(
         default=None,
-        description=f"PARA 카테고리 필터. 허용값: {PARA_CATEGORIES}",
+        description="PARA 카테고리 필터 (Projects / Areas / Resources / Archives)",
     )
     metadata_filter: Optional[Dict[str, Any]] = Field(
         default=None,
@@ -133,7 +151,9 @@ class SearchResultItem(BaseModel):
     """개별 검색 결과 항목"""
 
     content: str = Field(..., description="문서 내용")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="문서 메타데이터")
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="문서 메타데이터"
+    )
     score: float = Field(..., description="RRF 병합 점수")
 
 
@@ -182,6 +202,7 @@ __all__ = [
     "SearchResponse",
     "MetadataResponse",
     # Hybrid Search (Step 6)
+    "PARACategory",
     "PARA_CATEGORIES",
     "HybridSearchRequest",
     "SearchResultItem",
