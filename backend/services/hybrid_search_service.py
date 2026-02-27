@@ -39,23 +39,37 @@ class HybridSearchService:
 
     def __init__(
         self,
+        faiss_retriever: Optional[FAISSRetriever] = None,
+        bm25_retriever: Optional[BM25Retriever] = None,
         rrf_k: int = 60,
         faiss_dimension: int = 1536,
     ) -> None:
         """
+        의존성 주입(DI)을 지원하는 생성자.
+
         Args:
+            faiss_retriever: 외부에서 주입할 FAISS 리트리버 (없으면 신규 생성)
+            bm25_retriever: 외부에서 주입할 BM25 리트리버 (없으면 신규 생성)
             rrf_k: RRF 페널티 상수
             faiss_dimension: FAISS 임베딩 벡터 차원
         """
-        self.faiss_retriever = FAISSRetriever(dimension=faiss_dimension)
-        self.bm25_retriever = BM25Retriever()
+        # 의존성 주입 또는 기본 생성
+        self.faiss_retriever = faiss_retriever or FAISSRetriever(
+            dimension=faiss_dimension
+        )
+        self.bm25_retriever = bm25_retriever or BM25Retriever()
+
+        # 통합 검색기 초기화
         self.searcher = HybridSearcher(
             faiss_retriever=self.faiss_retriever,
             bm25_retriever=self.bm25_retriever,
             rrf_k=rrf_k,
         )
         logger.info(
-            "HybridSearchService initialized (rrf_k=%d, dim=%d)", rrf_k, faiss_dimension
+            "HybridSearchService initialized (rrf_k=%d, dim=%d, DI=%s)",
+            rrf_k,
+            faiss_dimension,
+            "Yes" if (faiss_retriever or bm25_retriever) else "No",
         )
 
     # ------------------------------------------------------------------
