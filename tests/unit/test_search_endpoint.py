@@ -113,6 +113,31 @@ def test_hybrid_search_invalid_category(client: TestClient):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
+class TestHybridSearchServiceInitialization:
+    """하위 호환성을 보장하는 지능형 생성자 초기화 검증."""
+
+    def test_init_with_positional_rrf_k(self):
+        """기본 순서 (rrf_k, dim) 위치 인수 호출 확인."""
+        svc = HybridSearchService(10, 2048)
+        assert svc.searcher.rrf_k == 10
+        assert svc.faiss_retriever.dimension == 2048
+
+    def test_init_with_positional_retrievers(self, mock_retrievers):
+        """과거/대안 순서 (retriever1, retriever2) 위치 인수 호출 확인."""
+        faiss, bm25 = mock_retrievers
+        svc = HybridSearchService(faiss, bm25)
+        assert svc.faiss_retriever == faiss
+        assert svc.bm25_retriever == bm25
+
+    def test_init_with_mixed_args(self, mock_retrievers):
+        """혼합 호출 (ret1, ret2, rrf_k) 확인."""
+        faiss, bm25 = mock_retrievers
+        svc = HybridSearchService(faiss, bm25, 45)
+        assert svc.faiss_retriever == faiss
+        assert svc.bm25_retriever == bm25
+        assert svc.searcher.rrf_k == 45
+
+
 class TestHybridSearchServiceLogic:
     """HybridSearchService 내부 로직 단위 검증."""
 

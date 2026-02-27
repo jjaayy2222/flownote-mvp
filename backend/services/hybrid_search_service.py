@@ -39,44 +39,76 @@ class HybridSearchService:
 
     def __init__(
         self,
+        *args: Any,
         rrf_k: int = 60,
         faiss_dimension: int = 1536,
         faiss_retriever: Optional[FAISSRetriever] = None,
         bm25_retriever: Optional[BM25Retriever] = None,
+        **kwargs: Any,
     ) -> None:
         """
-        의존성 주입(DI)을 지원하는 생성자.
-        하위 호환성을 위해 rrf_k와 faiss_dimension을 앞쪽에 위치시킵니다.
-
-        Args:
-            rrf_k: RRF 페널티 상수
-            faiss_dimension: FAISS 임베딩 벡터 차원
-            faiss_retriever: 외부에서 주입할 FAISS 리트리버 (없으면 신규 생성)
-            bm25_retriever: 외부에서 주입할 BM25 리트리버 (없으면 신규 생성)
+        하위 호환성을 극대화한 하이브리드 검색 서비스 생성자.
+        위치 인수(Positional Arguments)의 순서 변경에 따른 파괴적 변경을 방지하기 위해
+        전달된 인자의 타입을 체크하여 지능적으로 할당합니다.
         """
-        # 의존성 주입 또는 기본 생성 (None 여부를 명시적으로 확인하여 falsy 객체도 허용)
+        # 1. 초기값 설정
+        self._rrf_k = rrf_k
+        self._faiss_dim = faiss_dimension
+        self._faiss_ret = faiss_retriever
+        self._bm25_ret = bm25_retriever
+
+        # 2. 위치 인수(*args) 처리 (과거 순서 조합 대응)
+        # Case A: (rrf_k, dim, ret1, ret2)
+        # Case B: (ret1, ret2, rrf_k, dim)
+        for i, arg in enumerate(args):
+            if i == 0:
+                if isinstance(arg, int):
+                    self._rrf_k = arg
+                elif hasattr(arg, "search"):
+                    self._faiss_ret = arg
+            elif i == 1:
+                if isinstance(arg, int):
+                    self._faiss_dim = arg
+                elif hasattr(arg, "search"):
+                    self._bm25_ret = arg
+            elif i == 2:
+                if isinstance(arg, int):
+                    self._rrf_k = arg  # 드문 케이스 대응
+                elif hasattr(arg, "search"):
+                    self._faiss_ret = arg
+            elif i == 3:
+                if hasattr(arg, "search"):
+                    self._bm25_ret = arg
+
+        # 3. 추가 키워드 인수(**kwargs) 처리 (하위 호환용)
+        if "faiss_retriever" in kwargs:
+            self._faiss_ret = kwargs["faiss_retriever"]
+        if "bm25_retriever" in kwargs:
+            self._bm25_ret = kwargs["bm25_retriever"]
+
+        # 4. 인스턴스 할당 (명시적 None 체크 유지)
         self.faiss_retriever = (
-            faiss_retriever
-            if faiss_retriever is not None
-            else FAISSRetriever(dimension=faiss_dimension)
+            self._faiss_ret
+            if self._faiss_ret is not None
+            else FAISSRetriever(dimension=self._faiss_dim)
         )
         self.bm25_retriever = (
-            bm25_retriever if bm25_retriever is not None else BM25Retriever()
+            self._bm25_ret if self._bm25_ret is not None else BM25Retriever()
         )
 
-        # 통합 검색기 초기화
+        # 5. 검색기 초기화
         self.searcher = HybridSearcher(
             faiss_retriever=self.faiss_retriever,
             bm25_retriever=self.bm25_retriever,
-            rrf_k=rrf_k,
+            rrf_k=self._rrf_k,
         )
         logger.info(
             "HybridSearchService initialized (rrf_k=%d, dim=%d, DI=%s)",
-            rrf_k,
-            faiss_dimension,
+            self._rrf_k,
+            self._faiss_dim,
             (
                 "Yes"
-                if (faiss_retriever is not None or bm25_retriever is not None)
+                if (self._faiss_ret is not None or self._bm25_ret is not None)
                 else "No"
             ),
         )
