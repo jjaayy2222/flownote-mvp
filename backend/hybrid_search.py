@@ -8,11 +8,12 @@ FlowNote MVP - 하이브리드 검색 및 RRF 병합 모듈
 
 import hashlib
 import logging
-from typing import List, Dict, Any, Optional, Protocol
+from typing import List, Dict, Any, Optional, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
 
+@runtime_checkable
 class Retriever(Protocol):
     """
     리트리버 인터페이스 정의.

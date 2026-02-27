@@ -170,6 +170,23 @@ class TestHybridSearchServiceInitialization:
         svc = HybridSearchService(10, rrf_k=99)
         assert svc.searcher.rrf_k == 99
 
+    def test_init_with_too_many_positional_args(self):
+        """정의된 4개를 초과하는 위치 인수가 들어올 경우 TypeError 발생 확인."""
+        with pytest.raises(TypeError, match="takes up to 4 positional arguments"):
+            # 5개의 인자 전달
+            HybridSearchService(60, 1536, None, None, "extra")
+
+    def test_init_with_invalid_positional_type_logs_warning(self, caplog):
+        """위치 인수의 타입이 예상과 다를 경우 경고 로그가 남는지 확인."""
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            # i=0에 int나 Retriever가 아닌 문자열 전달
+            svc = HybridSearchService("invalid-type")
+            # 해석은 실패하지만 생성은 되어야 함 (기본값 사용)
+            assert svc.searcher.rrf_k == HybridSearchService.DEFAULT_RRF_K
+            assert "did not match any expected types" in caplog.text
+
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 도메인 로직 테스트 (Logic & Validation)
