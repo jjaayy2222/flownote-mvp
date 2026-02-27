@@ -3,15 +3,16 @@
 """
 하이브리드 검색 엔드포인트 (Step 6: RAG API Integration)
 
-GET  /search/          - 기존 단순 검색 (하위 호환)
-POST /search/hybrid    - HybridSearcher를 활용한 RAG 검색 (신규)
-GET  /search/hybrid    - 쿼리 파라미터 기반 RAG 검색 (신규, 간편 호출)
+리뷰 피드백 반영:
+1. run_in_threadpool을 사용하여 CPU/IO 바운드 검색 작업의 비차단 실행 보장
+2. HybridSearchResult DTO 연동
 """
 
 import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.concurrency import run_in_threadpool
 
 from backend.api.deps import get_locale
 from backend.api.models import (
@@ -19,7 +20,7 @@ from backend.api.models import (
     HybridSearchRequest,
     HybridSearchResponse,
     SearchResultItem,
-    PARA_CATEGORIES,
+    PARACategory,
 )
 from backend.services.hybrid_search_service import (
     HybridSearchService,
@@ -63,6 +64,7 @@ async def search_files(
 
 @router.post(
     "/hybrid",
+    # response_model_exclude_none=True,  # None 필드 제외 옵션 (필요 시)
     response_model=HybridSearchResponse,
     summary="하이브리드 RAG 검색 (POST)",
     description=(
@@ -104,9 +106,9 @@ async def hybrid_search_get(
         le=1.0,
         description="Dense 검색 가중치 (0.0=BM25 전용, 1.0=FAISS 전용)",
     ),
-    category: Optional[str] = Query(
+    category: Optional[PARACategory] = Query(
         default=None,
-        description=f"PARA 카테고리 필터 ({', '.join(PARA_CATEGORIES)})",
+        description="PARA 카테고리 필터 (Projects, Areas, Resources, Archives)",
     ),
     service: HybridSearchService = Depends(get_hybrid_search_service),
 ) -> HybridSearchResponse:
@@ -131,12 +133,15 @@ async def _run_hybrid_search(
     query: str,
     k: int,
     alpha: float,
-    category: Optional[str],
+    category: Optional[PARACategory],
     metadata_filter: Optional[dict],
 ) -> HybridSearchResponse:
     """POST/GET 공통 검색 실행 로직."""
     try:
-        result = service.search(
+        # [Performance] service.search는 동기 메서드(FAISS/BM25)이므로
+        # run_in_threadpool을 사용하여 메인 이벤트 루프 블로킹 방지
+        result = await run_in_threadpool(
+            service.search,
             query=query,
             k=k,
             alpha=alpha,
@@ -157,8 +162,9 @@ async def _run_hybrid_search(
             detail="검색 중 내부 오류가 발생했습니다.",
         ) from exc
 
-    raw_results = result["results"]
-    applied_filter = result["applied_filter"]
+    # DTO 속성 접근
+    raw_results = result.results
+    applied_filter = result.applied_filter
 
     # 결과 직렬화 (SearchResultItem)
     items = [
