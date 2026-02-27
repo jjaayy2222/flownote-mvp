@@ -144,16 +144,55 @@ class TestHybridSearchServiceValidation:
     """HybridSearchService의 파라미터 검증 및 필터 빌드 로직 단위 검증."""
 
     def test_search_alpha_out_of_range_raises_value_error(self):
-        svc = HybridSearchService()
-        with pytest.raises(ValueError, match="alpha must be between 0.0 and 1.0"):
-            svc.search(query="test", alpha=1.1)
-        with pytest.raises(ValueError, match="alpha must be between 0.0 and 1.0"):
-            svc.search(query="test", alpha=-0.1)
+        """alpha가 [0.0, 1.0] 범위를 벗어날 때 ValueError 발생 확인."""
+        with patch("backend.services.hybrid_search_service.FAISSRetriever"), patch(
+            "backend.services.hybrid_search_service.BM25Retriever"
+        ):
+            svc = HybridSearchService()
+            with pytest.raises(ValueError, match="alpha must be between 0.0 and 1.0"):
+                svc.search(query="test", alpha=1.1)
+            with pytest.raises(ValueError, match="alpha must be between 0.0 and 1.0"):
+                svc.search(query="test", alpha=-0.1)
 
     def test_search_k_min_validation(self):
-        svc = HybridSearchService()
-        with pytest.raises(ValueError, match="k must be greater than or equal to 1"):
-            svc.search(query="test", k=0)
+        """k가 1 미만일 때 ValueError 발생 확인."""
+        with patch("backend.services.hybrid_search_service.FAISSRetriever"), patch(
+            "backend.services.hybrid_search_service.BM25Retriever"
+        ):
+            svc = HybridSearchService()
+            with pytest.raises(
+                ValueError, match="k must be greater than or equal to 1"
+            ):
+                svc.search(query="test", k=0)
+
+    def test_search_k_boundary_accepts_valid_values(self):
+        """k의 유효 경계값(1, 50)이 정상적으로 허용되는지 확인."""
+        with patch("backend.services.hybrid_search_service.FAISSRetriever"), patch(
+            "backend.services.hybrid_search_service.BM25Retriever"
+        ):
+            svc = HybridSearchService()
+            # 검색 엔진 호출을 모킹하여 실제 임베딩/검색 방지
+            svc.searcher.search = MagicMock(return_value=[])
+
+            # 범위를 벗어나지 않으므로 예외 없이 실행되어야 함
+            svc.search(query="test", k=1)
+            svc.search(query="test", k=50)
+
+            assert svc.searcher.search.call_count == 2
+
+    def test_search_alpha_boundary_accepts_valid_values(self):
+        """alpha의 유효 경계값(0.0, 1.0)이 정상적으로 허용되는지 확인."""
+        with patch("backend.services.hybrid_search_service.FAISSRetriever"), patch(
+            "backend.services.hybrid_search_service.BM25Retriever"
+        ):
+            svc = HybridSearchService()
+            svc.searcher.search = MagicMock(return_value=[])
+
+            # 범위를 벗어나지 않으므로 예외 없이 실행되어야 함
+            svc.search(query="test", alpha=0.0)
+            svc.search(query="test", alpha=1.0)
+
+            assert svc.searcher.search.call_count == 2
 
     def test_build_filter_no_args_returns_none(self):
         result = HybridSearchService._build_metadata_filter(None, None)
