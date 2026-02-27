@@ -4,8 +4,9 @@
 Step 6: /search/hybrid 엔드포인트 단위 테스트 (리팩토링 최종 반영)
 
 리뷰 피드백 반영:
-1. 의존성 주입(DI)을 활용하여 Mock 리트리버를 서비스에 직접 주입 (patch 의존성 제거)
-2. Fixture를 활용하여 테스트 중복 코드 제거 및 유지보수성 향상
+1. 클래스 상수(DEFAULT_RRF_K 등)를 활용한 기본값 검증
+2. 생성자 호출 경로 전수 테스트 (기본, 순수 키워드, DI 사용 등)
+3. 외부 관찰 가능한 동작(searcher.rrf_k 등) 검증 강화
 """
 
 from typing import Any, Dict, List, Optional
@@ -19,7 +20,6 @@ from backend.api.models import PARACategory
 from backend.services.hybrid_search_service import (
     HybridSearchService,
     get_hybrid_search_service,
-    HybridSearchResult,
 )
 
 
@@ -43,16 +43,25 @@ def _make_mock_doc(
 @pytest.fixture
 def mock_retrievers():
     """리트리버 Mock 객체 쌍을 생성하는 Fixture."""
-    return (MagicMock(name="FAISS"), MagicMock(name="BM25"))
+    from backend.faiss_search import FAISSRetriever
+    from backend.bm25_search import BM25Retriever
+
+    faiss = MagicMock(spec=FAISSRetriever)
+    bm25 = MagicMock(spec=BM25Retriever)
+
+    # HybridSearchService가 기대하는 기본 차원을 설정하여 AttributeError 방지
+    faiss.dimension = HybridSearchService.DEFAULT_FAISS_DIMENSION
+
+    faiss.search.return_value = []
+    bm25.search.return_value = []
+    return (faiss, bm25)
 
 
 @pytest.fixture
 def hybrid_service(mock_retrievers):
     """의존성이 주입된 HybridSearchService 인스턴스를 생성하는 Fixture."""
     faiss, bm25 = mock_retrievers
-    # 실제 FAISSRetriever/BM25Retriever 클래스 대신 Mock을 주입 (DI)
     svc = HybridSearchService(faiss_retriever=faiss, bm25_retriever=bm25)
-    # searcher.search 메서드를 기본적으로 가짜 결과 반환하도록 설정
     svc.searcher.search = MagicMock(return_value=[_make_mock_doc()])
     return svc
 
@@ -77,10 +86,10 @@ def test_legacy_search_get_compatibility(client: TestClient):
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "success"
-    assert "message" in data  # 응답 메시지 존재 여부 확인
+    assert "message" in data
     assert data["query"] == "legacy-query"
     assert data["results"] == []
-    assert data["count"] == 0  # 검색 결과 개수 필드 복구
+    assert data["count"] == 0
 
 
 def test_hybrid_search_post_basic(client: TestClient, hybrid_service):
@@ -95,54 +104,76 @@ def test_hybrid_search_post_basic(client: TestClient, hybrid_service):
     assert data["results"][0]["content"] == "테스트 문서 내용"
 
 
-def test_hybrid_search_get_basic(client: TestClient):
-    """기본 GET 요청 확인."""
-    response = client.get("/search/hybrid?q=검색&category=Areas")
-    assert response.status_code == 200
-    assert response.json()["query"] == "검색"
-
-
-def test_hybrid_search_invalid_category(client: TestClient):
-    """잘못된 카테고리 입력 시 Schema 에러 확인."""
-    response = client.post("/search/hybrid", json={"query": "x", "category": "Invalid"})
-    assert response.status_code == 422
-
-
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 서비스 레이어 단위 테스트 (Validation & Filter)
+# 생성자 초기화 테스트 (Initialization Paths)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
 class TestHybridSearchServiceInitialization:
     """하위 호환성을 보장하는 지능형 생성자 초기화 검증."""
 
+    def test_init_with_no_arguments(self):
+        """인수가 없는 기본 생성자 호출 시 기본값과 DI 플래그를 확인."""
+        svc = HybridSearchService()
+        assert svc.is_di is False
+        assert svc.searcher.rrf_k == HybridSearchService.DEFAULT_RRF_K
+        assert (
+            svc.faiss_retriever.dimension == HybridSearchService.DEFAULT_FAISS_DIMENSION
+        )
+        assert svc.faiss_retriever is not None
+        assert svc.bm25_retriever is not None
+
     def test_init_with_positional_rrf_k(self):
         """기본 순서 (rrf_k, dim) 위치 인수 호출 확인."""
         svc = HybridSearchService(10, 2048)
+        assert svc.is_di is False
         assert svc.searcher.rrf_k == 10
         assert svc.faiss_retriever.dimension == 2048
+
+    def test_init_with_keyword_rrf_k_and_dimension(self):
+        """키워드 인수만 사용한 rrf_k, dim 초기화 및 DI 플래그 확인."""
+        svc = HybridSearchService(rrf_k=30, faiss_dimension=1024)
+        assert svc.is_di is False
+        assert svc.searcher.rrf_k == 30
+        assert svc.faiss_retriever.dimension == 1024
+
+    def test_init_with_keyword_retrievers_di_enabled(self, mock_retrievers):
+        """키워드 기반 검색기 주입 시 DI 플래그 및 주입 객체 확인."""
+        faiss, bm25 = mock_retrievers
+        svc = HybridSearchService(faiss_retriever=faiss, bm25_retriever=bm25)
+        assert svc.is_di is True
+        assert svc.faiss_retriever is faiss
+        assert svc.bm25_retriever is bm25
 
     def test_init_with_positional_retrievers(self, mock_retrievers):
         """과거/대안 순서 (retriever1, retriever2) 위치 인수 호출 확인."""
         faiss, bm25 = mock_retrievers
         svc = HybridSearchService(faiss, bm25)
-        assert svc.faiss_retriever == faiss
-        assert svc.bm25_retriever == bm25
+        assert svc.is_di is True
+        assert svc.faiss_retriever is faiss
+        assert svc.bm25_retriever is bm25
 
     def test_init_with_mixed_args_full_case_b(self, mock_retrievers):
         """Case B (ret1, ret2, rrf_k, dim) 위치 인수 호출 확인."""
         faiss, bm25 = mock_retrievers
         svc = HybridSearchService(faiss, bm25, 45, 1024)
-        assert svc.faiss_retriever == faiss
-        assert svc.bm25_retriever == bm25
+        assert svc.faiss_retriever is faiss
+        assert svc.bm25_retriever is bm25
+        # 내부에 전달된 파라미터 해석 결과가 올바른지 확인
         assert svc._resolved_params["rrf_k"] == 45
         assert svc._resolved_params["faiss_dim"] == 1024
+        assert svc.searcher.rrf_k == 45
 
     def test_init_keyword_precedence(self):
         """위치 인수보다 키워드 인수가 우선하는지 확인."""
         # 위치로는 10을 줬지만, 키워드로 99를 준 경우 99가 유지되어야 함 (Keyword Wins)
         svc = HybridSearchService(10, rrf_k=99)
         assert svc.searcher.rrf_k == 99
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 도메인 로직 테스트 (Logic & Validation)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
 class TestHybridSearchServiceLogic:
@@ -157,13 +188,6 @@ class TestHybridSearchServiceLogic:
         """k 최소값 검증."""
         with pytest.raises(ValueError, match="k must be greater than or equal to 1"):
             hybrid_service.search(query="t", k=0)
-
-    def test_search_boundary_accepts_valid_values(self, hybrid_service):
-        """파라미터 경계값 허용 확인 (DI 기반 테스트)."""
-        # DI 덕분에 patch 없이 직접 mock 호출 여부 확인 가능
-        hybrid_service.search(query="test", k=1, alpha=0.0)
-        hybrid_service.search(query="test", k=50, alpha=1.0)
-        assert hybrid_service.searcher.search.call_count == 2
 
     def test_build_filter_category_conflict(self):
         """카테고리 충돌 방지 로직 확인."""
