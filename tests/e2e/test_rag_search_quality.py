@@ -64,7 +64,9 @@ def test_rag_quality_and_tuning():
     logger.info("Starting RAG Quality E2E Test with Real Embeddings...")
 
     # 1. Initialize retrievers with real embeddings
-    faiss_ret = FAISSRetriever(dimension=1536)  # text-embedding-3-small uses 1536
+    # (Review: Use service default instead of hardcoding 1536)
+    dim = HybridSearchService.DEFAULT_FAISS_DIMENSION
+    faiss_ret = FAISSRetriever(dimension=dim)
     bm25_ret = BM25Retriever()
     embedder = faiss_ret.embedding_generator
 
@@ -92,9 +94,17 @@ def test_rag_quality_and_tuning():
         total_recall = 0.0
 
         for query, expected_sources in GROUND_TRUTH.items():
+            # (Review: Add category filter to ensure expansion logic is executed)
+            target_category = None
+            if "FlowNote" in query:
+                target_category = PARACategory.PROJECTS
+
             # Perform search (k=3 for testing)
             search_result = service.search(
-                query=query, k=3, filter_expansion_factor=factor
+                query=query,
+                k=3,
+                filter_expansion_factor=factor,
+                category=target_category,
             )
 
             retrieved_sources = [
