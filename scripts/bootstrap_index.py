@@ -55,15 +55,20 @@ async def _generate_embeddings_async(
     Semaphore를 통해 동시 요청 수를 제어하며 임베딩을 생성한다.
     I/O 바운드 작업(OpenAI API 호출)이므로 asyncio로 병렬화 가능하다.
 
+    Thread-Safety 근거:
+        EmbeddingGenerator.generate_embeddings()는 내부적으로 openai.OpenAI 클라이언트
+        (httpx.Client 기반)를 사용하며, OpenAI Python SDK v1.x는 공식적으로 thread-safe.
+        generate_embeddings() 내부에 공유 가변 상태(캐시, 버퍼, 카운터 등)가 없으므로
+        run_in_executor / asyncio.to_thread를 통한 병렬 호출은 안전하다.
+        Semaphore(--concurrency)가 동시 호출 수를 추가로 제한하여 rate limit도 제어함.
+
     Returns:
         임베딩 배열, 또는 실패 시 None
     """
     async with semaphore:
         try:
-            # generate_embeddings는 동기 함수이므로 스레드풀에서 실행
-            loop = asyncio.get_running_loop()
-            emb_result = await loop.run_in_executor(
-                None,
+            # asyncio.to_thread: Python 3.9+. run_in_executor(None, ...) 의 간결한 대안.
+            emb_result = await asyncio.to_thread(
                 service.faiss_retriever.embedding_generator.generate_embeddings,
                 texts,
             )
@@ -185,9 +190,11 @@ async def main() -> None:
         logger.info("ℹ️ 인덱싱할 마크다운 파일이 없습니다.")
         return
 
-    # 3. 동시 임베딩 생성 + 순차 인덱싱
+    # 3. 파일 단위 순차 처리 + 파일 내 배치 병렬 임베딩
     #
     # 설계 원칙:
+    #   - 파일별 버퍼링: 단일 파일의 청크만 메모리에 올림 (전체 Vault 누적 없음).
+    #     Obsidian 마크다운 파일은 일반적으로 수십~수백 KB이므로 실질적 메모리 부담 없음.
     #   - 임베딩 생성(I/O 바운드): Semaphore로 동시 요청 수 제한하여 병렬 처리
     #   - 리트리버 add_documents(CPU/메모리): thread-safe하지 않으므로 반드시 순차 처리
     #   → 임베딩 수집 완료 후 인덱싱을 순서대로 실행하는 투-페이즈 방식
