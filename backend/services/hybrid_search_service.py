@@ -17,6 +17,8 @@ from backend.faiss_search import FAISSRetriever
 from backend.bm25_search import BM25Retriever
 from backend.hybrid_search import HybridSearcher, Retriever
 from backend.api.models import PARACategory
+from backend.services.search_cache_service import search_cache_service
+from fastapi.concurrency import run_in_threadpool
 
 logger = logging.getLogger(__name__)
 
@@ -32,16 +34,12 @@ class HybridSearchResult:
     applied_filter: Optional[Dict[str, Any]]
 
 
-# 기본값 감지를 위한 센티넬 객체
-_DEFAULT = object()
-
-
 class HybridSearchService:
     """
     HybridSearcher를 감싸는 서비스 클래스.
     """
 
-    # 하위 호환성 및 테스트 정합성을 위한 기본값 상수
+    # 하위 호환성 및 테스트 정합성을 위한 기본값 상수 (Single Source of Truth)
     DEFAULT_RRF_K = 60
     DEFAULT_FAISS_DIMENSION = 1536
 
@@ -100,6 +98,10 @@ class HybridSearchService:
             "Yes" if self.is_di else "No",
         )
 
+        # [Persistence] 앱 시작 시 자동 로드 시도 (DI가 아닌 경우에만)
+        if not self.is_di:
+            self.load_indices()
+
     def _resolve_init_args(
         self,
         args: tuple,
@@ -140,6 +142,9 @@ class HybridSearchService:
 
             if target_key:
                 current_val = res[target_key]
+                logger.debug(
+                    "Arg %d: %s -> %s (current: %s)", i, arg, target_key, current_val
+                )
                 # 명시적 키워드 우선순위 체크 (헬퍼 메서드 분리)
                 if self._is_overridden_by_keyword(target_key, current_val, arg):
                     logger.warning(
@@ -149,6 +154,7 @@ class HybridSearchService:
                     continue
 
                 res[target_key] = arg
+                logger.debug("Updated %s to %s", target_key, arg)
             else:
                 # 타입 매칭 실패 시 경고 (또는 에러)
                 logger.warning(
@@ -202,7 +208,7 @@ class HybridSearchService:
     # 퍼블릭 메서드
     # ------------------------------------------------------------------
 
-    def search(
+    async def search(
         self,
         query: str,
         k: int = 5,
@@ -212,31 +218,32 @@ class HybridSearchService:
         filter_expansion_factor: int = 2,
     ) -> HybridSearchResult:
         """
-        하이브리드 검색 수행 후 구조화된 DTO 객체로 반환.
-
-        참고: 이 메서드는 CPU/IO bound 작업을 포함하므로
-        FastAPI 엔드포인트에서 run_in_threadpool 등을 통해 비동기적으로 실행해야 합니다.
+        하이브리드 검색 수행 (캐싱 레이어 포함).
+        - Redis 캐시를 먼저 확인하고, 미스 시 실제 검색 수행.
+        - 실제 검색은 CPU-bound 이므로 threadpool에서 실행.
         """
-        # 0. 서비스 레벨 파라미터 검증 (방어적 프로그래밍)
+        # [Fail Fast] 캐시 접근 전 파라미터 유효 범위 검증
         if not (0.0 <= alpha <= 1.0):
             raise ValueError(f"alpha must be between 0.0 and 1.0, got {alpha}")
         if k < 1:
             raise ValueError(f"k must be greater than or equal to 1, got {k}")
 
-        # 1. PARA 카테고리 검증 및 필터 병합
+        # 0. PARA 카테고리 검증 및 필터 병합
         effective_filter = self._build_metadata_filter(category, metadata_filter)
 
-        logger.info(
-            "Hybrid search call: query_len=%d, k=%d, alpha=%.2f, filter=%s, expansion=%d",
-            len(query),
-            k,
-            alpha,
-            effective_filter,
-            filter_expansion_factor,
+        # 1. Redis 캐시 확인 (Async)
+        # [Review 반영] None 체크를 명시적으로 하여 빈 결과 세트([])가 캐시된 경우를 미스와 구분
+        cached_raw = await search_cache_service.get_results(
+            query, k, alpha, effective_filter
         )
+        if cached_raw is not None:
+            return HybridSearchResult(
+                results=cached_raw, applied_filter=effective_filter
+            )
 
-        # 2. 검색 실행
-        raw_results = self.searcher.search(
+        # 2. 캐시 미스 시 실제 검색 실행 (Threadpool)
+        result = await run_in_threadpool(
+            self._execute_search,
             query=query,
             k=k,
             alpha=alpha,
@@ -244,7 +251,72 @@ class HybridSearchService:
             filter_expansion_factor=filter_expansion_factor,
         )
 
-        return HybridSearchResult(results=raw_results, applied_filter=effective_filter)
+        # 3. 결과 캐시에 저장 (Async, Background)
+        await search_cache_service.set_results(
+            query, k, alpha, effective_filter, result.results
+        )
+
+        return result
+
+    def _execute_search(
+        self,
+        query: str,
+        k: int,
+        alpha: float,
+        metadata_filter: Optional[Dict[str, Any]],
+        filter_expansion_factor: int = 2,
+    ) -> HybridSearchResult:
+        """실제 검색 로직 (CPU-bound)"""
+        if not (0.0 <= alpha <= 1.0):
+            raise ValueError(f"alpha must be between 0.0 and 1.0, got {alpha}")
+        if k < 1:
+            raise ValueError(f"k must be greater than or equal to 1, got {k}")
+
+        logger.info(
+            "Executing Hybrid search: query_len=%d, k=%d, alpha=%.2f, filter=%s, expansion=%d",
+            len(query),
+            k,
+            alpha,
+            metadata_filter,
+            filter_expansion_factor,
+        )
+
+        raw_results = self.searcher.search(
+            query=query,
+            k=k,
+            alpha=alpha,
+            metadata_filter=metadata_filter,
+            filter_expansion_factor=filter_expansion_factor,
+        )
+
+        return HybridSearchResult(results=raw_results, applied_filter=metadata_filter)
+
+    def save_indices(self):
+        """FAISS와 BM25 인덱스를 디스크에 저장"""
+        from backend.config import PathConfig
+
+        faiss_dir = PathConfig.FAISS_INDEX_DIR / "faiss"
+        bm25_dir = PathConfig.FAISS_INDEX_DIR / "bm25"
+
+        self.faiss_retriever.save(faiss_dir)
+        self.bm25_retriever.save(bm25_dir)
+        logger.info("✅ All search indices saved to disk.")
+
+    def load_indices(self):
+        """디스크에서 FAISS와 BM25 인덱스 로드"""
+        from backend.config import PathConfig
+
+        faiss_dir = PathConfig.FAISS_INDEX_DIR / "faiss"
+        bm25_dir = PathConfig.FAISS_INDEX_DIR / "bm25"
+
+        try:
+            self.faiss_retriever.load(faiss_dir)
+            self.bm25_retriever.load(bm25_dir)
+            logger.info("✅ All search indices loaded from disk.")
+        except FileNotFoundError:
+            logger.info("No search indices found on disk. Starting with empty indices.")
+        except Exception as e:
+            logger.error(f"Error loading search indices: {e}", exc_info=True)
 
     def is_ready(self) -> bool:
         """인덱스에 문서가 있으면 True."""

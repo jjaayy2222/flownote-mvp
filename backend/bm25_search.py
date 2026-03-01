@@ -23,6 +23,7 @@ from typing import (
     Callable,
     Tuple,
     TypedDict,
+    Union,
 )
 from rank_bm25 import BM25Okapi
 from backend.utils import check_metadata_match
@@ -413,6 +414,54 @@ class BM25Retriever:
     def size(self) -> int:
         """인덱스에 저장된 문서 수"""
         return len(self.documents)
+
+    def save(self, directory: Union[str, Any]):
+        """인덱스와 메타데이터를 디스크에 저장"""
+        from pathlib import Path
+
+        directory = Path(directory)
+        directory.mkdir(parents=True, exist_ok=True)
+
+        # 1. 문서 데이터 저장 (JSON)
+        import json
+
+        with open(directory / "documents.json", "w", encoding="utf-8") as f:
+            json.dump(self.documents, f, ensure_ascii=False, indent=2)
+
+        # 2. BM25 객체 저장 (Pickle)
+        import pickle
+
+        with open(directory / "bm25.pkl", "wb") as f:
+            pickle.dump(self.bm25, f)
+
+        logger.info(f"✅ BM25 인덱스 및 메타데이터 저장 완료: {directory}")
+
+    def load(self, directory: Union[str, Any]):
+        """디스크에서 인덱스와 메타데이터 로드"""
+        from pathlib import Path
+
+        directory = Path(directory)
+        docs_path = directory / "documents.json"
+        index_path = directory / "bm25.pkl"
+
+        if not docs_path.exists() or not index_path.exists():
+            raise FileNotFoundError(f"BM25 index files not found in {directory}")
+
+        # 1. 문서 데이터 로드
+        import json
+
+        with open(docs_path, "r", encoding="utf-8") as f:
+            self.documents = json.load(f)
+
+        # 2. BM25 객체 로드
+        import pickle
+
+        with open(index_path, "rb") as f:
+            self.bm25 = pickle.load(f)
+
+        logger.info(
+            f"✅ BM25 인덱스 및 메타데이터 로드 완료: {len(self.documents)}개 문서"
+        )
 
 
 if __name__ == "__main__":

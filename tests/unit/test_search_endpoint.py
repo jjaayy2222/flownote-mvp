@@ -196,15 +196,17 @@ class TestHybridSearchServiceInitialization:
 class TestHybridSearchServiceLogic:
     """HybridSearchService 내부 로직 단위 검증."""
 
-    def test_search_alpha_out_of_range(self, hybrid_service):
+    @pytest.mark.asyncio
+    async def test_search_alpha_out_of_range(self, hybrid_service):
         """alpha 범위 검증."""
         with pytest.raises(ValueError, match="alpha must be between 0.0 and 1.0"):
-            hybrid_service.search(query="t", alpha=1.1)
+            await hybrid_service.search(query="t", alpha=1.1)
 
-    def test_search_k_min_validation(self, hybrid_service):
+    @pytest.mark.asyncio
+    async def test_search_k_min_validation(self, hybrid_service):
         """k 최소값 검증."""
         with pytest.raises(ValueError, match="k must be greater than or equal to 1"):
-            hybrid_service.search(query="t", k=0)
+            await hybrid_service.search(query="t", k=0)
 
     def test_build_filter_category_conflict(self):
         """카테고리 충돌 방지 로직 확인."""
@@ -220,7 +222,10 @@ class TestHybridSearchServiceLogic:
         )
         assert result == {"category": "Resources", "other": "val"}
 
-    def test_search_expansion_factor_applied_only_with_filter(self, mock_retrievers):
+    @pytest.mark.asyncio
+    async def test_search_expansion_factor_applied_only_with_filter(
+        self, mock_retrievers
+    ):
         """메타데이터 필터가 있을 때만 expansion_factor가 적용되는지 확인."""
         faiss, bm25 = mock_retrievers
         # searcher.search를 모킹하지 않은 순수 서비스 인스턴스 생성
@@ -230,13 +235,13 @@ class TestHybridSearchServiceLogic:
         factor = 3
 
         # Case 1: No filter (service call without category/filter)
-        svc.search("query", k=k, filter_expansion_factor=factor)
+        await svc.search("query", k=k, filter_expansion_factor=factor)
         # Service internal build_filter returns None if no category/extra_filter
         faiss.search.assert_called_with("query", k=k, metadata_filter=None)
         bm25.search.assert_called_with("query", k=k, metadata_filter=None)
 
         # Case 2: With filter (service call with category)
-        svc.search(
+        await svc.search(
             "query", k=k, filter_expansion_factor=factor, category=PARACategory.PROJECTS
         )
         expected_filter = {"category": "Projects"}
@@ -247,7 +252,8 @@ class TestHybridSearchServiceLogic:
             "query", k=k * factor, metadata_filter=expected_filter
         )
 
-    def test_search_expansion_factor_validation_delegation(self, mock_retrievers):
+    @pytest.mark.asyncio
+    async def test_search_expansion_factor_validation_delegation(self, mock_retrievers):
         """expansion_factor 검증이 searcher로 위임되어 작동하는지 확인."""
         faiss, bm25 = mock_retrievers
         svc = HybridSearchService(faiss_retriever=faiss, bm25_retriever=bm25)
@@ -255,4 +261,4 @@ class TestHybridSearchServiceLogic:
         with pytest.raises(
             ValueError, match="filter_expansion_factor must be at least 1"
         ):
-            svc.search("query", filter_expansion_factor=0)
+            await svc.search("query", filter_expansion_factor=0)
