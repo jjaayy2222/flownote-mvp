@@ -141,13 +141,34 @@ def test_hybrid_searcher_individual_k_negative_raises(hybrid_searcher):
         searcher.search("test", k=3, bm25_k=-1)
 
 
-def test_hybrid_searcher_default_faiss_k_and_bm25_k_are_2x_k(hybrid_searcher):
-    """faiss_k=None, bm25_k=None일 때 기본값이 k * 2로 전달되는지 검증."""
+def test_hybrid_searcher_default_faiss_k_and_bm25_k_no_filter(hybrid_searcher):
+    """faiss_k=None, bm25_k=None이고 metadata_filter=None일 때
+    expansion_factor가 적용되지 않아 faiss_k = k * 1 = k가 전달되는지 검증.
+
+    필터 없이는 후보군 확장이 불필요하므로 k를 그대로 전달하는 것이 의도된 동작입니다.
+    """
     searcher, faiss, bm25 = hybrid_searcher
 
     k = 3
     _ = searcher.search("test", k=k, faiss_k=None, bm25_k=None)
 
+    # 필터 없음 → actual_expansion = 1 → f_k = k * 1 = k
+    assert faiss.last_k == k
+    assert bm25.last_k == k
+
+
+def test_hybrid_searcher_default_faiss_k_and_bm25_k_with_filter(hybrid_searcher):
+    """faiss_k=None, bm25_k=None이고 metadata_filter가 있을 때
+    filter_expansion_factor(기본값 2)가 적용되어 faiss_k = k * 2가 전달되는지 검증.
+    """
+    searcher, faiss, bm25 = hybrid_searcher
+
+    k = 3
+    _ = searcher.search(
+        "test", k=k, faiss_k=None, bm25_k=None, metadata_filter={"category": "Projects"}
+    )
+
+    # 필터 있음 → actual_expansion = filter_expansion_factor = 2 → f_k = k * 2
     assert faiss.last_k == k * 2
     assert bm25.last_k == k * 2
 
