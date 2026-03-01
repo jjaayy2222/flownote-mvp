@@ -6,6 +6,7 @@
 FlowNote MVP - FAISS 검색
 """
 
+import json
 import sys
 from pathlib import Path
 import logging
@@ -187,7 +188,7 @@ class FAISSRetriever:
         """인덱스에 저장된 문서 수"""
         return self.index.ntotal
 
-    def save(self, directory: Union[str, Path]):
+    def save(self, directory: Union[str, Path]) -> None:
         """인덱스와 메타데이터를 디스크에 저장"""
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
@@ -196,14 +197,12 @@ class FAISSRetriever:
         faiss.write_index(self.index, str(directory / "faiss.index"))
 
         # 문서 메타데이터 저장
-        import json
-
         with open(directory / "documents.json", "w", encoding="utf-8") as f:
             json.dump(self.documents, f, ensure_ascii=False, indent=2)
 
-        logger.info(f"✅ FAISS 인덱스 및 메타데이터 저장 완료: {directory}")
+        logger.info("FAISS 인덱스 및 메타데이터 저장 완료: %s", directory)
 
-    def load(self, directory: Union[str, Path]):
+    def load(self, directory: Union[str, Path]) -> None:
         """디스크에서 인덱스와 메타데이터 로드"""
         directory = Path(directory)
         index_path = directory / "faiss.index"
@@ -216,8 +215,6 @@ class FAISSRetriever:
         self.index = faiss.read_index(str(index_path))
 
         # 문서 메타데이터 로드
-        import json
-
         with open(docs_path, "r", encoding="utf-8") as f:
             self.documents = json.load(f)
 
@@ -231,7 +228,7 @@ class FAISSRetriever:
             )
 
         logger.info(
-            f"✅ FAISS 인덱스 및 메타데이터 로드 완료: {len(self.documents)}개 문서"
+            "FAISS 인덱스 및 메타데이터 로드 완료: %d개 문서", len(self.documents)
         )
 
 
