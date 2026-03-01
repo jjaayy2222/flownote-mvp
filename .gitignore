@@ -181,4 +181,6 @@ data/automation_logs/
 # Claude Desktop 개인 설정 (개인 경로 포함)
 claude_desktop_config.json
 
-
+# 테스트용 파일
+temp_test_vault/
+test_output.txt
