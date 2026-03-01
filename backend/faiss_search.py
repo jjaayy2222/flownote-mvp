@@ -221,12 +221,14 @@ class FAISSRetriever:
         with open(docs_path, "r", encoding="utf-8") as f:
             self.documents = json.load(f)
 
-        # 차원 검증
+        # 차원 검증 (불일치 시 경고만 남기고, self.dimension(명시적 설정값)은 유지)
         if self.index.d != self.dimension:
             logger.warning(
-                f"Loaded index dimension ({self.index.d}) differs from self.dimension ({self.dimension})"
+                "Loaded index dimension (%d) differs from configured dimension (%d). "
+                "Keeping configured dimension. Ensure the saved index matches your embedding model.",
+                self.index.d,
+                self.dimension,
             )
-            self.dimension = self.index.d
 
         logger.info(
             f"✅ FAISS 인덱스 및 메타데이터 로드 완료: {len(self.documents)}개 문서"
