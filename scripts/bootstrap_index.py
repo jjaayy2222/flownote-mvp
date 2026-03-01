@@ -61,7 +61,7 @@ async def _generate_embeddings_async(
     async with semaphore:
         try:
             # generate_embeddings는 동기 함수이므로 스레드풀에서 실행
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             emb_result = await loop.run_in_executor(
                 None,
                 service.faiss_retriever.embedding_generator.generate_embeddings,
@@ -78,30 +78,30 @@ async def _generate_embeddings_async(
             return None
 
 
-async def _process_file(
+def _process_file(
     file_path: Path,
     vault_path: Path,
     chunker: TextChunker,
     batch_size: int,
-) -> tuple[list[list[dict]], list[str], int]:
+) -> tuple[list[list[dict]], list[str]]:
     """
-    파일을 읽고 청킹하여 (배치 doc_entries 리스트, 배치 texts 리스트, 스킵 여부)를 반환한다.
-    인덱싱 자체는 수행하지 않으므로 완전히 순수 함수다.
+    파일을 읽고 청킹하여 (배치 doc_entries 리스트, 배치 texts 리스트)를 반환한다.
+    인덱싱 자체는 수행하지 않으므로 완전히 순수 함수다. async I/O 없음.
 
     Returns:
-        (batched_docs, batched_texts, error_flag): 배치 단위 문서·텍스트, 파일 오류 여부(0/1)
+        (batched_docs, batched_texts): 배치 단위 문서·텍스트
     """
     try:
         content = file_path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         logger.warning("UnicodeDecodeError — 파일 스킵: %s", file_path.name)
-        return [], [], 0
+        return [], []
     except OSError as e:
         logger.warning("파일 읽기 실패 (%s): %s", type(e).__name__, file_path.name)
-        return [], [], 0
+        return [], []
 
     if not content.strip():
-        return [], [], 0
+        return [], []
 
     category = _infer_category(file_path)
     metadata = {
@@ -112,7 +112,7 @@ async def _process_file(
 
     chunks = chunker.chunk_with_metadata(content, metadata)
     if not chunks:
-        return [], [], 0
+        return [], []
 
     # 배치 단위로 분할
     batched_docs = []
@@ -124,7 +124,7 @@ async def _process_file(
         )
         batched_texts.append([c["text"] for c in batch])
 
-    return batched_docs, batched_texts, 0
+    return batched_docs, batched_texts
 
 
 async def main() -> None:
@@ -201,8 +201,8 @@ async def main() -> None:
     logger.info("📖 임베딩 병렬 생성 + 순차 인덱싱 시작...")
 
     for file_idx, file_path in enumerate(md_files):
-        # Phase 1: 파일 읽기/청킹 (순수, 부작용 없음)
-        batched_docs, batched_texts, _ = await _process_file(
+        # Phase 1: 파일 읽기/청킹 (동기, 순수 함수 — async I/O 없음)
+        batched_docs, batched_texts = _process_file(
             file_path=file_path,
             vault_path=vault_path,
             chunker=chunker,
