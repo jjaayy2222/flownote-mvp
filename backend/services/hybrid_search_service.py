@@ -209,6 +209,7 @@ class HybridSearchService:
         alpha: float = 0.5,
         category: Optional[PARACategory] = None,
         metadata_filter: Optional[Dict[str, Any]] = None,
+        filter_expansion_factor: int = 2,
     ) -> HybridSearchResult:
         """
         하이브리드 검색 수행 후 구조화된 DTO 객체로 반환.
@@ -226,11 +227,12 @@ class HybridSearchService:
         effective_filter = self._build_metadata_filter(category, metadata_filter)
 
         logger.info(
-            "Hybrid search call: query_len=%d, k=%d, alpha=%.2f, filter=%s",
+            "Hybrid search call: query_len=%d, k=%d, alpha=%.2f, filter=%s, expansion=%d",
             len(query),
             k,
             alpha,
             effective_filter,
+            filter_expansion_factor,
         )
 
         # 2. 검색 실행
@@ -239,6 +241,7 @@ class HybridSearchService:
             k=k,
             alpha=alpha,
             metadata_filter=effective_filter,
+            filter_expansion_factor=filter_expansion_factor,
         )
 
         return HybridSearchResult(results=raw_results, applied_filter=effective_filter)

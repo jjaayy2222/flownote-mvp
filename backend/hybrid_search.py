@@ -98,6 +98,7 @@ class HybridSearcher:
         bm25_k: Optional[int] = None,
         alpha: float = 0.5,
         metadata_filter: Optional[Dict[str, Any]] = None,
+        filter_expansion_factor: int = 2,
     ) -> List[Dict[str, Any]]:
         """
         하이브리드 검색 수행 후 RRF 점수로 정렬하여 반환
@@ -105,10 +106,13 @@ class HybridSearcher:
         Args:
             query: 검색 질의
             k: 최종 반환할 문서 수 (0 이상)
-            faiss_k: FAISS에서 가져올 후보 수 (기본값: k * 2, 0 이상)
-            bm25_k: BM25에서 가져올 후보 수 (기본값: k * 2, 0 이상)
+            faiss_k: FAISS에서 가져올 후보 수 (기본값: k * filter_expansion_factor (필터링 시만 적용), 0 이상)
+            bm25_k: BM25에서 가져올 후보 수 (기본값: k * filter_expansion_factor (필터링 시만 적용), 0 이상)
             alpha: [0, 1] 범위의 가중치. 1.0에 가까울수록 Dense(FAISS) 결과 비중이 커짐.
             metadata_filter: 메타데이터 필터 조건 (예: {"category": "Projects"})
+            filter_expansion_factor: 후보군 확장을 위한 계수 (기본값: 2).
+                주의: metadata_filter가 제공되고 faiss_k/bm25_k가 None인 경우에만 적용됩니다.
+                명시적인 faiss_k/bm25_k 값이 주어지면 이 계수는 무시됩니다.
 
         Returns:
             RRF 점수 기반으로 재정렬된 하이브리드 검색 결과 리스트 (content, metadata, score 포함)
@@ -123,6 +127,11 @@ class HybridSearcher:
         if k == 0:
             return []
 
+        if filter_expansion_factor < 1:
+            raise ValueError(
+                f"filter_expansion_factor must be at least 1, got {filter_expansion_factor}"
+            )
+
         # 개별 k 값에 대한 음수 검증
         if faiss_k is not None and faiss_k < 0:
             raise ValueError(f"faiss_k must be non-negative, got {faiss_k}")
@@ -130,8 +139,10 @@ class HybridSearcher:
             raise ValueError(f"bm25_k must be non-negative, got {bm25_k}")
 
         # None 여부 명시적 확인 (0을 허용하기 위함)
-        f_k = faiss_k if faiss_k is not None else (k * 2)
-        b_k = bm25_k if bm25_k is not None else (k * 2)
+        # 필터가 있을 때만 expansion_factor를 적용하여 불필요한 연산 방지
+        actual_expansion = filter_expansion_factor if metadata_filter is not None else 1
+        f_k = faiss_k if faiss_k is not None else (k * actual_expansion)
+        b_k = bm25_k if bm25_k is not None else (k * actual_expansion)
 
         # 1. 각 검색 엔진에서 결과 가져오기
         faiss_results = self.faiss_retriever.search(
