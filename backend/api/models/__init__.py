@@ -150,7 +150,9 @@ class HybridSearchRequest(BaseModel):
 class SearchResultItem(BaseModel):
     """개별 검색 결과 항목"""
 
-    id: str = Field(..., description="문서 고유 식별자 (파일명-청크인덱스 등)")
+    id: Optional[str] = Field(
+        None, description="문서 고유 식별자 (파일명-청크인덱스 등)"
+    )
     content: str = Field(..., description="문서 내용")
     metadata: Dict[str, Any] = Field(
         default_factory=dict, description="문서 메타데이터"
