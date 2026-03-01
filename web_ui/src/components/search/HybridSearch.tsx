@@ -28,6 +28,7 @@ const LATENCY_WARN_MS = 2000; // 2초 이상이면 "느림" 표시
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function LatencyBadge({ ms }: { ms: number }) {
+  const t = useTranslations('search.status');
   const isWarn = ms >= LATENCY_WARN_MS;
   return (
     <span
@@ -38,7 +39,7 @@ function LatencyBadge({ ms }: { ms: number }) {
       }`}
     >
       <Clock className="h-3 w-3" />
-      {ms.toLocaleString()}ms {isWarn && '⚠️'}
+      {t('latency_unit', { ms: ms.toLocaleString() })} {isWarn && '⚠️'}
     </span>
   );
 }
@@ -59,7 +60,8 @@ function ScoreBadge({ score }: { score: number }) {
 }
 
 function ResultCard({ item, index }: { item: SearchResultItem; index: number }) {
-  const t = useTranslations('search.result');
+  const tResult = useTranslations('search.result');
+  const tFilters = useTranslations('search.filters');
   const [expanded, setExpanded] = useState(false);
   const source = typeof item.metadata?.source === 'string' ? item.metadata.source : null;
   const category = typeof item.metadata?.category === 'string' ? item.metadata.category : null;
@@ -86,7 +88,9 @@ function ResultCard({ item, index }: { item: SearchResultItem; index: number }) 
         <div className="flex items-center gap-2 flex-shrink-0">
           {category && (
             <Badge variant="secondary" className="text-xs">
-              {category}
+              {tFilters.has(`categories.${category}`) 
+                ? tFilters(`categories.${category}`) 
+                : category}
             </Badge>
           )}
           <ScoreBadge score={item.score} />
@@ -105,11 +109,11 @@ function ResultCard({ item, index }: { item: SearchResultItem; index: number }) 
         >
           {expanded ? (
             <>
-              <ChevronUp className="h-3 w-3" /> {t('collapse')}
+              <ChevronUp className="h-3 w-3" /> {tResult('collapse')}
             </>
           ) : (
             <>
-              <ChevronDown className="h-3 w-3" /> {t('expand')}
+              <ChevronDown className="h-3 w-3" /> {tResult('expand')}
             </>
           )}
         </button>
@@ -205,6 +209,13 @@ export function HybridSearch() {
     abortRef.current?.abort();
     setLoading(false);
   };
+
+  // 컴포넌트 언마운트 시 진행 중인 검색 요청 취소 (Cleanup)
+  React.useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   // ── Render ──────────────────────────────────────────
 
@@ -315,7 +326,7 @@ export function HybridSearch() {
                 <option value="">{t('filters.category_all')}</option>
                 {PARA_CATEGORIES.map((cat) => (
                   <option key={cat} value={cat}>
-                    {cat}
+                    {t(`filters.categories.${cat}`)}
                   </option>
                 ))}
               </select>
@@ -387,7 +398,11 @@ export function HybridSearch() {
           ) : (
             <div className="space-y-3">
               {results.map((item, i) => (
-                <ResultCard key={i} item={item} index={i} />
+                <ResultCard
+                  key={item.metadata?.source ? `${item.metadata.source}-${i}` : i}
+                  item={item}
+                  index={i}
+                />
               ))}
             </div>
           )}

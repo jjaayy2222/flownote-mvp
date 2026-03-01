@@ -99,7 +99,13 @@
       "alpha_hint_sparse": "BM25",
       "alpha_hint_mid": "Balanced",
       "category_label": "PARA Category",
-      "category_all": "All (No filter)"
+      "category_all": "All (No filter)",
+      "categories": {
+        "Projects": "Projects",
+        "Areas": "Areas",
+        "Resources": "Resources",
+        "Archives": "Archives"
+      }
     },
     "status": {
       "searching": "Searching",
@@ -110,7 +116,8 @@
       "error_title": "Search Error",
       "error_server": "A server error occurred. Please try again later.",
       "error_network": "Cannot connect to API server. Please check if the backend is running.",
-      "error_unexpected": "An unexpected error occurred."
+      "error_unexpected": "An unexpected error occurred.",
+      "latency_unit": "{ms}ms"
     },
     "result": {
       "expand": "Expand",
