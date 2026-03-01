@@ -41,7 +41,8 @@ class SearchCacheService:
         key = self._generate_key(query, k, alpha, metadata_filter)
         try:
             cached_data = await redis_client.redis.get(key)
-            if cached_data:
+            if cached_data is not None:
+                # [Review 반영] 빈 결과([])도 유효한 캐시 히트로 취급
                 logger.info("Search cache hit: query=%s", query)
                 return json.loads(cached_data)
         except Exception as e:
@@ -63,11 +64,26 @@ class SearchCacheService:
 
         key = self._generate_key(query, k, alpha, metadata_filter)
         try:
-            # TTL과 함께 결과 저장
-            await redis_client.redis.set(key, json.dumps(results), ex=self.ttl)
+            # [Review 반영] JSON 직렬화 안전성 확보
+            # 리스트 내부의 점수(score) 등 혹시 모를 numpy 타입을 Python 기본 타입으로 변환
+            serialized = json.dumps(results, default=self._json_default)
+            await redis_client.redis.set(key, serialized, ex=self.ttl)
             logger.debug("Search results cached: query=%s", query)
         except Exception as e:
             logger.warning("Failed to cache search results: %s", e)
+
+    @staticmethod
+    def _json_default(obj: Any) -> Any:
+        """JSON 직렬화 불가능한 타입(예: numpy float)을 위한 헬퍼"""
+        import numpy as np
+
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
 # 싱글톤 인스턴스
