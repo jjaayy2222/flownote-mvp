@@ -312,10 +312,12 @@ class PathConfig:
     DATA_DIR = BASE_DIR / "data"
     UPLOAD_DIR = DATA_DIR / "uploads"
     DB_DIR = DATA_DIR / "db"
+    FAISS_INDEX_DIR = DATA_DIR / "faiss"
 
     # 필수 디렉토리 생성
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     DB_DIR.mkdir(parents=True, exist_ok=True)
+    FAISS_INDEX_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━

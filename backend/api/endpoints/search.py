@@ -138,10 +138,9 @@ async def _run_hybrid_search(
 ) -> HybridSearchResponse:
     """POST/GET 공통 검색 실행 로직."""
     try:
-        # [Performance] service.search는 동기 메서드(FAISS/BM25)이므로
-        # run_in_threadpool을 사용하여 메인 이벤트 루프 블로킹 방지
-        result = await run_in_threadpool(
-            service.search,
+        # [Performance] service.search는 이제 비동기 메서드이며,
+        # 내부적으로 CPU-bound 작업을 run_in_threadpool로 처리하고 Redis 캐싱을 수행합니다.
+        result = await service.search(
             query=query,
             k=k,
             alpha=alpha,

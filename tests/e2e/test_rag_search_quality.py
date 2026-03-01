@@ -84,7 +84,8 @@ GROUND_TRUTH: Dict[str, GroundTruthCase] = {
 
 @pytest.mark.skip(reason="Requires real OpenAI API Credit")
 @pytest.mark.e2e
-def test_rag_quality_and_tuning(rag_config):
+@pytest.mark.asyncio
+async def test_rag_quality_and_tuning(rag_config):
     """
     실제 임베딩을 사용하여 검색 품질(P/R) 측정 및 expansion_factor 튜닝 시뮬레이션
     """
@@ -123,7 +124,7 @@ def test_rag_quality_and_tuning(rag_config):
             target_category = gd.get("category")
 
             # Perform search (k=3 for testing)
-            search_result = service.search(
+            search_result = await service.search(
                 query=query,
                 k=3,
                 filter_expansion_factor=factor,
