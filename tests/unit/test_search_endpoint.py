@@ -270,7 +270,11 @@ class TestHybridSearchServiceLogic:
 
 
 class TestSearchCacheServiceKeyGeneration:
-    """SearchCacheService._generate_key 로직 단위 검증."""
+    """SearchCacheService.make_cache_key 로직 단위 검증.
+
+    [Review 반영] 테스트가 내부 구현(_generate_key)에 결합되지 않도록
+    공개 헬퍼(make_cache_key)를 사용합니다.
+    """
 
     def setup_method(self):
         from backend.services.search_cache_service import SearchCacheService
@@ -283,16 +287,16 @@ class TestSearchCacheServiceKeyGeneration:
         [Review 반영] filter_expansion_factor가 결과에 영향을 미치므로
         캐시 키에 포함하지 않으면 잘못된 캐시 히트가 발생한다.
         """
-        key1 = self.svc._generate_key("query", 5, 0.5, None, 2)
-        key2 = self.svc._generate_key("query", 5, 0.5, None, 10)
+        key1 = self.svc.make_cache_key("query", 5, 0.5, None, 2)
+        key2 = self.svc.make_cache_key("query", 5, 0.5, None, 10)
         assert (
             key1 != key2
         ), "expansion_factor가 다르면 다른 캐시 키가 생성되어야 합니다"
 
     def test_same_params_produces_same_key(self):
         """동일한 파라미터는 항상 같은 캐시 키를 생성해야 한다."""
-        key1 = self.svc._generate_key("query", 5, 0.5, {"category": "Projects"}, 2)
-        key2 = self.svc._generate_key("query", 5, 0.5, {"category": "Projects"}, 2)
+        key1 = self.svc.make_cache_key("query", 5, 0.5, {"category": "Projects"}, 2)
+        key2 = self.svc.make_cache_key("query", 5, 0.5, {"category": "Projects"}, 2)
         assert key1 == key2
 
     def test_alpha_float_normalization_same_key(self):
@@ -304,29 +308,33 @@ class TestSearchCacheServiceKeyGeneration:
         alpha_exact = 0.5
         # 극미한 부동소수점 오차 (round(..., 6) 이내)
         alpha_near = 0.5000001
-        key_exact = self.svc._generate_key("query", 5, alpha_exact, None, 2)
-        key_near = self.svc._generate_key("query", 5, alpha_near, None, 2)
+        key_exact = self.svc.make_cache_key("query", 5, alpha_exact, None, 2)
+        key_near = self.svc.make_cache_key("query", 5, alpha_near, None, 2)
         # round(..., 6) → 둘 다 0.5로 정규화되어 같은 키
         assert key_exact == key_near
 
     def test_alpha_float_significantly_different_produces_different_key(self):
         """의미 있는 차이의 alpha는 다른 캐시 키를 생성해야 한다."""
-        key1 = self.svc._generate_key("query", 5, 0.3, None, 2)
-        key2 = self.svc._generate_key("query", 5, 0.7, None, 2)
+        key1 = self.svc.make_cache_key("query", 5, 0.3, None, 2)
+        key2 = self.svc.make_cache_key("query", 5, 0.7, None, 2)
         assert key1 != key2
 
     def test_different_filter_produces_different_keys(self):
         """필터가 다르면 캐시 키가 달라야 한다."""
-        key1 = self.svc._generate_key("query", 5, 0.5, {"category": "Projects"}, 2)
-        key2 = self.svc._generate_key("query", 5, 0.5, {"category": "Areas"}, 2)
+        key1 = self.svc.make_cache_key("query", 5, 0.5, {"category": "Projects"}, 2)
+        key2 = self.svc.make_cache_key("query", 5, 0.5, {"category": "Areas"}, 2)
         assert key1 != key2
 
     def test_none_filter_and_empty_filter_behavior(self):
-        """None 필터와 {} 필터의 키 동일성 확인 (현재 구현: None → '{}' 치환)."""
-        key_none = self.svc._generate_key("query", 5, 0.5, None, 2)
-        key_empty = self.svc._generate_key("query", 5, 0.5, {}, 2)
-        # 현재 구현상 None은 '{}'로 직렬화되어 동일한 키 생성
-        assert key_none == key_empty
+        """None 필터와 {} 필터의 키 분리 확인.
+
+        [Review 반영] "필터 없음(None)"과 "빈 필터({})"는 의미가 다를 수 있으므로
+        미래 호환성을 위해 캐시 키에서 이를 명확히 분리하여 인코딩합니다.
+        """
+        key_none = self.svc.make_cache_key("query", 5, 0.5, None, 2)
+        key_empty = self.svc.make_cache_key("query", 5, 0.5, {}, 2)
+        # 명시적으로 다른 키가 생성되어야 함
+        assert key_none != key_empty
 
 
 class TestLoadIndicesReturnValue:

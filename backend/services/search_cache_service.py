@@ -24,7 +24,7 @@ class SearchCacheService:
     def __init__(self, ttl: int = 3600):
         self.ttl = ttl  # 기본 캐시 유지 시간: 1시간
 
-    def _generate_key(
+    def make_cache_key(
         self,
         query: str,
         k: int,
@@ -32,19 +32,32 @@ class SearchCacheService:
         metadata_filter: Optional[Dict],
         filter_expansion_factor: int,
     ) -> str:
-        """검색 파라미터를 기반으로 고유한 캐시 키 생성.
+        """검색 파라미터를 기반으로 고유한 캐시 키를 생성합니다 (공개 헬퍼).
 
-        [Review 반영]
-        - alpha: IEEE 754 부동소수점 오류로 인한 캐시 미스 방지를 위해 정규화.
+        캐시 키의 정확성 및 미래 호환성을 위해 다음 정책을 적용합니다:
+        - alpha: IEEE 754 부동소수점 표현 오류로 인한 캐시 미스 방지를 위해 정규화.
         - filter_expansion_factor: 검색 결과에 영향을 미치므로 반드시 키에 포함.
+        - metadata_filter: None(필터 미지정)과 {}(빈 필터 명시)를 명시적으로 구분.
+          현재는 두 경우 모두 필터 없음과 동일하게 동작하지만,
+          나중에 구분이 필요해질 경우 호환성 깨짐 없이 대응할 수 있습니다.
+
+        Note:
+            이 메서드는 공개 API입니다. 테스트나 외부 도구에서 키 생성 로직을
+            직접 확인해야 할 때 사용하세요.
         """
         # [Review 반영] alpha 정규화: 부동소수점 표현 불일치로 인한 캐시 미스 방지
         normalized_alpha = round(alpha, _ALPHA_ROUND_NDIGITS)
-        # 필터 딕셔너리를 정렬된 JSON 문자열로 변환하여 일관성 유지
-        filter_str = (
-            json.dumps(metadata_filter, sort_keys=True) if metadata_filter else "{}"
-        )
-        # [Review 반영] filter_expansion_factor 포함: 다른 expansion 값은 다른 결과를 생성
+
+        # [Review 반영] None과 {} 명시적 구분 인코딩
+        # - None  : 호출자가 필터를 명시하지 않음 → "null" 토큰
+        # - {}    : 호출자가 빈 필터 객체를 명시적으로 전달 → "{}" 토큰
+        # - {...} : 실제 필터 조건 → 정렬된 JSON 직렬화
+        if metadata_filter is None:
+            filter_str = "null"
+        else:
+            filter_str = json.dumps(metadata_filter, sort_keys=True)
+
+        # filter_expansion_factor 포함: 다른 expansion 값은 다른 결과를 생성
         params_str = (
             f"{query}:{k}:{normalized_alpha}:{filter_str}:{filter_expansion_factor}"
         )
@@ -63,7 +76,7 @@ class SearchCacheService:
         if not redis_client.is_connected():
             return None
 
-        key = self._generate_key(
+        key = self.make_cache_key(
             query, k, alpha, metadata_filter, filter_expansion_factor
         )
         try:
@@ -90,7 +103,7 @@ class SearchCacheService:
         if not redis_client.is_connected():
             return
 
-        key = self._generate_key(
+        key = self.make_cache_key(
             query, k, alpha, metadata_filter, filter_expansion_factor
         )
         try:
