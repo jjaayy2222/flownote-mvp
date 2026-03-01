@@ -3,6 +3,12 @@
 import logging
 import pytest
 from typing import List, Dict, Any, TypedDict, Optional, Union
+
+try:
+    from typing import NotRequired  # Python 3.11+
+except ImportError:
+    from typing_extensions import NotRequired
+
 from backend.faiss_search import FAISSRetriever
 from backend.bm25_search import BM25Retriever
 from backend.services.hybrid_search_service import HybridSearchService
@@ -10,6 +16,7 @@ from backend.api.models import PARACategory
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 # Sample Data: Obsidian-like Vault
 SAMPLE_DOCS = [
@@ -47,7 +54,7 @@ class GroundTruthCase(TypedDict):
     """테스트 케이스 구조 정의 (Review 반영)"""
 
     sources: List[str]
-    category: Optional[PARACategory]
+    category: NotRequired[PARACategory]
 
 
 # Ground Truth for Evaluation: (Query -> GroundTruthCase)
