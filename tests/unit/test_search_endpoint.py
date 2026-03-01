@@ -219,3 +219,40 @@ class TestHybridSearchServiceLogic:
             PARACategory.RESOURCES, {"other": "val"}
         )
         assert result == {"category": "Resources", "other": "val"}
+
+    def test_search_expansion_factor_applied_only_with_filter(self, mock_retrievers):
+        """메타데이터 필터가 있을 때만 expansion_factor가 적용되는지 확인."""
+        faiss, bm25 = mock_retrievers
+        # searcher.search를 모킹하지 않은 순수 서비스 인스턴스 생성
+        svc = HybridSearchService(faiss_retriever=faiss, bm25_retriever=bm25)
+
+        k = 5
+        factor = 3
+
+        # Case 1: No filter (service call without category/filter)
+        svc.search("query", k=k, filter_expansion_factor=factor)
+        # Service internal build_filter returns None if no category/extra_filter
+        faiss.search.assert_called_with("query", k=k, metadata_filter=None)
+        bm25.search.assert_called_with("query", k=k, metadata_filter=None)
+
+        # Case 2: With filter (service call with category)
+        svc.search(
+            "query", k=k, filter_expansion_factor=factor, category=PARACategory.PROJECTS
+        )
+        expected_filter = {"category": "Projects"}
+        faiss.search.assert_called_with(
+            "query", k=k * factor, metadata_filter=expected_filter
+        )
+        bm25.search.assert_called_with(
+            "query", k=k * factor, metadata_filter=expected_filter
+        )
+
+    def test_search_expansion_factor_validation_delegation(self, mock_retrievers):
+        """expansion_factor 검증이 searcher로 위임되어 작동하는지 확인."""
+        faiss, bm25 = mock_retrievers
+        svc = HybridSearchService(faiss_retriever=faiss, bm25_retriever=bm25)
+
+        with pytest.raises(
+            ValueError, match="filter_expansion_factor must be at least 1"
+        ):
+            svc.search("query", filter_expansion_factor=0)

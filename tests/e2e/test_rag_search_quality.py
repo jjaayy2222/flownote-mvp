@@ -140,7 +140,3 @@ def test_rag_quality_and_tuning():
     # 6. Basic Assertion: Recall should not decrease with higher expansion factor
     # (Note: In this small sample, it might stay same)
     assert results_summary[-1]["avg_recall"] >= results_summary[0]["avg_recall"]
-
-
-if __name__ == "__main__":
-    test_rag_quality_and_tuning()

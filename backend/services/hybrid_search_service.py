@@ -222,10 +222,6 @@ class HybridSearchService:
             raise ValueError(f"alpha must be between 0.0 and 1.0, got {alpha}")
         if k < 1:
             raise ValueError(f"k must be greater than or equal to 1, got {k}")
-        if filter_expansion_factor < 1:
-            raise ValueError(
-                f"filter_expansion_factor must be at least 1, got {filter_expansion_factor}"
-            )
 
         # 1. PARA 카테고리 검증 및 필터 병합
         effective_filter = self._build_metadata_filter(category, metadata_filter)
