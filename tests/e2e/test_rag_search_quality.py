@@ -2,7 +2,13 @@
 
 import logging
 import pytest
-from typing import List, Dict, Any
+from typing import List, Dict, Any, TypedDict, Optional, Union
+
+try:
+    from typing import NotRequired  # Python 3.11+
+except ImportError:
+    from typing_extensions import NotRequired
+
 from backend.faiss_search import FAISSRetriever
 from backend.bm25_search import BM25Retriever
 from backend.services.hybrid_search_service import HybridSearchService
@@ -10,6 +16,7 @@ from backend.api.models import PARACategory
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 # Sample Data: Obsidian-like Vault
 SAMPLE_DOCS = [
@@ -42,8 +49,16 @@ SAMPLE_DOCS = [
     },
 ]
 
-# Ground Truth for Evaluation: (Query -> Dict with Expected Sources and Optional Category)
-GROUND_TRUTH = {
+
+class GroundTruthCase(TypedDict):
+    """테스트 케이스 구조 정의 (Review 반영)"""
+
+    sources: List[str]
+    category: NotRequired[PARACategory]
+
+
+# Ground Truth for Evaluation: (Query -> GroundTruthCase)
+GROUND_TRUTH: Dict[str, GroundTruthCase] = {
     "FlowNote RAG": {
         "sources": [
             "Projects/FlowNote/Plan.md",
@@ -69,14 +84,14 @@ GROUND_TRUTH = {
 
 @pytest.mark.skip(reason="Requires real OpenAI API Credit")
 @pytest.mark.e2e
-def test_rag_quality_and_tuning(embedding_dim):
+def test_rag_quality_and_tuning(rag_config):
     """
     실제 임베딩을 사용하여 검색 품질(P/R) 측정 및 expansion_factor 튜닝 시뮬레이션
     """
     logger.info("Starting RAG Quality E2E Test with Real Embeddings...")
 
     # 1. Initialize retrievers with real embeddings
-    faiss_ret = FAISSRetriever(dimension=embedding_dim)
+    faiss_ret = FAISSRetriever(dimension=rag_config.embedding_dimension)
     bm25_ret = BM25Retriever()
     embedder = faiss_ret.embedding_generator
 

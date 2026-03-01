@@ -18,13 +18,21 @@ os.environ["GPT4O_MINI_API_KEY"] = "test-key"  # Mocking용
 # ────────────────────────────────────────────────────────
 # 공용 테스트 설정 (Centralized Test Config)
 # ────────────────────────────────────────────────────────
-DEFAULT_EMBEDDING_DIM = 1536
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class RAGTestConfig:
+    """RAG 테스트 관련 중앙 집중 설정 객체"""
+
+    embedding_dimension: int = 1536
+    # 향후 모델명, 기본 k값 등 확장 가능
 
 
 @pytest.fixture(scope="session")
-def embedding_dim():
-    """테스트용 기본 임베딩 차원"""
-    return DEFAULT_EMBEDDING_DIM
+def rag_config() -> RAGTestConfig:
+    """테스트 전반에서 사용할 RAG 설정 객체"""
+    return RAGTestConfig()
 
 
 from backend.main import app
