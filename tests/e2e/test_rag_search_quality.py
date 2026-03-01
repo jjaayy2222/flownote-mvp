@@ -42,29 +42,41 @@ SAMPLE_DOCS = [
     },
 ]
 
-# Ground Truth for Evaluation: (Query -> List of Expected Source Files)
+# Ground Truth for Evaluation: (Query -> Dict with Expected Sources and Optional Category)
 GROUND_TRUTH = {
-    "FlowNote RAG": [
-        "Projects/FlowNote/Plan.md",
-        "Projects/FlowNote/Meeting_20240301.md",
-        "Resources/AI/RAG_Basics.md",
-    ],
-    "Health and workout": ["Areas/Health/Workout.md"],
-    "Documentation for FastAPI": ["Resources/Tech/FastAPI.md"],
-    "filter_expansion_factor": ["Projects/FlowNote/Meeting_20240301.md"],
+    "FlowNote RAG": {
+        "sources": [
+            "Projects/FlowNote/Plan.md",
+            "Projects/FlowNote/Meeting_20240301.md",
+            "Resources/AI/RAG_Basics.md",
+        ],
+        "category": PARACategory.PROJECTS,
+    },
+    "Health and workout": {
+        "sources": ["Areas/Health/Workout.md"],
+        "category": PARACategory.AREAS,
+    },
+    "Documentation for FastAPI": {
+        "sources": ["Resources/Tech/FastAPI.md"],
+        "category": PARACategory.RESOURCES,
+    },
+    "filter_expansion_factor": {
+        "sources": ["Projects/FlowNote/Meeting_20240301.md"],
+        "category": PARACategory.PROJECTS,
+    },
 }
 
 
 @pytest.mark.skip(reason="Requires real OpenAI API Credit")
 @pytest.mark.e2e
-def test_rag_quality_and_tuning():
+def test_rag_quality_and_tuning(embedding_dim):
     """
     실제 임베딩을 사용하여 검색 품질(P/R) 측정 및 expansion_factor 튜닝 시뮬레이션
     """
     logger.info("Starting RAG Quality E2E Test with Real Embeddings...")
 
     # 1. Initialize retrievers with real embeddings
-    faiss_ret = FAISSRetriever(dimension=1536)  # text-embedding-3-small uses 1536
+    faiss_ret = FAISSRetriever(dimension=embedding_dim)
     bm25_ret = BM25Retriever()
     embedder = faiss_ret.embedding_generator
 
@@ -91,10 +103,16 @@ def test_rag_quality_and_tuning():
         total_precision = 0.0
         total_recall = 0.0
 
-        for query, expected_sources in GROUND_TRUTH.items():
+        for query, gd in GROUND_TRUTH.items():
+            expected_sources = gd["sources"]
+            target_category = gd.get("category")
+
             # Perform search (k=3 for testing)
             search_result = service.search(
-                query=query, k=3, filter_expansion_factor=factor
+                query=query,
+                k=3,
+                filter_expansion_factor=factor,
+                category=target_category,
             )
 
             retrieved_sources = [

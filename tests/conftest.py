@@ -15,6 +15,18 @@ sys.path.append(str(Path(__file__).parent.parent))
 os.environ["TESTING"] = "true"
 os.environ["GPT4O_MINI_API_KEY"] = "test-key"  # Mocking용
 
+# ────────────────────────────────────────────────────────
+# 공용 테스트 설정 (Centralized Test Config)
+# ────────────────────────────────────────────────────────
+DEFAULT_EMBEDDING_DIM = 1536
+
+
+@pytest.fixture(scope="session")
+def embedding_dim():
+    """테스트용 기본 임베딩 차원"""
+    return DEFAULT_EMBEDDING_DIM
+
+
 from backend.main import app
 from backend.services.onboarding_service import OnboardingService
 from backend.services.classification_service import ClassificationService
