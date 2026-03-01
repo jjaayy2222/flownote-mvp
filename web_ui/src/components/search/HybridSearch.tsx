@@ -24,6 +24,20 @@ const DEFAULT_ALPHA = 0.5;
 const LATENCY_WARN_MS = 2000; // 2초 이상이면 "느림" 표시
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Helpers
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/**
+ * PARA 카테고리 명칭의 번역을 시도하고, 없으면 원본 키를 반환하는 공용 헬퍼
+ */
+function useCategoryTranslator() {
+  const t = useTranslations('search.filters');
+  return useCallback((cat: string) => {
+    return t.has(`categories.${cat}`) ? t(`categories.${cat}`) : cat;
+  }, [t]);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Sub-components
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -61,8 +75,9 @@ function ScoreBadge({ score }: { score: number }) {
 
 function ResultCard({ item, index }: { item: SearchResultItem; index: number }) {
   const tResult = useTranslations('search.result');
-  const tFilters = useTranslations('search.filters');
+  const getCategoryLabel = useCategoryTranslator();
   const [expanded, setExpanded] = useState(false);
+  
   const source = typeof item.metadata?.source === 'string' ? item.metadata.source : null;
   const category = typeof item.metadata?.category === 'string' ? item.metadata.category : null;
   const isLong = item.content.length > 300;
@@ -88,9 +103,7 @@ function ResultCard({ item, index }: { item: SearchResultItem; index: number }) 
         <div className="flex items-center gap-2 flex-shrink-0">
           {category && (
             <Badge variant="secondary" className="text-xs">
-              {tFilters.has(`categories.${category}`) 
-                ? tFilters(`categories.${category}`) 
-                : category}
+              {getCategoryLabel(category)}
             </Badge>
           )}
           <ScoreBadge score={item.score} />
@@ -128,6 +141,7 @@ function ResultCard({ item, index }: { item: SearchResultItem; index: number }) 
 
 export function HybridSearch() {
   const t = useTranslations('search');
+  const getCategoryLabel = useCategoryTranslator();
   
   // Form state
   const [query, setQuery] = useState('');
@@ -326,7 +340,7 @@ export function HybridSearch() {
                 <option value="">{t('filters.category_all')}</option>
                 {PARA_CATEGORIES.map((cat) => (
                   <option key={cat} value={cat}>
-                    {t(`filters.categories.${cat}`)}
+                    {getCategoryLabel(cat)}
                   </option>
                 ))}
               </select>
@@ -399,7 +413,7 @@ export function HybridSearch() {
             <div className="space-y-3">
               {results.map((item, i) => (
                 <ResultCard
-                  key={item.metadata?.source ? `${item.metadata.source}-${i}` : i}
+                  key={item.id}
                   item={item}
                   index={i}
                 />
