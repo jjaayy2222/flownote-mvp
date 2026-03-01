@@ -1,9 +1,9 @@
 // web_ui/src/config/navigation.ts
 
-import { LayoutDashboard, Network, BarChart3, Settings, Github } from "lucide-react";
+import { LayoutDashboard, Network, BarChart3, Search, Settings, Github } from "lucide-react";
 
 // Translation keys defined in en.json/ko.json under "navigation" namespace
-export type TranslationKey = "dashboard" | "graph" | "stats" | "preferences" | "github";
+export type TranslationKey = "dashboard" | "graph" | "stats" | "search" | "preferences" | "github";
 
 export interface NavigationItem {
   href: string;
@@ -14,6 +14,7 @@ export interface NavigationItem {
 
 export const mainNavItems: NavigationItem[] = [
   { href: "/", label: "dashboard", icon: LayoutDashboard },
+  { href: "/search", label: "search", icon: Search },
   { href: "/graph", label: "graph", icon: Network },
   { href: "/stats", label: "stats", icon: BarChart3 },
 ];

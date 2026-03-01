@@ -19,6 +19,7 @@
     "dashboard": "Dashboard",
     "graph": "Graph View",
     "stats": "Statistics",
+    "search": "Hybrid Search",
     "preferences": "Preferences",
     "github": "GitHub"
   },
@@ -84,5 +85,9 @@
   "metadata": {
     "title": "FlowNote - AI Knowledge System",
     "description": "AI-powered Knowledge Management System based on PARA method."
+  },
+  "search": {
+    "title": "Hybrid RAG Search",
+    "description": "Find relevant notes from your Obsidian Vault using FAISS + BM25 hybrid vector search."
   }
 }

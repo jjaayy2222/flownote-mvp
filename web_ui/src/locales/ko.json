@@ -19,6 +19,7 @@
     "dashboard": "대시보드",
     "graph": "그래프 뷰",
     "stats": "통계",
+    "search": "하이브리드 검색",
     "preferences": "설정",
     "github": "GitHub"
   },
@@ -84,5 +85,9 @@
   "metadata": {
     "title": "FlowNote - AI 지식 관리 시스템",
     "description": "PARA 방법론 기반의 AI 지식 관리 시스템. 당신의 제2의 두뇌를 자동화하세요."
+  },
+  "search": {
+    "title": "하이브리드 RAG 검색",
+    "description": "FAISS + BM25 하이브리드 벡터 검색으로 Obsidian Vault에서 관련 노트를 찾아보세요."
   }
 }
