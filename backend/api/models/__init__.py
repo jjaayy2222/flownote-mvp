@@ -148,10 +148,15 @@ class HybridSearchRequest(BaseModel):
 
 
 class SearchResultItem(BaseModel):
-    """개별 검색 결과 항목"""
+    """개별 검색 결과 항목.
+
+    주의: `id` 필드는 모델 생성 시 하위 호환성을 위해 `Optional`로 정의되어 있으나,
+    API 엔드포인트 응답 시에는 항상 구체적인 식별자(String)가 포함됨을 보장합니다.
+    """
 
     id: Optional[str] = Field(
-        None, description="문서 고유 식별자 (파일명-청크인덱스 등)"
+        None,
+        description="문서 고유 식별자. 내부 생성 시에는 생략 가능하나 외부 응답 시에는 항상 값이 포함됨.",
     )
     content: str = Field(..., description="문서 내용")
     metadata: Dict[str, Any] = Field(
