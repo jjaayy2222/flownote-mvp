@@ -24,10 +24,25 @@ const DEFAULT_ALPHA = 0.5;
 const LATENCY_WARN_MS = 2000; // 2초 이상이면 "느림" 표시
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Helpers
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/**
+ * PARA 카테고리 명칭의 번역을 시도하고, 없으면 원본 키를 반환하는 공용 헬퍼
+ */
+function useCategoryTranslator() {
+  const t = useTranslations('search.filters');
+  return useCallback((cat: string) => {
+    return t.has(`categories.${cat}`) ? t(`categories.${cat}`) : cat;
+  }, [t]);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Sub-components
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function LatencyBadge({ ms }: { ms: number }) {
+  const t = useTranslations('search.status');
   const isWarn = ms >= LATENCY_WARN_MS;
   return (
     <span
@@ -38,7 +53,7 @@ function LatencyBadge({ ms }: { ms: number }) {
       }`}
     >
       <Clock className="h-3 w-3" />
-      {ms.toLocaleString()}ms {isWarn && '⚠️'}
+      {t('latency_unit', { ms: ms.toLocaleString() })} {isWarn && '⚠️'}
     </span>
   );
 }
@@ -59,8 +74,10 @@ function ScoreBadge({ score }: { score: number }) {
 }
 
 function ResultCard({ item, index }: { item: SearchResultItem; index: number }) {
-  const t = useTranslations('search.result');
+  const tResult = useTranslations('search.result');
+  const getCategoryLabel = useCategoryTranslator();
   const [expanded, setExpanded] = useState(false);
+  
   const source = typeof item.metadata?.source === 'string' ? item.metadata.source : null;
   const category = typeof item.metadata?.category === 'string' ? item.metadata.category : null;
   const isLong = item.content.length > 300;
@@ -86,7 +103,7 @@ function ResultCard({ item, index }: { item: SearchResultItem; index: number }) 
         <div className="flex items-center gap-2 flex-shrink-0">
           {category && (
             <Badge variant="secondary" className="text-xs">
-              {category}
+              {getCategoryLabel(category)}
             </Badge>
           )}
           <ScoreBadge score={item.score} />
@@ -105,11 +122,11 @@ function ResultCard({ item, index }: { item: SearchResultItem; index: number }) 
         >
           {expanded ? (
             <>
-              <ChevronUp className="h-3 w-3" /> {t('collapse')}
+              <ChevronUp className="h-3 w-3" /> {tResult('collapse')}
             </>
           ) : (
             <>
-              <ChevronDown className="h-3 w-3" /> {t('expand')}
+              <ChevronDown className="h-3 w-3" /> {tResult('expand')}
             </>
           )}
         </button>
@@ -124,6 +141,7 @@ function ResultCard({ item, index }: { item: SearchResultItem; index: number }) 
 
 export function HybridSearch() {
   const t = useTranslations('search');
+  const getCategoryLabel = useCategoryTranslator();
   
   // Form state
   const [query, setQuery] = useState('');
@@ -205,6 +223,13 @@ export function HybridSearch() {
     abortRef.current?.abort();
     setLoading(false);
   };
+
+  // 컴포넌트 언마운트 시 진행 중인 검색 요청 취소 (Cleanup)
+  React.useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   // ── Render ──────────────────────────────────────────
 
@@ -315,7 +340,7 @@ export function HybridSearch() {
                 <option value="">{t('filters.category_all')}</option>
                 {PARA_CATEGORIES.map((cat) => (
                   <option key={cat} value={cat}>
-                    {cat}
+                    {getCategoryLabel(cat)}
                   </option>
                 ))}
               </select>
@@ -387,7 +412,11 @@ export function HybridSearch() {
           ) : (
             <div className="space-y-3">
               {results.map((item, i) => (
-                <ResultCard key={i} item={item} index={i} />
+                <ResultCard
+                  key={item.id}
+                  item={item}
+                  index={i}
+                />
               ))}
             </div>
           )}

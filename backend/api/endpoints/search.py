@@ -168,11 +168,12 @@ async def _run_hybrid_search(
     # 결과 직렬화 (SearchResultItem)
     items = [
         SearchResultItem(
+            id=doc.get("id", f"unknown-{i}"),
             content=doc.get("content", ""),
             metadata=doc.get("metadata", {}),
             score=doc.get("score", 0.0),
         )
-        for doc in raw_results
+        for i, doc in enumerate(raw_results)
     ]
 
     logger.info(
