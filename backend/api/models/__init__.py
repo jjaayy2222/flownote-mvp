@@ -150,14 +150,11 @@ class HybridSearchRequest(BaseModel):
 class SearchResultItem(BaseModel):
     """개별 검색 결과 항목.
 
-    필드 속성:
-    - id: 문서 고유 식별자. 생성 시 생략하면 기본값('pending-id')이 부여되나,
-      API 응답 시에는 항상 구체적인 ID가 포함됩니다.
+    API 응답 규격으로서, 프론트엔드 React key로 활용되는 `id`가 필수이며
+    백엔드 하이브리드 검색 레이어에서 보장하는 고유 식별자가 포함됩니다.
     """
 
-    id: str = Field(
-        default="pending-id", description="문서 고유 식별자 (파일명-청크인덱스 등)"
-    )
+    id: str = Field(..., description="문서 고유 식별자 (파일명-청크인덱스 등)")
     content: str = Field(..., description="문서 내용")
     metadata: Dict[str, Any] = Field(
         default_factory=dict, description="문서 메타데이터"
