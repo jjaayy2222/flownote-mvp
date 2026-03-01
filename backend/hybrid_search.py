@@ -186,6 +186,7 @@ class HybridSearcher:
         final_results = []
         for doc_key in sorted_keys[:k]:
             doc_info = merged_docs[doc_key].copy()
+            doc_info["id"] = doc_key  # 고유 식별자 포함
             doc_info["score"] = rrf_scores[doc_key]
             final_results.append(doc_info)
 
