@@ -221,8 +221,11 @@ class HybridSearchService:
         하이브리드 검색 수행 (캐싱 레이어 포함).
         - Redis 캐시를 먼저 확인하고, 미스 시 실제 검색 수행.
         - 실제 검색은 CPU-bound 이므로 threadpool에서 실행.
+
+        [Fail Fast 정책] 파라미터 검증은 이 public 진입점에서만 수행합니다.
+        _execute_search는 이 메서드를 통해서만 호출되므로 중복 검증이 불필요합니다.
         """
-        # [Fail Fast] 캐시 접근 전 파라미터 유효 범위 검증
+        # [Fail Fast] 캐시 접근 전 파라미터 유효 범위 검증 (단일 검증 지점)
         if not (0.0 <= alpha <= 1.0):
             raise ValueError(f"alpha must be between 0.0 and 1.0, got {alpha}")
         if k < 1:
@@ -233,8 +236,9 @@ class HybridSearchService:
 
         # 1. Redis 캐시 확인 (Async)
         # [Review 반영] None 체크를 명시적으로 하여 빈 결과 세트([])가 캐시된 경우를 미스와 구분
+        # [Review 반영] filter_expansion_factor를 캐시 키에 포함 (다른 expansion 값 → 다른 결과)
         cached_raw = await search_cache_service.get_results(
-            query, k, alpha, effective_filter
+            query, k, alpha, effective_filter, filter_expansion_factor
         )
         if cached_raw is not None:
             return HybridSearchResult(
@@ -252,8 +256,9 @@ class HybridSearchService:
         )
 
         # 3. 결과 캐시에 저장 (Async, Background)
+        # [Review 반영] filter_expansion_factor를 캐시 키 생성에 포함
         await search_cache_service.set_results(
-            query, k, alpha, effective_filter, result.results
+            query, k, alpha, effective_filter, filter_expansion_factor, result.results
         )
 
         return result
@@ -266,18 +271,17 @@ class HybridSearchService:
         metadata_filter: Optional[Dict[str, Any]],
         filter_expansion_factor: int = 2,
     ) -> HybridSearchResult:
-        """실제 검색 로직 (CPU-bound)"""
-        if not (0.0 <= alpha <= 1.0):
-            raise ValueError(f"alpha must be between 0.0 and 1.0, got {alpha}")
-        if k < 1:
-            raise ValueError(f"k must be greater than or equal to 1, got {k}")
+        """실제 검색 로직 (CPU-bound).
 
+        주의: 파라미터 검증은 public 진입점인 search()에서만 수행됩니다.
+        이 메서드는 search()를 통해서만 호출되므로, 중복 검증을 포함하지 않습니다.
+        """
         logger.info(
-            "Executing Hybrid search: query_len=%d, k=%d, alpha=%.2f, filter=%s, expansion=%d",
+            "Executing Hybrid search: query_len=%d, k=%d, alpha=%.2f, filter_keys=%s, expansion=%d",
             len(query),
             k,
             alpha,
-            metadata_filter,
+            list(metadata_filter.keys()) if metadata_filter else None,
             filter_expansion_factor,
         )
 
@@ -302,8 +306,19 @@ class HybridSearchService:
         self.bm25_retriever.save(bm25_dir)
         logger.info("✅ All search indices saved to disk.")
 
-    def load_indices(self):
-        """디스크에서 FAISS와 BM25 인덱스 로드"""
+    def load_indices(self) -> bool:
+        """디스크에서 FAISS와 BM25 인덱스 로드.
+
+        Returns:
+            True: 인덱스를 성공적으로 로드함.
+            False: 인덱스 파일이 없거나 로드 불가능한 경우 (빈 인덱스로 시작).
+
+        [Review 반영] 예외 처리 구체화:
+        - FileNotFoundError: 초기 실행 등 정상 케이스 → INFO 로그 후 빈 인덱스로 시작.
+        - (OS/IO) OSError, IOError: 파일 권한·디스크 오류 → WARNING 로그 후 빈 인덱스로 시작.
+        - (역직렬화) Exception: pickle UnpicklingError 등 손상 파일 → ERROR 로그 후 빈 인덱스로 시작.
+          서비스 시작 자체를 막지 않되, 로그로 명확히 인지할 수 있도록 합니다.
+        """
         from backend.config import PathConfig
 
         faiss_dir = PathConfig.FAISS_INDEX_DIR / "faiss"
@@ -313,10 +328,25 @@ class HybridSearchService:
             self.faiss_retriever.load(faiss_dir)
             self.bm25_retriever.load(bm25_dir)
             logger.info("✅ All search indices loaded from disk.")
+            return True
         except FileNotFoundError:
+            # 정상 케이스: 최초 실행이거나 아직 저장된 인덱스가 없음
             logger.info("No search indices found on disk. Starting with empty indices.")
+        except OSError as e:
+            # 파일 권한 문제, 디스크 I/O 오류 등
+            logger.warning(
+                "I/O error while loading search indices (starting with empty indices): %s",
+                e,
+            )
         except Exception as e:
-            logger.error(f"Error loading search indices: {e}", exc_info=True)
+            # Pickle UnpicklingError, 버전 불일치 등 역직렬화 오류
+            logger.error(
+                "Failed to deserialize search indices; starting with empty indices. "
+                "This may indicate corrupted or incompatible index files. error_type=%s",
+                type(e).__name__,
+                exc_info=True,
+            )
+        return False
 
     def is_ready(self) -> bool:
         """인덱스에 문서가 있으면 True."""
