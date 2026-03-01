@@ -88,6 +88,33 @@
   },
   "search": {
     "title": "하이브리드 RAG 검색",
-    "description": "FAISS + BM25 하이브리드 벡터 검색으로 Obsidian Vault에서 관련 노트를 찾아보세요."
+    "description": "FAISS + BM25 하이브리드 벡터 검색으로 Obsidian Vault에서 관련 노트를 찾아보세요.",
+    "placeholder": "검색어를 입력하세요...",
+    "submit": "검색",
+    "cancel": "취소",
+    "filters": {
+      "k_label": "결과 수 (k)",
+      "alpha_label": "Dense 가중치 (α)",
+      "alpha_hint_dense": "FAISS",
+      "alpha_hint_sparse": "BM25",
+      "alpha_hint_mid": "균형",
+      "category_label": "PARA 카테고리",
+      "category_all": "전체 (필터 없음)"
+    },
+    "status": {
+      "searching": "검색 중",
+      "results_count": "\"{query}\" 검색 결과 {count}건",
+      "no_results": "검색 결과가 없습니다",
+      "no_results_hint": "다른 검색어를 사용하거나 카테고리 필터를 변경해 보세요.",
+      "clear_filter": "카테고리 필터 해제",
+      "error_title": "검색 오류",
+      "error_server": "서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+      "error_network": "API 서버에 연결할 수 없습니다. 백엔드가 실행 중인지 확인해 주세요.",
+      "error_unexpected": "예상치 못한 오류가 발생했습니다."
+    },
+    "result": {
+      "expand": "더 보기",
+      "collapse": "접기"
+    }
   }
 }

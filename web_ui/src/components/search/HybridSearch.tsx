@@ -1,8 +1,8 @@
 // web_ui/src/components/search/HybridSearch.tsx
-
 'use client';
 
 import React, { useState, useRef, useCallback } from 'react';
+import { useTranslations } from 'next-intl';
 import {
   hybridSearch,
   SearchApiError,
@@ -59,6 +59,7 @@ function ScoreBadge({ score }: { score: number }) {
 }
 
 function ResultCard({ item, index }: { item: SearchResultItem; index: number }) {
+  const t = useTranslations('search.result');
   const [expanded, setExpanded] = useState(false);
   const source = typeof item.metadata?.source === 'string' ? item.metadata.source : null;
   const category = typeof item.metadata?.category === 'string' ? item.metadata.category : null;
@@ -104,11 +105,11 @@ function ResultCard({ item, index }: { item: SearchResultItem; index: number }) 
         >
           {expanded ? (
             <>
-              <ChevronUp className="h-3 w-3" /> 접기
+              <ChevronUp className="h-3 w-3" /> {t('collapse')}
             </>
           ) : (
             <>
-              <ChevronDown className="h-3 w-3" /> 더 보기
+              <ChevronDown className="h-3 w-3" /> {t('expand')}
             </>
           )}
         </button>
@@ -122,6 +123,8 @@ function ResultCard({ item, index }: { item: SearchResultItem; index: number }) 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export function HybridSearch() {
+  const t = useTranslations('search');
+  
   // Form state
   const [query, setQuery] = useState('');
   const [k, setK] = useState(DEFAULT_K);
@@ -175,22 +178,22 @@ export function HybridSearch() {
       }
       if (err instanceof SearchApiError) {
         if (err.statusCode === 422) {
-          setError(`파라미터 오류: ${err.message}`);
+          setError(err.message); // 상세 메시지(파라미터 오류 등)
         } else if (err.statusCode >= 500) {
-          setError('서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+          setError(t('status.error_server'));
         } else {
           setError(err.message);
         }
       } else if (err instanceof TypeError) {
         // fetch 실패 (네트워크 오류, 서버 미실행 등)
-        setError('API 서버에 연결할 수 없습니다. 백엔드가 실행 중인지 확인해 주세요.');
+        setError(t('status.error_network'));
       } else {
-        setError('예상치 못한 오류가 발생했습니다.');
+        setError(t('status.error_unexpected'));
       }
     } finally {
       setLoading(false);
     }
-  }, [query, k, alpha, category]);
+  }, [query, k, alpha, category, t]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !loading) {
@@ -212,10 +215,10 @@ export function HybridSearch() {
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center gap-2">
             <FileSearch className="h-5 w-5 text-blue-600" />
-            하이브리드 RAG 검색
+            {t('title')}
           </CardTitle>
           <CardDescription>
-            FAISS(Dense) + BM25(Sparse) 하이브리드 검색 — RRF 알고리즘으로 결과를 통합합니다.
+            {t('description')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -227,9 +230,9 @@ export function HybridSearch() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="검색어를 입력하세요..."
+              placeholder={t('placeholder')}
               disabled={loading}
-              aria-label="검색 질의"
+              aria-label={t('title')}
               className="flex-1 px-3 py-2 text-sm border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-50 disabled:bg-slate-50"
             />
             {loading ? (
@@ -240,7 +243,7 @@ export function HybridSearch() {
                 className="gap-2 min-w-[80px]"
               >
                 <Loader2 className="h-4 w-4 animate-spin" />
-                취소
+                {t('cancel')}
               </Button>
             ) : (
               <Button
@@ -250,7 +253,7 @@ export function HybridSearch() {
                 className="gap-2 min-w-[80px] bg-blue-600 hover:bg-blue-700"
               >
                 <Search className="h-4 w-4" />
-                검색
+                {t('submit')}
               </Button>
             )}
           </div>
@@ -260,7 +263,7 @@ export function HybridSearch() {
             {/* 결과 수 */}
             <div className="space-y-1">
               <label htmlFor="search-k-input" className="text-xs text-muted-foreground font-medium">
-                결과 수 (k): <span className="text-blue-600 font-bold">{k}</span>
+                {t('filters.k_label')}: <span className="text-blue-600 font-bold">{k}</span>
               </label>
               <input
                 id="search-k-input"
@@ -277,7 +280,7 @@ export function HybridSearch() {
             {/* Alpha (Dense 가중치) */}
             <div className="space-y-1">
               <label htmlFor="search-alpha-input" className="text-xs text-muted-foreground font-medium">
-                Dense 가중치 (α): <span className="text-blue-600 font-bold">{alpha.toFixed(1)}</span>
+                {t('filters.alpha_label')}: <span className="text-blue-600 font-bold">{alpha.toFixed(1)}</span>
               </label>
               <input
                 id="search-alpha-input"
@@ -290,17 +293,17 @@ export function HybridSearch() {
                 disabled={loading}
                 className="w-full accent-blue-600"
               />
-              <div className="flex justify-between text-[10px] text-muted-foreground">
-                <span>BM25</span>
-                <span>균형</span>
-                <span>FAISS</span>
+              <div className="flex justify-between text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">
+                <span>{t('filters.alpha_hint_sparse')}</span>
+                <span className="font-normal lowercase">{t('filters.alpha_hint_mid')}</span>
+                <span>{t('filters.alpha_hint_dense')}</span>
               </div>
             </div>
 
             {/* PARA 카테고리 필터 */}
             <div className="space-y-1">
               <label htmlFor="search-category-select" className="text-xs text-muted-foreground font-medium">
-                PARA 카테고리
+                {t('filters.category_label')}
               </label>
               <select
                 id="search-category-select"
@@ -309,7 +312,7 @@ export function HybridSearch() {
                 disabled={loading}
                 className="w-full px-3 py-2 text-sm border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-50"
               >
-                <option value="">전체 (필터 없음)</option>
+                <option value="">{t('filters.category_all')}</option>
                 {PARA_CATEGORIES.map((cat) => (
                   <option key={cat} value={cat}>
                     {cat}
@@ -323,7 +326,7 @@ export function HybridSearch() {
 
       {/* Loading Skeleton */}
       {loading && (
-        <div className="space-y-3" aria-live="polite" aria-label="검색 중">
+        <div className="space-y-3" aria-live="polite" aria-label={t('status.searching')}>
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="border rounded-xl p-4 bg-white animate-pulse">
               <div className="h-3 bg-slate-200 rounded w-1/3 mb-3" />
@@ -345,7 +348,7 @@ export function HybridSearch() {
         >
           <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <p className="font-semibold text-sm">검색 오류</p>
+            <p className="font-semibold text-sm">{t('status.error_title')}</p>
             <p className="text-sm">{error}</p>
           </div>
         </div>
@@ -357,8 +360,7 @@ export function HybridSearch() {
           {/* Results Header */}
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              <span className="font-semibold text-slate-800">&quot;{lastQuery}&quot;</span> 검색 결과{' '}
-              <span className="font-bold text-blue-600">{results.length}건</span>
+              {t('status.results_count', { query: lastQuery, count: results.length })}
             </p>
             {latencyMs !== null && <LatencyBadge ms={latencyMs} />}
           </div>
@@ -367,9 +369,9 @@ export function HybridSearch() {
           {results.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground border rounded-xl bg-white">
               <Search className="h-12 w-12 mb-3 opacity-20" />
-              <p className="font-medium">검색 결과가 없습니다</p>
+              <p className="font-medium">{t('status.no_results')}</p>
               <p className="text-sm mt-1">
-                다른 검색어를 사용하거나 카테고리 필터를 변경해 보세요.
+                {t('status.no_results_hint')}
               </p>
               {category && (
                 <Button
@@ -378,7 +380,7 @@ export function HybridSearch() {
                   className="mt-3 text-blue-600"
                   onClick={() => setCategory('')}
                 >
-                  카테고리 필터 해제
+                  {t('status.clear_filter')}
                 </Button>
               )}
             </div>
