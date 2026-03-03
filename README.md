@@ -166,6 +166,13 @@
 - **Backend API i18n**: Accept-Language 헤더 기반 응답 현지화
 - **날짜/숫자 포맷**: 로케일별 자동 포맷팅
 
+### 2.12 🔍 **하이브리드 RAG 검색 (Hybrid RAG Search)** (v7.0 Phase 2)
+- **Hybrid Search Engine**: FAISS(Dense)와 BM25(Sparse)를 결합한 고성능 검색
+- **순위 통합 (RRF)**: Reciprocal Rank Fusion 알고리즘 기반 최적 결과 도출
+- **초기 인덱싱 자동화**: `scripts/bootstrap_index.py`를 통한 Obsidian Vault 일괄 인덱싱
+- **E2E 품질 검증**: 실제 임베딩 기반 검색 품질 측정 (Recall ~0.92 확보)
+- **캐싱 및 최적화**: Redis 검색 결과 캐싱 및 인덱스 영속화 구현
+
 ---
 
 ## 3. 💻 기술 스택
@@ -207,7 +214,9 @@
 ### 3.4 검색 & 데이터
 | 기술 | 버전 | 용도 |
 |------|------|------|
-| **FAISS** | 1.12.0 | 벡터 검색 엔진 |
+| **FAISS** | 1.12.0 | 벡터 검색 엔진 (Dense) |
+| **BM25** | - | 키워드 검색 엔진 (Sparse) |
+| **RRF** | - | 하이브리드 순위 통합 알고리즘 |
 | **pdfplumber** | 0.11.0 | PDF 파싱 |
 | **python-dotenv** | 1.1.1 | 환경변수 관리 |
 
@@ -453,12 +462,14 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 | [#1-10] | ~11/11 | Phase 1-2 (MVP) | ✅ |
 | [#10.4] | 12/16 | Celery 자동화 & 스케줄링 | ✅ |
 | [#10.11] | 02/04 | v6.0 Phase 3 (i18n) | ✅ |
+| [#11.2.12] | 03/02 | v7.0 Phase 2 (Hybrid RAG) | ✅ |
 
 ### 주요 커밋 히스토리
 - `v5.0` - MCP 서버, Next.js 대시보드, Graph View
 - `v6.0 Phase 1` - WebSocket 실시간 업데이트
 - `v6.0 Phase 2` - Conflict Diff Viewer
 - `v6.0 Phase 3` - 다국어 지원 (i18n) ✅
+- `v7.0 Phase 2` - 하이브리드 RAG 검색 엔진 통합 ✅
 
 ---
 
@@ -498,7 +509,19 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
   - [x] SEO 메타데이터 다국어화
   - [x] 날짜/숫자 로케일별 포맷팅
 
+### ✅ 완료된 기능 (v7.0)
+- [x] **Phase 1: AI 에이전트 아키텍처 (LangGraph)** ✨
+  - [x] 상태 기반 추론 루프 설계
+  - [x] Redis 기반 메모리 통합
+- [x] **Phase 2: 하이브리드 RAG 검색** ✨
+  - [x] FAISS + BM25 하이브리드 엔진
+  - [x] RRF 순위 통합 알고리즘
+  - [x] 초기 인덱싱 부트스트랩 스크립트
+  - [x] E2E 검색 품질 검증 완료
+  - [x] Redis 검색 결과 캐싱
+
 ### 🚧 진행 예정 (v7.0)
+- [ ] AI Assistant 스트리밍 채팅 (RAG)
 - [ ] 추가 언어 지원 (일본어, 중국어)
 - [ ] AI 기반 자동 번역
 - [ ] 고급 검색 필터
