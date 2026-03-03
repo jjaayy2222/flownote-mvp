@@ -166,6 +166,13 @@
 - **Backend API i18n**: Accept-Language header-based response localization
 - **Date/Number Formatting**: Locale-specific auto-formatting
 
+### 2.12 🔍 **Hybrid RAG Search** (v7.0 Phase 2)
+- **Hybrid Search Engine**: High-performance search combining FAISS (Dense) and BM25 (Sparse)
+- **Rank Fusion (RRF)**: Optimized results based on the Reciprocal Rank Fusion algorithm
+- **Auto Initial Indexing**: Bulk indexing of Obsidian Vaults via `scripts/bootstrap_index.py`
+- **E2E Quality Validation**: Real embedding-based search quality measurement (Recall ~0.92)
+- **Caching & Optimization**: Implementation of Redis-based search result caching and index persistence
+
 ---
 
 ## 3. 💻 Tech Stack
@@ -207,7 +214,9 @@
 ### 3.4 Search & Data
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| **FAISS** | 1.12.0 | Vector Search Engine |
+| **FAISS** | 1.12.0 | Vector Search Engine (Dense) |
+| **BM25** | - | Keyword Search Engine (Sparse) |
+| **RRF** | - | Hybrid Rank Fusion Algorithm |
 | **pdfplumber** | 0.11.0 | PDF Parsing |
 | **python-dotenv** | 1.1.1 | Environment Variable Management |
 
@@ -453,12 +462,14 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 | [#1-10] | ~11/11 | Phase 1-2 (MVP) | ✅ |
 | [#10.4] | 12/16 | Celery Automation & Scheduling | ✅ |
 | [#10.11] | 02/04 | v6.0 Phase 3 (i18n) | ✅ |
+| [#11.2.12] | 03/02 | v7.0 Phase 2 (Hybrid RAG) | ✅ |
 
 ### Major Commit History
 - `v5.0` - MCP Server, Next.js Dashboard, Graph View
 - `v6.0 Phase 1` - WebSocket Real-time Updates
 - `v6.0 Phase 2` - Conflict Diff Viewer
 - `v6.0 Phase 3` - Internationalization (i18n) ✅
+- `v7.0 Phase 2` - Hybrid RAG Search Engine Integration ✅
 
 ---
 
@@ -498,7 +509,19 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
   - [x] SEO metadata internationalization
   - [x] Locale-specific date/number formatting
 
+### ✅ Completed Features (v7.0)
+- [x] **Phase 1: AI Agent Architecture (LangGraph)** ✨
+  - [x] State-based reasoning loop design
+  - [x] Redis-based memory integration
+- [x] **Phase 2: Hybrid RAG Search** ✨
+  - [x] FAISS + BM25 Hybrid engine
+  - [x] RRF rank fusion algorithm
+  - [x] Initial indexing bootstrap script
+  - [x] E2E search quality validation complete
+  - [x] Redis search result caching
+
 ### 🚧 Planned (v7.0)
+- [ ] AI Assistant Streaming Chat (RAG)
 - [ ] Additional language support (Japanese, Chinese)
 - [ ] AI-based auto-translation
 - [ ] Advanced search filters
