@@ -92,6 +92,13 @@ class ChatService:
 
         return "You are a helpful and expert AI assistant."
 
+    @staticmethod
+    def _format_sse_event(event_type: str, **kwargs) -> str:
+        """SSE 규격에 맞게 이벤트를 포맷팅하는 헬퍼 함수"""
+        payload = {"type": event_type}
+        payload.update(kwargs)
+        return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
     async def stream_chat(
         self,
         query: str,
@@ -134,6 +141,7 @@ Context:
 
         # 4. Langchain Runnable Streaming 실행 (v2 Events API 사용으로 진짜 토큰 단위 스트리밍 달성)
         sources_emitted = False
+        is_cancelled = False
 
         try:
             async for event in retrieval_chain.astream_events(
@@ -155,40 +163,31 @@ Context:
                                     }
                                 )
                         # Source Documents 메타데이터를 클라이언트로 1회만 전송
-                        meta_event = json.dumps(
-                            {"type": "sources", "data": sources}, ensure_ascii=False
-                        )
-                        yield f"data: {meta_event}\n\n"
+                        yield self._format_sse_event("sources", data=sources)
                         sources_emitted = True
 
                 # 채팅 모델에서 스트리밍되는 실제 텍스트 토큰
                 elif kind == "on_chat_model_stream":
                     chunk = event["data"].get("chunk")
                     if chunk and getattr(chunk, "content", None):
-                        data_event = json.dumps(
-                            {"type": "token", "data": chunk.content}, ensure_ascii=False
-                        )
-                        yield f"data: {data_event}\n\n"
+                        yield self._format_sse_event("token", data=chunk.content)
 
         except asyncio.CancelledError:
-            # 클라이언트 연결 끊김/취소 시 조기 종료되도록 처리 (에러로 삼키지 않음)
+            # 클라이언트 연결 끊김/취소 시 조기 종료 시그널 마킹 후 예외를 다시 던짐
+            is_cancelled = True
             logger.info("Chat stream cancelled by user.")
             raise
         except Exception as e:
             # 서버 측 상세 에러 기록 (내부 로깅)
             logger.exception("Error during streaming RAG chat")
-            # 클라이언트 측에는 민감한 내부 에러(str(e))가 아닌 일반(Generic) 메시지 전송
-            error_event = json.dumps(
-                {
-                    "type": "error",
-                    "message": "서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
-                },
-                ensure_ascii=False,
+            # 클라이언트 측에는 일반(Generic) 메시지 전송
+            yield self._format_sse_event(
+                "error",
+                message="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
             )
-            yield f"data: {error_event}\n\n"
-            yield "data: [DONE]\n\n"
-        else:
-            # 루프 정상 종료 시 완료 신호 전송
+
+        # GeneratorExit/CancelledError 중에는 yield를 호출하면 안되므로 정상/내부오류 발생 시에만 DONE 방출
+        if not is_cancelled:
             yield "data: [DONE]\n\n"
 
 
