@@ -34,7 +34,6 @@ async def stream_chat(
         chat_service.stream_chat(
             query=request.query,
             user_id=request.user_id,
-            session_id=request.session_id,
             k=request.k,
             alpha=request.alpha,
         ),

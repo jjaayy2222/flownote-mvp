@@ -36,8 +36,10 @@ class HybridSearchLangChainRetriever(BaseRetriever):
     def _get_relevant_documents(
         self, query: str, *, run_manager=None
     ) -> List[Document]:
-        """동기 호출 (사용하지 않음, aget 사용 권장)"""
-        return []
+        """비동기 호출(aget) 전용으로, 동기 호출은 지원하지 않습니다."""
+        raise NotImplementedError(
+            "This retriever only supports asynchronous execution (_aget_relevant_documents)."
+        )
 
     async def _aget_relevant_documents(
         self, query: str, *, run_manager=None
@@ -92,7 +94,6 @@ class ChatService:
         self,
         query: str,
         user_id: str,
-        session_id: Optional[str] = None,
         k: int = 5,
         alpha: float = 0.5,
     ) -> AsyncGenerator[str, None]:
@@ -129,30 +130,40 @@ Context:
         document_chain = create_stuff_documents_chain(llm, prompt)
         retrieval_chain = create_retrieval_chain(retriever, document_chain)
 
-        # 4. Langchain Runnable Streaming 실행
-        async for chunk in retrieval_chain.astream({"input": query}):
-            # 처음 검색이 완료되어 context가 로드되었을 때 (첫 chunk에 함께 포함됨)
-            if "context" in chunk and isinstance(chunk["context"], list):
-                sources = []
-                for doc in chunk["context"]:
-                    sources.append(
-                        {
-                            "id": doc.metadata.get("id", ""),
-                            "score": doc.metadata.get("score", 0.0),
-                        }
-                    )
-                # Source Documents 메타데이터를 클라이언트로 전송
-                meta_event = json.dumps(
-                    {"type": "sources", "data": sources}, ensure_ascii=False
-                )
-                yield f"data: {meta_event}\n\n"
+        # 4. Langchain Runnable Streaming 실행 (v2 Events API 사용으로 진짜 토큰 단위 스트리밍 달성)
+        sources_emitted = False
 
-            # 생성된 토큰 스트리밍
-            if "answer" in chunk:
-                token = chunk["answer"]
-                if token:
+        async for event in retrieval_chain.astream_events(
+            {"input": query}, version="v2"
+        ):
+            kind = event["event"]
+
+            # 검색기 종료 시점 (컨텍스트 로드 완료)에 소스 전송
+            if kind == "on_retriever_end" and not sources_emitted:
+                docs = event["data"].get("output", [])
+                if docs and isinstance(docs, list):
+                    sources = []
+                    for doc in docs:
+                        if hasattr(doc, "metadata"):
+                            sources.append(
+                                {
+                                    "id": doc.metadata.get("id", ""),
+                                    "score": doc.metadata.get("score", 0.0),
+                                }
+                            )
+                    # Source Documents 메타데이터를 클라이언트로 1회만 전송
+                    meta_event = json.dumps(
+                        {"type": "sources", "data": sources}, ensure_ascii=False
+                    )
+                    yield f"data: {meta_event}\n\n"
+                    sources_emitted = True
+
+            # 채팅 모델에서 스트리밍되는 실제 텍스트 토큰
+            elif kind == "on_chat_model_stream":
+                chunk = event["data"].get("chunk")
+                if chunk and getattr(chunk, "content", None):
                     data_event = json.dumps(
-                        {"type": "token", "data": token}, ensure_ascii=False
+                        {"type": "token", "data": chunk.content}, ensure_ascii=False
                     )
                     yield f"data: {data_event}\n\n"
 
