@@ -38,4 +38,9 @@ async def stream_chat(
             alpha=request.alpha,
         ),
         media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )

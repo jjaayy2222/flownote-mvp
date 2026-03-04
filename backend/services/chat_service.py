@@ -49,7 +49,8 @@ class HybridSearchLangChainRetriever(BaseRetriever):
         docs = []
         for res in result.results:
             content = res.get("content", "")
-            metadata = res.get("metadata", {})
+            # 원본 검색 결과의 metadata 훼손을 방지하기 위해 얕은 복사 후 조작
+            metadata = dict(res.get("metadata", {}))
             metadata["id"] = res.get("id", "")
             metadata["score"] = res.get("score", 0.0)
             docs.append(Document(page_content=content, metadata=metadata))
@@ -133,42 +134,54 @@ Context:
         # 4. Langchain Runnable Streaming 실행 (v2 Events API 사용으로 진짜 토큰 단위 스트리밍 달성)
         sources_emitted = False
 
-        async for event in retrieval_chain.astream_events(
-            {"input": query}, version="v2"
-        ):
-            kind = event["event"]
+        try:
+            async for event in retrieval_chain.astream_events(
+                {"input": query}, version="v2"
+            ):
+                kind = event["event"]
 
-            # 검색기 종료 시점 (컨텍스트 로드 완료)에 소스 전송
-            if kind == "on_retriever_end" and not sources_emitted:
-                docs = event["data"].get("output", [])
-                if docs and isinstance(docs, list):
-                    sources = []
-                    for doc in docs:
-                        if hasattr(doc, "metadata"):
-                            sources.append(
-                                {
-                                    "id": doc.metadata.get("id", ""),
-                                    "score": doc.metadata.get("score", 0.0),
-                                }
-                            )
-                    # Source Documents 메타데이터를 클라이언트로 1회만 전송
-                    meta_event = json.dumps(
-                        {"type": "sources", "data": sources}, ensure_ascii=False
-                    )
-                    yield f"data: {meta_event}\n\n"
-                    sources_emitted = True
+                # 검색기 종료 시점 (컨텍스트 로드 완료)에 소스 전송
+                if kind == "on_retriever_end" and not sources_emitted:
+                    docs = event["data"].get("output", [])
+                    if docs and isinstance(docs, list):
+                        sources = []
+                        for doc in docs:
+                            if hasattr(doc, "metadata"):
+                                sources.append(
+                                    {
+                                        "id": doc.metadata.get("id", ""),
+                                        "score": doc.metadata.get("score", 0.0),
+                                    }
+                                )
+                        # Source Documents 메타데이터를 클라이언트로 1회만 전송
+                        meta_event = json.dumps(
+                            {"type": "sources", "data": sources}, ensure_ascii=False
+                        )
+                        yield f"data: {meta_event}\n\n"
+                        sources_emitted = True
 
-            # 채팅 모델에서 스트리밍되는 실제 텍스트 토큰
-            elif kind == "on_chat_model_stream":
-                chunk = event["data"].get("chunk")
-                if chunk and getattr(chunk, "content", None):
-                    data_event = json.dumps(
-                        {"type": "token", "data": chunk.content}, ensure_ascii=False
-                    )
-                    yield f"data: {data_event}\n\n"
+                # 채팅 모델에서 스트리밍되는 실제 텍스트 토큰
+                elif kind == "on_chat_model_stream":
+                    chunk = event["data"].get("chunk")
+                    if chunk and getattr(chunk, "content", None):
+                        data_event = json.dumps(
+                            {"type": "token", "data": chunk.content}, ensure_ascii=False
+                        )
+                        yield f"data: {data_event}\n\n"
 
-        # 스트리밍 완료를 알리는 종료 신호
-        yield "data: [DONE]\n\n"
+        except Exception as e:
+            logger.exception("Error during streaming RAG chat")
+            error_event = json.dumps(
+                {
+                    "type": "error",
+                    "message": f"An error occurred during chat streaming: {str(e)}",
+                },
+                ensure_ascii=False,
+            )
+            yield f"data: {error_event}\n\n"
+        finally:
+            # 스트리밍 완료를 알리는 종료 신호 (에러 발생 시에도 끊김 방지)
+            yield "data: [DONE]\n\n"
 
 
 @lru_cache(maxsize=None)
