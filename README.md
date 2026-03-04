@@ -357,7 +357,12 @@ pytest --cov=backend --cov-report=term-missing
 
 ```bash
 # 초기 인덱스 구축 (Obsidian Vault 전체 인덱싱)
+# ⚠️  --clear: 기존 인덱스를 완전히 삭제하고 재구축합니다.
+#             프로덕션 환경에서는 신중하게 사용하세요 (복구 불가).
 python scripts/bootstrap_index.py --vault /path/to/your/vault --clear
+
+# ✅ 인덱스 업데이트만 필요할 경우: --clear 없이 실행 (기존 인덱스에 추가)
+python scripts/bootstrap_index.py --vault /path/to/your/vault
 
 # E2E 검색 품질 실측 (OpenAI API 연동 필요)
 pytest tests/e2e/test_rag_search_quality.py -s -v
@@ -366,10 +371,14 @@ pytest tests/e2e/test_rag_search_quality.py -s -v
 pytest tests/performance/benchmark_rag.py -s -v
 ```
 
-| 지표 | 측정값 | 비고 |
-|------|--------|------|
-| **Precision** | 0.75 | 하이브리드 검색 기준 |
-| **Recall** | 0.92 | `filter_expansion_factor` 튜닝 후 |
+> 📂 **인덱스 저장 위치**: `backend/config/__init__.py`의 `PathConfig.FAISS_INDEX_DIR` 환경변수로 제어됩니다 (기본값: `data/indices/`).
+
+| 지표 | 측정값 | 측정 조건 |
+|------|--------|----------|
+| **Precision** | 0.75 | 테스트 Vault (~20개 문서, 5개 쿼리셋, `alpha=0.5`) |
+| **Recall** | 0.92 | `filter_expansion_factor=2.0` 튜닝 후 동일 조건 |
+
+> ℹ️ **참고**: 위 수치는 소규모 테스트 데이터셋 기준입니다. 실제 Vault 규모와 쿼리 특성에 따라 결과가 달라질 수 있으며, `tests/performance/benchmark_rag.py`로 본인 환경에서 직접 측정하는 것을 권장합니다.
 
 ---
 

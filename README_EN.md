@@ -357,7 +357,12 @@ pytest --cov=backend --cov-report=term-missing
 
 ```bash
 # Build initial index (full Obsidian Vault indexing)
+# ⚠️  --clear: Completely deletes and rebuilds the existing index.
+#              Use with caution in production environments (irreversible).
 python scripts/bootstrap_index.py --vault /path/to/your/vault --clear
+
+# ✅ For incremental updates only: run without --clear (adds to existing index)
+python scripts/bootstrap_index.py --vault /path/to/your/vault
 
 # E2E search quality test (requires OpenAI API)
 pytest tests/e2e/test_rag_search_quality.py -s -v
@@ -366,10 +371,14 @@ pytest tests/e2e/test_rag_search_quality.py -s -v
 pytest tests/performance/benchmark_rag.py -s -v
 ```
 
-| Metric | Measured Value | Notes |
-|--------|---------------|-------|
-| **Precision** | 0.75 | Hybrid search baseline |
-| **Recall** | 0.92 | After `filter_expansion_factor` tuning |
+> 📂 **Index storage location**: Controlled by the `PathConfig.FAISS_INDEX_DIR` environment variable in `backend/config/__init__.py` (default: `data/indices/`).
+
+| Metric | Measured Value | Measurement Conditions |
+|--------|---------------|------------------------|
+| **Precision** | 0.75 | Test Vault (~20 docs, 5-query set, `alpha=0.5`) |
+| **Recall** | 0.92 | Same conditions after `filter_expansion_factor=2.0` tuning |
+
+> ℹ️ **Note**: The above metrics are based on a small-scale test dataset. Results may vary depending on your actual Vault size and query characteristics. It is recommended to measure directly in your own environment using `tests/performance/benchmark_rag.py`.
 
 ---
 
