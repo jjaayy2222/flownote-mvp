@@ -2,6 +2,7 @@
 
 import json
 import logging
+import asyncio
 from typing import AsyncGenerator, List, Optional
 from functools import lru_cache
 
@@ -169,18 +170,25 @@ Context:
                         )
                         yield f"data: {data_event}\n\n"
 
+        except asyncio.CancelledError:
+            # 클라이언트 연결 끊김/취소 시 조기 종료되도록 처리 (에러로 삼키지 않음)
+            logger.info("Chat stream cancelled by user.")
+            raise
         except Exception as e:
+            # 서버 측 상세 에러 기록 (내부 로깅)
             logger.exception("Error during streaming RAG chat")
+            # 클라이언트 측에는 민감한 내부 에러(str(e))가 아닌 일반(Generic) 메시지 전송
             error_event = json.dumps(
                 {
                     "type": "error",
-                    "message": f"An error occurred during chat streaming: {str(e)}",
+                    "message": "서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
                 },
                 ensure_ascii=False,
             )
             yield f"data: {error_event}\n\n"
-        finally:
-            # 스트리밍 완료를 알리는 종료 신호 (에러 발생 시에도 끊김 방지)
+            yield "data: [DONE]\n\n"
+        else:
+            # 루프 정상 종료 시 완료 신호 전송
             yield "data: [DONE]\n\n"
 
 
