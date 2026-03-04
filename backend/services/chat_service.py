@@ -92,7 +92,8 @@ class ChatService:
 
         return "You are a helpful and expert AI assistant."
 
-    def _format_sse_event(self, event_type: str, **kwargs) -> str:
+    @staticmethod
+    def _format_sse_event(event_type: str, **kwargs) -> str:
         """SSE 규격에 맞게 이벤트를 포맷팅하는 헬퍼 함수"""
         payload = {"type": event_type}
         payload.update(kwargs)
@@ -140,6 +141,7 @@ Context:
 
         # 4. Langchain Runnable Streaming 실행 (v2 Events API 사용으로 진짜 토큰 단위 스트리밍 달성)
         sources_emitted = False
+        is_cancelled = False
 
         try:
             async for event in retrieval_chain.astream_events(
@@ -171,9 +173,9 @@ Context:
                         yield self._format_sse_event("token", data=chunk.content)
 
         except asyncio.CancelledError:
-            # 클라이언트 연결 끊김/취소 시 조기 종료되도록 처리
+            # 클라이언트 연결 끊김/취소 시 조기 종료 시그널 마킹 후 예외를 다시 던짐
+            is_cancelled = True
             logger.info("Chat stream cancelled by user.")
-            yield "data: [DONE]\n\n"
             raise
         except Exception as e:
             # 서버 측 상세 에러 기록 (내부 로깅)
@@ -183,9 +185,9 @@ Context:
                 "error",
                 message="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
             )
-            yield "data: [DONE]\n\n"
-        else:
-            # 루프 정상 종료 시 완료 신호 전송
+
+        # GeneratorExit/CancelledError 중에는 yield를 호출하면 안되므로 정상/내부오류 발생 시에만 DONE 방출
+        if not is_cancelled:
             yield "data: [DONE]\n\n"
 
 
