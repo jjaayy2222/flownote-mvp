@@ -290,7 +290,7 @@ Search Query Input
 Before using hybrid search, you need to index your Obsidian Vault.
 
 ```bash
-# Run from the project root in terminal
+# Run from the project root in the terminal
 # ✅ First run (no existing index)
 python scripts/bootstrap_index.py --vault /path/to/your/vault
 
