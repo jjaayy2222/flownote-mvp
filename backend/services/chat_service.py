@@ -95,9 +95,13 @@ class ChatService:
     @staticmethod
     def _format_sse_event(event_type: str, **kwargs) -> str:
         """SSE 규격에 맞게 이벤트를 포맷팅하는 헬퍼 함수"""
+        if event_type == "done":
+            return "data: [DONE]\n\n"
+
         payload = {"type": event_type}
         payload.update(kwargs)
-        return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        # JSON 직렬화 불가 객체(UUID, datetime 등) 방어를 위해 default=str 파라미터 적용
+        return f"data: {json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
 
     async def stream_chat(
         self,
@@ -188,7 +192,7 @@ Context:
 
         # GeneratorExit/CancelledError 중에는 yield를 호출하면 안되므로 정상/내부오류 발생 시에만 DONE 방출
         if not is_cancelled:
-            yield "data: [DONE]\n\n"
+            yield self._format_sse_event("done")
 
 
 @lru_cache(maxsize=None)
