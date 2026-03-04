@@ -177,6 +177,19 @@ class HybridSearchResponse(BaseModel):
     )
 
 
+# ---------------------------------------------------------
+# Chat Streaming API Models (Step 7: RAG API Integration)
+# ---------------------------------------------------------
+
+class ChatQueryRequest(BaseModel):
+    """채팅 질의 요청 스키마"""
+    query: str = Field(..., description="사용자 질의 텍스트")
+    user_id: str = Field(..., description="사용자 ID (온보딩 및 세션 식별용)")
+    session_id: Optional[str] = Field(default=None, description="채팅 세션 ID (대화 기록 유지용)")
+    k: int = Field(default=5, ge=1, le=20, description="RAG 검색에 사용할 최대 컨텍스트(문서) 수")
+    alpha: float = Field(default=0.5, ge=0.0, le=1.0, description="하이브리드 검색 FAISS 가중치")
+
+
 __all__ = [
     # Classification (Core)
     "ClassifyRequest",
@@ -212,4 +225,6 @@ __all__ = [
     "HybridSearchRequest",
     "SearchResultItem",
     "HybridSearchResponse",
+    # Chat (Step 7)
+    "ChatQueryRequest",
 ]
