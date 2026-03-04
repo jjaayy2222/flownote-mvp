@@ -256,15 +256,21 @@ flownote-mvp/
 │   │   ├── websocket_manager.py        # WebSocket connection management (v6.0) ✨
 │   │   ├── diff_service.py             # Diff generation (v6.0) ✨
 │   │   ├── i18n_service.py             # Multilingual messages (v6.0) ✨
-│   │   └── ...
+│   │   ├── hybrid_search_service.py    # Hybrid search orchestrator (v7.0) ✨
+│   │   └── search_cache_service.py     # Redis search result caching (v7.0) ✨
 │   │
 │   ├── core/                           # Core configuration (v6.0) ✨
 │   │   └── config.py                   # Application settings
 │   │
 │   ├── embedding.py                    # Embedding generation
-│   ├── faiss_search.py                 # FAISS search
+│   ├── faiss_search.py                 # FAISS vector search (with save/load persistence) ✨
+│   ├── bm25_search.py                  # BM25 keyword search (with save/load persistence) ✨
+│   ├── hybrid_search.py                # FAISS+BM25 RRF hybrid engine (v7.0) ✨
 │   ├── classifier/                     # PARA classification logic
 │   └── ...
+│
+├── scripts/                            # Utility scripts
+│   └── bootstrap_index.py             # Obsidian Vault initial indexing CLI (v7.0) ✨
 │
 ├── web_ui/                             # Next.js Frontend ✨
 │   ├── src/
@@ -272,12 +278,15 @@ flownote-mvp/
 │   │   │   ├── [locale]/               # Multilingual routing (v6.0) ✨
 │   │   │   │   ├── page.tsx            # Dashboard
 │   │   │   │   ├── graph/page.tsx      # Graph View
-│   │   │   │   └── stats/page.tsx      # Statistics
+│   │   │   │   ├── stats/page.tsx      # Statistics
+│   │   │   │   └── search/page.tsx     # Hybrid search page (v7.0) ✨
 │   │   │   └── not-found.tsx           # 404 page (i18n) ✨
 │   │   ├── components/                 # React components
 │   │   │   ├── dashboard/
 │   │   │   │   └── SyncMonitor.tsx     # WebSocket-based (v6.0) ✨
 │   │   │   ├── para/GraphView.tsx      # Graph View
+│   │   │   ├── search/
+│   │   │   │   └── HybridSearch.tsx    # Hybrid search UI (v7.0) ✨
 │   │   │   ├── conflict/               # Conflict Diff Viewer (v6.0) ✨
 │   │   │   │   ├── DiffViewer.tsx
 │   │   │   │   └── ConflictResolver.tsx
@@ -285,6 +294,8 @@ flownote-mvp/
 │   │   │       └── LanguageSwitcher.tsx # Language switcher (v6.0) ✨
 │   │   ├── i18n/                       # i18n configuration (v6.0) ✨
 │   │   │   └── config.ts
+│   │   ├── lib/
+│   │   │   └── searchApi.ts            # Hybrid search API client (v7.0) ✨
 │   │   ├── locales/                    # Translation files (v6.0) ✨
 │   │   │   ├── ko.json
 │   │   │   └── en.json
@@ -294,6 +305,13 @@ flownote-mvp/
 │   ├── middleware.ts                   # next-intl middleware (v6.0) ✨
 │   └── package.json
 │
+├── tests/
+│   ├── unit/                           # Unit tests
+│   ├── e2e/
+│   │   └── test_rag_search_quality.py  # E2E search quality measurement (v7.0) ✨
+│   └── performance/
+│       └── benchmark_rag.py            # Large-scale performance benchmarks (v7.0) ✨
+│
 ├── data/                               # Data storage
 ├── docs/                               # Documentation
 │   └── P/                              # Project phase documentation
@@ -302,7 +320,8 @@ flownote-mvp/
 │       ├── v5_phase3_visualization/    # Visualization docs
 │       ├── v6.0_phase1_websocket/      # WebSocket docs (v6.0) ✨
 │       ├── v6.0_phase2_diff_viewer/    # Diff Viewer docs (v6.0) ✨
-│       └── v6.0_phase3_i18n/           # i18n docs (v6.0) ✨
+│       ├── v6.0_phase3_i18n/           # i18n docs (v6.0) ✨
+│       └── v7.0_planning/              # v7.0 planning docs (v7.0) ✨
 ├── README.md                           # Korean documentation
 └── README_EN.md                        # This document (English)
 ```
@@ -323,14 +342,43 @@ pytest
 pytest --cov=backend --cov-report=term-missing
 ```
 
-### 5.2 Test Coverage (Phase 4 baseline)
+### 5.2 Test Coverage (v7.0 Phase 2 baseline)
 
 | Module | Coverage | Notes |
 |--------|----------|-------|
-| **Overall** | **55%** | Focus on core logic |
+| **Overall** | **55%+** | Focus on core logic |
 | `util.py` (Celery Tasks) | 80%+ | Automation tasks |
 | `parallel_processor.py` | 100% | Parallel processing |
-| `classification_service.py` | 89% | Core logic |
+| `classification_service.py` | 89% | Core classification logic |
+| `hybrid_search_service.py` | 90%+ | Hybrid search service (v7.0) |
+| `search_cache_service.py` | 85%+ | Redis cache layer (v7.0) |
+
+### 5.3 E2E Search Quality Measurement (v7.0)
+
+```bash
+# Build initial index (full Obsidian Vault indexing)
+# ⚠️  --clear: Completely deletes and rebuilds the existing index.
+#              Use with caution in production environments (irreversible).
+python scripts/bootstrap_index.py --vault /path/to/your/vault --clear
+
+# ✅ For incremental updates only: run without --clear (adds to existing index)
+python scripts/bootstrap_index.py --vault /path/to/your/vault
+
+# E2E search quality test (requires OpenAI API)
+pytest tests/e2e/test_rag_search_quality.py -s -v
+
+# Large-scale performance benchmark (1,000+ documents)
+pytest tests/performance/benchmark_rag.py -s -v
+```
+
+> 📂 **Index storage location**: Controlled by the `PathConfig.FAISS_INDEX_DIR` environment variable in `backend/config/__init__.py` (default: `data/indices/`).
+
+| Metric | Measured Value | Measurement Conditions |
+|--------|---------------|------------------------|
+| **Precision** | 0.75 | Test Vault (~20 docs, 5-query set, `alpha=0.5`) |
+| **Recall** | 0.92 | Same conditions after `filter_expansion_factor=2.0` tuning |
+
+> ℹ️ **Note**: The above metrics are based on a small-scale test dataset. Results may vary depending on your actual Vault size and query characteristics. It is recommended to measure directly in your own environment using `tests/performance/benchmark_rag.py`.
 
 ---
 
@@ -445,7 +493,17 @@ python -m backend.mcp.server
 2. Check auto-reclassification/report generation tasks in `Tasks` tab
 3. Monitor worker status in `System` tab
 
-### 7.7 **Step 7: CLI Usage**
+### 7.7 **Step 7: Hybrid RAG Search (v7.0)**
+1. Build initial index (first time only)
+```bash
+# Index entire Obsidian Vault into FAISS + BM25
+python scripts/bootstrap_index.py --vault /path/to/your/vault
+```
+2. Enter search query on the dashboard or `/search` page
+3. Configure **Hybrid Search** settings: `alpha` (Dense/Sparse weight), `k` (result count), PARA category filter
+4. Review **Score** and **Response Latency** of search results
+
+### 7.8 **Step 8: CLI Usage**
 ```bash
 # Classify single file
 python -m backend.cli classify "path/to/file.txt" [user_id]
@@ -532,10 +590,19 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 ## 10. ❓ FAQ
 
 ### Q1. Is Redis required?
-**A**: Yes, Redis is required as Celery's message broker and must be running.
+**A**: Yes, Redis is required for both Celery's message broker and v7.0's search result caching (`SearchCacheService`) and must be running.
 
 ### Q2. When do automation tasks run?
 **A**: According to the schedule defined in `backend/celery_app/config.py` (e.g., reclassification at 00:00 daily).
+
+### Q3. Does hybrid search require initial setup?
+**A**: Yes, you need to run `scripts/bootstrap_index.py` to index your Obsidian Vault before first use. On subsequent server restarts, the index is automatically loaded from disk.
+
+### Q4. What does the `alpha` parameter do?
+**A**: It controls the weight ratio between FAISS (Dense, semantic) and BM25 (Sparse, keyword) search. `alpha=1.0` uses FAISS only, `alpha=0.0` uses BM25 only. Default is `0.5` (equal blend).
+
+### Q5. What if search results are slow?
+**A**: Once the Redis cache warms up, responses return instantly on cache hits. The first search on a cold cache may be slower due to embedding computation. Use `tests/performance/benchmark_rag.py` to measure performance.
 
 ---
 
