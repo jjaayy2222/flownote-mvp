@@ -15,7 +15,7 @@
 3. [Onboarding Process](#3-onboarding-process)
 4. [Classifying Files](#4-classifying-files)
 5. [Using Search](#5-using-search)
-6. [Hybrid RAG Search (v7.0)](#6-hybrid-rag-search-v70)
+6. [Hybrid RAG Search](#6-hybrid-rag-search)
 7. [Dashboard Features](#7-dashboard-features)
 8. [Automation Settings](#8-automation-settings)
 9. [Obsidian Integration](#9-obsidian-integration)
@@ -260,13 +260,13 @@ If AI classification is inaccurate:
 
 - **Exact phrase search**: Use quotes `"REST API"`
 - **Category filter**: Search specific PARA categories
-- **Date range**: Search files within specific period
+- **Date range**: Search files within a specific period
 
-> 💡 Starting with v7.0, **Hybrid RAG Search** is available for more accurate results. See [Chapter 6](#6-hybrid-rag-search-v70) for details.
+> 💡 Starting with v7.0, **Hybrid RAG Search** is available for more accurate results. See [Chapter 6](#6-hybrid-rag-search) for details.
 
 ---
 
-## 6. 🔍 Hybrid RAG Search (v7.0)
+## 6. Hybrid RAG Search
 
 The **Hybrid RAG Search** introduced in v7.0 combines semantic (Dense) and keyword (Sparse) search to deliver significantly more accurate results.
 
@@ -362,7 +362,7 @@ The dashboard consists of 3 main sections:
 - **MCP Server Status**: Connection status
 - **Last Sync**: Last synchronization time
 
-### 7.2 Real-time Updates (v6.0)
+### 7.2 Real-time Updates
 
 WebSocket-based real-time updates:
 - Instant reflection when file classification completes
@@ -445,7 +445,7 @@ OBSIDIAN_AUTO_SYNC=true
 SYNC_INTERVAL=300  # Every 5 minutes
 ```
 
-### 9.3 Conflict Resolution (v6.0)
+### 9.3 Conflict Resolution
 
 When file conflicts occur:
 
@@ -456,7 +456,7 @@ When file conflicts occur:
    - **Keep Remote**: Keep Obsidian version
    - **Keep Both**: Keep both versions (timestamp added to filename)
 
-**Diff Viewer features (v6.0):**
+**Diff Viewer features:**
 - Monaco Editor-based Side-by-Side comparison
 - Syntax Highlighting
 - Markdown Preview
@@ -466,7 +466,7 @@ When file conflicts occur:
 
 ## 10. Language Settings
 
-### 10.1 Web UI Language Switching (v6.0)
+### 10.1 Web UI Language Switching
 
 1. Click **language switcher** in top-right corner
 2. Select **한국어** or **English**
@@ -530,7 +530,7 @@ lsof -i :8000
 kill -9 <PID>
 ```
 
-#### ❌ WebSocket Connection Failed (v6.0)
+#### ❌ WebSocket Connection Failed
 ```
 WebSocket connection failed
 ```
@@ -573,7 +573,7 @@ rm -rf data/uploads/*
 python -m uvicorn backend.main:app --reload
 ```
 
-### 11.4 Hybrid Search Troubleshooting (v7.0)
+### 11.4 Hybrid Search Troubleshooting
 
 #### ❌ No results or irrelevant results
 **Cause**: Index not built or outdated index
