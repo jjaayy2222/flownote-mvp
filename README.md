@@ -256,15 +256,21 @@ flownote-mvp/
 │   │   ├── websocket_manager.py        # WebSocket 연결 관리 (v6.0) ✨
 │   │   ├── diff_service.py             # Diff 생성 (v6.0) ✨
 │   │   ├── i18n_service.py             # 다국어 메시지 (v6.0) ✨
-│   │   └── ...
+│   │   ├── hybrid_search_service.py    # 하이브리드 검색 오케스트레이터 (v7.0) ✨
+│   │   └── search_cache_service.py     # Redis 검색 결과 캐싱 (v7.0) ✨
 │   │
 │   ├── core/                           # 핵심 설정 (v6.0) ✨
 │   │   └── config.py                   # 애플리케이션 설정
 │   │
 │   ├── embedding.py                    # 임베딩 생성
-│   ├── faiss_search.py                 # FAISS 검색
+│   ├── faiss_search.py                 # FAISS 벡터 검색 (save/load 영속화 포함) ✨
+│   ├── bm25_search.py                  # BM25 키워드 검색 (save/load 영속화 포함) ✨
+│   ├── hybrid_search.py                # FAISS+BM25 RRF 하이브리드 엔진 (v7.0) ✨
 │   ├── classifier/                     # PARA 분류 로직
 │   └── ...
+│
+├── scripts/                            # 유틸리티 스크립트
+│   └── bootstrap_index.py             # Obsidian Vault 초기 인덱싱 CLI (v7.0) ✨
 │
 ├── web_ui/                             # Next.js Frontend ✨
 │   ├── src/
@@ -272,12 +278,15 @@ flownote-mvp/
 │   │   │   ├── [locale]/               # 다국어 라우팅 (v6.0) ✨
 │   │   │   │   ├── page.tsx            # Dashboard
 │   │   │   │   ├── graph/page.tsx      # Graph View
-│   │   │   │   └── stats/page.tsx      # Statistics
+│   │   │   │   ├── stats/page.tsx      # Statistics
+│   │   │   │   └── search/page.tsx     # 하이브리드 검색 페이지 (v7.0) ✨
 │   │   │   └── not-found.tsx           # 404 페이지 (i18n) ✨
 │   │   ├── components/                 # React 컴포넌트
 │   │   │   ├── dashboard/
 │   │   │   │   └── SyncMonitor.tsx     # WebSocket 기반 (v6.0) ✨
 │   │   │   ├── para/GraphView.tsx      # Graph View
+│   │   │   ├── search/
+│   │   │   │   └── HybridSearch.tsx    # 하이브리드 검색 UI (v7.0) ✨
 │   │   │   ├── conflict/               # Conflict Diff Viewer (v6.0) ✨
 │   │   │   │   ├── DiffViewer.tsx
 │   │   │   │   └── ConflictResolver.tsx
@@ -285,6 +294,8 @@ flownote-mvp/
 │   │   │       └── LanguageSwitcher.tsx # 언어 전환 (v6.0) ✨
 │   │   ├── i18n/                       # 다국어 설정 (v6.0) ✨
 │   │   │   └── config.ts
+│   │   ├── lib/
+│   │   │   └── searchApi.ts            # 하이브리드 검색 API 클라이언트 (v7.0) ✨
 │   │   ├── locales/                    # 번역 파일 (v6.0) ✨
 │   │   │   ├── ko.json
 │   │   │   └── en.json
@@ -294,6 +305,13 @@ flownote-mvp/
 │   ├── middleware.ts                   # next-intl 미들웨어 (v6.0) ✨
 │   └── package.json
 │
+├── tests/
+│   ├── unit/                           # 단위 테스트
+│   ├── e2e/
+│   │   └── test_rag_search_quality.py  # E2E 검색 품질 측정 (v7.0) ✨
+│   └── performance/
+│       └── benchmark_rag.py            # 대용량 성능 벤치마크 (v7.0) ✨
+│
 ├── data/                               # 데이터 저장소
 ├── docs/                               # 문서
 │   └── P/                              # 프로젝트 페이즈 문서
@@ -302,7 +320,8 @@ flownote-mvp/
 │       ├── v5_phase3_visualization/    # Visualization 문서
 │       ├── v6.0_phase1_websocket/      # WebSocket 문서 (v6.0) ✨
 │       ├── v6.0_phase2_diff_viewer/    # Diff Viewer 문서 (v6.0) ✨
-│       └── v6.0_phase3_i18n/           # i18n 문서 (v6.0) ✨
+│       ├── v6.0_phase3_i18n/           # i18n 문서 (v6.0) ✨
+│       └── v7.0_planning/              # v7.0 계획 문서 (v7.0) ✨
 ├── README.md                           # 본 문서 (한국어)
 └── README_EN.md                        # 영문 문서
 ```
@@ -323,14 +342,43 @@ pytest
 pytest --cov=backend --cov-report=term-missing
 ```
 
-### 5.2 테스트 커버리지 (Phase 4 기준)
+### 5.2 테스트 커버리지 (v7.0 Phase 2 기준)
 
 | 모듈 | 커버리지 | 비고 |
 |------|----------|------|
-| **전체** | **55%** | 주요 로직 위주 테스트 |
+| **전체** | **55%+** | 주요 로직 위주 테스트 |
 | `util.py` (Celery Tasks) | 80%+ | 자동화 태스크 |
 | `parallel_processor.py` | 100% | 병렬 처리 |
-| `classification_service.py` | 89% | 핵심 로직 |
+| `classification_service.py` | 89% | 핵심 분류 로직 |
+| `hybrid_search_service.py` | 90%+ | 하이브리드 검색 서비스 (v7.0) |
+| `search_cache_service.py` | 85%+ | Redis 캐시 레이어 (v7.0) |
+
+### 5.3 E2E 검색 품질 측정 (v7.0)
+
+```bash
+# 초기 인덱스 구축 (Obsidian Vault 전체 인덱싱)
+# ⚠️  --clear: 기존 인덱스를 완전히 삭제하고 재구축합니다.
+#             프로덕션 환경에서는 신중하게 사용하세요 (복구 불가).
+python scripts/bootstrap_index.py --vault /path/to/your/vault --clear
+
+# ✅ 인덱스 업데이트만 필요할 경우: --clear 없이 실행 (기존 인덱스에 추가)
+python scripts/bootstrap_index.py --vault /path/to/your/vault
+
+# E2E 검색 품질 실측 (OpenAI API 연동 필요)
+pytest tests/e2e/test_rag_search_quality.py -s -v
+
+# 대용량 성능 벤치마크 (1,000개 이상 문서)
+pytest tests/performance/benchmark_rag.py -s -v
+```
+
+> 📂 **인덱스 저장 위치**: `backend/config/__init__.py`의 `PathConfig.FAISS_INDEX_DIR` 환경변수로 제어됩니다 (기본값: `data/indices/`).
+
+| 지표 | 측정값 | 측정 조건 |
+|------|--------|----------|
+| **Precision** | 0.75 | 테스트 Vault (~20개 문서, 5개 쿼리셋, `alpha=0.5`) |
+| **Recall** | 0.92 | `filter_expansion_factor=2.0` 튜닝 후 동일 조건 |
+
+> ℹ️ **참고**: 위 수치는 소규모 테스트 데이터셋 기준입니다. 실제 Vault 규모와 쿼리 특성에 따라 결과가 달라질 수 있으며, `tests/performance/benchmark_rag.py`로 본인 환경에서 직접 측정하는 것을 권장합니다.
 
 ---
 
@@ -445,7 +493,17 @@ python -m backend.mcp.server
 2. `Tasks` 탭에서 자동 재분류/리포트 생성 작업 확인
 3. `System` 탭에서 워커 상태 확인
 
-### 7.7 **Step 7: CLI 사용**
+### 7.7 **Step 7: 하이브리드 RAG 검색 사용 (v7.0)**
+1. 초기 인덱스 구축 (최초 1회)
+```bash
+# Obsidian Vault 전체를 FAISS + BM25 인덱스로 일괄 색인
+python scripts/bootstrap_index.py --vault /path/to/your/vault
+```
+2. 대시보드 또는 `/search` 페이지에서 검색어 입력
+3. **Hybrid Search** 탭에서 `alpha` (Dense/Sparse 가중치), `k` (결과 수), PARA 카테고리 필터 설정
+4. 검색 결과의 **Score** 및 **응답 지연시간(Latency)** 확인
+
+### 7.8 **Step 8: CLI 사용**
 ```bash
 # 단일 파일 분류
 python -m backend.cli classify "path/to/file.txt" [user_id]
@@ -532,10 +590,19 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 ## 10. ❓ FAQ
 
 ### Q1. Redis가 꼭 필요한가요?
-**A**: 네, Celery의 메시지 브로커로 Redis를 사용하므로 반드시 실행되어 있어야 합니다.
+**A**: 네, Celery 메시지 브로커 및 v7.0의 검색 결과 캐싱(`SearchCacheService`)에도 Redis를 사용하므로 반드시 실행되어 있어야 합니다.
 
 ### Q2. 자동화 작업은 언제 실행되나요?
 **A**: `backend/celery_app/config.py`에 정의된 스케줄에 따릅니다. (예: 재분류-매일 00:00)
+
+### Q3. 하이브리드 검색을 사용하려면 초기 설정이 필요한가요?
+**A**: 네, 서버 최초 실행 전에 `scripts/bootstrap_index.py`로 Obsidian Vault를 인덱싱해야 합니다. 이후 서버 재시작 시에는 인덱스가 자동으로 디스크에서 로드됩니다.
+
+### Q4. `alpha` 파라미터는 무엇인가요?
+**A**: FAISS(Dense, 의미 기반)와 BM25(Sparse, 키워드 기반) 검색의 가중치 비율입니다. `alpha=1.0`이면 FAISS만, `alpha=0.0`이면 BM25만 사용합니다. 기본값은 `0.5` (균등 혼합)입니다.
+
+### Q5. 검색 결과가 느릴 때 어떻게 하나요?
+**A**: Redis 캐시가 적중되면 응답이 즉시 반환됩니다. 캐시 미스 시 첫 검색은 임베딩 연산이 포함되어 느릴 수 있습니다. `tests/performance/benchmark_rag.py`로 성능을 측정해 볼 수 있습니다.
 
 ---
 
