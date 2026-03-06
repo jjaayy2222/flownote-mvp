@@ -65,6 +65,21 @@ class ChatService:
         self.hybrid_search_service = hybrid_search_service
         self.onboarding_service = onboarding_service
 
+        import os
+
+        # 런타임마다 읽지 않고 서비스 초기화 시점에 한 번만 읽고 검증(Fail Fast)
+        try:
+            self.rag_max_docs = int(os.getenv("RAG_MAX_DOCS", "10"))
+            self.rag_max_doc_chars = int(os.getenv("RAG_MAX_DOC_CHARS", "2000"))
+            self.rag_max_total_chars = int(os.getenv("RAG_MAX_TOTAL_CHARS", "16000"))
+        except ValueError as e:
+            logger.error(f"Invalid RAG configuration detected: {e}")
+            self.rag_max_docs, self.rag_max_doc_chars, self.rag_max_total_chars = (
+                10,
+                2000,
+                16000,
+            )
+
     def _get_streaming_llm(self):
         """스트리밍용 ChatOpenAI 객체 생성"""
         from langchain_openai import ChatOpenAI
@@ -161,15 +176,9 @@ Context:
         )
 
         # 3. 단일 책임 RAG 파이프라인: 수동 retrieval + 단순 LLM 체인
-        import os
-
         def format_docs(docs: List[Document]) -> str:
             """Format retrieved documents securely into a bounded-length context string."""
-            max_docs = int(os.getenv("RAG_MAX_DOCS", "10"))
-            max_chars_per_doc = int(os.getenv("RAG_MAX_DOC_CHARS", "2000"))
-            max_total_chars = int(os.getenv("RAG_MAX_TOTAL_CHARS", "16000"))
-
-            limited_docs = docs[:max_docs]
+            limited_docs = docs[: self.rag_max_docs]
             contents: List[str] = []
             total_length = 0
 
@@ -178,18 +187,28 @@ Context:
                 # 문서 경계를 모델이 구분하기 쉽도록 가벼운 구분자 추가
                 header = f"--- Document {i} ---"
 
-                if len(content) > max_chars_per_doc:
-                    content = content[:max_chars_per_doc] + "...(truncated)"
+                doc_suffix = "...(truncated)"
+                if len(content) > self.rag_max_doc_chars:
+                    # 잘림 표시 접미사의 길이까지 고려해서 엄격하게 자름
+                    safe_len = max(0, self.rag_max_doc_chars - len(doc_suffix))
+                    content = content[:safe_len] + doc_suffix
 
                 doc_text = f"{header}\n{content}\n"
 
                 # 전체 문자열 길이 제한
-                remaining = max_total_chars - total_length
+                remaining = self.rag_max_total_chars - total_length
                 if remaining <= 0:
                     break
 
                 if len(doc_text) > remaining:
-                    doc_text = doc_text[:remaining]
+                    total_limit_suffix = " ...(truncated due to total length limit)"
+                    if remaining > len(total_limit_suffix):
+                        doc_text = (
+                            doc_text[: remaining - len(total_limit_suffix)]
+                            + total_limit_suffix
+                        )
+                    else:
+                        doc_text = doc_text[:remaining]
 
                 contents.append(doc_text)
                 total_length += len(doc_text)
