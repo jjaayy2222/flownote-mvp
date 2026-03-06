@@ -25,6 +25,7 @@ from backend.api.endpoints.sync import router as sync_router
 from backend.api.endpoints.automation import router as automation_router
 from backend.api.endpoints.graph import router as graph_router
 from backend.api.endpoints.search import router as search_router
+from backend.api.endpoints.chat import router as chat_router
 
 
 # 로깅 설정
@@ -146,6 +147,10 @@ logger.info("✅ automation_router 등록 완료 (Celery Automation)")
 
 app.include_router(graph_router, prefix="/api")
 logger.info("✅ graph_router 등록 완료 (Visualization)")
+
+# chat_router (Issue #614: RAG 스트리밍 채팅)
+app.include_router(chat_router, prefix="/api")
+logger.info("✅ chat_router 등록 완료 (RAG Streaming Chat)")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

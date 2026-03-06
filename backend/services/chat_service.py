@@ -13,8 +13,8 @@ from langchain_core.prompts import (
     HumanMessagePromptTemplate,
 )
 from langchain_core.retrievers import BaseRetriever
-from langchain.chains import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
 
 from backend.services.hybrid_search_service import (
     HybridSearchService,
@@ -72,8 +72,18 @@ class ChatService:
         from langchain_openai import ChatOpenAI
         import os
 
+        # 기본 OPENAI_API_KEY가 없는 환경이므로 .env의 커스텀 환경변수를 명시적으로 주입
+        # GPT-4o-mini를 1순위로, GPT-4o 등 다른 모델을 fallback으로 사용
+        api_key = os.getenv("GPT4O_MINI_API_KEY") or os.getenv("GPT4O_API_KEY")
+        base_url = os.getenv("GPT4O_MINI_BASE_URL") or os.getenv("GPT4O_BASE_URL")
+        model = os.getenv("GPT4O_MINI_MODEL") or os.getenv("GPT4O_MODEL", "gpt-4o-mini")
+
         return ChatOpenAI(
-            model=os.getenv("GPT4O_MODEL", "gpt-4o"), streaming=True, temperature=0.3
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            streaming=True,
+            temperature=0.3,
         )
 
     def _get_user_context_prompt_text(self, user_id: str) -> str:
@@ -139,39 +149,51 @@ Context:
             ]
         )
 
-        # 3. 문서 결합 체인 및 RAG 검색 체인 생성
-        document_chain = create_stuff_documents_chain(llm, prompt)
-        retrieval_chain = create_retrieval_chain(retriever, document_chain)
+        # 3. LCEL 파이프라인으로 RAG 체인 구성 (LangChain 1.x 호환)
+        def format_docs(docs: List[Document]) -> str:
+            return "\n\n".join(doc.page_content for doc in docs)
 
-        # 4. Langchain Runnable Streaming 실행 (v2 Events API 사용으로 진짜 토큰 단위 스트리밍 달성)
+        from operator import itemgetter
+
+        retrieval_chain = (
+            RunnablePassthrough.assign(
+                context=itemgetter("input") | retriever | format_docs
+            )
+            | prompt
+            | llm
+            | StrOutputParser()
+        )
+
+        # 4. Streaming 실행 (astream_events v2 사용)
         sources_emitted = False
         is_cancelled = False
 
         try:
+            # 소스 문서를 try 블록 안에서 수집 — 검색 실패 시에도 error 이벤트 정상 전송 보장
+            source_docs: List[Document] = await retriever._aget_relevant_documents(
+                query
+            )
+            sources = [
+                {
+                    "id": doc.metadata.get("id", ""),
+                    "score": doc.metadata.get("score", 0.0),
+                }
+                for doc in source_docs
+                if hasattr(doc, "metadata")
+            ]
+
+            # sources가 있으면 스트리밍 시작 전 먼저 전송
+            if sources:
+                yield self._format_sse_event("sources", data=sources)
+                sources_emitted = True
+
             async for event in retrieval_chain.astream_events(
                 {"input": query}, version="v2"
             ):
                 kind = event["event"]
 
-                # 검색기 종료 시점 (컨텍스트 로드 완료)에 소스 전송
-                if kind == "on_retriever_end" and not sources_emitted:
-                    docs = event["data"].get("output", [])
-                    if docs and isinstance(docs, list):
-                        sources = []
-                        for doc in docs:
-                            if hasattr(doc, "metadata"):
-                                sources.append(
-                                    {
-                                        "id": doc.metadata.get("id", ""),
-                                        "score": doc.metadata.get("score", 0.0),
-                                    }
-                                )
-                        # Source Documents 메타데이터를 클라이언트로 1회만 전송
-                        yield self._format_sse_event("sources", data=sources)
-                        sources_emitted = True
-
                 # 채팅 모델에서 스트리밍되는 실제 텍스트 토큰
-                elif kind == "on_chat_model_stream":
+                if kind == "on_chat_model_stream":
                     chunk = event["data"].get("chunk")
                     if chunk and getattr(chunk, "content", None):
                         yield self._format_sse_event("token", data=chunk.content)
