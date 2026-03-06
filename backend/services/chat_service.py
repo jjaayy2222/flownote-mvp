@@ -13,8 +13,6 @@ from langchain_core.prompts import (
     HumanMessagePromptTemplate,
 )
 from langchain_core.retrievers import BaseRetriever
-from langchain_core.runnables import RunnablePassthrough
-from langchain_core.output_parsers import StrOutputParser
 
 from backend.services.hybrid_search_service import (
     HybridSearchService,
@@ -74,9 +72,24 @@ class ChatService:
 
         # 기본 OPENAI_API_KEY가 없는 환경이므로 .env의 커스텀 환경변수를 명시적으로 주입
         # GPT-4o-mini를 1순위로, GPT-4o 등 다른 모델을 fallback으로 사용
-        api_key = os.getenv("GPT4O_MINI_API_KEY") or os.getenv("GPT4O_API_KEY")
-        base_url = os.getenv("GPT4O_MINI_BASE_URL") or os.getenv("GPT4O_BASE_URL")
-        model = os.getenv("GPT4O_MINI_MODEL") or os.getenv("GPT4O_MODEL", "gpt-4o-mini")
+        api_key = (
+            os.getenv("GPT4O_MINI_API_KEY")
+            or os.getenv("GPT4O_API_KEY")
+            or os.getenv("OPENAI_API_KEY")
+        )
+        if not api_key:
+            raise ValueError(
+                "OpenAI API key is missing. Please set GPT4O_MINI_API_KEY, GPT4O_API_KEY, or OPENAI_API_KEY in your environment variables."
+            )
+
+        base_url = (
+            os.getenv("GPT4O_MINI_BASE_URL")
+            or os.getenv("GPT4O_BASE_URL")
+            or os.getenv("OPENAI_BASE_URL")
+        )
+        model = (
+            os.getenv("GPT4O_MINI_MODEL") or os.getenv("GPT4O_MODEL") or "gpt-4o-mini"
+        )
 
         return ChatOpenAI(
             api_key=api_key,
@@ -149,30 +162,20 @@ Context:
             ]
         )
 
-        # 3. LCEL 파이프라인으로 RAG 체인 구성 (LangChain 1.x 호환)
+        # 3. 단일 책임 RAG 파이프라인: 수동 retrieval + 단순 LLM 체인
         def format_docs(docs: List[Document]) -> str:
             return "\n\n".join(doc.page_content for doc in docs)
 
-        from operator import itemgetter
-
-        retrieval_chain = (
-            RunnablePassthrough.assign(
-                context=itemgetter("input") | retriever | format_docs
-            )
-            | prompt
-            | llm
-            | StrOutputParser()
-        )
+        rag_chain = prompt | llm
 
         # 4. Streaming 실행 (astream_events v2 사용)
         sources_emitted = False
         is_cancelled = False
 
         try:
-            # 소스 문서를 try 블록 안에서 수집 — 검색 실패 시에도 error 이벤트 정상 전송 보장
-            source_docs: List[Document] = await retriever._aget_relevant_documents(
-                query
-            )
+            # 1) 단일 위치에서 public API를 통해 retrieval 수행 (중복 조회 방지)
+            source_docs: List[Document] = await retriever.aget_relevant_documents(query)
+
             sources = [
                 {
                     "id": doc.metadata.get("id", ""),
@@ -182,14 +185,17 @@ Context:
                 if hasattr(doc, "metadata")
             ]
 
-            # sources가 있으면 스트리밍 시작 전 먼저 전송
+            # 2) sources가 있으면 스트리밍 시작 전 먼저 전송
             if sources:
                 yield self._format_sse_event("sources", data=sources)
                 sources_emitted = True
 
-            async for event in retrieval_chain.astream_events(
-                {"input": query}, version="v2"
-            ):
+            # 3) 컨텍스트를 직접 만들어 체인에 주입 (LCEL Runnable 의존성 최소화)
+            context_str = format_docs(source_docs)
+            chain_input = {"input": query, "context": context_str}
+
+            # 4) LLM 스트리밍
+            async for event in rag_chain.astream_events(chain_input, version="v2"):
                 kind = event["event"]
 
                 # 채팅 모델에서 스트리밍되는 실제 텍스트 토큰
