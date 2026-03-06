@@ -136,8 +136,6 @@ class ChatService:
         """질의를 받아 RAG 체인을 실행하고 SSE 규격에 맞게 결과 청크를 반환하는 비동기 제너레이터"""
         logger.info(f"Stream chat started for user {user_id}")
 
-        llm = self._get_streaming_llm()
-
         # 1. Custom Retriever 구성
         retriever = HybridSearchLangChainRetriever(
             service=self.hybrid_search_service, k=k, alpha=alpha
@@ -163,18 +161,51 @@ Context:
         )
 
         # 3. 단일 책임 RAG 파이프라인: 수동 retrieval + 단순 LLM 체인
-        def format_docs(docs: List[Document]) -> str:
-            return "\n\n".join(doc.page_content for doc in docs)
+        import os
 
-        rag_chain = prompt | llm
+        def format_docs(docs: List[Document]) -> str:
+            """Format retrieved documents securely into a bounded-length context string."""
+            max_docs = int(os.getenv("RAG_MAX_DOCS", "10"))
+            max_chars_per_doc = int(os.getenv("RAG_MAX_DOC_CHARS", "2000"))
+            max_total_chars = int(os.getenv("RAG_MAX_TOTAL_CHARS", "16000"))
+
+            limited_docs = docs[:max_docs]
+            contents: List[str] = []
+            total_length = 0
+
+            for i, doc in enumerate(limited_docs, 1):
+                content = doc.page_content or ""
+                # 문서 경계를 모델이 구분하기 쉽도록 가벼운 구분자 추가
+                header = f"--- Document {i} ---"
+
+                if len(content) > max_chars_per_doc:
+                    content = content[:max_chars_per_doc] + "...(truncated)"
+
+                doc_text = f"{header}\n{content}\n"
+
+                # 전체 문자열 길이 제한
+                remaining = max_total_chars - total_length
+                if remaining <= 0:
+                    break
+
+                if len(doc_text) > remaining:
+                    doc_text = doc_text[:remaining]
+
+                contents.append(doc_text)
+                total_length += len(doc_text)
+
+            return "\n\n".join(contents)
 
         # 4. Streaming 실행 (astream_events v2 사용)
-        sources_emitted = False
         is_cancelled = False
 
         try:
-            # 1) 단일 위치에서 public API를 통해 retrieval 수행 (중복 조회 방지)
-            source_docs: List[Document] = await retriever.aget_relevant_documents(query)
+            # 1) LLM 초기화 및 파이프라인 구성 (예외 발생 시 클라이언트에 error SSE로 전달되도록 try 블록 안으로 이동)
+            llm = self._get_streaming_llm()
+            rag_chain = prompt | llm
+
+            # 2) 단일 위치에서 public API를 통해 retrieval 수행 (중복 조회 방지)
+            source_docs: List[Document] = await retriever.ainvoke(query)
 
             sources = [
                 {
@@ -185,10 +216,9 @@ Context:
                 if hasattr(doc, "metadata")
             ]
 
-            # 2) sources가 있으면 스트리밍 시작 전 먼저 전송
+            # 3) sources가 있으면 스트리밍 시작 전 먼저 전송
             if sources:
                 yield self._format_sse_event("sources", data=sources)
-                sources_emitted = True
 
             # 3) 컨텍스트를 직접 만들어 체인에 주입 (LCEL Runnable 의존성 최소화)
             context_str = format_docs(source_docs)
