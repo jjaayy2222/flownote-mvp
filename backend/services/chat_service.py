@@ -3,9 +3,10 @@
 import json
 import logging
 import asyncio
-from typing import AsyncGenerator, List, Optional
+from typing import Any, AsyncGenerator, List, Optional
 from functools import lru_cache
 
+from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.prompts import (
     ChatPromptTemplate,
@@ -56,10 +57,13 @@ class HybridSearchLangChainRetriever(BaseRetriever):
         return docs
 
     async def aget_relevant_documents(
-        self, query: str, *, run_manager=None
+        self,
+        query: str,
+        *,
+        run_manager: Optional[CallbackManagerForRetrieverRun] = None,
+        **kwargs: Any,
     ) -> List[Document]:
         """Provides backward-compatibility for traditional BaseRetriever interface."""
-        kwargs = {}
         if run_manager:
             kwargs["config"] = {"callbacks": run_manager.get_child()}
         return await self.ainvoke(query, **kwargs)
@@ -102,9 +106,9 @@ class ChatService:
             # 설정 무결성을 위반했으므로 구체적인 값을 로그에 담아 명확히 에러 전파(Fail-Fast)
             logger.error(
                 f"Invalid RAG configuration detected. "
-                f"Env values were -> RAG_MAX_DOCS='{os.getenv('RAG_MAX_DOCS')}', "
-                f"RAG_MAX_DOC_CHARS='{os.getenv('RAG_MAX_DOC_CHARS')}', "
-                f"RAG_MAX_TOTAL_CHARS='{os.getenv('RAG_MAX_TOTAL_CHARS')}'. "
+                f"Env values were -> RAG_MAX_DOCS='{raw_docs}', "
+                f"RAG_MAX_DOC_CHARS='{raw_chars}', "
+                f"RAG_MAX_TOTAL_CHARS='{raw_total}'. "
                 f"Detail: {e}. Raising exception to fail fast."
             )
             raise
