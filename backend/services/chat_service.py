@@ -65,7 +65,11 @@ class HybridSearchLangChainRetriever(BaseRetriever):
     ) -> List[Document]:
         """Provides backward-compatibility for traditional BaseRetriever interface."""
         if run_manager:
-            kwargs["config"] = {"callbacks": run_manager.get_child()}
+            # 기존 제공된 config 딕셔너리를 무조건 덮어쓰지 않고 추출(Merge)
+            config = kwargs.pop("config", {}) or {}
+            # run_manager 콜백을 병합하면서, 다른 config 키(태그, 메타데이터 등)를 보존
+            config["callbacks"] = run_manager.get_child()
+            kwargs["config"] = config
         return await self.ainvoke(query, **kwargs)
 
 
