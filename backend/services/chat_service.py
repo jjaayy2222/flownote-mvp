@@ -55,6 +55,12 @@ class HybridSearchLangChainRetriever(BaseRetriever):
             docs.append(Document(page_content=content, metadata=metadata))
         return docs
 
+    async def aget_relevant_documents(
+        self, query: str, *, run_manager=None
+    ) -> List[Document]:
+        """Provides backward-compatibility for traditional BaseRetriever interface."""
+        return await self.ainvoke(query)
+
 
 class ChatService:
     def __init__(
@@ -72,13 +78,21 @@ class ChatService:
             self.rag_max_docs = int(os.getenv("RAG_MAX_DOCS", "10"))
             self.rag_max_doc_chars = int(os.getenv("RAG_MAX_DOC_CHARS", "2000"))
             self.rag_max_total_chars = int(os.getenv("RAG_MAX_TOTAL_CHARS", "16000"))
+
+            if any(
+                val < 0
+                for val in (
+                    self.rag_max_docs,
+                    self.rag_max_doc_chars,
+                    self.rag_max_total_chars,
+                )
+            ):
+                raise ValueError("RAG bounds must be non-negative.")
         except ValueError as e:
-            logger.error(f"Invalid RAG configuration detected: {e}")
-            self.rag_max_docs, self.rag_max_doc_chars, self.rag_max_total_chars = (
-                10,
-                2000,
-                16000,
+            logger.error(
+                f"Invalid RAG configuration detected: {e}. Raising exception to fail fast."
             )
+            raise
 
     def _get_streaming_llm(self):
         """스트리밍용 ChatOpenAI 객체 생성"""
@@ -224,7 +238,7 @@ Context:
             rag_chain = prompt | llm
 
             # 2) 단일 위치에서 public API를 통해 retrieval 수행 (중복 조회 방지)
-            source_docs: List[Document] = await retriever.ainvoke(query)
+            source_docs: List[Document] = await retriever.aget_relevant_documents(query)
 
             sources = [
                 {
