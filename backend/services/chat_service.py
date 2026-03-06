@@ -55,6 +55,15 @@ class HybridSearchLangChainRetriever(BaseRetriever):
             docs.append(Document(page_content=content, metadata=metadata))
         return docs
 
+    async def aget_relevant_documents(
+        self, query: str, *, run_manager=None
+    ) -> List[Document]:
+        """Provides backward-compatibility for traditional BaseRetriever interface."""
+        kwargs = {}
+        if run_manager:
+            kwargs["config"] = {"callbacks": run_manager.get_child()}
+        return await self.ainvoke(query, **kwargs)
+
 
 class ChatService:
     def __init__(
@@ -69,16 +78,36 @@ class ChatService:
 
         # 런타임마다 읽지 않고 서비스 초기화 시점에 한 번만 읽고 검증(Fail Fast)
         try:
-            self.rag_max_docs = int(os.getenv("RAG_MAX_DOCS", "10"))
-            self.rag_max_doc_chars = int(os.getenv("RAG_MAX_DOC_CHARS", "2000"))
-            self.rag_max_total_chars = int(os.getenv("RAG_MAX_TOTAL_CHARS", "16000"))
+            raw_docs = os.getenv("RAG_MAX_DOCS", "10")
+            raw_chars = os.getenv("RAG_MAX_DOC_CHARS", "2000")
+            raw_total = os.getenv("RAG_MAX_TOTAL_CHARS", "16000")
+
+            self.rag_max_docs = int(raw_docs)
+            self.rag_max_doc_chars = int(raw_chars)
+            self.rag_max_total_chars = int(raw_total)
+
+            if any(
+                val < 0
+                for val in (
+                    self.rag_max_docs,
+                    self.rag_max_doc_chars,
+                    self.rag_max_total_chars,
+                )
+            ):
+                raise ValueError(
+                    f"RAG bounds must be non-negative. "
+                    f"Parsed values: docs={self.rag_max_docs}, chars={self.rag_max_doc_chars}, total={self.rag_max_total_chars}"
+                )
         except ValueError as e:
-            logger.error(f"Invalid RAG configuration detected: {e}")
-            self.rag_max_docs, self.rag_max_doc_chars, self.rag_max_total_chars = (
-                10,
-                2000,
-                16000,
+            # 설정 무결성을 위반했으므로 구체적인 값을 로그에 담아 명확히 에러 전파(Fail-Fast)
+            logger.error(
+                f"Invalid RAG configuration detected. "
+                f"Env values were -> RAG_MAX_DOCS='{os.getenv('RAG_MAX_DOCS')}', "
+                f"RAG_MAX_DOC_CHARS='{os.getenv('RAG_MAX_DOC_CHARS')}', "
+                f"RAG_MAX_TOTAL_CHARS='{os.getenv('RAG_MAX_TOTAL_CHARS')}'. "
+                f"Detail: {e}. Raising exception to fail fast."
             )
+            raise
 
     def _get_streaming_llm(self):
         """스트리밍용 ChatOpenAI 객체 생성"""
@@ -224,7 +253,7 @@ Context:
             rag_chain = prompt | llm
 
             # 2) 단일 위치에서 public API를 통해 retrieval 수행 (중복 조회 방지)
-            source_docs: List[Document] = await retriever.ainvoke(query)
+            source_docs: List[Document] = await retriever.aget_relevant_documents(query)
 
             sources = [
                 {
