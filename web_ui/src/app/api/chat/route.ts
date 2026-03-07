@@ -5,11 +5,17 @@ import { createOpenAI } from '@ai-sdk/openai';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
 
+function generateUniqueId(): string {
+  return typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `uid-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
 function getOnlyTextFromMessage(message: UIMessage): string {
   const parts = message.parts ?? [];
   const textParts = parts.filter((p) => p.type === 'text');
-  if (parts.length > textParts.length) {
-    console.warn(`[Chat Proxy] Extracting only text. Ignored non-text parts in message: ${message.id}`);
+  if (parts.length > textParts.length && process.env.NODE_ENV !== 'production') {
+    console.warn('[Chat Proxy] Extracting only text. Ignored non-text parts in message.');
   }
   return textParts
     .map((p) => (p as { type: 'text'; text: string }).text)
@@ -96,7 +102,7 @@ function createUIChunkStream(backendRes: Response): ReadableStream<UIMessageChun
       const reader = backendRes.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      const textPartId = `text-${crypto.randomUUID()}`;
+      const textPartId = `text-${generateUniqueId()}`;
       let textStarted = false;
 
       const done = () => finishStream(controller, textStarted, textPartId);
@@ -123,6 +129,9 @@ function createUIChunkStream(backendRes: Response): ReadableStream<UIMessageChun
             );
             currentEventDataLines = [];
             currentEventType = null;
+            if (isDone) {
+              done();
+            }
             return isDone;
           }
           return false;
@@ -143,7 +152,6 @@ function createUIChunkStream(backendRes: Response): ReadableStream<UIMessageChun
             }
 
             if (flushCurrentEvent()) {
-              done();
               return;
             }
             break;
@@ -158,7 +166,6 @@ function createUIChunkStream(backendRes: Response): ReadableStream<UIMessageChun
 
             if (line === '') {
               if (flushCurrentEvent()) {
-                done();
                 return;
               }
               continue;
