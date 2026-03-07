@@ -14,7 +14,7 @@ function generateUniqueId(): string {
 function getOnlyTextFromMessage(message: UIMessage): string {
   const parts = message.parts ?? [];
   const textParts = parts.filter((p) => p.type === 'text');
-  if (parts.length > textParts.length && process.env.NODE_ENV !== 'production') {
+  if (parts.length > textParts.length && process.env.DEBUG_CHAT === 'true') {
     console.warn('[Chat Proxy] Extracting only text. Ignored non-text parts in message.');
   }
   return textParts
@@ -105,7 +105,14 @@ function createUIChunkStream(backendRes: Response): ReadableStream<UIMessageChun
       const textPartId = `text-${generateUniqueId()}`;
       let textStarted = false;
 
-      const done = () => finishStream(controller, textStarted, textPartId);
+      const done = () => {
+        reader.cancel().catch((err) => {
+          if (process.env.DEBUG_CHAT === 'true') {
+            console.error('Error canceling stream reader:', err);
+          }
+        });
+        finishStream(controller, textStarted, textPartId);
+      };
       const ensureTextStarted = () => {
         if (!textStarted) {
           controller.enqueue({ type: 'text-start', id: textPartId });
