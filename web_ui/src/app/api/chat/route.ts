@@ -121,7 +121,7 @@ function createUIChunkStream(backendRes: Response): ReadableStream<UIMessageChun
       };
 
       if (!reader) {
-        done();
+        finishStream(controller, false, null);
         return;
       }
 
@@ -202,11 +202,17 @@ function createUIChunkStream(backendRes: Response): ReadableStream<UIMessageChun
             }
           }
         }
-      } catch {
-        controller.enqueue({
-          type: 'error',
-          errorText: '스트림 읽기 중 오류가 발생했습니다.',
-        } as UIMessageChunk);
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          if (isDebugChatEnabled()) {
+            console.log('[Chat Proxy] Stream reading aborted.');
+          }
+        } else {
+          controller.enqueue({
+            type: 'error',
+            errorText: '스트림 읽기 중 오류가 발생했습니다.',
+          } as UIMessageChunk);
+        }
       }
 
       done();
@@ -277,6 +283,12 @@ export async function POST(req: Request) {
         fallbackRequired = true;
       }
     } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') {
+        if (isDebugChatEnabled()) {
+          console.log('[Chat Proxy] Fetch aborted by client.');
+        }
+        return new Response(null, { status: 499 });
+      }
       console.warn('[Chat Proxy] Backend connection failed, falling back to Gemini...', e);
       fallbackRequired = true;
     }
