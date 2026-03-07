@@ -6,20 +6,15 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 
-let envLoaded = false;
-function loadRootEnv() {
-  if (envLoaded) return;
-  const envPath = path.resolve(process.cwd(), '../.env');
-  if (fs.existsSync(envPath)) {
-    dotenv.config({ path: envPath });
-  }
-  envLoaded = true;
+// 모듈 진입 시 1회만 한 곳에서 일관되게 환경변수(root .env) 로드
+const envPath = path.resolve(process.cwd(), '../.env');
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath });
 }
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
 
 async function fallbackToGemini(messages: UIMessage[]) {
-  loadRootEnv();
 
   const apiKey = process.env.GEMINI_3_PRO_API_KEY;
   const baseURL = process.env.GEMINI_3_PRO_BASE_URL;
@@ -149,54 +144,91 @@ export async function POST(req: Request) {
         };
 
         try {
+          // SSE parsing state for accumulating multiline data fields
+          let currentEventType: string | null = null;
+          let currentEventDataLines: string[] = [];
+
           while (true) {
             const { done: streamDone, value } = await reader.read();
             if (streamDone) break;
 
+            // Decode the incoming chunk and append to the rolling buffer
             buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() ?? '';
 
-            for (const line of lines) {
-              if (!line.trim() || !line.startsWith('data: ')) continue;
+            // Split into lines; keep the last partial line in the buffer
+            const rawLines = buffer.split('\n');
+            buffer = rawLines.pop() ?? '';
 
-              const dataStr = line.slice(6).trim();
-              if (dataStr === '[DONE]') {
-                done();
-                return;
+            for (const rawLine of rawLines) {
+              // Trim trailing CR for CRLF endings
+              const line = rawLine.replace(/\r$/, '');
+
+              // Empty line indicates end of one SSE event
+              if (line === '') {
+                if (currentEventDataLines.length > 0) {
+                  const dataPayload = currentEventDataLines.join('\n');
+
+                  if (dataPayload === '[DONE]') {
+                    done();
+                    return;
+                  }
+
+                  // Hand off the aggregated payload for further handling
+                  try {
+                    const parsed = JSON.parse(dataPayload) as {
+                      type: string;
+                      data?: unknown;
+                      message?: string;
+                    };
+                    
+                    const eventType = parsed.type ?? currentEventType ?? 'message';
+
+                    if (eventType === 'sources') {
+                      controller.enqueue({
+                        type: 'message-metadata',
+                        messageMetadata: { sources: parsed.data },
+                      } as UIMessageChunk);
+                    } else if (eventType === 'token') {
+                      if (!textStarted) {
+                        controller.enqueue({ type: 'text-start', id: textPartId });
+                        textStarted = true;
+                      }
+                      controller.enqueue({
+                        type: 'text-delta',
+                        id: textPartId,
+                        delta: String(parsed.data ?? ''),
+                      });
+                    } else if (eventType === 'error') {
+                      controller.enqueue({
+                        type: 'error',
+                        errorText: parsed.message ?? '서버 오류가 발생했습니다.',
+                      } as UIMessageChunk);
+                    }
+                  } catch (e) {
+                    console.error('Failed to parse SSE data payload as JSON', {
+                      dataPayload,
+                      error: e,
+                    });
+                  }
+
+                  currentEventDataLines = [];
+                  currentEventType = null;
+                }
+                continue;
               }
 
-              try {
-                const event = JSON.parse(dataStr) as {
-                  type: string;
-                  data?: unknown;
-                  message?: string;
-                };
+              // Comment line (ignored)
+              if (line.startsWith(':')) continue;
 
-                if (event.type === 'sources') {
-                  // sources를 metadata로 전달
-                  controller.enqueue({
-                    type: 'message-metadata',
-                    messageMetadata: { sources: event.data },
-                  } as UIMessageChunk);
-                } else if (event.type === 'token') {
-                  if (!textStarted) {
-                    controller.enqueue({ type: 'text-start', id: textPartId });
-                    textStarted = true;
-                  }
-                  controller.enqueue({
-                    type: 'text-delta',
-                    id: textPartId,
-                    delta: String(event.data ?? ''),
-                  });
-                } else if (event.type === 'error') {
-                  controller.enqueue({
-                    type: 'error',
-                    errorText: event.message ?? '서버 오류가 발생했습니다.',
-                  } as UIMessageChunk);
-                }
-              } catch {
-                // JSON 파싱 실패 — 무시
+              // Explicit event type (optional; default is "message")
+              if (line.startsWith('event:')) {
+                currentEventType = line.slice('event:'.length).trimStart();
+                continue;
+              }
+
+              // Data line (may be repeated; concatenate with newlines)
+              if (line.startsWith('data:')) {
+                currentEventDataLines.push(line.slice('data:'.length).trimStart());
               }
             }
           }
