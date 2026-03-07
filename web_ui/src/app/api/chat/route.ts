@@ -115,11 +115,13 @@ function createUIChunkStream(backendRes: Response): ReadableStream<UIMessageChun
         if (isFinished) return;
         isFinished = true;
 
-        reader.cancel().catch((err) => {
-          if (isDebugChatEnabled()) {
-            console.error('Error canceling stream reader:', err);
-          }
-        });
+        if (reader) {
+          reader.cancel().catch((err) => {
+            if (isDebugChatEnabled()) {
+              console.error('Error canceling stream reader:', err);
+            }
+          });
+        }
         finishStream(controller, textStarted, textPartId);
       };
       const ensureTextStarted = () => {
@@ -266,6 +268,7 @@ export async function POST(req: Request) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: req.signal,
       });
 
       if (!backendRes.ok) {
