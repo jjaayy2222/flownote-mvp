@@ -5,19 +5,29 @@ import { createOpenAI } from '@ai-sdk/openai';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
 
-function getTextFromMessage(message: UIMessage): string {
-  return (message.parts ?? [])
-    .filter((p) => p.type === 'text')
+function generateUniqueId(): string {
+  return typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `uid-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
+function getOnlyTextFromMessage(message: UIMessage): string {
+  const parts = message.parts ?? [];
+  const textParts = parts.filter((p) => p.type === 'text');
+  if (parts.length > textParts.length && process.env.NODE_ENV !== 'production') {
+    console.warn('[Chat Proxy] Extracting only text. Ignored non-text parts in message.');
+  }
+  return textParts
     .map((p) => (p as { type: 'text'; text: string }).text)
     .join('');
 }
 
-function mapUiMessagesToModel(messages: UIMessage[]): ModelMessage[] {
+function mapUiMessagesToTextOnlyModel(messages: UIMessage[]): ModelMessage[] {
   return messages
     .filter((m) => ['system', 'user', 'assistant'].includes(m.role))
     .map((m) => ({
       role: m.role as 'user' | 'assistant' | 'system',
-      content: getTextFromMessage(m),
+      content: getOnlyTextFromMessage(m),
     }));
 }
 
@@ -92,7 +102,7 @@ function createUIChunkStream(backendRes: Response): ReadableStream<UIMessageChun
       const reader = backendRes.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      const textPartId = `text-${Date.now()}`;
+      const textPartId = `text-${generateUniqueId()}`;
       let textStarted = false;
 
       const done = () => finishStream(controller, textStarted, textPartId);
@@ -106,6 +116,26 @@ function createUIChunkStream(backendRes: Response): ReadableStream<UIMessageChun
       try {
         let currentEventType: string | null = null;
         let currentEventDataLines: string[] = [];
+
+        const flushCurrentEvent = (): boolean => {
+          if (currentEventDataLines.length > 0) {
+            const dataPayload = currentEventDataLines.join('\n');
+            const isDone = handleSseEvent(
+              currentEventType,
+              dataPayload,
+              controller,
+              ensureTextStarted,
+              textPartId
+            );
+            currentEventDataLines = [];
+            currentEventType = null;
+            if (isDone) {
+              done();
+            }
+            return isDone;
+          }
+          return false;
+        };
 
         while (true) {
           const { done: streamDone, value } = await reader.read();
@@ -121,19 +151,8 @@ function createUIChunkStream(backendRes: Response): ReadableStream<UIMessageChun
               }
             }
 
-            if (currentEventDataLines.length > 0) {
-              const dataPayload = currentEventDataLines.join('\n');
-              const isDone = handleSseEvent(
-                currentEventType,
-                dataPayload,
-                controller,
-                ensureTextStarted,
-                textPartId
-              );
-              if (isDone) {
-                done();
-                return;
-              }
+            if (flushCurrentEvent()) {
+              return;
             }
             break;
           }
@@ -146,23 +165,8 @@ function createUIChunkStream(backendRes: Response): ReadableStream<UIMessageChun
             const line = rawLine.replace(/\r$/, '');
 
             if (line === '') {
-              if (currentEventDataLines.length > 0) {
-                const dataPayload = currentEventDataLines.join('\n');
-                const isDone = handleSseEvent(
-                  currentEventType,
-                  dataPayload,
-                  controller,
-                  ensureTextStarted,
-                  textPartId
-                );
-
-                if (isDone) {
-                  done();
-                  return;
-                }
-
-                currentEventDataLines = [];
-                currentEventType = null;
+              if (flushCurrentEvent()) {
+                return;
               }
               continue;
             }
@@ -205,7 +209,7 @@ async function fallbackToGemini(messages: UIMessage[]) {
 
   const customOpenAI = createOpenAI({ apiKey, baseURL });
   const model = customOpenAI(modelId);
-  const coreMessages = mapUiMessagesToModel(messages);
+  const coreMessages = mapUiMessagesToTextOnlyModel(messages);
 
   try {
     const result = streamText({
@@ -229,7 +233,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'No messages provided' }, { status: 400 });
     }
 
-    const queryText = getTextFromMessage(lastMessage);
+    const queryText = getOnlyTextFromMessage(lastMessage);
 
     const payload = {
       query: queryText,
