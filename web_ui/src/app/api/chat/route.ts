@@ -4,6 +4,8 @@ import type { UIMessage, UIMessageChunk, ModelMessage } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
+/** Nginx 스타일의 비표준 상태 코드: 클라이언트가 연결을 조기에 닫았음을 나타냄 */
+const HTTP_STATUS_CLIENT_CLOSED_REQUEST = 499;
 
 function generateUniqueId(): string {
   return typeof crypto !== 'undefined' && crypto.randomUUID
@@ -16,8 +18,11 @@ function isDebugChatEnabled(): boolean {
   return val === 'true' || val === '1' || val === 'yes';
 }
 
-function isAbortError(err: unknown): boolean {
-  return (err instanceof Error && err.name === 'AbortError') || (err as { name?: string })?.name === 'AbortError';
+function isAbortError(err: unknown): err is Error & { name: 'AbortError' } {
+  return (
+    (err instanceof Error && err.name === 'AbortError') ||
+    (err as { name?: string })?.name === 'AbortError'
+  );
 }
 
 function getOnlyTextFromMessage(message: UIMessage): string {
@@ -162,23 +167,40 @@ function createUIChunkStream(backendRes: Response): ReadableStream<UIMessageChun
           return false;
         };
 
+        const processLine = (rawLine: string): boolean => {
+          const line = rawLine.replace(/\r$/, '');
+
+          if (line === '') {
+            return flushCurrentEvent();
+          }
+
+          if (line.startsWith(':')) return false;
+
+          if (line.startsWith('event:')) {
+            currentEventType = line.slice('event:'.length).trimStart();
+            return false;
+          }
+
+          if (line.startsWith('data:')) {
+            currentEventDataLines.push(line.slice('data:'.length).trimStart());
+          }
+          return false;
+        };
+
         while (true) {
           const { done: streamDone, value } = await reader.read();
           
           if (streamDone) {
-            // Flush any remaining partial multi-line event if stream dropped
-            buffer += decoder.decode(new Uint8Array(0), { stream: false });
-            const trailingLines = buffer.split('\n');
-            for (const trailingLine of trailingLines) {
-              const line = trailingLine.replace(/\r$/, '');
-              if (line.startsWith('data:')) {
-                currentEventDataLines.push(line.slice('data:'.length).trimStart());
+            // Flush any remaining partial multi-line 이벤트 처리 
+            // 스트림이 끊겼을 때 마지막 행이 줄바꿈 없이 끝난 경우를 대비해 decoder를 닫으며 남은 데이터를 긁어옵니다.
+            const lastChunk = decoder.decode(new Uint8Array(0), { stream: false });
+            if (lastChunk) {
+              const trailingLines = lastChunk.split('\n');
+              for (const tl of trailingLines) {
+                if (processLine(tl)) return;
               }
             }
-
-            if (flushCurrentEvent()) {
-              return;
-            }
+            flushCurrentEvent();
             break;
           }
 
@@ -187,25 +209,7 @@ function createUIChunkStream(backendRes: Response): ReadableStream<UIMessageChun
           buffer = rawLines.pop() ?? '';
 
           for (const rawLine of rawLines) {
-            const line = rawLine.replace(/\r$/, '');
-
-            if (line === '') {
-              if (flushCurrentEvent()) {
-                return;
-              }
-              continue;
-            }
-
-            if (line.startsWith(':')) continue;
-
-            if (line.startsWith('event:')) {
-              currentEventType = line.slice('event:'.length).trimStart();
-              continue;
-            }
-
-            if (line.startsWith('data:')) {
-              currentEventDataLines.push(line.slice('data:'.length).trimStart());
-            }
+            if (processLine(rawLine)) return;
           }
         }
       } catch (err) {
@@ -213,6 +217,11 @@ function createUIChunkStream(backendRes: Response): ReadableStream<UIMessageChun
           if (isDebugChatEnabled()) {
             console.log('[Chat Proxy] Stream reading aborted.');
           }
+          // [Engineering Decision] 
+          // 사용자 중단(Abort) 시에는 실시간 수신된 부분 데이터까지를 유효한 결과로 간주하고 
+          // 불필요한 에러 팝업 없이 조용히 스트림을 닫는 것이 최상의 UX입니다.
+          done();
+          return;
         } else {
           controller.enqueue({
             type: 'error',
@@ -293,7 +302,7 @@ export async function POST(req: Request) {
         if (isDebugChatEnabled()) {
           console.log('[Chat Proxy] Fetch aborted by client.');
         }
-        return new Response(null, { status: 499 });
+        return new Response(null, { status: HTTP_STATUS_CLIENT_CLOSED_REQUEST });
       }
       console.warn('[Chat Proxy] Backend connection failed, falling back to Gemini...', e);
       fallbackRequired = true;
