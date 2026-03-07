@@ -191,16 +191,22 @@ function createUIChunkStream(backendRes: Response): ReadableStream<UIMessageChun
           const { done: streamDone, value } = await reader.read();
           
           if (streamDone) {
-            // Flush any remaining partial multi-line 이벤트 처리 
-            // 스트림이 끊겼을 때 마지막 행이 줄바꿈 없이 끝난 경우를 대비해 decoder를 닫으며 남은 데이터를 긁어옵니다.
+            // [Fixed] Flush any remaining partial multi-line 이벤트 처리 
+            // 스트림이 끊겼을 때 기존 buffer와 마지막 데이터(lastChunk)를 결합하여 데이터 유실을 방지합니다.
             const lastChunk = decoder.decode(new Uint8Array(0), { stream: false });
-            if (lastChunk) {
-              const trailingLines = lastChunk.split('\n');
+            const finalData = buffer + lastChunk;
+            
+            if (finalData) {
+              const trailingLines = finalData.split('\n');
               for (const tl of trailingLines) {
                 if (processLine(tl)) return;
               }
             }
-            flushCurrentEvent();
+
+            // 루프 종료 전 마지막 미처리 이벤트 플러시
+            if (flushCurrentEvent()) {
+              return;
+            }
             break;
           }
 
