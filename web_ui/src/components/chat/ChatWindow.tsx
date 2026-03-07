@@ -23,6 +23,8 @@ const WELCOME_MESSAGE: UIMessage = {
   ],
 };
 
+const defaultChatTransport = new DefaultChatTransport({ api: '/api/chat' });
+
 export function ChatWindow() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState('');
@@ -40,7 +42,7 @@ export function ChatWindow() {
 
   const { messages, sendMessage, status, error } = useChat({
     messages: [WELCOME_MESSAGE],
-    transport: new DefaultChatTransport({ api: '/api/chat' }),
+    transport: defaultChatTransport,
     onError: (err: Error) => {
       toast.error('메시지 전송 중 에러가 발생했습니다.', {
         description: err.message || '서버와의 연결을 확인해주세요.',
