@@ -99,12 +99,7 @@ function handleSseEvent(
 function createUIChunkStream(backendRes: Response): ReadableStream<UIMessageChunk> {
   return new ReadableStream<UIMessageChunk>({
     async start(controller) {
-      if (!backendRes.body) {
-        finishStream(controller, false, null);
-        return;
-      }
-
-      const reader = backendRes.body.getReader();
+      const reader = backendRes.body?.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       const textPartId = `text-${generateUniqueId()}`;
@@ -124,6 +119,12 @@ function createUIChunkStream(backendRes: Response): ReadableStream<UIMessageChun
         }
         finishStream(controller, textStarted, textPartId);
       };
+
+      if (!reader) {
+        done();
+        return;
+      }
+
       const ensureTextStarted = () => {
         if (!textStarted) {
           controller.enqueue({ type: 'text-start', id: textPartId });
@@ -268,7 +269,7 @@ export async function POST(req: Request) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-        signal: req.signal,
+        signal: req.signal || undefined,
       });
 
       if (!backendRes.ok) {
