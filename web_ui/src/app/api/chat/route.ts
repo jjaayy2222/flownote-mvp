@@ -16,6 +16,10 @@ function isDebugChatEnabled(): boolean {
   return val === 'true' || val === '1' || val === 'yes';
 }
 
+function isAbortError(err: unknown): boolean {
+  return (err instanceof Error && err.name === 'AbortError') || (err as { name?: string })?.name === 'AbortError';
+}
+
 function getOnlyTextFromMessage(message: UIMessage): string {
   const parts = message.parts ?? [];
   const textParts = parts.filter((p) => p.type === 'text');
@@ -88,10 +92,12 @@ function handleSseEvent(
       } as UIMessageChunk);
     }
   } catch (e) {
-    console.error('Failed to parse SSE data payload as JSON', {
-      dataPayload,
-      error: e,
-    });
+    if (isDebugChatEnabled()) {
+      console.error('Failed to parse SSE data payload as JSON', {
+        dataPayload,
+        error: e,
+      });
+    }
   }
   return false;
 }
@@ -121,7 +127,7 @@ function createUIChunkStream(backendRes: Response): ReadableStream<UIMessageChun
       };
 
       if (!reader) {
-        finishStream(controller, false, null);
+        done();
         return;
       }
 
@@ -203,7 +209,7 @@ function createUIChunkStream(backendRes: Response): ReadableStream<UIMessageChun
           }
         }
       } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') {
+        if (isAbortError(err)) {
           if (isDebugChatEnabled()) {
             console.log('[Chat Proxy] Stream reading aborted.');
           }
@@ -283,7 +289,7 @@ export async function POST(req: Request) {
         fallbackRequired = true;
       }
     } catch (e) {
-      if (e instanceof Error && e.name === 'AbortError') {
+      if (isAbortError(e)) {
         if (isDebugChatEnabled()) {
           console.log('[Chat Proxy] Fetch aborted by client.');
         }
