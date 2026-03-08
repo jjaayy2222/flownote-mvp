@@ -85,9 +85,13 @@ export function ChatWindow() {
       setIsHistoryLoading(true);
       try {
         const res = await fetch(`/api/chat?session_id=${sessionId}`);
-        if (!ignore && res.ok) {
+        if (ignore) return;
+
+        if (res.ok) {
           const data = await res.json();
-          if (!ignore && data.messages && data.messages.length > 0) {
+          if (ignore) return;
+
+          if (data.messages && data.messages.length > 0) {
             // 백엔드 메시지를 UIMessage 형식으로 변환
             const historyMessages: UIMessage[] = data.messages.map((m: { role: string; content: string; timestamp?: string }, index: number) => ({
               id: `hist-${index}-${sessionId}`,
@@ -97,12 +101,13 @@ export function ChatWindow() {
             }));
 
             setMessages(prev => {
-              // 이미 히스토리가 로드되었거나 신규 메시지가 로드된 히스토리와 중복되는지 체크
-              const hasHistory = prev.some(m => m.id.startsWith('hist-'));
-              if (hasHistory) return prev;
+              // 현재 세션의 히스토리가 이미 포함되어 있는지 정밀 체크 (ID와 세션 매칭)
+              const alreadyHasCurrentHistory = prev.some(m => m.id.endsWith(`-${sessionId}`));
+              if (alreadyHasCurrentHistory) return prev;
 
-              const newcomers = prev.filter(m => m.id !== 'welcome');
-              return [WELCOME_MESSAGE, ...historyMessages, ...newcomers];
+              // welcome 메시지는 최상단 고정을 위해 제외하고 히스토리 뒤에 대화 재결합
+              const currentMessages = prev.filter(m => m.id !== 'welcome');
+              return [WELCOME_MESSAGE, ...historyMessages, ...currentMessages];
             });
           }
         }
@@ -120,6 +125,7 @@ export function ChatWindow() {
     loadHistory();
     return () => {
       ignore = true;
+      setIsHistoryLoading(false); // 세션 전환 시 로딩 상태 강제 초기화 (Stuck 방지)
     };
   }, [sessionId, setMessages]);
 
