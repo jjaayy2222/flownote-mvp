@@ -66,7 +66,7 @@ export function ChatWindow() {
     },
   });
 
-  // 세션 관리 및 히스토리 로딩
+  // 1. 초기 세션 복원/생성 (마운트 시 1회)
   useEffect(() => {
     let sid = localStorage.getItem('flownote_chat_session_id');
     if (!sid) {
@@ -74,33 +74,60 @@ export function ChatWindow() {
       localStorage.setItem('flownote_chat_session_id', sid);
     }
     setSessionId(sid);
+  }, []);
+
+  // 2. 세션 변경 시 히스토리 로드 (sessionId 의존성 추가)
+  useEffect(() => {
+    if (!sessionId) return;
+    let ignore = false;
 
     const loadHistory = async () => {
       setIsHistoryLoading(true);
       try {
-        const res = await fetch(`/api/chat?session_id=${sid}`);
+        const res = await fetch(`/api/chat?session_id=${sessionId}`);
+        if (ignore) return;
+
         if (res.ok) {
           const data = await res.json();
+          if (ignore) return;
+
           if (data.messages && data.messages.length > 0) {
             // 백엔드 메시지를 UIMessage 형식으로 변환
             const historyMessages: UIMessage[] = data.messages.map((m: { role: string; content: string; timestamp?: string }, index: number) => ({
-              id: `hist-${index}`,
+              id: `hist-${index}-${sessionId}`,
               role: m.role as 'user' | 'assistant' | 'system' | 'data',
               parts: [{ type: 'text', text: m.content }],
               createdAt: m.timestamp ? new Date(m.timestamp) : undefined,
             }));
-            setMessages([WELCOME_MESSAGE, ...historyMessages]);
+
+            setMessages(prev => {
+              // 현재 세션의 히스토리가 이미 포함되어 있는지 정밀 체크 (ID와 세션 매칭)
+              const alreadyHasCurrentHistory = prev.some(m => m.id.endsWith(`-${sessionId}`));
+              if (alreadyHasCurrentHistory) return prev;
+
+              // welcome 메시지는 최상단 고정을 위해 제외하고 히스토리 뒤에 대화 재결합
+              const currentMessages = prev.filter(m => m.id !== 'welcome');
+              return [WELCOME_MESSAGE, ...historyMessages, ...currentMessages];
+            });
           }
         }
       } catch (err) {
-        console.error('Failed to load chat history:', err);
+        if (!ignore) {
+          console.error('Failed to load chat history:', err);
+        }
       } finally {
-        setIsHistoryLoading(false);
+        if (!ignore) {
+          setIsHistoryLoading(false);
+        }
       }
     };
 
     loadHistory();
-  }, [setMessages]);
+    return () => {
+      ignore = true;
+      setIsHistoryLoading(false); // 세션 전환 시 로딩 상태 강제 초기화 (Stuck 방지)
+    };
+  }, [sessionId, setMessages]);
 
   const handleClearHistory = async () => {
     if (!sessionId) return;

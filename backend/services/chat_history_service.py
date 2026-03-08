@@ -21,6 +21,9 @@ class ChatHistoryService:
 
     async def add_message(self, session_id: str, role: str, content: str):
         """메시지를 Redis 리스트에 추가"""
+        if not session_id:
+            return
+
         if not redis_client.is_connected():
             try:
                 await redis_client.connect()
@@ -51,6 +54,9 @@ class ChatHistoryService:
 
     async def get_history(self, session_id: str, limit: int = 20) -> List[ChatMessage]:
         """최근 대화 내역 조회"""
+        if not session_id:
+            return []
+
         if not redis_client.is_connected():
             try:
                 await redis_client.connect()
@@ -62,8 +68,6 @@ class ChatHistoryService:
                 return []
 
         key = self._get_key(session_id)
-        if not key:
-            return []
         try:
             # 최근 limit개의 메시지 가져오기 (리스트의 끝에서부터)
             data = await redis_client.redis.lrange(key, -limit, -1)
@@ -81,6 +85,9 @@ class ChatHistoryService:
 
     async def clear_history(self, session_id: str):
         """특정 세션의 히스토리 삭제"""
+        if not session_id:
+            return
+
         if not redis_client.is_connected():
             try:
                 await redis_client.connect()
