@@ -24,6 +24,7 @@ from backend.services.chat_history_service import (
     ChatHistoryService,
     get_chat_history_service,
 )
+from backend.api.models import ChatMessage
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,10 @@ class ChatService:
 
     def _get_streaming_llm(self):
         """스트리밍용 ChatOpenAI 객체 생성"""
+        return self._get_llm(streaming=True)
+
+    def _get_llm(self, streaming: bool = False):
+        """ChatOpenAI 객체 생성 (기본값: non-streaming)"""
         from langchain_openai import ChatOpenAI
         import os
 
@@ -153,7 +158,7 @@ class ChatService:
             api_key=api_key,
             base_url=base_url,
             model=model,
-            streaming=True,
+            streaming=streaming,
             temperature=0.3,
         )
 
@@ -193,9 +198,8 @@ Follow-up Question: {query}
 Standalone Question:"""
 
         rephrase_prompt = ChatPromptTemplate.from_template(rephrase_template)
-        llm = (
-            self._get_streaming_llm()
-        )  # reuse same config, but maybe we want non-streaming here? ainvoke works anyway
+        # 쿼리 재구성 작업은 스트리밍이 필요 없으므로 일반 LLM 사용
+        llm = self._get_llm(streaming=False)
 
         chain = rephrase_prompt | llm | StringOutputParser()
 
@@ -203,10 +207,15 @@ Standalone Question:"""
             standalone_query = await chain.ainvoke(
                 {"history": context_history, "query": query}
             )
-            logger.info(f"Rephrased query: '{query}' -> '{standalone_query}'")
+            logger.info(
+                "Rephrased query",
+                extra={"original": query, "rephrased": standalone_query},
+            )
             return standalone_query.strip()
         except Exception as e:
-            logger.warning(f"Query rephrasing failed: {e}. Using original query.")
+            logger.warning(
+                "Query rephrasing failed", extra={"query": query, "error": str(e)}
+            )
             return query
 
     @staticmethod
@@ -244,15 +253,20 @@ Standalone Question:"""
             service=self.hybrid_search_service, k=k, alpha=alpha
         )
 
-        # 1.5. 검색 실행 (재구성된 쿼리 사용)
-        source_docs: List[Document] = await retriever.aget_relevant_documents(
-            effective_query
-        )
+        # 4. Streaming 실행 (astream_events v2 사용)
+        is_cancelled = False
+        full_content = ""
 
-        # 2. 사용자 상황에 맞춘 시스템 프롬프트 템플릿 작성
-        user_context_msg = self._get_user_context_prompt_text(user_id)
+        try:
+            # 1.5. 검색 실행 (재구성된 쿼리 사용) - 예외 발생 시 SSE error로 보고하기 위해 try 내부로 이동
+            source_docs: List[Document] = await retriever.aget_relevant_documents(
+                effective_query
+            )
 
-        system_template = f"""{user_context_msg}
+            # 2. 사용자 상황에 맞춘 시스템 프롬프트 템플릿 작성
+            user_context_msg = self._get_user_context_prompt_text(user_id)
+
+            system_template = f"""{user_context_msg}
 
 Answer the user's question clearly and accurately, using ONLY the context provided below.
 If you cannot answer the question using the context, state "주어진 문서 내용에서는 답변을 찾을 수 없습니다." and do not guess.
@@ -261,70 +275,55 @@ Do not mention the words "context" or "provided text" explicitly in your final a
 Context: 
 {{context}}
 """
-        prompt_messages = [
-            SystemMessagePromptTemplate.from_template(system_template),
-        ]
+            prompt_messages = [
+                SystemMessagePromptTemplate.from_template(system_template),
+            ]
+            prompt_messages.append(HumanMessagePromptTemplate.from_template("{input}"))
+            prompt = ChatPromptTemplate.from_messages(prompt_messages)
 
-        # 최근 대화를 프롬프트에 직접 포함 (선택사항, 하지만 RAG에서는 보통 context에 녹임)
-        # 여기서는 query rewriting을 했으므로, standalone query만 던지는 방식을 선택하거나,
-        # 혹은 히스토리를 명시적으로 ChatPrompt에 넣을 수 있음.
-        # Vercel AI SDK는 보통 messages를 다 보내주므로,
-        # 여기서는 memory 역할을 하는 history를 partial로 넣는 대신,
-        # rewriting된 query를 input으로 사용함.
+            # 3. 단일 책임 RAG 파이프라인: 수동 retrieval + 단순 LLM 체인
+            def format_docs(docs: List[Document]) -> str:
+                """Format retrieved documents securely into a bounded-length context string."""
+                limited_docs = docs[: self.rag_max_docs]
+                contents: List[str] = []
+                total_length = 0
 
-        prompt_messages.append(HumanMessagePromptTemplate.from_template("{input}"))
-        prompt = ChatPromptTemplate.from_messages(prompt_messages)
+                for i, doc in enumerate(limited_docs, 1):
+                    content = doc.page_content or ""
+                    # 문서 경계를 모델이 구분하기 쉽도록 가벼운 구분자 추가
+                    header = f"--- Document {i} ---"
 
-        # 3. 단일 책임 RAG 파이프라인: 수동 retrieval + 단순 LLM 체인
-        def format_docs(docs: List[Document]) -> str:
-            """Format retrieved documents securely into a bounded-length context string."""
-            limited_docs = docs[: self.rag_max_docs]
-            contents: List[str] = []
-            total_length = 0
+                    doc_suffix = "...(truncated)"
+                    if len(content) > self.rag_max_doc_chars:
+                        # 잘림 표시 접미사의 길이까지 고려해서 엄격하게 자름
+                        safe_len = max(0, self.rag_max_doc_chars - len(doc_suffix))
+                        content = content[:safe_len] + doc_suffix
 
-            for i, doc in enumerate(limited_docs, 1):
-                content = doc.page_content or ""
-                # 문서 경계를 모델이 구분하기 쉽도록 가벼운 구분자 추가
-                header = f"--- Document {i} ---"
+                    doc_text = f"{header}\n{content}\n"
 
-                doc_suffix = "...(truncated)"
-                if len(content) > self.rag_max_doc_chars:
-                    # 잘림 표시 접미사의 길이까지 고려해서 엄격하게 자름
-                    safe_len = max(0, self.rag_max_doc_chars - len(doc_suffix))
-                    content = content[:safe_len] + doc_suffix
+                    # 전체 문자열 길이 제한
+                    remaining = self.rag_max_total_chars - total_length
+                    if remaining <= 0:
+                        break
 
-                doc_text = f"{header}\n{content}\n"
+                    if len(doc_text) > remaining:
+                        total_limit_suffix = " ...(truncated due to total length limit)"
+                        if remaining > len(total_limit_suffix):
+                            doc_text = (
+                                doc_text[: remaining - len(total_limit_suffix)]
+                                + total_limit_suffix
+                            )
+                        else:
+                            doc_text = doc_text[:remaining]
 
-                # 전체 문자열 길이 제한
-                remaining = self.rag_max_total_chars - total_length
-                if remaining <= 0:
-                    break
+                    contents.append(doc_text)
+                    total_length += len(doc_text)
 
-                if len(doc_text) > remaining:
-                    total_limit_suffix = " ...(truncated due to total length limit)"
-                    if remaining > len(total_limit_suffix):
-                        doc_text = (
-                            doc_text[: remaining - len(total_limit_suffix)]
-                            + total_limit_suffix
-                        )
-                    else:
-                        doc_text = doc_text[:remaining]
+                return "\n\n".join(contents)
 
-                contents.append(doc_text)
-                total_length += len(doc_text)
-
-            return "\n\n".join(contents)
-
-        # 4. Streaming 실행 (astream_events v2 사용)
-        is_cancelled = False
-
-        try:
-            # 1) LLM 초기화 및 파이프라인 구성 (예외 발생 시 클라이언트에 error SSE로 전달되도록 try 블록 안으로 이동)
+            # 1) LLM 초기화 및 파이프라인 구성
             llm = self._get_streaming_llm()
             rag_chain = prompt | llm
-
-            # 2) 단일 위치에서 public API를 통해 retrieval 수행 (중복 조회 방지)
-            # source_docs는 위에서 effective_query로 이미 조회함
 
             sources = [
                 {
@@ -347,7 +346,6 @@ Context:
             }  # 유저는 원본 질문을 보고 싶어하므로 query 사용
 
             # 4) LLM 스트리밍
-            full_content = ""
             async for event in rag_chain.astream_events(chain_input, version="v2"):
                 kind = event["event"]
 
@@ -365,7 +363,10 @@ Context:
             raise
         except Exception as e:
             # 서버 측 상세 에러 기록 (내부 로깅)
-            logger.exception("Error during streaming RAG chat")
+            logger.exception(
+                "Error during streaming RAG chat",
+                extra={"user_id": user_id, "session_id": session_id},
+            )
             # 클라이언트 측에는 일반(Generic) 메시지 전송
             yield self._format_sse_event(
                 "error",

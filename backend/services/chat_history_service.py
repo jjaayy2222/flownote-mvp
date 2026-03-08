@@ -25,7 +25,10 @@ class ChatHistoryService:
             try:
                 await redis_client.connect()
             except Exception as e:
-                logger.error(f"Redis connection failed in ChatHistoryService: {e}")
+                logger.error(
+                    "Redis connection failed in ChatHistoryService",
+                    extra={"session_id": session_id, "error": str(e)},
+                )
                 return
 
         key = self._get_key(session_id)
@@ -42,7 +45,8 @@ class ChatHistoryService:
             await redis_client.redis.expire(key, self.ttl)
         except Exception as e:
             logger.error(
-                f"Failed to add message to history for session {session_id}: {e}"
+                "Failed to add message to history",
+                extra={"session_id": session_id, "error": str(e)},
             )
 
     async def get_history(self, session_id: str, limit: int = 20) -> List[ChatMessage]:
@@ -51,10 +55,15 @@ class ChatHistoryService:
             try:
                 await redis_client.connect()
             except Exception as e:
-                logger.error(f"Redis connection failed in ChatHistoryService: {e}")
+                logger.error(
+                    "Redis connection failed in ChatHistoryService",
+                    extra={"session_id": session_id, "error": str(e)},
+                )
                 return []
 
         key = self._get_key(session_id)
+        if not key:
+            return []
         try:
             # 최근 limit개의 메시지 가져오기 (리스트의 끝에서부터)
             data = await redis_client.redis.lrange(key, -limit, -1)
@@ -64,16 +73,32 @@ class ChatHistoryService:
                 messages.append(ChatMessage(**msg_dict))
             return messages
         except Exception as e:
-            logger.error(f"Failed to get history for session {session_id}: {e}")
+            logger.error(
+                "Failed to get history",
+                extra={"session_id": session_id, "error": str(e)},
+            )
             return []
 
     async def clear_history(self, session_id: str):
         """특정 세션의 히스토리 삭제"""
         if not redis_client.is_connected():
-            return
+            try:
+                await redis_client.connect()
+            except Exception as e:
+                logger.error(
+                    "Failed to connect to Redis for clearing history",
+                    extra={"session_id": session_id, "error": str(e)},
+                )
+                return
 
         key = self._get_key(session_id)
-        await redis_client.redis.delete(key)
+        try:
+            await redis_client.redis.delete(key)
+        except Exception as e:
+            logger.error(
+                "Failed to clear history",
+                extra={"session_id": session_id, "error": str(e)},
+            )
 
 
 def get_chat_history_service() -> ChatHistoryService:

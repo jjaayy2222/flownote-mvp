@@ -110,8 +110,7 @@ export function ChatWindow() {
       await fetch(`/api/chat/history?session_id=${sessionId}`, {
         method: 'DELETE',
       });
-      // Actually, my route.ts doesn't handle DELETE yet, I should add it or just clear state
-      // For now, let's just clear the local state and localStorage to get a new session
+      // Clear local state and localStorage to get a new session
       const newSid = generateSessionId();
       localStorage.setItem('flownote_chat_session_id', newSid);
       setSessionId(newSid);

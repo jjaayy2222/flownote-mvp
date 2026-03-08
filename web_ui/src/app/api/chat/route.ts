@@ -283,10 +283,10 @@ export async function POST(req: Request) {
 
     const payload = {
       query: queryText,
-      user_id: body.user_id || 'test_user_123',
+      user_id: body.user_id ?? 'test_user_123',
       session_id: body.session_id,
-      k: body.k || 3,
-      alpha: body.alpha || 0.5,
+      k: body.k ?? 3,
+      alpha: body.alpha ?? 0.5,
     };
 
     let backendRes: Response | null = null;
