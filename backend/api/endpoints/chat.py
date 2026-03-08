@@ -8,8 +8,12 @@ import logging
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
-from backend.api.models import ChatQueryRequest
+from backend.api.models import ChatQueryRequest, ChatHistoryResponse
 from backend.services.chat_service import ChatService, get_chat_service
+from backend.services.chat_history_service import (
+    ChatHistoryService,
+    get_chat_history_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +38,7 @@ async def stream_chat(
         chat_service.stream_chat(
             query=request.query,
             user_id=request.user_id,
+            session_id=request.session_id,
             k=request.k,
             alpha=request.alpha,
         ),
@@ -44,3 +49,37 @@ async def stream_chat(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get(
+    "/history/{session_id}",
+    response_model=ChatHistoryResponse,
+    summary="대화 히스토리 조회",
+)
+async def get_chat_history(
+    session_id: str,
+    limit: int = 20,
+    chat_history_service: ChatHistoryService = Depends(get_chat_history_service),
+):
+    """
+    지정된 세션 ID의 최근 대화 내역을 조회합니다.
+    """
+    messages = await chat_history_service.get_history(session_id, limit=limit)
+    return ChatHistoryResponse(
+        status="success", session_id=session_id, messages=messages
+    )
+
+
+@router.delete("/history/{session_id}", summary="대화 히스토리 초기화")
+async def clear_chat_history(
+    session_id: str,
+    chat_history_service: ChatHistoryService = Depends(get_chat_history_service),
+):
+    """
+    지정된 세션 ID의 대화 내역을 모두 삭제합니다.
+    """
+    await chat_history_service.clear_history(session_id)
+    return {
+        "status": "success",
+        "message": f"History for session {session_id} cleared.",
+    }
