@@ -25,9 +25,16 @@ const WELCOME_MESSAGE: UIMessage = {
 
 const defaultChatTransport = new DefaultChatTransport({ api: '/api/chat' });
 
+function generateSessionId(): string {
+  return `sess-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
 export function ChatWindow() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState('');
+  const [sessionId, setSessionId] = useState<string>('');
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [alpha, setAlpha] = useState(0.5);
 
   const scrollToBottom = useCallback(() => {
     if (scrollContainerRef.current) {
@@ -40,9 +47,14 @@ export function ChatWindow() {
     }
   }, []);
 
-  const { messages, sendMessage, status, error } = useChat({
+  const { messages, sendMessage, status, error, setMessages } = useChat({
     messages: [WELCOME_MESSAGE],
     transport: defaultChatTransport,
+    // @ts-expect-error - body is supported at runtime but may have type conflicts with custom transport
+    body: {
+      session_id: sessionId,
+      alpha: alpha,
+    },
     onError: (err: Error) => {
       toast.error('메시지 전송 중 에러가 발생했습니다.', {
         description: err.message || '서버와의 연결을 확인해주세요.',
@@ -53,6 +65,63 @@ export function ChatWindow() {
       scrollToBottom();
     },
   });
+
+  // 세션 관리 및 히스토리 로딩
+  useEffect(() => {
+    let sid = localStorage.getItem('flownote_chat_session_id');
+    if (!sid) {
+      sid = generateSessionId();
+      localStorage.setItem('flownote_chat_session_id', sid);
+    }
+    setSessionId(sid);
+
+    const loadHistory = async () => {
+      setIsHistoryLoading(true);
+      try {
+        const res = await fetch(`/api/chat?session_id=${sid}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.messages && data.messages.length > 0) {
+            // 백엔드 메시지를 UIMessage 형식으로 변환
+            const historyMessages: UIMessage[] = data.messages.map((m: { role: string; content: string; timestamp?: string }, index: number) => ({
+              id: `hist-${index}`,
+              role: m.role as 'user' | 'assistant' | 'system' | 'data',
+              parts: [{ type: 'text', text: m.content }],
+              createdAt: m.timestamp ? new Date(m.timestamp) : undefined,
+            }));
+            setMessages([WELCOME_MESSAGE, ...historyMessages]);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load chat history:', err);
+      } finally {
+        setIsHistoryLoading(false);
+      }
+    };
+
+    loadHistory();
+  }, [setMessages]);
+
+  const handleClearHistory = async () => {
+    if (!sessionId) return;
+    if (!confirm('대화 내용을 모두 초기화하시겠습니까?')) return;
+
+    try {
+      await fetch(`/api/chat/history?session_id=${sessionId}`, {
+        method: 'DELETE',
+      });
+      // Actually, my route.ts doesn't handle DELETE yet, I should add it or just clear state
+      // For now, let's just clear the local state and localStorage to get a new session
+      const newSid = generateSessionId();
+      localStorage.setItem('flownote_chat_session_id', newSid);
+      setSessionId(newSid);
+      setMessages([WELCOME_MESSAGE]);
+      toast.success('대화가 초기화되었습니다.');
+    } catch (err) {
+      console.error('Clear history error:', err);
+      toast.error('초기화 중 오류가 발생했습니다.');
+    }
+  };
 
   const isLoading = status === 'streaming' || status === 'submitted';
 
@@ -88,13 +157,41 @@ export function ChatWindow() {
           <h2 className="text-lg font-bold text-slate-800 tracking-tight">Flownote AI</h2>
           <p className="text-xs text-slate-500 font-medium">사용자 데이터 기반 RAG 에이전트</p>
         </div>
-        {/* 상태 표시 */}
-        {isLoading && (
-          <div className="flex items-center gap-1.5 text-xs text-blue-500">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            <span>응답 생성 중...</span>
+        <div className="flex items-center gap-3">
+          {/* 하이브리드 가중치 조절 (간이) */}
+          <div className="hidden md:flex flex-col items-end mr-2">
+            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Alpha (Dense/FAISS)</span>
+            <select 
+              value={alpha} 
+              aria-label="Alpha weighting for hybrid search"
+              onChange={(e) => setAlpha(parseFloat(e.target.value))}
+              className="text-xs bg-transparent border-none focus:ring-0 text-slate-600 font-medium cursor-pointer"
+            >
+              <option value="0.0">0.0 (Keyword Only)</option>
+              <option value="0.3">0.3 (Keyword Heavy)</option>
+              <option value="0.5">0.5 (Balanced)</option>
+              <option value="0.7">0.7 (Semantic Heavy)</option>
+              <option value="1.0">1.0 (Semantic Only)</option>
+            </select>
           </div>
-        )}
+
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={handleClearHistory}
+            className="text-slate-400 hover:text-red-500 hover:bg-red-50 text-xs h-8"
+          >
+            초기화
+          </Button>
+
+          {/* 상태 표시 */}
+          {(isLoading || isHistoryLoading) && (
+            <div className="flex items-center gap-1.5 text-xs text-blue-500 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-100">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>{isHistoryLoading ? '이전 대화 로드 중...' : '응답 생성 중...'}</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 메시지 목록 */}

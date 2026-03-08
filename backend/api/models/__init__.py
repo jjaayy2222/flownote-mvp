@@ -187,12 +187,31 @@ class ChatQueryRequest(BaseModel):
 
     query: str = Field(..., description="사용자 질의 텍스트")
     user_id: str = Field(..., description="사용자 ID (온보딩 및 세션 식별용)")
+    session_id: Optional[str] = Field(
+        default=None, description="세션 ID (대화 맥락 유지용)"
+    )
     k: int = Field(
         default=5, ge=1, le=20, description="RAG 검색에 사용할 최대 컨텍스트(문서) 수"
     )
     alpha: float = Field(
         default=0.5, ge=0.0, le=1.0, description="하이브리드 검색 FAISS 가중치"
     )
+
+
+class ChatMessage(BaseModel):
+    """채팅 메시지 개별 항목 모델"""
+
+    role: str = Field(..., description="메시지 발신자 역할 (user, assistant, system)")
+    content: str = Field(..., description="메시지 내용")
+    timestamp: Optional[str] = Field(None, description="ISO 형식의 타임스탬프")
+
+
+class ChatHistoryResponse(BaseModel):
+    """채팅 히스토리 응답 모델"""
+
+    status: str = Field(..., description="응답 상태")
+    session_id: str = Field(..., description="세션 ID")
+    messages: List[ChatMessage] = Field(default_factory=list, description="대화 내역 리스트")
 
 
 __all__ = [
@@ -232,4 +251,6 @@ __all__ = [
     "HybridSearchResponse",
     # Chat (Step 7)
     "ChatQueryRequest",
+    "ChatMessage",
+    "ChatHistoryResponse",
 ]

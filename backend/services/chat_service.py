@@ -20,6 +20,10 @@ from backend.services.hybrid_search_service import (
     get_hybrid_search_service,
 )
 from backend.services.onboarding_service import OnboardingService
+from backend.services.chat_history_service import (
+    ChatHistoryService,
+    get_chat_history_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +82,11 @@ class ChatService:
         self,
         hybrid_search_service: HybridSearchService,
         onboarding_service: OnboardingService,
+        chat_history_service: ChatHistoryService,
     ):
         self.hybrid_search_service = hybrid_search_service
         self.onboarding_service = onboarding_service
+        self.chat_history_service = chat_history_service
 
         import os
 
@@ -167,6 +173,42 @@ class ChatService:
 
         return "You are a helpful and expert AI assistant."
 
+    async def _rephrase_query(self, query: str, history: List[ChatMessage]) -> str:
+        """이전 대화 맥락을 기반으로 질의 재구성 (Query Rewriting)"""
+        if not history:
+            return query
+
+        from langchain_core.output_parsers import StringOutputParser
+
+        # 최근 5개 정도의 대화만 맥락으로 사용
+        context_history = "\n".join([f"{m.role}: {m.content}" for m in history[-5:]])
+
+        rephrase_template = """Given the following conversation history and a follow-up question, rephrase the follow-up question to be a standalone question that can be understood without the conversation history.
+If the follow-up question is already standalone, return it exactly as is.
+
+Chat History:
+{history}
+
+Follow-up Question: {query}
+Standalone Question:"""
+
+        rephrase_prompt = ChatPromptTemplate.from_template(rephrase_template)
+        llm = (
+            self._get_streaming_llm()
+        )  # reuse same config, but maybe we want non-streaming here? ainvoke works anyway
+
+        chain = rephrase_prompt | llm | StringOutputParser()
+
+        try:
+            standalone_query = await chain.ainvoke(
+                {"history": context_history, "query": query}
+            )
+            logger.info(f"Rephrased query: '{query}' -> '{standalone_query}'")
+            return standalone_query.strip()
+        except Exception as e:
+            logger.warning(f"Query rephrasing failed: {e}. Using original query.")
+            return query
+
     @staticmethod
     def _format_sse_event(event_type: str, **kwargs) -> str:
         """SSE 규격에 맞게 이벤트를 포맷팅하는 헬퍼 함수"""
@@ -182,15 +224,29 @@ class ChatService:
         self,
         query: str,
         user_id: str,
+        session_id: Optional[str] = None,
         k: int = 5,
         alpha: float = 0.5,
     ) -> AsyncGenerator[str, None]:
         """질의를 받아 RAG 체인을 실행하고 SSE 규격에 맞게 결과 청크를 반환하는 비동기 제너레이터"""
         logger.info(f"Stream chat started for user {user_id}")
 
+        # 0. 히스토리 로드 및 질의 재구성
+        history: List[ChatMessage] = []
+        effective_query = query
+        if session_id:
+            history = await self.chat_history_service.get_history(session_id)
+            if history:
+                effective_query = await self._rephrase_query(query, history)
+
         # 1. Custom Retriever 구성
         retriever = HybridSearchLangChainRetriever(
             service=self.hybrid_search_service, k=k, alpha=alpha
+        )
+
+        # 1.5. 검색 실행 (재구성된 쿼리 사용)
+        source_docs: List[Document] = await retriever.aget_relevant_documents(
+            effective_query
         )
 
         # 2. 사용자 상황에 맞춘 시스템 프롬프트 템플릿 작성
@@ -205,12 +261,19 @@ Do not mention the words "context" or "provided text" explicitly in your final a
 Context: 
 {{context}}
 """
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                SystemMessagePromptTemplate.from_template(system_template),
-                HumanMessagePromptTemplate.from_template("{input}"),
-            ]
-        )
+        prompt_messages = [
+            SystemMessagePromptTemplate.from_template(system_template),
+        ]
+
+        # 최근 대화를 프롬프트에 직접 포함 (선택사항, 하지만 RAG에서는 보통 context에 녹임)
+        # 여기서는 query rewriting을 했으므로, standalone query만 던지는 방식을 선택하거나,
+        # 혹은 히스토리를 명시적으로 ChatPrompt에 넣을 수 있음.
+        # Vercel AI SDK는 보통 messages를 다 보내주므로,
+        # 여기서는 memory 역할을 하는 history를 partial로 넣는 대신,
+        # rewriting된 query를 input으로 사용함.
+
+        prompt_messages.append(HumanMessagePromptTemplate.from_template("{input}"))
+        prompt = ChatPromptTemplate.from_messages(prompt_messages)
 
         # 3. 단일 책임 RAG 파이프라인: 수동 retrieval + 단순 LLM 체인
         def format_docs(docs: List[Document]) -> str:
@@ -261,7 +324,7 @@ Context:
             rag_chain = prompt | llm
 
             # 2) 단일 위치에서 public API를 통해 retrieval 수행 (중복 조회 방지)
-            source_docs: List[Document] = await retriever.aget_relevant_documents(query)
+            # source_docs는 위에서 effective_query로 이미 조회함
 
             sources = [
                 {
@@ -278,9 +341,13 @@ Context:
 
             # 3) 컨텍스트를 직접 만들어 체인에 주입 (LCEL Runnable 의존성 최소화)
             context_str = format_docs(source_docs)
-            chain_input = {"input": query, "context": context_str}
+            chain_input = {
+                "input": query,
+                "context": context_str,
+            }  # 유저는 원본 질문을 보고 싶어하므로 query 사용
 
             # 4) LLM 스트리밍
+            full_content = ""
             async for event in rag_chain.astream_events(chain_input, version="v2"):
                 kind = event["event"]
 
@@ -288,6 +355,7 @@ Context:
                 if kind == "on_chat_model_stream":
                     chunk = event["data"].get("chunk")
                     if chunk and getattr(chunk, "content", None):
+                        full_content += chunk.content
                         yield self._format_sse_event("token", data=chunk.content)
 
         except asyncio.CancelledError:
@@ -306,6 +374,13 @@ Context:
 
         # GeneratorExit/CancelledError 중에는 yield를 호출하면 안되므로 정상/내부오류 발생 시에만 DONE 방출
         if not is_cancelled:
+            # 성공적으로 마쳤다면 히스토리에 저장
+            if session_id and full_content:
+                await self.chat_history_service.add_message(session_id, "user", query)
+                await self.chat_history_service.add_message(
+                    session_id, "assistant", full_content
+                )
+
             yield self._format_sse_event("done")
 
 
@@ -314,4 +389,5 @@ def get_chat_service() -> ChatService:
     return ChatService(
         hybrid_search_service=get_hybrid_search_service(),
         onboarding_service=OnboardingService(),
+        chat_history_service=get_chat_history_service(),
     )
