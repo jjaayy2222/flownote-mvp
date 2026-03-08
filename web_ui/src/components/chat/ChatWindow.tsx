@@ -81,6 +81,10 @@ export function ChatWindow() {
     if (!sessionId) return;
     let ignore = false;
 
+    // 세션이 변경되면 먼저 메시지 창을 비우고 환영 메시지만 남깁니다.
+    // 이를 통해 이전 세션의 잔여 메시지가 섞이는 현상을 방지합니다.
+    setMessages([WELCOME_MESSAGE]);
+
     const loadHistory = async () => {
       setIsHistoryLoading(true);
       try {
@@ -101,11 +105,7 @@ export function ChatWindow() {
             }));
 
             setMessages(prev => {
-              // 현재 세션의 히스토리가 이미 포함되어 있는지 정밀 체크 (ID와 세션 매칭)
-              const alreadyHasCurrentHistory = prev.some(m => m.id.endsWith(`-${sessionId}`));
-              if (alreadyHasCurrentHistory) return prev;
-
-              // welcome 메시지는 최상단 고정을 위해 제외하고 히스토리 뒤에 대화 재결합
+              // 환영 메시지와 로딩 중 이미 발생했을 수 있는 신규 메시지는 보존
               const currentMessages = prev.filter(m => m.id !== 'welcome');
               return [WELCOME_MESSAGE, ...historyMessages, ...currentMessages];
             });
@@ -125,7 +125,7 @@ export function ChatWindow() {
     loadHistory();
     return () => {
       ignore = true;
-      setIsHistoryLoading(false); // 세션 전환 시 로딩 상태 강제 초기화 (Stuck 방지)
+      setIsHistoryLoading(false); // Cleanup 시 로딩 상태 해제 보장
     };
   }, [sessionId, setMessages]);
 

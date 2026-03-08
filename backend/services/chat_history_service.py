@@ -22,7 +22,8 @@ class ChatHistoryService:
     async def add_message(self, session_id: str, role: str, content: str):
         """메시지를 Redis 리스트에 추가"""
         if not session_id:
-            return
+            logger.error("Failed to add message: session_id is missing.")
+            raise ValueError("session_id is required to add messages to history.")
 
         if not redis_client.is_connected():
             try:
@@ -55,6 +56,9 @@ class ChatHistoryService:
     async def get_history(self, session_id: str, limit: int = 20) -> List[ChatMessage]:
         """최근 대화 내역 조회"""
         if not session_id:
+            logger.warning(
+                "get_history called without session_id. Returning empty list."
+            )
             return []
 
         if not redis_client.is_connected():
@@ -86,6 +90,7 @@ class ChatHistoryService:
     async def clear_history(self, session_id: str):
         """특정 세션의 히스토리 삭제"""
         if not session_id:
+            logger.error("Failed to clear history: session_id is missing.")
             return
 
         if not redis_client.is_connected():
