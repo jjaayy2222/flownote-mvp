@@ -283,9 +283,10 @@ export async function POST(req: Request) {
 
     const payload = {
       query: queryText,
-      user_id: 'test_user_123', // TODO: 인증 연동 시 세션 사용자 ID로 교체
-      k: 3,
-      alpha: 0.5,
+      user_id: body.user_id ?? 'test_user_123',
+      session_id: body.session_id,
+      k: body.k ?? 3,
+      alpha: body.alpha ?? 0.5,
     };
 
     let backendRes: Response | null = null;
@@ -322,6 +323,64 @@ export async function POST(req: Request) {
     return createUIMessageStreamResponse({ stream: chunkStream });
   } catch (error) {
     console.error('[Chat Proxy Error]', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
+}
+
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const sessionId = searchParams.get('session_id');
+
+    if (!sessionId) {
+      return NextResponse.json({ error: 'session_id is required' }, { status: 400 });
+    }
+
+    const backendRes = await fetch(`${BACKEND_URL}/api/chat/history/${sessionId}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!backendRes.ok) {
+      const errorData = await backendRes.json().catch(() => ({}));
+      return NextResponse.json(
+        { error: errorData.message || 'Failed to fetch history from backend' },
+        { status: backendRes.status }
+      );
+    }
+
+    const data = await backendRes.json();
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error('[Chat History Proxy Error]', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const sessionId = searchParams.get('session_id');
+
+    if (!sessionId) {
+      return NextResponse.json({ error: 'session_id is required' }, { status: 400 });
+    }
+
+    const backendRes = await fetch(`${BACKEND_URL}/api/chat/history/${sessionId}`, {
+      method: 'DELETE',
+    });
+
+    if (!backendRes.ok) {
+      const errorData = await backendRes.json().catch(() => ({}));
+      return NextResponse.json(
+        { error: errorData.message || 'Failed to clear history from backend' },
+        { status: backendRes.status }
+      );
+    }
+
+    return NextResponse.json({ status: 'success' });
+  } catch (error) {
+    console.error('[Chat History Delete Error]', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
