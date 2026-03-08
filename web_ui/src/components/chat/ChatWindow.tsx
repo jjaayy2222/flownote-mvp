@@ -66,7 +66,7 @@ export function ChatWindow() {
     },
   });
 
-  // 세션 관리 및 히스토리 로딩
+  // 1. 초기 세션 복원/생성 (마운트 시 1회)
   useEffect(() => {
     let sid = localStorage.getItem('flownote_chat_session_id');
     if (!sid) {
@@ -74,33 +74,54 @@ export function ChatWindow() {
       localStorage.setItem('flownote_chat_session_id', sid);
     }
     setSessionId(sid);
+  }, []);
+
+  // 2. 세션 변경 시 히스토리 로드 (sessionId 의존성 추가)
+  useEffect(() => {
+    if (!sessionId) return;
+    let ignore = false;
 
     const loadHistory = async () => {
       setIsHistoryLoading(true);
       try {
-        const res = await fetch(`/api/chat?session_id=${sid}`);
-        if (res.ok) {
+        const res = await fetch(`/api/chat?session_id=${sessionId}`);
+        if (!ignore && res.ok) {
           const data = await res.json();
-          if (data.messages && data.messages.length > 0) {
+          if (!ignore && data.messages && data.messages.length > 0) {
             // 백엔드 메시지를 UIMessage 형식으로 변환
             const historyMessages: UIMessage[] = data.messages.map((m: { role: string; content: string; timestamp?: string }, index: number) => ({
-              id: `hist-${index}`,
+              id: `hist-${index}-${sessionId}`,
               role: m.role as 'user' | 'assistant' | 'system' | 'data',
               parts: [{ type: 'text', text: m.content }],
               createdAt: m.timestamp ? new Date(m.timestamp) : undefined,
             }));
-            setMessages([WELCOME_MESSAGE, ...historyMessages]);
+
+            setMessages(prev => {
+              // 이미 히스토리가 로드되었거나 신규 메시지가 로드된 히스토리와 중복되는지 체크
+              const hasHistory = prev.some(m => m.id.startsWith('hist-'));
+              if (hasHistory) return prev;
+
+              const newcomers = prev.filter(m => m.id !== 'welcome');
+              return [WELCOME_MESSAGE, ...historyMessages, ...newcomers];
+            });
           }
         }
       } catch (err) {
-        console.error('Failed to load chat history:', err);
+        if (!ignore) {
+          console.error('Failed to load chat history:', err);
+        }
       } finally {
-        setIsHistoryLoading(false);
+        if (!ignore) {
+          setIsHistoryLoading(false);
+        }
       }
     };
 
     loadHistory();
-  }, [setMessages]);
+    return () => {
+      ignore = true;
+    };
+  }, [sessionId, setMessages]);
 
   const handleClearHistory = async () => {
     if (!sessionId) return;
