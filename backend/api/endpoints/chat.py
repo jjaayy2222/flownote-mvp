@@ -5,7 +5,7 @@
 """
 
 import logging
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from backend.api.models import ChatQueryRequest, ChatHistoryResponse
@@ -64,10 +64,13 @@ async def get_chat_history(
     """
     지정된 세션 ID의 최근 대화 내역을 조회합니다.
     """
-    messages = await chat_history_service.get_history(session_id, limit=limit)
-    return ChatHistoryResponse(
-        status="success", session_id=session_id, messages=messages
-    )
+    try:
+        messages = await chat_history_service.get_history(session_id, limit=limit)
+        return ChatHistoryResponse(
+            status="success", session_id=session_id, messages=messages
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.delete("/history/{session_id}", summary="대화 히스토리 초기화")
@@ -78,8 +81,11 @@ async def clear_chat_history(
     """
     지정된 세션 ID의 대화 내역을 모두 삭제합니다.
     """
-    await chat_history_service.clear_history(session_id)
-    return {
-        "status": "success",
-        "message": f"History for session {session_id} cleared.",
-    }
+    try:
+        await chat_history_service.clear_history(session_id)
+        return {
+            "status": "success",
+            "message": f"History for session {session_id} cleared.",
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

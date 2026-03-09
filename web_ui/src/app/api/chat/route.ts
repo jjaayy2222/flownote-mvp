@@ -7,6 +7,10 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
 /** Nginx 스타일의 비표준 상태 코드: 클라이언트가 연결을 조기에 닫았음을 나타냄 */
 const HTTP_STATUS_CLIENT_CLOSED_REQUEST = 499;
 
+const DEFAULT_K = 3;
+const DEFAULT_ALPHA = 0.5;
+const DEFAULT_USER_ID = 'test_user_123';
+
 function generateUniqueId(): string {
   return typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
@@ -283,10 +287,10 @@ export async function POST(req: Request) {
 
     const payload = {
       query: queryText,
-      user_id: body.user_id ?? 'test_user_123',
+      user_id: body.user_id ?? DEFAULT_USER_ID,
       session_id: body.session_id,
-      k: body.k ?? 3,
-      alpha: body.alpha ?? 0.5,
+      k: body.k ?? DEFAULT_K,
+      alpha: body.alpha ?? DEFAULT_ALPHA,
     };
 
     let backendRes: Response | null = null;
@@ -327,60 +331,3 @@ export async function POST(req: Request) {
   }
 }
 
-export async function GET(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const sessionId = searchParams.get('session_id');
-
-    if (!sessionId) {
-      return NextResponse.json({ error: 'session_id is required' }, { status: 400 });
-    }
-
-    const backendRes = await fetch(`${BACKEND_URL}/api/chat/history/${sessionId}`, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-    });
-
-    if (!backendRes.ok) {
-      const errorData = await backendRes.json().catch(() => ({}));
-      return NextResponse.json(
-        { error: errorData.message || 'Failed to fetch history from backend' },
-        { status: backendRes.status }
-      );
-    }
-
-    const data = await backendRes.json();
-    return NextResponse.json(data);
-  } catch (error) {
-    console.error('[Chat History Proxy Error]', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
-  }
-}
-
-export async function DELETE(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const sessionId = searchParams.get('session_id');
-
-    if (!sessionId) {
-      return NextResponse.json({ error: 'session_id is required' }, { status: 400 });
-    }
-
-    const backendRes = await fetch(`${BACKEND_URL}/api/chat/history/${sessionId}`, {
-      method: 'DELETE',
-    });
-
-    if (!backendRes.ok) {
-      const errorData = await backendRes.json().catch(() => ({}));
-      return NextResponse.json(
-        { error: errorData.message || 'Failed to clear history from backend' },
-        { status: backendRes.status }
-      );
-    }
-
-    return NextResponse.json({ status: 'success' });
-  } catch (error) {
-    console.error('[Chat History Delete Error]', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
-  }
-}
