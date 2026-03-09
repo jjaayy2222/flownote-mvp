@@ -23,8 +23,11 @@ const WELCOME_MESSAGE: UIMessage = {
   ],
 };
 
-const defaultChatTransport = new DefaultChatTransport({ api: '/api/chat' });
+const DEFAULT_CHAT_K = 3;
+const DEFAULT_CHAT_ALPHA = 0.5;
 
+
+const defaultChatTransport = new DefaultChatTransport({ api: '/api/chat' });
 function generateSessionId(): string {
   return `sess-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
@@ -34,7 +37,7 @@ export function ChatWindow() {
   const [input, setInput] = useState('');
   const [sessionId, setSessionId] = useState<string>('');
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
-  const [alpha, setAlpha] = useState(0.5);
+  const [alpha, setAlpha] = useState(DEFAULT_CHAT_ALPHA);
 
   const scrollToBottom = useCallback(() => {
     if (scrollContainerRef.current) {
@@ -54,6 +57,7 @@ export function ChatWindow() {
     body: {
       session_id: sessionId,
       alpha: alpha,
+      k: DEFAULT_CHAT_K,
     },
     onError: (err: Error) => {
       toast.error('메시지 전송 중 에러가 발생했습니다.', {
@@ -88,7 +92,7 @@ export function ChatWindow() {
     const loadHistory = async () => {
       setIsHistoryLoading(true);
       try {
-        const res = await fetch(`/api/chat?session_id=${sessionId}`);
+        const res = await fetch(`/api/chat/history?session_id=${sessionId}`);
         if (ignore) return;
 
         if (res.ok) {
@@ -110,10 +114,17 @@ export function ChatWindow() {
               return [WELCOME_MESSAGE, ...historyMessages, ...currentMessages];
             });
           }
+        } else {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Failed to load history');
         }
-      } catch (err) {
+      } catch (err: unknown) {
         if (!ignore) {
+          const errMsg = err instanceof Error ? err.message : 'Unknown error';
           console.error('Failed to load chat history:', err);
+          toast.error('대화 내역을 불러오는데 실패했습니다.', {
+            description: errMsg,
+          });
         }
       } finally {
         if (!ignore) {
@@ -134,18 +145,27 @@ export function ChatWindow() {
     if (!confirm('대화 내용을 모두 초기화하시겠습니까?')) return;
 
     try {
-      await fetch(`/api/chat/history?session_id=${sessionId}`, {
+      const res = await fetch(`/api/chat/history?session_id=${sessionId}`, {
         method: 'DELETE',
       });
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to clear history');
+      }
+
       // Clear local state and localStorage to get a new session
       const newSid = generateSessionId();
       localStorage.setItem('flownote_chat_session_id', newSid);
       setSessionId(newSid);
       setMessages([WELCOME_MESSAGE]);
       toast.success('대화가 초기화되었습니다.');
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Clear history error:', err);
-      toast.error('초기화 중 오류가 발생했습니다.');
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      toast.error('초기화 중 오류가 발생했습니다.', {
+        description: errMsg,
+      });
     }
   };
 
