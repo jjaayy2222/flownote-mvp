@@ -3,6 +3,38 @@ import { NextResponse } from 'next/server';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
 
 /**
+ * 백엔드 히스토리 응답 데이터를 문자열 에러 메시지로 정규화하는 헬퍼
+ */
+function normalizeErrorMessage(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null;
+  
+  const record = data as Record<string, unknown>;
+  const detail = record.detail || record.message;
+  if (!detail) return null;
+
+  if (typeof detail === 'string') return detail;
+  
+  if (Array.isArray(detail)) {
+    // FastAPI validation error(422)는 [{msg, loc, type}, ...] 형태를 가집니다.
+    return detail
+      .map((d: unknown) => {
+        if (typeof d === 'string') return d;
+        if (d && typeof d === 'object') {
+          return (d as Record<string, unknown>).msg || JSON.stringify(d);
+        }
+        return JSON.stringify(d);
+      })
+      .join(', ');
+  }
+
+  if (typeof detail === 'object') {
+     return JSON.stringify(detail);
+  }
+
+  return String(detail);
+}
+
+/**
  * 백엔드 히스토리 API 호출을 처리하는 공통 헬퍼 함수
  */
 async function callBackendHistory(method: 'GET' | 'DELETE', sessionId: string) {
@@ -15,19 +47,36 @@ async function callBackendHistory(method: 'GET' | 'DELETE', sessionId: string) {
   try {
     const response = await fetch(url, options);
 
+    // [Refactor] 204 No Content 또는 빈 바디 응답 시 Safe Handling
+    // JSON 필드가 없는 경우 response.json() 호출 시 발생하는 예외를 방지합니다.
+    // 리뷰 의견에 따라 성공 경로는 200으로 Normalize 하여 호출부의 계약을 단순화합니다.
+    if (response.status === 204) {
+      return { data: { status: 'success' }, status: 200 };
+    }
+
+    const responseText = await response.text();
+    const hasBody = responseText.trim().length > 0;
+    let data: unknown;
+    
+    try {
+      data = hasBody ? JSON.parse(responseText) : (method === 'DELETE' ? { status: 'success' } : {});
+    } catch (e) {
+      console.warn(`[Chat History ${method}] Failed to parse JSON body`, e);
+      data = { message: responseText || 'No clear message' };
+    }
+
+    // [Refactor] 에러 발생(status >= 400) 시 처리
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
+      // FastAPI의 detail 필드(list/object)를 문자열로 정규화하여 가독성을 높입니다.
+      const errorMessage = normalizeErrorMessage(data) || `Failed to ${method.toLowerCase()} history from backend (Status: ${response.status})`;
+      
       return {
-        error: errorData.message || `Failed to ${method.toLowerCase()} history from backend`,
+        error: errorMessage,
         status: response.status,
       };
     }
 
-    if (method === 'DELETE') {
-      return { data: { status: 'success' }, status: 200 };
-    }
-
-    const data = await response.json();
+    // 성공 경로는 200으로 통일 (Propagating response.status 대신 일관성 선택)
     return { data, status: 200 };
   } catch (error) {
     console.error(`[Chat History ${method} Proxy Error]`, error);
