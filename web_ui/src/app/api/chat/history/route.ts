@@ -15,18 +15,19 @@ async function callBackendHistory(method: 'GET' | 'DELETE', sessionId: string) {
   try {
     const response = await fetch(url, options);
 
+    // [Refactor] FastAPI는 기본적으로 에러 정보를 'detail' 필드에 담아 반환함
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      // detail 우선 순위로 에러 메시지 추출
+      const errorMessage = errorData.detail || errorData.message || `Failed to ${method.toLowerCase()} history from backend`;
+      
       return {
-        error: errorData.message || `Failed to ${method.toLowerCase()} history from backend`,
+        error: errorMessage,
         status: response.status,
       };
     }
 
-    if (method === 'DELETE') {
-      return { data: { status: 'success' }, status: 200 };
-    }
-
+    // [Refactor] DELETE 요청 시에도 백엔드가 반환하는 실제 바디를 전달하여 투명성 확보
     const data = await response.json();
     return { data, status: 200 };
   } catch (error) {
