@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
+const NO_BODY_STATUSES = [204, 205, 304] as const;
 
 /**
  * 백엔드 히스토리 응답 데이터를 문자열 에러 메시지로 정규화하는 헬퍼
@@ -11,9 +12,9 @@ function normalizeErrorMessage(data: unknown): string | null {
   const record = data as Record<string, unknown>;
   // Nullish coalescing 사용: 빈 문자열('') 등 falsy 하지만 유효한 값을 보존
   const detail = record.detail ?? record.message;
-  if (!detail) return null;
+  if (detail == null) return null;
 
-  // 1. 단순 문자열인 경우
+  // 1. 단순 문자열인 경우 (빈 문자열 포함 그대로 반환)
   if (typeof detail === 'string') return detail;
 
   // 2. FastAPI validation error 형태인 경우: [{ msg, loc, type }, ...]
@@ -38,6 +39,30 @@ function normalizeErrorMessage(data: unknown): string | null {
 }
 
 /**
+ * 백엔드 결과를 Next.js Response/NextResponse로 변환하는 공통 직렬화 헬퍼
+ */
+function toNextResponse({
+  data,
+  error,
+  status,
+}: {
+  data?: unknown;
+  error?: string;
+  status: number;
+}) {
+  if (error) {
+    return NextResponse.json({ error }, { status });
+  }
+
+  // RFC 7231 규격 준수: 바디가 없어야 하는 상태 코드인 경우 빈 응답 반환
+  if ((NO_BODY_STATUSES as ReadonlyArray<number>).includes(status)) {
+    return new Response(null, { status });
+  }
+
+  return NextResponse.json(data, { status });
+}
+
+/**
  * 백엔드 히스토리 API 호출을 처리하는 공통 헬퍼 함수
  */
 async function callBackendHistory(method: 'GET' | 'DELETE', sessionId: string) {
@@ -49,12 +74,11 @@ async function callBackendHistory(method: 'GET' | 'DELETE', sessionId: string) {
 
   try {
     const response = await fetch(url, options);
-
-    // 바디가 없는 상태 코드 확인 (204 No Content, 205, 304 등)
-    const isNoContent = [204, 205, 304].includes(response.status);
+    const isNoBodyStatus = (NO_BODY_STATUSES as ReadonlyArray<number>).includes(response.status);
+    
     let data: unknown = null;
 
-    if (!isNoContent) {
+    if (!isNoBodyStatus) {
       // 텍스트로 먼저 읽어 바디 존재 확인 후 JSON 파싱 (가장 견고한 방법)
       const text = await response.text();
       if (text.trim()) {
@@ -67,10 +91,9 @@ async function callBackendHistory(method: 'GET' | 'DELETE', sessionId: string) {
       }
     }
 
-    // 성공 시 기본 데이터 설정
-    if (response.ok) {
-      if (!data) data = { status: 'success' };
-      // [Refactor] 성공 상태 노멀라이즈 해제: 원본 상태 코드를 전파하여 투명성 유지
+    // 성공 또는 304 상태 시 처리
+    if (response.ok || response.status === 304) {
+      if (data == null) data = { status: 'success' };
       return { data, status: response.status };
     }
 
@@ -94,8 +117,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'session_id is required' }, { status: 400 });
   }
 
-  const { data, error, status } = await callBackendHistory('GET', sessionId);
-  return error ? NextResponse.json({ error }, { status }) : NextResponse.json(data, { status });
+  const result = await callBackendHistory('GET', sessionId);
+  return toNextResponse(result);
 }
 
 export async function DELETE(req: Request) {
@@ -106,6 +129,6 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: 'session_id is required' }, { status: 400 });
   }
 
-  const { data, error, status } = await callBackendHistory('DELETE', sessionId);
-  return error ? NextResponse.json({ error }, { status }) : NextResponse.json(data, { status });
+  const result = await callBackendHistory('DELETE', sessionId);
+  return toNextResponse(result);
 }
