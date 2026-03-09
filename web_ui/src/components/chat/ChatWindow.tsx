@@ -23,6 +23,9 @@ const WELCOME_MESSAGE: UIMessage = {
   ],
 };
 
+const DEFAULT_CHAT_K = 3;
+const DEFAULT_CHAT_ALPHA = 0.5;
+
 
 const defaultChatTransport = new DefaultChatTransport({ api: '/api/chat' });
 function generateSessionId(): string {
@@ -34,7 +37,7 @@ export function ChatWindow() {
   const [input, setInput] = useState('');
   const [sessionId, setSessionId] = useState<string>('');
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
-  const [alpha, setAlpha] = useState(0.5);
+  const [alpha, setAlpha] = useState(DEFAULT_CHAT_ALPHA);
 
   const scrollToBottom = useCallback(() => {
     if (scrollContainerRef.current) {
@@ -54,7 +57,7 @@ export function ChatWindow() {
     body: {
       session_id: sessionId,
       alpha: alpha,
-      k: 3,
+      k: DEFAULT_CHAT_K,
     },
     onError: (err: Error) => {
       toast.error('메시지 전송 중 에러가 발생했습니다.', {

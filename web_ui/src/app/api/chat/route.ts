@@ -7,6 +7,10 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
 /** Nginx 스타일의 비표준 상태 코드: 클라이언트가 연결을 조기에 닫았음을 나타냄 */
 const HTTP_STATUS_CLIENT_CLOSED_REQUEST = 499;
 
+const DEFAULT_K = 3;
+const DEFAULT_ALPHA = 0.5;
+const DEFAULT_USER_ID = 'test_user_123';
+
 function generateUniqueId(): string {
   return typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
@@ -283,10 +287,10 @@ export async function POST(req: Request) {
 
     const payload = {
       query: queryText,
-      user_id: body.user_id ?? 'test_user_123',
+      user_id: body.user_id ?? DEFAULT_USER_ID,
       session_id: body.session_id,
-      k: body.k ?? 3,
-      alpha: body.alpha ?? 0.5,
+      k: body.k ?? DEFAULT_K,
+      alpha: body.alpha ?? DEFAULT_ALPHA,
     };
 
     let backendRes: Response | null = null;
