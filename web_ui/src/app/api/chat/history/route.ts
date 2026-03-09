@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
-const NO_BODY_STATUSES = [204, 205, 304] as const;
+
+/** 바디가 없어야 하는 HTTP 상태 코드 규격 (RFC 7231) */
+const NO_BODY_STATUS_SET = new Set([204, 205, 304]);
+
+function isNoBodyStatus(status: number): boolean {
+  return NO_BODY_STATUS_SET.has(status);
+}
 
 /**
  * 백엔드 히스토리 응답 데이터를 문자열 에러 메시지로 정규화하는 헬퍼
@@ -14,7 +20,7 @@ function normalizeErrorMessage(data: unknown): string | null {
   const detail = record.detail ?? record.message;
   if (detail == null) return null;
 
-  // 1. 단순 문자열인 경우 (빈 문자열 포함 그대로 반환)
+  // 1. 단순 문자열인 경우
   if (typeof detail === 'string') return detail;
 
   // 2. FastAPI validation error 형태인 경우: [{ msg, loc, type }, ...]
@@ -39,7 +45,7 @@ function normalizeErrorMessage(data: unknown): string | null {
 }
 
 /**
- * 백엔드 결과를 Next.js Response/NextResponse로 변환하는 공통 직렬화 헬퍼
+ * 백엔드 결과를 Next.js NextResponse로 변환하는 공통 직렬화 헬퍼
  */
 function toNextResponse({
   data,
@@ -55,8 +61,8 @@ function toNextResponse({
   }
 
   // RFC 7231 규격 준수: 바디가 없어야 하는 상태 코드인 경우 빈 응답 반환
-  if ((NO_BODY_STATUSES as ReadonlyArray<number>).includes(status)) {
-    return new Response(null, { status });
+  if (isNoBodyStatus(status)) {
+    return new NextResponse(null, { status });
   }
 
   return NextResponse.json(data, { status });
@@ -74,11 +80,11 @@ async function callBackendHistory(method: 'GET' | 'DELETE', sessionId: string) {
 
   try {
     const response = await fetch(url, options);
-    const isNoBodyStatus = (NO_BODY_STATUSES as ReadonlyArray<number>).includes(response.status);
+    const noBody = isNoBodyStatus(response.status);
     
     let data: unknown = null;
 
-    if (!isNoBodyStatus) {
+    if (!noBody) {
       // 텍스트로 먼저 읽어 바디 존재 확인 후 JSON 파싱 (가장 견고한 방법)
       const text = await response.text();
       if (text.trim()) {
@@ -93,7 +99,10 @@ async function callBackendHistory(method: 'GET' | 'DELETE', sessionId: string) {
 
     // 성공 또는 304 상태 시 처리
     if (response.ok || response.status === 304) {
-      if (data == null) data = { status: 'success' };
+      // [Review 반영] 바디가 필요한 경우에만 기본값 설정 (304 등은 skip)
+      if (data == null && !noBody) {
+        data = { status: 'success' };
+      }
       return { data, status: response.status };
     }
 
