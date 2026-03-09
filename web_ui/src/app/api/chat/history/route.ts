@@ -15,11 +15,27 @@ async function callBackendHistory(method: 'GET' | 'DELETE', sessionId: string) {
   try {
     const response = await fetch(url, options);
 
+    // [Refactor] 204 No Content 또는 빈 바디 응답 시 Safe Handling
+    // JSON 필드가 없는 경우 response.json() 호출 시 발생하는 예외를 방지합니다.
+    if (response.status === 204) {
+      return { data: { status: 'success' }, status: 204 };
+    }
+
+    const responseText = await response.text();
+    const hasBody = responseText.trim().length > 0;
+    let data;
+    
+    try {
+      data = hasBody ? JSON.parse(responseText) : (method === 'DELETE' ? { status: 'success' } : {});
+    } catch (e) {
+      console.warn(`[Chat History ${method}] Failed to parse JSON body`, e);
+      data = { message: responseText || 'No clear message' };
+    }
+
     // [Refactor] FastAPI는 기본적으로 에러 정보를 'detail' 필드에 담아 반환함
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
       // detail 우선 순위로 에러 메시지 추출
-      const errorMessage = errorData.detail || errorData.message || `Failed to ${method.toLowerCase()} history from backend`;
+      const errorMessage = data.detail || data.message || `Failed to ${method.toLowerCase()} history from backend`;
       
       return {
         error: errorMessage,
@@ -27,8 +43,6 @@ async function callBackendHistory(method: 'GET' | 'DELETE', sessionId: string) {
       };
     }
 
-    // [Refactor] DELETE 요청 시에도 백엔드가 반환하는 실제 바디를 전달하여 투명성 확보
-    const data = await response.json();
     return { data, status: 200 };
   } catch (error) {
     console.error(`[Chat History ${method} Proxy Error]`, error);
