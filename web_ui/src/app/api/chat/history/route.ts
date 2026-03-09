@@ -49,14 +49,13 @@ async function callBackendHistory(method: 'GET' | 'DELETE', sessionId: string) {
 
     // [Refactor] 204 No Content 또는 빈 바디 응답 시 Safe Handling
     // JSON 필드가 없는 경우 response.json() 호출 시 발생하는 예외를 방지합니다.
-    // 리뷰 의견에 따라 성공 경로는 200으로 Normalize 하여 호출부의 계약을 단순화합니다.
     if (response.status === 204) {
-      return { data: { status: 'success' }, status: 200 };
+      return { data: { status: 'success' }, status: 204 };
     }
 
     const responseText = await response.text();
     const hasBody = responseText.trim().length > 0;
-    let data: unknown;
+    let data;
     
     try {
       data = hasBody ? JSON.parse(responseText) : (method === 'DELETE' ? { status: 'success' } : {});
@@ -65,10 +64,10 @@ async function callBackendHistory(method: 'GET' | 'DELETE', sessionId: string) {
       data = { message: responseText || 'No clear message' };
     }
 
-    // [Refactor] 에러 발생(status >= 400) 시 처리
+    // [Refactor] FastAPI는 기본적으로 에러 정보를 'detail' 필드에 담아 반환함
     if (!response.ok) {
-      // FastAPI의 detail 필드(list/object)를 문자열로 정규화하여 가독성을 높입니다.
-      const errorMessage = normalizeErrorMessage(data) || `Failed to ${method.toLowerCase()} history from backend (Status: ${response.status})`;
+      // detail 우선 순위로 에러 메시지 추출
+      const errorMessage = data.detail || data.message || `Failed to ${method.toLowerCase()} history from backend`;
       
       return {
         error: errorMessage,
@@ -76,7 +75,6 @@ async function callBackendHistory(method: 'GET' | 'DELETE', sessionId: string) {
       };
     }
 
-    // 성공 경로는 200으로 통일 (Propagating response.status 대신 일관성 선택)
     return { data, status: 200 };
   } catch (error) {
     console.error(`[Chat History ${method} Proxy Error]`, error);

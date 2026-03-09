@@ -4,6 +4,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useChat } from '@ai-sdk/react';
 import type { UIMessage } from 'ai';
 import { DefaultChatTransport } from 'ai';
+import { CHAT_CONFIG } from '@/lib/constants';
 import { MessageBubble } from './MessageBubble';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
@@ -23,8 +24,6 @@ const WELCOME_MESSAGE: UIMessage = {
   ],
 };
 
-const DEFAULT_CHAT_K = 3;
-const DEFAULT_CHAT_ALPHA = 0.5;
 
 
 const defaultChatTransport = new DefaultChatTransport({ api: '/api/chat' });
@@ -37,7 +36,7 @@ export function ChatWindow() {
   const [input, setInput] = useState('');
   const [sessionId, setSessionId] = useState<string>('');
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
-  const [alpha, setAlpha] = useState(DEFAULT_CHAT_ALPHA);
+  const [alpha, setAlpha] = useState<number>(CHAT_CONFIG.DEFAULT_ALPHA);
 
   const scrollToBottom = useCallback(() => {
     if (scrollContainerRef.current) {
@@ -57,7 +56,7 @@ export function ChatWindow() {
     body: {
       session_id: sessionId,
       alpha: alpha,
-      k: DEFAULT_CHAT_K,
+      k: CHAT_CONFIG.DEFAULT_K,
     },
     onError: (err: Error) => {
       toast.error('메시지 전송 중 에러가 발생했습니다.', {
