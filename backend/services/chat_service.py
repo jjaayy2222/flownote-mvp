@@ -236,10 +236,15 @@ class ChatService:
 
             # [Observability] 비정상적인 메타데이터 타입 감지 및 경고 (리뷰 반영)
             if not isinstance(raw_source, str):
+                # [Security] 로그 비대화 방지 및 보안을 위해 출력 값 제한 (리뷰 반영)
+                safe_val = str(raw_source)[:100]
+                if len(str(raw_source)) > 100:
+                    safe_val += "..."
+
                 logger.warning(
                     f"Unexpected metadata type detected for source/id: {type(raw_source)}. "
                     f"Doc ID: {doc.metadata.get('id', 'N/A')}. "
-                    f"Coercing to string. Value: {raw_source}"
+                    f"Coercing to string. Value(truncated): {safe_val}"
                 )
 
             source_path = str(raw_source)
@@ -324,12 +329,16 @@ Standalone Question:"""
             )
             logger.info(
                 "Rephrased query",
-                extra={"original": query, "rephrased": standalone_query},
+                extra={
+                    "original": self._mask_pii(query),
+                    "rephrased": self._mask_pii(standalone_query),
+                },
             )
             return standalone_query.strip()
         except Exception as e:
             logger.warning(
-                "Query rephrasing failed", extra={"query": query, "error": str(e)}
+                "Query rephrasing failed",
+                extra={"query": self._mask_pii(query), "error": str(e)},
             )
             return query
 
