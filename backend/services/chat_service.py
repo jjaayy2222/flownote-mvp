@@ -235,9 +235,10 @@ class ChatService:
             )
 
             # [Observability] 비정상적인 메타데이터 타입 감지 및 경고 (리뷰 반영)
-            if not isinstance(raw_source, str) and raw_source != "unknown":
+            if not isinstance(raw_source, str):
                 logger.warning(
                     f"Unexpected metadata type detected for source/id: {type(raw_source)}. "
+                    f"Doc ID: {doc.metadata.get('id', 'N/A')}. "
                     f"Coercing to string. Value: {raw_source}"
                 )
 
