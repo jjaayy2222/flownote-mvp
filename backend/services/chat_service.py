@@ -235,10 +235,11 @@ class ChatService:
             )
 
             # [Observability] 비정상적인 메타데이터 타입 감지 및 경고 (리뷰 반영)
-            if not isinstance(raw_source, str):
+            if not isinstance(raw_source, str) and raw_source != "unknown":
                 # [Security] 로그 비대화 방지 및 보안을 위해 출력 값 제한 (리뷰 반영)
-                safe_val = str(raw_source)[:100]
-                if len(str(raw_source)) > 100:
+                raw_source_str = str(raw_source)
+                safe_val = raw_source_str[:100]
+                if len(raw_source_str) > 100:
                     safe_val += "..."
 
                 logger.warning(
