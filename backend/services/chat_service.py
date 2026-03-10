@@ -204,17 +204,6 @@ class ChatService:
         return text
 
     # ------------------------------------------------------------------
-    # [Refinement] 명시적인 마스킹 정책 래퍼
-    # ------------------------------------------------------------------
-    def _mask_for_history(self, text: str) -> str:
-        """대화 기록 저장용 마스킹 정책"""
-        return self._mask_pii(text)
-
-    def _mask_for_source_payload(self, text: Optional[str]) -> str:
-        """SSE 소스 페이로드용 마스킹 및 길이 제한 정책"""
-        return self._mask_pii(text)[:MAX_SOURCE_PAGE_CONTENT_LEN]
-
-    # ------------------------------------------------------------------
     # [Refinement] 검색 결과 처리 및 성능 로깅 헬퍼
     # ------------------------------------------------------------------
     def _dedupe_and_build_sources(
@@ -250,7 +239,9 @@ class ChatService:
                         if "/" in source_path
                         else source_path
                     ),
-                    "page_content": self._mask_for_source_payload(doc.page_content),
+                    "page_content": self._mask_pii(doc.page_content)[
+                        :MAX_SOURCE_PAGE_CONTENT_LEN
+                    ],
                 }
             )
 
@@ -259,16 +250,12 @@ class ChatService:
     def _log_ttft_once(
         self,
         *,
-        ttft_recorded: bool,
         start_time: float,
         rephrase_duration: float,
         search_duration: float,
         user_id: str,
-    ) -> tuple[bool, float]:
-        """첫 번째 토큰 발생 시 성능 지표를 한 번만 기록"""
-        if ttft_recorded:
-            return True, 0.0
-
+    ) -> float:
+        """첫 번째 토큰 발생 시 성능 지표 기록"""
         ttft = time.perf_counter() - start_time
         logger.info(
             f"[Performance] TTFT recorded for user {user_id}",
@@ -279,7 +266,7 @@ class ChatService:
                 "user_id": user_id,
             },
         )
-        return True, ttft
+        return ttft
 
     async def _rephrase_query(self, query: str, history: List[ChatMessage]) -> str:
         """이전 대화 맥락을 기반으로 질의 재구성 (Query Rewriting)"""
@@ -456,13 +443,13 @@ Context:
                     if chunk and getattr(chunk, "content", None):
                         # TTFT(Time To First Token) 기록 및 성능 로깅 (헬퍼 사용)
                         if not ttft_recorded:
-                            ttft_recorded, _ = self._log_ttft_once(
-                                ttft_recorded=ttft_recorded,
+                            _ = self._log_ttft_once(
                                 start_time=start_time,
                                 rephrase_duration=rephrase_duration,
                                 search_duration=search_duration,
                                 user_id=user_id,
                             )
+                            ttft_recorded = True
 
                         full_content += chunk.content
                         # 스트리밍 토큰은 실시간성을 위해 마스킹 없이 우선 전송
@@ -484,9 +471,9 @@ Context:
 
         if not is_cancelled:
             if session_id and full_content:
-                # 저장 시 최종 결과물(질의 및 답변)에 대해 PII 마스킹 적용 (용도별 헬퍼 사용)
-                masked_query = self._mask_for_history(query)
-                masked_content = self._mask_for_history(full_content)
+                # 저장 시 최종 결과물(질의 및 답변)에 대해 PII 마스킹 적용
+                masked_query = self._mask_pii(query)
+                masked_content = self._mask_pii(full_content)
 
                 await self.chat_history_service.add_message(
                     session_id, "user", masked_query
