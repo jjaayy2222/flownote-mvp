@@ -3,7 +3,7 @@ import logging
 import asyncio
 import re
 import time
-from typing import Any, AsyncGenerator, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, TypedDict
 from functools import lru_cache
 
 from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
@@ -30,6 +30,16 @@ logger = logging.getLogger(__name__)
 
 # [Engineering Decision] SSE 페이로드 크기 및 성능 최적화를 위한 상수
 MAX_SOURCE_PAGE_CONTENT_LEN = 500
+
+
+class SourceDocumentPayload(TypedDict):
+    """SSE 'sources' 이벤트를 통해 클라이언트로 전송될 소스 문서의 구조"""
+
+    id: str
+    score: float
+    source: str
+    title: str
+    page_content: str
 
 
 class HybridSearchLangChainRetriever(BaseRetriever):
@@ -208,7 +218,7 @@ class ChatService:
     # ------------------------------------------------------------------
     def _dedupe_and_build_sources(
         self, source_docs: List[Document]
-    ) -> tuple[List[Document], list[dict]]:
+    ) -> tuple[List[Document], List[SourceDocumentPayload]]:
         """
         소스 중복 제거 및 SSE 전송용 페이로드 생성.
 
@@ -216,13 +226,22 @@ class ChatService:
         """
         seen_sources: set[str] = set()
         deduped_docs: List[Document] = []
-        payload: list[dict] = []
+        payload: List[SourceDocumentPayload] = []
 
         for doc in source_docs:
             # source가 없으면 id를 fallback으로 사용 (리뷰 반영)
-            source_path = (
+            raw_source = (
                 doc.metadata.get("source") or doc.metadata.get("id") or "unknown"
             )
+
+            # [Observability] 비정상적인 메타데이터 타입 감지 및 경고 (리뷰 반영)
+            if not isinstance(raw_source, str) and raw_source != "unknown":
+                logger.warning(
+                    f"Unexpected metadata type detected for source/id: {type(raw_source)}. "
+                    f"Coercing to string. Value: {raw_source}"
+                )
+
+            source_path = str(raw_source)
             if source_path in seen_sources:
                 continue
 
@@ -255,14 +274,19 @@ class ChatService:
         search_duration: float,
         user_id: str,
     ) -> float:
-        """첫 번째 토큰 발생 시 성능 지표 기록"""
+        """
+        첫 번째 토큰 발생 시 성능 지표 기록.
+
+        [Ops Decision] 로그 분석 레이어에서의 수치 분석(Aggregation)을 용이하게 하기 위해
+        포맷팅된 문자열 대신 원시 float 값을 저장합니다. (리뷰 반영)
+        """
         ttft = time.perf_counter() - start_time
         logger.info(
             f"[Performance] TTFT recorded for user {user_id}",
             extra={
-                "ttft": f"{ttft:.4f}s",
-                "rephrase_duration": f"{rephrase_duration:.4f}s",
-                "search_duration": f"{search_duration:.4f}s",
+                "ttft": ttft,
+                "rephrase_duration": rephrase_duration,
+                "search_duration": search_duration,
                 "user_id": user_id,
             },
         )
