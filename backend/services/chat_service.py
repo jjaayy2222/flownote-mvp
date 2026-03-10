@@ -1,8 +1,8 @@
-# backend/services/chat_service.py
-
 import json
 import logging
 import asyncio
+import re
+import time
 from typing import Any, AsyncGenerator, List, Optional
 from functools import lru_cache
 
@@ -27,6 +27,9 @@ from backend.services.chat_history_service import (
 from backend.api.models import ChatMessage
 
 logger = logging.getLogger(__name__)
+
+# [Engineering Decision] SSE 페이로드 크기 및 성능 최적화를 위한 상수
+MAX_SOURCE_PAGE_CONTENT_LEN = 500
 
 
 class HybridSearchLangChainRetriever(BaseRetriever):
@@ -178,6 +181,28 @@ class ChatService:
 
         return "You are a helpful and expert AI assistant."
 
+    def _mask_pii(self, text: Optional[str]) -> str:
+        """
+        개인정보(PII) 마스킹 가드레일 (이메일, 전화번호 등)
+
+        [Engineering Decision]
+        - 스트리밍 토큰 단위 마스킹은 문맥 단절로 리소스가 많이 들 수 있으므로,
+        - 소스 문서 내용(Full Text)과 최종 저장 시점(User/Assistant)에 적용하는 것을 1순위로 합니다.
+        """
+        if not text:
+            return ""
+
+        # 1. 이메일: abc@def.com -> a***@def.com
+        text = re.sub(
+            r"([a-zA-Z0-9_.+-]+)@([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)",
+            lambda m: m.group(1)[0] + "***@" + m.group(2),
+            text,
+        )
+        # 2. 전화번호 (KR): 010-1234-5678 -> 010-****-5678
+        text = re.sub(r"(\d{2,3})-(\d{3,4})-(\d{4})", r"\1-****-\3", text)
+
+        return text
+
     async def _rephrase_query(self, query: str, history: List[ChatMessage]) -> str:
         """이전 대화 맥락을 기반으로 질의 재구성 (Query Rewriting)"""
         if not history:
@@ -238,15 +263,20 @@ Standalone Question:"""
         alpha: float = 0.5,
     ) -> AsyncGenerator[str, None]:
         """질의를 받아 RAG 체인을 실행하고 SSE 규격에 맞게 결과 청크를 반환하는 비동기 제너레이터"""
+        start_time = time.perf_counter()
         logger.info(f"Stream chat started for user {user_id}")
 
         # 0. 히스토리 로드 및 질의 재구성
         history: List[ChatMessage] = []
         effective_query = query
+        rephrase_duration = 0.0
+
         if session_id:
             history = await self.chat_history_service.get_history(session_id)
             if history:
+                rephrase_start = time.perf_counter()
                 effective_query = await self._rephrase_query(query, history)
+                rephrase_duration = time.perf_counter() - rephrase_start
 
         # 1. Custom Retriever 구성
         retriever = HybridSearchLangChainRetriever(
@@ -256,12 +286,15 @@ Standalone Question:"""
         # 4. Streaming 실행 (astream_events v2 사용)
         is_cancelled = False
         full_content = ""
+        ttft_recorded = False
 
         try:
-            # 1.5. 검색 실행 (재구성된 쿼리 사용) - 예외 발생 시 SSE error로 보고하기 위해 try 내부로 이동
+            # 1.5. 검색 실행 (재구성된 쿼리 사용)
+            search_start = time.perf_counter()
             source_docs: List[Document] = await retriever.aget_relevant_documents(
                 effective_query
             )
+            search_duration = time.perf_counter() - search_start
 
             # 2. 사용자 상황에 맞춘 시스템 프롬프트 템플릿 작성
             user_context_msg = self._get_user_context_prompt_text(user_id)
@@ -281,7 +314,7 @@ Context:
             prompt_messages.append(HumanMessagePromptTemplate.from_template("{input}"))
             prompt = ChatPromptTemplate.from_messages(prompt_messages)
 
-            # 3. 단일 책임 RAG 파이프라인: 수동 retrieval + 단순 LLM 체인
+            # 3. 단일 책임 RAG 파이프라인
             def format_docs(docs: List[Document]) -> str:
                 """Format retrieved documents securely into a bounded-length context string."""
                 limited_docs = docs[: self.rag_max_docs]
@@ -290,18 +323,15 @@ Context:
 
                 for i, doc in enumerate(limited_docs, 1):
                     content = doc.page_content or ""
-                    # 문서 경계를 모델이 구분하기 쉽도록 가벼운 구분자 추가
                     header = f"--- Document {i} ---"
 
                     doc_suffix = "...(truncated)"
                     if len(content) > self.rag_max_doc_chars:
-                        # 잘림 표시 접미사의 길이까지 고려해서 엄격하게 자름
                         safe_len = max(0, self.rag_max_doc_chars - len(doc_suffix))
                         content = content[:safe_len] + doc_suffix
 
                     doc_text = f"{header}\n{content}\n"
 
-                    # 전체 문자열 길이 제한
                     remaining = self.rag_max_total_chars - total_length
                     if remaining <= 0:
                         break
@@ -325,61 +355,98 @@ Context:
             llm = self._get_streaming_llm()
             rag_chain = prompt | llm
 
-            sources = [
-                {
-                    "id": doc.metadata.get("id", ""),
-                    "score": doc.metadata.get("score", 0.0),
-                }
-                for doc in source_docs
-                if hasattr(doc, "metadata")
-            ]
+            # [Optimization] Source Deduplication (파일 단위 중복 제거)
+            # Consistency: UI와 LLM 컨텍스트 양쪽 모두에 일관되게 적용
+            seen_sources = set()
+            deduplicated_source_docs = []
+            sources_payload = []
 
-            # 3) sources가 있으면 스트리밍 시작 전 먼저 전송
-            if sources:
-                yield self._format_sse_event("sources", data=sources)
+            for doc in source_docs:
+                # source가 없으면 id를 fallback으로 사용 (리뷰 반영)
+                source_path = (
+                    doc.metadata.get("source") or doc.metadata.get("id") or "unknown"
+                )
 
-            # 3) 컨텍스트를 직접 만들어 체인에 주입 (LCEL Runnable 의존성 최소화)
-            context_str = format_docs(source_docs)
+                if source_path not in seen_sources:
+                    seen_sources.add(source_path)
+                    deduplicated_source_docs.append(doc)
+
+                    # UI용 SSE 페이로드 구성
+                    sources_payload.append(
+                        {
+                            "id": doc.metadata.get("id", ""),
+                            "score": doc.metadata.get("score", 0.0),
+                            "source": source_path,
+                            "title": (
+                                source_path.split("/")[-1]
+                                if "/" in source_path
+                                else source_path
+                            ),
+                            # 페이로드 크기 최적화를 위해 길이 제한 적용 및 PII 마스킹 (리뷰 반영)
+                            "page_content": self._mask_pii(doc.page_content)[
+                                :MAX_SOURCE_PAGE_CONTENT_LEN
+                            ],
+                        }
+                    )
+
+            if sources_payload:
+                yield self._format_sse_event("sources", data=sources_payload)
+
+            # 3) 컨텍스트를 직접 만들어 체인에 주입 (중복 제거된 문서 사용)
+            context_str = format_docs(deduplicated_source_docs)
             chain_input = {
                 "input": query,
                 "context": context_str,
-            }  # 유저는 원본 질문을 보고 싶어하므로 query 사용
+            }
 
             # 4) LLM 스트리밍
             async for event in rag_chain.astream_events(chain_input, version="v2"):
                 kind = event["event"]
 
-                # 채팅 모델에서 스트리밍되는 실제 텍스트 토큰
                 if kind == "on_chat_model_stream":
                     chunk = event["data"].get("chunk")
                     if chunk and getattr(chunk, "content", None):
+                        # TTFT(Time To First Token) 기록 및 성능 로깅
+                        if not ttft_recorded:
+                            ttft = time.perf_counter() - start_time
+                            logger.info(
+                                f"[Performance] TTFT: {ttft:.4f}s | "
+                                f"Rephrase: {rephrase_duration:.4f}s | "
+                                f"Search: {search_duration:.4f}s | "
+                                f"User: {user_id}"
+                            )
+                            ttft_recorded = True
+
                         full_content += chunk.content
+                        # 스트리밍 토큰은 실시간성을 위해 마스킹 없이 우선 전송
+                        # (단어 중간이 잘릴 수 있어 정규표현식이 오작동할 수 있음)
                         yield self._format_sse_event("token", data=chunk.content)
 
         except asyncio.CancelledError:
-            # 클라이언트 연결 끊김/취소 시 조기 종료 시그널 마킹 후 예외를 다시 던짐
             is_cancelled = True
             logger.info("Chat stream cancelled by user.")
             raise
         except Exception as e:
-            # 서버 측 상세 에러 기록 (내부 로깅)
             logger.exception(
                 "Error during streaming RAG chat",
                 extra={"user_id": user_id, "session_id": session_id},
             )
-            # 클라이언트 측에는 일반(Generic) 메시지 전송
             yield self._format_sse_event(
                 "error",
                 message="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
             )
 
-        # GeneratorExit/CancelledError 중에는 yield를 호출하면 안되므로 정상/내부오류 발생 시에만 DONE 방출
         if not is_cancelled:
-            # 성공적으로 마쳤다면 히스토리에 저장
             if session_id and full_content:
-                await self.chat_history_service.add_message(session_id, "user", query)
+                # 저장 시 최종 결과물(질의 및 답변)에 대해 PII 마스킹 적용 (보안 가드레일 상향)
+                masked_query = self._mask_pii(query)
+                masked_content = self._mask_pii(full_content)
+
                 await self.chat_history_service.add_message(
-                    session_id, "assistant", full_content
+                    session_id, "user", masked_query
+                )
+                await self.chat_history_service.add_message(
+                    session_id, "assistant", masked_content
                 )
 
             yield self._format_sse_event("done")
