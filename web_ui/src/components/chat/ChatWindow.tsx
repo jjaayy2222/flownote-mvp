@@ -31,10 +31,18 @@ function generateSessionId(): string {
   return `sess-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
+/**
+ * 무작위 사용자 ID 생성 헬퍼
+ */
+function generateUserId(): string {
+  return `user-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
 export function ChatWindow() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState('');
   const [sessionId, setSessionId] = useState<string>('');
+  const [userId, setUserId] = useState<string>('');
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [alpha, setAlpha] = useState<number>(CHAT_CONFIG.DEFAULT_ALPHA);
 
@@ -54,6 +62,7 @@ export function ChatWindow() {
     transport: defaultChatTransport,
     // @ts-expect-error - body is supported at runtime but may have type conflicts with custom transport
     body: {
+      user_id: userId || CHAT_CONFIG.DEFAULT_USER_ID,
       session_id: sessionId,
       alpha: alpha,
       k: CHAT_CONFIG.DEFAULT_K,
@@ -69,14 +78,23 @@ export function ChatWindow() {
     },
   });
 
-  // 1. 초기 세션 복원/생성 (마운트 시 1회)
+  // 1. 초기 세션 및 사용자 ID 복원/생성 (마운트 시 1회)
   useEffect(() => {
+    // 세션 ID 처리
     let sid = localStorage.getItem('flownote_chat_session_id');
     if (!sid) {
       sid = generateSessionId();
       localStorage.setItem('flownote_chat_session_id', sid);
     }
     setSessionId(sid);
+
+    // 사용자 ID 처리 (온보딩 연동 대비)
+    let uid = localStorage.getItem('flownote_user_id');
+    if (!uid) {
+      uid = generateUserId();
+      localStorage.setItem('flownote_user_id', uid);
+    }
+    setUserId(uid);
   }, []);
 
   // 2. 세션 변경 시 히스토리 로드 (sessionId 의존성 추가)
