@@ -3,7 +3,7 @@ import logging
 import asyncio
 import re
 import time
-from typing import Any, AsyncGenerator, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
 from functools import lru_cache
 
 from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
@@ -208,7 +208,7 @@ class ChatService:
     # ------------------------------------------------------------------
     def _dedupe_and_build_sources(
         self, source_docs: List[Document]
-    ) -> tuple[List[Document], list[dict]]:
+    ) -> tuple[List[Document], List[Dict[str, Any]]]:
         """
         소스 중복 제거 및 SSE 전송용 페이로드 생성.
 
@@ -216,11 +216,12 @@ class ChatService:
         """
         seen_sources: set[str] = set()
         deduped_docs: List[Document] = []
-        payload: list[dict] = []
+        payload: List[Dict[str, Any]] = []
 
         for doc in source_docs:
             # source가 없으면 id를 fallback으로 사용 (리뷰 반영)
-            source_path = (
+            # 메타데이터 타입 불일치 방지를 위해 명시적 문자열 변환
+            source_path = str(
                 doc.metadata.get("source") or doc.metadata.get("id") or "unknown"
             )
             if source_path in seen_sources:
@@ -260,9 +261,9 @@ class ChatService:
         logger.info(
             f"[Performance] TTFT recorded for user {user_id}",
             extra={
-                "ttft": f"{ttft:.4f}s",
-                "rephrase_duration": f"{rephrase_duration:.4f}s",
-                "search_duration": f"{search_duration:.4f}s",
+                "ttft": ttft,
+                "rephrase_duration": rephrase_duration,
+                "search_duration": search_duration,
                 "user_id": user_id,
             },
         )
