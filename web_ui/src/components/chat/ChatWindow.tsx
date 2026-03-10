@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useChat } from '@ai-sdk/react';
 import type { UIMessage } from 'ai';
 import { DefaultChatTransport } from 'ai';
-import { CHAT_CONFIG } from '@/lib/constants';
+import { CHAT_CONFIG, STORAGE_KEYS } from '@/lib/constants';
 import { MessageBubble } from './MessageBubble';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
@@ -27,14 +27,40 @@ const WELCOME_MESSAGE: UIMessage = {
 
 
 const defaultChatTransport = new DefaultChatTransport({ api: '/api/chat' });
-function generateSessionId(): string {
-  return `sess-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+/**
+ * 범용 ID 생성 헬퍼 (prefix 기반)
+ */
+function generateId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
 export function ChatWindow() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState('');
-  const [sessionId, setSessionId] = useState<string>('');
+
+  // 0. ID 상태 지연 초기화 (Lazy Initializer)
+  // 초기 렌더링 시점에 localStorage에서 직접 복원하거나 새로 생성하여 불필요한 재렌더링 및 하드코딩 폴백 방지
+  const [sessionId, setSessionId] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    let sid = localStorage.getItem(STORAGE_KEYS.CHAT_SESSION_ID);
+    if (!sid) {
+      sid = generateId('sess');
+      localStorage.setItem(STORAGE_KEYS.CHAT_SESSION_ID, sid);
+    }
+    return sid;
+  });
+
+  const [userId, setUserId] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    let uid = localStorage.getItem(STORAGE_KEYS.USER_ID);
+    if (!uid) {
+      uid = generateId('user');
+      localStorage.setItem(STORAGE_KEYS.USER_ID, uid);
+    }
+    return uid;
+  });
+
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [alpha, setAlpha] = useState<number>(CHAT_CONFIG.DEFAULT_ALPHA);
 
@@ -54,6 +80,7 @@ export function ChatWindow() {
     transport: defaultChatTransport,
     // @ts-expect-error - body is supported at runtime but may have type conflicts with custom transport
     body: {
+      user_id: userId || CHAT_CONFIG.DEFAULT_USER_ID,
       session_id: sessionId,
       alpha: alpha,
       k: CHAT_CONFIG.DEFAULT_K,
@@ -69,15 +96,6 @@ export function ChatWindow() {
     },
   });
 
-  // 1. 초기 세션 복원/생성 (마운트 시 1회)
-  useEffect(() => {
-    let sid = localStorage.getItem('flownote_chat_session_id');
-    if (!sid) {
-      sid = generateSessionId();
-      localStorage.setItem('flownote_chat_session_id', sid);
-    }
-    setSessionId(sid);
-  }, []);
 
   // 2. 세션 변경 시 히스토리 로드 (sessionId 의존성 추가)
   useEffect(() => {
@@ -154,8 +172,8 @@ export function ChatWindow() {
       }
 
       // Clear local state and localStorage to get a new session
-      const newSid = generateSessionId();
-      localStorage.setItem('flownote_chat_session_id', newSid);
+      const newSid = generateId('sess');
+      localStorage.setItem(STORAGE_KEYS.CHAT_SESSION_ID, newSid);
       setSessionId(newSid);
       setMessages([WELCOME_MESSAGE]);
       toast.success('대화가 초기화되었습니다.');
