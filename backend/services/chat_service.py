@@ -203,6 +203,84 @@ class ChatService:
 
         return text
 
+    # ------------------------------------------------------------------
+    # [Refinement] 명시적인 마스킹 정책 래퍼
+    # ------------------------------------------------------------------
+    def _mask_for_history(self, text: str) -> str:
+        """대화 기록 저장용 마스킹 정책"""
+        return self._mask_pii(text)
+
+    def _mask_for_source_payload(self, text: Optional[str]) -> str:
+        """SSE 소스 페이로드용 마스킹 및 길이 제한 정책"""
+        return self._mask_pii(text)[:MAX_SOURCE_PAGE_CONTENT_LEN]
+
+    # ------------------------------------------------------------------
+    # [Refinement] 검색 결과 처리 및 성능 로깅 헬퍼
+    # ------------------------------------------------------------------
+    def _dedupe_and_build_sources(
+        self, source_docs: List[Document]
+    ) -> tuple[List[Document], list[dict]]:
+        """
+        소스 중복 제거 및 SSE 전송용 페이로드 생성.
+
+        [Consistency] UI 노출 문서와 LLM 컨텍스트 문서를 100% 일치시킵니다.
+        """
+        seen_sources: set[str] = set()
+        deduped_docs: List[Document] = []
+        payload: list[dict] = []
+
+        for doc in source_docs:
+            # source가 없으면 id를 fallback으로 사용 (리뷰 반영)
+            source_path = (
+                doc.metadata.get("source") or doc.metadata.get("id") or "unknown"
+            )
+            if source_path in seen_sources:
+                continue
+
+            seen_sources.add(source_path)
+            deduped_docs.append(doc)
+
+            payload.append(
+                {
+                    "id": doc.metadata.get("id", ""),
+                    "score": doc.metadata.get("score", 0.0),
+                    "source": source_path,
+                    "title": (
+                        source_path.split("/")[-1]
+                        if "/" in source_path
+                        else source_path
+                    ),
+                    "page_content": self._mask_for_source_payload(doc.page_content),
+                }
+            )
+
+        return deduped_docs, payload
+
+    def _log_ttft_once(
+        self,
+        *,
+        ttft_recorded: bool,
+        start_time: float,
+        rephrase_duration: float,
+        search_duration: float,
+        user_id: str,
+    ) -> tuple[bool, float]:
+        """첫 번째 토큰 발생 시 성능 지표를 한 번만 기록"""
+        if ttft_recorded:
+            return True, 0.0
+
+        ttft = time.perf_counter() - start_time
+        logger.info(
+            f"[Performance] TTFT recorded for user {user_id}",
+            extra={
+                "ttft": f"{ttft:.4f}s",
+                "rephrase_duration": f"{rephrase_duration:.4f}s",
+                "search_duration": f"{search_duration:.4f}s",
+                "user_id": user_id,
+            },
+        )
+        return True, ttft
+
     async def _rephrase_query(self, query: str, history: List[ChatMessage]) -> str:
         """이전 대화 맥락을 기반으로 질의 재구성 (Query Rewriting)"""
         if not history:
@@ -351,75 +429,43 @@ Context:
 
                 return "\n\n".join(contents)
 
-            # 1) LLM 초기화 및 파이프라인 구성
+            # 3) LLM 초기화 및 파이프라인 구성
             llm = self._get_streaming_llm()
             rag_chain = prompt | llm
 
-            # [Optimization] Source Deduplication (파일 단위 중복 제거)
-            # Consistency: UI와 LLM 컨텍스트 양쪽 모두에 일관되게 적용
-            seen_sources = set()
-            deduplicated_source_docs = []
-            sources_payload = []
-
-            for doc in source_docs:
-                # source가 없으면 id를 fallback으로 사용 (리뷰 반영)
-                source_path = (
-                    doc.metadata.get("source") or doc.metadata.get("id") or "unknown"
-                )
-
-                if source_path not in seen_sources:
-                    seen_sources.add(source_path)
-                    deduplicated_source_docs.append(doc)
-
-                    # UI용 SSE 페이로드 구성
-                    sources_payload.append(
-                        {
-                            "id": doc.metadata.get("id", ""),
-                            "score": doc.metadata.get("score", 0.0),
-                            "source": source_path,
-                            "title": (
-                                source_path.split("/")[-1]
-                                if "/" in source_path
-                                else source_path
-                            ),
-                            # 페이로드 크기 최적화를 위해 길이 제한 적용 및 PII 마스킹 (리뷰 반영)
-                            "page_content": self._mask_pii(doc.page_content)[
-                                :MAX_SOURCE_PAGE_CONTENT_LEN
-                            ],
-                        }
-                    )
+            # 4) [Orchestration] 소스 중복 제거 및 페이로드 생성
+            deduplicated_source_docs, sources_payload = self._dedupe_and_build_sources(
+                source_docs
+            )
 
             if sources_payload:
                 yield self._format_sse_event("sources", data=sources_payload)
 
-            # 3) 컨텍스트를 직접 만들어 체인에 주입 (중복 제거된 문서 사용)
+            # 5) 컨텍스트 주입 및 LLM 스트리밍
             context_str = format_docs(deduplicated_source_docs)
             chain_input = {
                 "input": query,
                 "context": context_str,
             }
 
-            # 4) LLM 스트리밍
             async for event in rag_chain.astream_events(chain_input, version="v2"):
                 kind = event["event"]
 
                 if kind == "on_chat_model_stream":
                     chunk = event["data"].get("chunk")
                     if chunk and getattr(chunk, "content", None):
-                        # TTFT(Time To First Token) 기록 및 성능 로깅
+                        # TTFT(Time To First Token) 기록 및 성능 로깅 (헬퍼 사용)
                         if not ttft_recorded:
-                            ttft = time.perf_counter() - start_time
-                            logger.info(
-                                f"[Performance] TTFT: {ttft:.4f}s | "
-                                f"Rephrase: {rephrase_duration:.4f}s | "
-                                f"Search: {search_duration:.4f}s | "
-                                f"User: {user_id}"
+                            ttft_recorded, _ = self._log_ttft_once(
+                                ttft_recorded=ttft_recorded,
+                                start_time=start_time,
+                                rephrase_duration=rephrase_duration,
+                                search_duration=search_duration,
+                                user_id=user_id,
                             )
-                            ttft_recorded = True
 
                         full_content += chunk.content
                         # 스트리밍 토큰은 실시간성을 위해 마스킹 없이 우선 전송
-                        # (단어 중간이 잘릴 수 있어 정규표현식이 오작동할 수 있음)
                         yield self._format_sse_event("token", data=chunk.content)
 
         except asyncio.CancelledError:
@@ -438,9 +484,9 @@ Context:
 
         if not is_cancelled:
             if session_id and full_content:
-                # 저장 시 최종 결과물(질의 및 답변)에 대해 PII 마스킹 적용 (보안 가드레일 상향)
-                masked_query = self._mask_pii(query)
-                masked_content = self._mask_pii(full_content)
+                # 저장 시 최종 결과물(질의 및 답변)에 대해 PII 마스킹 적용 (용도별 헬퍼 사용)
+                masked_query = self._mask_for_history(query)
+                masked_content = self._mask_for_history(full_content)
 
                 await self.chat_history_service.add_message(
                     session_id, "user", masked_query
