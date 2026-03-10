@@ -28,6 +28,9 @@ from backend.api.models import ChatMessage
 
 logger = logging.getLogger(__name__)
 
+# [Engineering Decision] SSE 페이로드 크기 및 성능 최적화를 위한 상수
+MAX_SOURCE_PAGE_CONTENT_LEN = 500
+
 
 class HybridSearchLangChainRetriever(BaseRetriever):
     """HybridSearchService를 LangChain Retriever로 래핑"""
@@ -178,16 +181,16 @@ class ChatService:
 
         return "You are a helpful and expert AI assistant."
 
-    def _mask_pii(self, text: str) -> str:
+    def _mask_pii(self, text: Optional[str]) -> str:
         """
         개인정보(PII) 마스킹 가드레일 (이메일, 전화번호 등)
 
         [Engineering Decision]
         - 스트리밍 토큰 단위 마스킹은 문맥 단절로 리소스가 많이 들 수 있으므로,
-        - 우선 소스 문서 내용(Full Text)과 최종 저장 시점에 적용하는 것을 1순위로 합니다.
+        - 소스 문서 내용(Full Text)과 최종 저장 시점(User/Assistant)에 적용하는 것을 1순위로 합니다.
         """
         if not text:
-            return text
+            return ""
 
         # 1. 이메일: abc@def.com -> a***@def.com
         text = re.sub(
@@ -353,14 +356,23 @@ Context:
             rag_chain = prompt | llm
 
             # [Optimization] Source Deduplication (파일 단위 중복 제거)
+            # Consistency: UI와 LLM 컨텍스트 양쪽 모두에 일관되게 적용
             seen_sources = set()
-            sources = []
+            deduplicated_source_docs = []
+            sources_payload = []
+
             for doc in source_docs:
-                source_path = doc.metadata.get("source", "unknown")
+                # source가 없으면 id를 fallback으로 사용 (리뷰 반영)
+                source_path = (
+                    doc.metadata.get("source") or doc.metadata.get("id") or "unknown"
+                )
+
                 if source_path not in seen_sources:
                     seen_sources.add(source_path)
-                    # PII 마스킹 처리된 소스 텍스트 포함
-                    sources.append(
+                    deduplicated_source_docs.append(doc)
+
+                    # UI용 SSE 페이로드 구성
+                    sources_payload.append(
                         {
                             "id": doc.metadata.get("id", ""),
                             "score": doc.metadata.get("score", 0.0),
@@ -370,19 +382,18 @@ Context:
                                 if "/" in source_path
                                 else source_path
                             ),
-                            "page_content": (
-                                self._mask_pii(doc.page_content)
-                                if hasattr(doc, "page_content")
-                                else ""
-                            ),
+                            # 페이로드 크기 최적화를 위해 길이 제한 적용 및 PII 마스킹 (리뷰 반영)
+                            "page_content": self._mask_pii(doc.page_content)[
+                                :MAX_SOURCE_PAGE_CONTENT_LEN
+                            ],
                         }
                     )
 
-            if sources:
-                yield self._format_sse_event("sources", data=sources)
+            if sources_payload:
+                yield self._format_sse_event("sources", data=sources_payload)
 
-            # 3) 컨텍스트를 직접 만들어 체인에 주입
-            context_str = format_docs(source_docs)
+            # 3) 컨텍스트를 직접 만들어 체인에 주입 (중복 제거된 문서 사용)
+            context_str = format_docs(deduplicated_source_docs)
             chain_input = {
                 "input": query,
                 "context": context_str,
@@ -427,9 +438,13 @@ Context:
 
         if not is_cancelled:
             if session_id and full_content:
-                # 저장 시 최종 결과물에 대해 PII 마스킹 적용 (보안 가드레일)
+                # 저장 시 최종 결과물(질의 및 답변)에 대해 PII 마스킹 적용 (보안 가드레일 상향)
+                masked_query = self._mask_pii(query)
                 masked_content = self._mask_pii(full_content)
-                await self.chat_history_service.add_message(session_id, "user", query)
+
+                await self.chat_history_service.add_message(
+                    session_id, "user", masked_query
+                )
                 await self.chat_history_service.add_message(
                     session_id, "assistant", masked_content
                 )
