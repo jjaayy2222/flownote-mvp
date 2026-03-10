@@ -31,6 +31,9 @@ logger = logging.getLogger(__name__)
 # [Engineering Decision] SSE 페이로드 크기 및 성능 최적화를 위한 상수
 MAX_SOURCE_PAGE_CONTENT_LEN = 500
 
+# [Engineering Excellence] 메타데이터 폴백을 안전하게 식별하기 위한 내부 센티널 (리뷰 반영)
+_METADATA_SENTINEL = object()
+
 
 class SourceDocumentPayload(TypedDict):
     """SSE 'sources' 이벤트를 통해 클라이언트로 전송될 소스 문서의 구조"""
@@ -229,27 +232,30 @@ class ChatService:
         payload: List[SourceDocumentPayload] = []
 
         for doc in source_docs:
-            # source가 없으면 id를 fallback으로 사용 (리뷰 반영)
+            # 1. 우선순위에 따른 메타데이터 추출 (source -> id -> sentinel 마커)
             raw_source = (
-                doc.metadata.get("source") or doc.metadata.get("id") or "unknown"
+                doc.metadata.get("source")
+                or doc.metadata.get("id")
+                or _METADATA_SENTINEL
             )
-            # [Optimization] 문자열 변환은 한 번만 수행하여 재사용 (리뷰 반영)
-            source_path = str(raw_source)
 
-            # [Observability] 비정상적인 메타데이터 타입 감지 및 경고 (리뷰 반영)
-            # sentinel("unknown")이 아닌데 문자열이 아닌 경우에만 경고 발생
-            if not isinstance(raw_source, str) and source_path != "unknown":
-                # [Security] 로그 비대화 방지 및 보안을 위해 출력 값 제한
-                # 이미 source_path로 변환되었으므로 추가 str() 호출 없이 재사용
-                safe_val = source_path[:100]
-                if len(source_path) > 100:
-                    safe_val += "..."
+            # 2. 타입 검증 및 문자열 변환 (리뷰 반영: 센티널 마커 사용으로 accidental suppression 방지)
+            if raw_source is _METADATA_SENTINEL:
+                source_path = "unknown"
+            else:
+                source_path = str(raw_source)
+                # 명시적으로 존재하나 문자열이 아닌 경우에만 추적을 위해 경고 로깅
+                if not isinstance(raw_source, str):
+                    # [Security] 로그 비대화 방지 및 보안을 위해 출력 값 제한
+                    safe_val = source_path[:100]
+                    if len(source_path) > 100:
+                        safe_val += "..."
 
-                logger.warning(
-                    f"Unexpected metadata type detected for source/id: {type(raw_source)}. "
-                    f"Doc ID: {doc.metadata.get('id', 'N/A')}. "
-                    f"Coercing to string. Value(truncated): {safe_val}"
-                )
+                    logger.warning(
+                        f"Unexpected metadata type detected for source/id: {type(raw_source)}. "
+                        f"Doc ID: {doc.metadata.get('id', 'N/A')}. "
+                        f"Coercing to string. Value(truncated): {safe_val}"
+                    )
             if source_path in seen_sources:
                 continue
 
