@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useChat } from '@ai-sdk/react';
 import type { UIMessage } from 'ai';
 import { DefaultChatTransport } from 'ai';
@@ -29,10 +29,43 @@ const WELCOME_MESSAGE: UIMessage = {
 const defaultChatTransport = new DefaultChatTransport({ api: '/api/chat' });
 
 /**
- * 범용 ID 생성 헬퍼 (prefix 기반)
+ * 범용 ID 생성 헬퍼
  */
 function generateId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
+/**
+ * Storage에서 ID를 가져오거나 없으면 새로 생성하여 저장하는 유틸리티
+ * 
+ * [Refinement] localStorage 접근 시 보안 설정이나 시크릿 모드 등으로 인한
+ * 런타임 에러를 방지하기 위해 try/catch 가드를 적용했습니다.
+ */
+function getOrCreateStoredId(storageKey: string, prefix: string): string {
+  // 서버 사이드 렌더링 시에는 빈 문자열 반환 (hydration mismatch 방지)
+  if (typeof window === 'undefined') return '';
+
+  let id: string | null = null;
+  
+  // 1. 기존 ID 로드 시도
+  try {
+    id = localStorage.getItem(storageKey);
+  } catch (err) {
+    console.warn(`[Storage] Failed to read ${storageKey} from localStorage:`, err);
+  }
+
+  // 2. ID가 없으면 생성 후 저장 시도
+  if (!id) {
+    id = generateId(prefix);
+    try {
+      localStorage.setItem(storageKey, id);
+    } catch (err) {
+      // 저장이 실패하더라도 현재 세션에서는 생성된 ID를 사용함
+      console.warn(`[Storage] Failed to save ${storageKey} to localStorage:`, err);
+    }
+  }
+  
+  return id;
 }
 
 export function ChatWindow() {
@@ -40,26 +73,14 @@ export function ChatWindow() {
   const [input, setInput] = useState('');
 
   // 0. ID 상태 지연 초기화 (Lazy Initializer)
-  // 초기 렌더링 시점에 localStorage에서 직접 복원하거나 새로 생성하여 불필요한 재렌더링 및 하드코딩 폴백 방지
-  const [sessionId, setSessionId] = useState<string>(() => {
-    if (typeof window === 'undefined') return '';
-    let sid = localStorage.getItem(STORAGE_KEYS.CHAT_SESSION_ID);
-    if (!sid) {
-      sid = generateId('sess');
-      localStorage.setItem(STORAGE_KEYS.CHAT_SESSION_ID, sid);
-    }
-    return sid;
-  });
+  const [sessionId, setSessionId] = useState<string>(() => 
+    getOrCreateStoredId(STORAGE_KEYS.CHAT_SESSION_ID, 'sess')
+  );
 
-  const [userId, setUserId] = useState<string>(() => {
-    if (typeof window === 'undefined') return '';
-    let uid = localStorage.getItem(STORAGE_KEYS.USER_ID);
-    if (!uid) {
-      uid = generateId('user');
-      localStorage.setItem(STORAGE_KEYS.USER_ID, uid);
-    }
-    return uid;
-  });
+  // userId는 컴포넌트 생명주기 동안 변경되지 않으므로 setter 없이 상태로만 유지 (Lint 경고 해결)
+  const [userId] = useState<string>(() => 
+    getOrCreateStoredId(STORAGE_KEYS.USER_ID, 'user')
+  );
 
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [alpha, setAlpha] = useState<number>(CHAT_CONFIG.DEFAULT_ALPHA);
@@ -75,10 +96,10 @@ export function ChatWindow() {
     }
   }, []);
 
-  const { messages, sendMessage, status, error, setMessages } = useChat({
+  // useChat 옵션 메모이제이션 (성능 최적화 및 불필요한 effect 방지)
+  const chatOptions = useMemo(() => ({
     messages: [WELCOME_MESSAGE],
     transport: defaultChatTransport,
-    // @ts-expect-error - body is supported at runtime but may have type conflicts with custom transport
     body: {
       user_id: userId || CHAT_CONFIG.DEFAULT_USER_ID,
       session_id: sessionId,
@@ -94,7 +115,9 @@ export function ChatWindow() {
     onFinish: () => {
       scrollToBottom();
     },
-  });
+  }), [userId, sessionId, alpha, scrollToBottom]);
+
+  const { messages, sendMessage, status, error, setMessages } = useChat(chatOptions);
 
 
   // 2. 세션 변경 시 히스토리 로드 (sessionId 의존성 추가)
@@ -173,7 +196,11 @@ export function ChatWindow() {
 
       // Clear local state and localStorage to get a new session
       const newSid = generateId('sess');
-      localStorage.setItem(STORAGE_KEYS.CHAT_SESSION_ID, newSid);
+      try {
+        localStorage.setItem(STORAGE_KEYS.CHAT_SESSION_ID, newSid);
+      } catch (err) {
+        console.warn('[Storage] Failed to update session_id in localStorage:', err);
+      }
       setSessionId(newSid);
       setMessages([WELCOME_MESSAGE]);
       toast.success('대화가 초기화되었습니다.');
