@@ -37,14 +37,34 @@ function generateId(prefix: string): string {
 
 /**
  * Storage에서 ID를 가져오거나 없으면 새로 생성하여 저장하는 유틸리티
+ * 
+ * [Refinement] localStorage 접근 시 보안 설정이나 시크릿 모드 등으로 인한
+ * 런타임 에러를 방지하기 위해 try/catch 가드를 적용했습니다.
  */
 function getOrCreateStoredId(storageKey: string, prefix: string): string {
+  // 서버 사이드 렌더링 시에는 빈 문자열 반환 (hydration mismatch 방지)
   if (typeof window === 'undefined') return '';
-  let id = localStorage.getItem(storageKey);
+
+  let id: string | null = null;
+  
+  // 1. 기존 ID 로드 시도
+  try {
+    id = localStorage.getItem(storageKey);
+  } catch (err) {
+    console.warn(`[Storage] Failed to read ${storageKey} from localStorage:`, err);
+  }
+
+  // 2. ID가 없으면 생성 후 저장 시도
   if (!id) {
     id = generateId(prefix);
-    localStorage.setItem(storageKey, id);
+    try {
+      localStorage.setItem(storageKey, id);
+    } catch (err) {
+      // 저장이 실패하더라도 현재 세션에서는 생성된 ID를 사용함
+      console.warn(`[Storage] Failed to save ${storageKey} to localStorage:`, err);
+    }
   }
+  
   return id;
 }
 
@@ -176,7 +196,11 @@ export function ChatWindow() {
 
       // Clear local state and localStorage to get a new session
       const newSid = generateId('sess');
-      localStorage.setItem(STORAGE_KEYS.CHAT_SESSION_ID, newSid);
+      try {
+        localStorage.setItem(STORAGE_KEYS.CHAT_SESSION_ID, newSid);
+      } catch (err) {
+        console.warn('[Storage] Failed to update session_id in localStorage:', err);
+      }
       setSessionId(newSid);
       setMessages([WELCOME_MESSAGE]);
       toast.success('대화가 초기화되었습니다.');
