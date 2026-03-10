@@ -233,12 +233,16 @@ class ChatService:
             raw_source = (
                 doc.metadata.get("source") or doc.metadata.get("id") or "unknown"
             )
+            # [Optimization] 문자열 변환은 한 번만 수행하여 재사용 (리뷰 반영)
+            source_path = str(raw_source)
 
             # [Observability] 비정상적인 메타데이터 타입 감지 및 경고 (리뷰 반영)
-            if not isinstance(raw_source, str):
-                # [Security] 로그 비대화 방지 및 보안을 위해 출력 값 제한 (리뷰 반영)
-                safe_val = str(raw_source)[:100]
-                if len(str(raw_source)) > 100:
+            # sentinel("unknown")이 아닌데 문자열이 아닌 경우에만 경고 발생
+            if not isinstance(raw_source, str) and source_path != "unknown":
+                # [Security] 로그 비대화 방지 및 보안을 위해 출력 값 제한
+                # 이미 source_path로 변환되었으므로 추가 str() 호출 없이 재사용
+                safe_val = source_path[:100]
+                if len(source_path) > 100:
                     safe_val += "..."
 
                 logger.warning(
@@ -246,8 +250,6 @@ class ChatService:
                     f"Doc ID: {doc.metadata.get('id', 'N/A')}. "
                     f"Coercing to string. Value(truncated): {safe_val}"
                 )
-
-            source_path = str(raw_source)
             if source_path in seen_sources:
                 continue
 
