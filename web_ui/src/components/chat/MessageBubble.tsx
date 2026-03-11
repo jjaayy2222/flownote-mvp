@@ -23,7 +23,7 @@ type CodeProps = React.ComponentPropsWithoutRef<'code'> & {
 
 // [Constants] 인용 관련 공용 패턴 및 기본 텍스트
 // 중앙 집중화를 통해 정규식 불일치 가능성을 원천 차단했습니다.
-const CITATION_ID_FRAGMENT = '[1-9]\\d*';
+const CITATION_ID_FRAGMENT = '(?:[1-9]\\d*)';
 const CITATION_VALIDATION_REGEX = new RegExp(`^${CITATION_ID_FRAGMENT}$`);
 const INLINE_CITATION_REGEX = new RegExp(
   `(\`{1,3}[\\s\\S]*?\`{1,3})|\\[(${CITATION_ID_FRAGMENT})\\](?!\\s*[\\(:])`,
