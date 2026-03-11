@@ -73,9 +73,15 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     // 인라인 인용(Citation) 링크 컴포넌트
     a({ children, href, className, ...props }) {
       if (href?.startsWith('cite:')) {
-        const index = parseInt(href.replace('cite:', ''), 10) - 1;
+        const indexStr = href.replace('cite:', '');
+        const index = parseInt(indexStr, 10) - 1;
         const source = sources[index];
         
+        // [Robustness] 유효하지 않은 인용 지수이거나 소스가 없는 경우 일반 텍스트로 폴백
+        if (isNaN(index) || !source) {
+          return <span className={cn("text-slate-500", className)} title="출처 정보 없음">{children}</span>;
+        }
+
         const handleCitationClick = (e: React.MouseEvent | React.KeyboardEvent) => {
           e.preventDefault();
           if (source) handleBadgeClick(source);
@@ -126,10 +132,11 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     .join('');
 
   // AI 답변 내 [1], [2] 패턴을 인라인 인용 링크로 변환 (isUser가 아닐 때만 적용)
-  // [Robustness] 백틱(`)으로 감싸진 코드 블록 내의 매치는 제외하도록 정규식 개선 (리뷰 반영)
+  // [Robustness] 백틱(`)으로 감싸진 코드 블록 내의 매치는 제외하도록 정규식 개선
+  // [Robustness] 기존 마크다운 링크 / 참조 정의([1](/path), [1]: http...)는 변환 대상에서 제외 (리뷰 반영)
   const processedContent = isUser
     ? textContent
-    : textContent.replace(/(`{1,3}[\s\S]*?`{1,3})|\[(\d+)\]/g, (match, code, num) => {
+    : textContent.replace(/(`{1,3}[\s\S]*?`{1,3})|\[(\d+)\](?!\(|:)/g, (match, code, num) => {
         return code ? code : `[${num}](cite:${num})`;
       });
 
