@@ -415,6 +415,7 @@ If you cannot answer the question using the context, state "주어진 문서 내
 - You MUST use inline citations to indicate the source of your information.
 - Use the format [1], [2], etc., corresponding to the Document number provided in the context.
 - Place the citation at the end of the sentence or paragraph it supports.
+- Citations must be plain `[1]`, `[2]`, etc. tokens with no surrounding markdown links or additional formatting (for example, do NOT output `[1](url)` or `[**1**]`).
 - Do not mention the words "context" or "provided text" explicitly.
 - Do not add a separate "Sources" or "References" section at the end of your answer; the citations [1], [2] within the text are sufficient.
 
