@@ -7,6 +7,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import type { UIMessage } from 'ai';
 import { SourcePanel, SourceItem } from './SourcePanel';
 import type { Components } from 'react-markdown';
@@ -69,13 +70,68 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         </code>
       );
     },
+    // 인라인 인용(Citation) 링크 컴포넌트
+    a({ children, href, className, ...props }) {
+      if (href?.startsWith('cite:')) {
+        const index = parseInt(href.replace('cite:', ''), 10) - 1;
+        const source = sources[index];
+        
+        const handleCitationClick = (e: React.MouseEvent | React.KeyboardEvent) => {
+          e.preventDefault();
+          if (source) handleBadgeClick(source);
+        };
+
+        return (
+          <sup
+            role="button"
+            tabIndex={0}
+            onClick={handleCitationClick}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                handleCitationClick(e as unknown as React.MouseEvent);
+              }
+            }}
+            className="
+              inline-flex items-center justify-center
+              mx-0.5 px-1 min-w-[1rem] h-4
+              bg-blue-50 text-blue-700 font-bold text-[9px]
+              rounded border border-blue-200
+              cursor-pointer hover:bg-blue-100 hover:border-blue-300
+              transition-colors align-top mt-0.5
+              select-none focus:outline-none focus:ring-1 focus:ring-blue-400
+            "
+            title={source ? `출처: ${source.title || source.id}` : '출처 정보 없음'}
+          >
+            {children}
+          </sup>
+        );
+      }
+      return (
+        <a 
+          href={href} 
+          className={cn("text-blue-600 underline", className)} 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          {...props}
+        >
+          {children}
+        </a>
+      );
+    },
   };
 
-  // ai v6: UIMessage.parts에서 TextUIPart만 추출해 텍스트 결합
   const textContent = (message.parts ?? [])
     .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
     .map((p) => p.text)
     .join('');
+
+  // AI 답변 내 [1], [2] 패턴을 인라인 인용 링크로 변환 (isUser가 아닐 때만 적용)
+  // [Robustness] 백틱(`)으로 감싸진 코드 블록 내의 매치는 제외하도록 정규식 개선 (리뷰 반영)
+  const processedContent = isUser
+    ? textContent
+    : textContent.replace(/(`{1,3}[\s\S]*?`{1,3})|\[(\d+)\]/g, (match, code, num) => {
+        return code ? code : `[${num}](cite:${num})`;
+      });
 
   return (
     <>
@@ -100,7 +156,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               remarkPlugins={[remarkGfm]}
               components={markdownComponents}
             >
-              {textContent}
+              {processedContent}
             </ReactMarkdown>
           </div>
 
