@@ -152,10 +152,11 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   // AI 답변 내 [1], [2] 패턴을 인라인 인용 링크로 변환 (isUser가 아닐 때만 적용)
   // [Robustness] 백틱(`)으로 감싸진 코드 블록 내의 매치는 제외하도록 정규식 개선
   // [Robustness] 기존 마크다운 링크 / 참조 정의([1](/path), [1]: http...)는 변환 대상에서 제외
-  // [Refinement] 룩어헤드에 공백을 허용하여 [1] (url) 같은 케이스도 보호 (리뷰 반영)
+  // [Refinement] 룩어헤드에 공백을 허용하여 [1] (url) 같은 케이스도 보호
+  // [Synchronization] 검증 로직과 일치하도록 유효한 인덱스([1-9]\d*)만 매칭 (리뷰 반영)
   const processedContent = isUser
     ? textContent
-    : textContent.replace(/(`{1,3}[\s\S]*?`{1,3})|\[(\d+)\](?!\s*[\(:])/g, (match, code, num) => {
+    : textContent.replace(/(`{1,3}[\s\S]*?`{1,3})|\[([1-9]\d*)\](?!\s*[\(:])/g, (match, code, num) => {
         return code ? code : `[${num}](cite:${num})`;
       });
 
