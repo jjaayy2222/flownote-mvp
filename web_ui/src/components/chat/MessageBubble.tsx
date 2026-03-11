@@ -7,6 +7,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import type { UIMessage } from 'ai';
 import { SourcePanel, SourceItem } from './SourcePanel';
 import type { Components } from 'react-markdown';
@@ -70,16 +71,25 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       );
     },
     // 인라인 인용(Citation) 링크 컴포넌트
-    a({ children, href, ...props }) {
+    a({ children, href, className, ...props }) {
       if (href?.startsWith('cite:')) {
         const index = parseInt(href.replace('cite:', ''), 10) - 1;
         const source = sources[index];
         
+        const handleCitationClick = (e: React.MouseEvent | React.KeyboardEvent) => {
+          e.preventDefault();
+          if (source) handleBadgeClick(source);
+        };
+
         return (
           <sup
-            onClick={(e) => {
-              e.preventDefault();
-              if (source) handleBadgeClick(source);
+            role="button"
+            tabIndex={0}
+            onClick={handleCitationClick}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                handleCitationClick(e as unknown as React.MouseEvent);
+              }
             }}
             className="
               inline-flex items-center justify-center
@@ -88,7 +98,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               rounded border border-blue-200
               cursor-pointer hover:bg-blue-100 hover:border-blue-300
               transition-colors align-top mt-0.5
-              select-none
+              select-none focus:outline-none focus:ring-1 focus:ring-blue-400
             "
             title={source ? `출처: ${source.title || source.id}` : '출처 정보 없음'}
           >
@@ -96,7 +106,17 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           </sup>
         );
       }
-      return <a href={href} className="text-blue-600 underline" target="_blank" rel="noopener noreferrer" {...props}>{children}</a>;
+      return (
+        <a 
+          href={href} 
+          className={cn("text-blue-600 underline", className)} 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          {...props}
+        >
+          {children}
+        </a>
+      );
     },
   };
 
@@ -106,9 +126,12 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     .join('');
 
   // AI 답변 내 [1], [2] 패턴을 인라인 인용 링크로 변환 (isUser가 아닐 때만 적용)
+  // [Robustness] 백틱(`)으로 감싸진 코드 블록 내의 매치는 제외하도록 정규식 개선 (리뷰 반영)
   const processedContent = isUser
     ? textContent
-    : textContent.replace(/\[(\d+)\]/g, '[$1](cite:$1)');
+    : textContent.replace(/(`{1,3}[\s\S]*?`{1,3})|\[(\d+)\]/g, (match, code, num) => {
+        return code ? code : `[${num}](cite:${num})`;
+      });
 
   return (
     <>
