@@ -410,7 +410,13 @@ Standalone Question:"""
 
 Answer the user's question clearly and accurately, using ONLY the context provided below.
 If you cannot answer the question using the context, state "주어진 문서 내용에서는 답변을 찾을 수 없습니다." and do not guess.
-Do not mention the words "context" or "provided text" explicitly in your final answer, just answer the question directly.
+
+[Important Rule: Citations]
+- You MUST use inline citations to indicate the source of your information.
+- Use the format [1], [2], etc., corresponding to the Document number provided in the context.
+- Place the citation at the end of the sentence or paragraph it supports.
+- Do not mention the words "context" or "provided text" explicitly.
+- Do not add a separate "Sources" or "References" section at the end of your answer; the citations [1], [2] within the text are sufficient.
 
 Context: 
 {{context}}
