@@ -23,8 +23,12 @@ type CodeProps = React.ComponentPropsWithoutRef<'code'> & {
 
 // [Constants] 인용 관련 공용 패턴 및 기본 텍스트
 // 중앙 집중화를 통해 정규식 불일치 가능성을 원천 차단했습니다.
-const CITATION_ID_PATTERN = '[1-9]\\d*';
-const CITATION_VALIDATION_REGEX = new RegExp(`^${CITATION_ID_PATTERN}$`);
+const CITATION_ID_FRAGMENT = '[1-9]\\d*';
+const CITATION_VALIDATION_REGEX = new RegExp(`^${CITATION_ID_FRAGMENT}$`);
+const INLINE_CITATION_REGEX = new RegExp(
+  `(\`{1,3}[\\s\\S]*?\`{1,3})|\\[(${CITATION_ID_FRAGMENT})\\](?!\\s*[\\(:])`,
+  'g'
+);
 const DEFAULT_FALLBACK_TITLE = "출처 정보 없음";
 
 /**
@@ -164,10 +168,10 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     .join('');
 
   // AI 답변 내 [1], [2] 패턴을 인라인 인용 링크로 변환 (isUser가 아닐 때만 적용)
-  // [Synchronization] 중앙 관리되는 패턴(CITATION_ID_PATTERN)을 사용하여 일관성 유지
+  // [Optimization] 호이스팅된 INLINE_CITATION_REGEX를 사용하여 성능을 최적화하고 일관성을 유지합니다.
   const processedContent = isUser
     ? textContent
-    : textContent.replace(new RegExp(`(\`{1,3}[\\s\\S]*?\`{1,3})|\\[(${CITATION_ID_PATTERN})\\](?!\\s*[\\(:])`, 'g'), (match, code, num) => {
+    : textContent.replace(INLINE_CITATION_REGEX, (match, code, num) => {
         return code ? code : `[${num}](cite:${num})`;
       });
 
