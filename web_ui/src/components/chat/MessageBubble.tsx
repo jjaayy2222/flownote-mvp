@@ -21,6 +21,18 @@ type CodeProps = React.ComponentPropsWithoutRef<'code'> & {
   inline?: boolean;
 };
 
+/**
+ * [Refactoring] 유효하지 않거나 누락된 인용 소스에 대한 일관된 폴백 렌더러
+ * 리뷰 코멘트에 따라 중복 코드를 제거하고 스타일 일관성을 유지하기 위해 추출했습니다.
+ */
+function FallbackCitation({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <span className={cn("text-slate-500", className)} title="출처 정보 없음">
+      {children}
+    </span>
+  );
+}
+
 export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user';
 
@@ -75,25 +87,17 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       if (href?.startsWith('cite:')) {
         const indexStr = href.replace('cite:', '').trim();
 
-        // [Validation] cite 인덱스는 공백을 제외하고 순수한 양의 정수여야 함 (리뷰 반영)
-        if (!/^\d+$/.test(indexStr)) {
-          return (
-            <span className={cn("text-slate-500", className)} title="출처 정보 없음">
-              {children}
-            </span>
-          );
+        // [Validation] cite 인덱스는 1 이상의 정수여야 함 (리뷰 반영: /^[1-9]\d*$/ 로 강화)
+        if (!/^[1-9]\d*$/.test(indexStr)) {
+          return <FallbackCitation className={className}>{children}</FallbackCitation>;
         }
 
         const index = parseInt(indexStr, 10) - 1;
         const source = sources[index];
         
-        // [Robustness] 유효하지 않은 인용 지수이거나 소스가 없는 경우 일반 텍스트로 폴백
+        // [Robustness] 소스가 없는 경우 폴백
         if (!source) {
-          return (
-            <span className={cn("text-slate-500", className)} title="출처 정보 없음">
-              {children}
-            </span>
-          );
+          return <FallbackCitation className={className}>{children}</FallbackCitation>;
         }
 
         const handleCitationClick = (e: React.MouseEvent | React.KeyboardEvent) => {
@@ -147,10 +151,11 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
   // AI 답변 내 [1], [2] 패턴을 인라인 인용 링크로 변환 (isUser가 아닐 때만 적용)
   // [Robustness] 백틱(`)으로 감싸진 코드 블록 내의 매치는 제외하도록 정규식 개선
-  // [Robustness] 기존 마크다운 링크 / 참조 정의([1](/path), [1]: http...)는 변환 대상에서 제외 (리뷰 반영)
+  // [Robustness] 기존 마크다운 링크 / 참조 정의([1](/path), [1]: http...)는 변환 대상에서 제외
+  // [Refinement] 룩어헤드에 공백을 허용하여 [1] (url) 같은 케이스도 보호 (리뷰 반영)
   const processedContent = isUser
     ? textContent
-    : textContent.replace(/(`{1,3}[\s\S]*?`{1,3})|\[(\d+)\](?!\(|:)/g, (match, code, num) => {
+    : textContent.replace(/(`{1,3}[\s\S]*?`{1,3})|\[(\d+)\](?!\s*[\(:])/g, (match, code, num) => {
         return code ? code : `[${num}](cite:${num})`;
       });
 
