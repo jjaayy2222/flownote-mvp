@@ -21,13 +21,27 @@ type CodeProps = React.ComponentPropsWithoutRef<'code'> & {
   inline?: boolean;
 };
 
+// [Constants] 인용 관련 공용 패턴 및 기본 텍스트
+// 중앙 집중화를 통해 정규식 불일치 가능성을 원천 차단했습니다.
+const CITATION_ID_PATTERN = '[1-9]\\d*';
+const CITATION_VALIDATION_REGEX = new RegExp(`^${CITATION_ID_PATTERN}$`);
+const DEFAULT_FALLBACK_TITLE = "출처 정보 없음";
+
 /**
  * [Refactoring] 유효하지 않거나 누락된 인용 소스에 대한 일관된 폴백 렌더러
- * 리뷰 코멘트에 따라 중복 코드를 제거하고 스타일 일관성을 유지하기 위해 추출했습니다.
+ * 리뷰 코멘트에 따라 툴팁 텍스트를 prop으로 분리하여 재사용성을 높였습니다.
  */
-function FallbackCitation({ children, className }: { children: React.ReactNode; className?: string }) {
+function FallbackCitation({ 
+  children, 
+  className, 
+  title = DEFAULT_FALLBACK_TITLE 
+}: { 
+  children: React.ReactNode; 
+  className?: string; 
+  title?: string;
+}) {
   return (
-    <span className={cn("text-slate-500", className)} title="출처 정보 없음">
+    <span className={cn("text-slate-500", className)} title={title}>
       {children}
     </span>
   );
@@ -87,8 +101,8 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       if (href?.startsWith('cite:')) {
         const indexStr = href.replace('cite:', '').trim();
 
-        // [Validation] cite 인덱스는 1 이상의 정수여야 함 (리뷰 반영: /^[1-9]\d*$/ 로 강화)
-        if (!/^[1-9]\d*$/.test(indexStr)) {
+        // [Validation] cite 인덱스 검증 (중앙 집중화된 정규식 사용)
+        if (!CITATION_VALIDATION_REGEX.test(indexStr)) {
           return <FallbackCitation className={className}>{children}</FallbackCitation>;
         }
 
@@ -150,13 +164,10 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     .join('');
 
   // AI 답변 내 [1], [2] 패턴을 인라인 인용 링크로 변환 (isUser가 아닐 때만 적용)
-  // [Robustness] 백틱(`)으로 감싸진 코드 블록 내의 매치는 제외하도록 정규식 개선
-  // [Robustness] 기존 마크다운 링크 / 참조 정의([1](/path), [1]: http...)는 변환 대상에서 제외
-  // [Refinement] 룩어헤드에 공백을 허용하여 [1] (url) 같은 케이스도 보호
-  // [Synchronization] 검증 로직과 일치하도록 유효한 인덱스([1-9]\d*)만 매칭 (리뷰 반영)
+  // [Synchronization] 중앙 관리되는 패턴(CITATION_ID_PATTERN)을 사용하여 일관성 유지
   const processedContent = isUser
     ? textContent
-    : textContent.replace(/(`{1,3}[\s\S]*?`{1,3})|\[([1-9]\d*)\](?!\s*[\(:])/g, (match, code, num) => {
+    : textContent.replace(new RegExp(`(\`{1,3}[\\s\\S]*?\`{1,3})|\\[(${CITATION_ID_PATTERN})\\](?!\\s*[\\(:])`, 'g'), (match, code, num) => {
         return code ? code : `[${num}](cite:${num})`;
       });
 
