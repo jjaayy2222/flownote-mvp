@@ -73,18 +73,32 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     // 인라인 인용(Citation) 링크 컴포넌트
     a({ children, href, className, ...props }) {
       if (href?.startsWith('cite:')) {
-        const indexStr = href.replace('cite:', '');
+        const indexStr = href.replace('cite:', '').trim();
+
+        // [Validation] cite 인덱스는 공백을 제외하고 순수한 양의 정수여야 함 (리뷰 반영)
+        if (!/^\d+$/.test(indexStr)) {
+          return (
+            <span className={cn("text-slate-500", className)} title="출처 정보 없음">
+              {children}
+            </span>
+          );
+        }
+
         const index = parseInt(indexStr, 10) - 1;
         const source = sources[index];
         
         // [Robustness] 유효하지 않은 인용 지수이거나 소스가 없는 경우 일반 텍스트로 폴백
-        if (isNaN(index) || !source) {
-          return <span className={cn("text-slate-500", className)} title="출처 정보 없음">{children}</span>;
+        if (!source) {
+          return (
+            <span className={cn("text-slate-500", className)} title="출처 정보 없음">
+              {children}
+            </span>
+          );
         }
 
         const handleCitationClick = (e: React.MouseEvent | React.KeyboardEvent) => {
           e.preventDefault();
-          if (source) handleBadgeClick(source);
+          handleBadgeClick(source);
         };
 
         return (
