@@ -179,7 +179,7 @@
 - **보안 가드레일 (PII)**: 이메일, 전화번호 등 민감 정보 자동 마스킹 처리
 - **소스 중복 제거**: 동일 문서 중복 노출 방지를 통한 가독성 향상
 - **동적 세션 관리**: `localStorage` 기반 고유 `user_id` 및 세션 관리
-- **성능 모니터링**: 단계별 지연 시간(Query Rephrasing, Search, Generation) 및 부하 분석 정밀 로깅
+- **성능 모니터링**: 단계별 지연 시간(Query Rephrasing / Search / Generation) 및 부하 분석 정밀 로깅
 
 ---
 
@@ -590,7 +590,7 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
   - [x] 인용(Inline Citations) 시스템 및 17차 리팩토링 완료
   - [x] 개인정보(PII) 자동 마스킹 및 보안 가드레일
   - [x] 소스 중복 제거 및 UI 최적화
-  - [x] TTFT 측정 및 단계별 지연 시간(Query Rephrasing/Search/Generation) 부하 분석
+  - [x] TTFT 측정 및 단계별 지연 시간(Query Rephrasing / Search / Generation) 부하 분석
 
 ### 🚧 진행 예정 (v7.0)
 - [ ] 추가 언어 지원 (일본어, 중국어)

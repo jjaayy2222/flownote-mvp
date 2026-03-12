@@ -179,7 +179,7 @@
 - **Security Guardrails (PII)**: Automatic masking of sensitive info (emails, phone numbers)
 - **Source Deduplication**: Enhanced readability by preventing duplicate exposure of the same document
 - **Dynamic Session Management**: `localStorage`-based unique `user_id` and session management
-- **Performance Monitoring**: Precise logging of latency in each stage (Query Rephrasing, Search, Generation) and load analysis
+- **Performance Monitoring**: Precise logging of latency in each stage (Query Rephrasing / Search / Generation) and load analysis
 
 ---
 
@@ -587,10 +587,10 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
   - [x] E2E search quality validation complete
   - [x] Redis search result caching
   - [x] SSE-based real-time streaming responses
-  - [x] Citation(Inline Citations) system and 17 iterations of refactoring complete
+  - [x] Inline citation system and 17 iterations of refactoring complete
   - [x] Automatic PII masking & security guardrails
   - [x] Source deduplication & UI optimization
-  - [x] TTFT measurement & load analysis for each stage (Query Rephrasing/Search/Generation)
+  - [x] TTFT measurement & load analysis for each stage (Query Rephrasing / Search / Generation)
 
 ### 🚧 Planned (v7.0)
 - [ ] Additional language support (Japanese, Chinese)
