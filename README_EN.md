@@ -179,7 +179,7 @@
 - **Security Guardrails (PII)**: Automatic masking of sensitive info (emails, phone numbers)
 - **Source Deduplication**: Enhanced readability by preventing duplicate exposure of the same document
 - **Dynamic Session Management**: `localStorage`-based unique `user_id` and session management
-- **Performance Monitoring**: Precise logging of latency in each stage (Rephrasing, Search, Generation)
+- **Performance Monitoring**: Precise logging of latency in each stage (Query Rephrasing, Search, Generation) and load analysis
 
 ---
 
@@ -529,7 +529,7 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 | [#10.4] | 12/16 | Celery Automation & Scheduling | ✅ |
 | [#10.11] | 02/04 | v6.0 Phase 3 (i18n) | ✅ |
 | [#11.2.12] | 03/02 | v7.0 Phase 2 (Hybrid RAG) | ✅ |
-| [#11.3.12] | 03/12 | v7.0 Phase 2-3 (Hybrid RAG & AI Assistant) | ✅ |
+| [#11.3.13] | 03/12 | v7.0 Phase 2-3 (Hybrid RAG & AI Assistant) | ✅ |
 
 ### Major Commit History
 - `v5.0` - MCP Server, Next.js Dashboard, Graph View
@@ -587,10 +587,10 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
   - [x] E2E search quality validation complete
   - [x] Redis search result caching
   - [x] SSE-based real-time streaming responses
-  - [x] Inline Citation system
+  - [x] Citation(Inline Citations) system and 17 iterations of refactoring complete
   - [x] Automatic PII masking & security guardrails
   - [x] Source deduplication & UI optimization
-  - [x] TTFT (Time To First Token) measurement & load analysis
+  - [x] TTFT measurement & load analysis for each stage (Query Rephrasing/Search/Generation)
 
 ### 🚧 Planned (v7.0)
 - [ ] Additional language support (Japanese, Chinese)
