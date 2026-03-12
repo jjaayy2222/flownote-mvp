@@ -173,6 +173,14 @@
 - **E2E Quality Validation**: Real embedding-based search quality measurement (Recall ~0.92)
 - **Caching & Optimization**: Implementation of Redis-based search result caching and index persistence
 
+### 2.13 🤖 **AI Assistant Streaming Chat (RAG)** (v7.0 Phase 2-3) ✨
+- **Real-time Streaming**: SSE(Server-Sent Events) based answer generation (TTFT optimized)
+- **Intelligent Inline Citations**: Display source numbers `[1]`, `[2]` within answers with source panel integration
+- **Security Guardrails (PII)**: Automatic masking of sensitive info (emails, phone numbers)
+- **Source Deduplication**: Enhanced readability by preventing duplicate exposure of the same document
+- **Dynamic Session Management**: `localStorage`-based unique `user_id` and session management
+- **Performance Monitoring**: Precise logging of latency in each stage (Rephrasing, Search, Generation)
+
 ---
 
 ## 3. 💻 Tech Stack
@@ -521,6 +529,7 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 | [#10.4] | 12/16 | Celery Automation & Scheduling | ✅ |
 | [#10.11] | 02/04 | v6.0 Phase 3 (i18n) | ✅ |
 | [#11.2.12] | 03/02 | v7.0 Phase 2 (Hybrid RAG) | ✅ |
+| [#11.3.12] | 03/12 | v7.0 Phase 2-3 (Hybrid RAG & AI Assistant) | ✅ |
 
 ### Major Commit History
 - `v5.0` - MCP Server, Next.js Dashboard, Graph View
@@ -571,15 +580,19 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 - [x] **Phase 1: AI Agent Architecture (LangGraph)** ✨
   - [x] State-based reasoning loop design
   - [x] Redis-based memory integration
-- [x] **Phase 2: Hybrid RAG Search** ✨
+- [x] **Phase 2-3: Hybrid RAG Search & AI Assistant** ✨
   - [x] FAISS + BM25 Hybrid engine
   - [x] RRF rank fusion algorithm
   - [x] Initial indexing bootstrap script
   - [x] E2E search quality validation complete
   - [x] Redis search result caching
+  - [x] SSE-based real-time streaming responses
+  - [x] Inline Citation system
+  - [x] Automatic PII masking & security guardrails
+  - [x] Source deduplication & UI optimization
+  - [x] TTFT (Time To First Token) measurement & load analysis
 
 ### 🚧 Planned (v7.0)
-- [ ] AI Assistant Streaming Chat (RAG)
 - [ ] Additional language support (Japanese, Chinese)
 - [ ] AI-based auto-translation
 - [ ] Advanced search filters
