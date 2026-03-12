@@ -173,6 +173,14 @@
 - **E2E 품질 검증**: 실제 임베딩 기반 검색 품질 측정 (Recall ~0.92 확보)
 - **캐싱 및 최적화**: Redis 검색 결과 캐싱 및 인덱스 영속화 구현
 
+### 2.13 🤖 **AI Assistant 스트리밍 채팅 (RAG)** (v7.0 Phase 2-3) ✨
+- **실시간 스트리밍**: SSE(Server-Sent Events) 기반 답변 생성 (TTFT 최적화)
+- **지능형 인라인 인용**: 답변 내 `[1]`, `[2]` 형태의 출처 표시 및 소스 패널 연동
+- **보안 가드레일 (PII)**: 이메일, 전화번호 등 민감 정보 자동 마스킹 처리
+- **소스 중복 제거**: 동일 문서 중복 노출 방지를 통한 가독성 향상
+- **동적 세션 관리**: `localStorage` 기반 고유 `user_id` 및 세션 관리
+- **성능 모니터링**: 단계별 지연시간(재구성, 검색, 생성) 정밀 로깅
+
 ---
 
 ## 3. 💻 기술 스택
@@ -521,6 +529,7 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 | [#10.4] | 12/16 | Celery 자동화 & 스케줄링 | ✅ |
 | [#10.11] | 02/04 | v6.0 Phase 3 (i18n) | ✅ |
 | [#11.2.12] | 03/02 | v7.0 Phase 2 (Hybrid RAG) | ✅ |
+| [#11.3.12] | 03/12 | v7.0 Phase 3 (RAG Chat) | ✅ |
 
 ### 주요 커밋 히스토리
 - `v5.0` - MCP 서버, Next.js 대시보드, Graph View
@@ -571,15 +580,19 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 - [x] **Phase 1: AI 에이전트 아키텍처 (LangGraph)** ✨
   - [x] 상태 기반 추론 루프 설계
   - [x] Redis 기반 메모리 통합
-- [x] **Phase 2: 하이브리드 RAG 검색** ✨
+- [x] **Phase 2-3: 하이브리드 RAG 검색 & AI 어시스턴트** ✨
   - [x] FAISS + BM25 하이브리드 엔진
   - [x] RRF 순위 통합 알고리즘
   - [x] 초기 인덱싱 부트스트랩 스크립트
   - [x] E2E 검색 품질 검증 완료
   - [x] Redis 검색 결과 캐싱
+  - [x] SSE 기반 실시간 스트리밍 답변
+  - [x] 인라인 인용(Inline Citations) 시스템
+  - [x] 개인정보(PII) 자동 마스킹 및 보안 가드레일
+  - [x] 소스 중복 제거 및 UI 최적화
+  - [x] TTFT(Time To First Token) 측정 부하 분석
 
 ### 🚧 진행 예정 (v7.0)
-- [ ] AI Assistant 스트리밍 채팅 (RAG)
 - [ ] 추가 언어 지원 (일본어, 중국어)
 - [ ] AI 기반 자동 번역
 - [ ] 고급 검색 필터
