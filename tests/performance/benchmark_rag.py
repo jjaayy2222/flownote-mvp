@@ -106,11 +106,21 @@ async def run_load_test(chat_service: ChatService, queries: List[str], concurren
 
     start_time = time.perf_counter()
     tasks = [task(q) for q in queries]
-    results = await asyncio.gather(*tasks)
+    # return_exceptions=True를 적용하여 개별 에러가 전체 벤치마크를 중단시키지 않도록 방어
+    results = await asyncio.gather(*tasks, return_exceptions=True)
     total_duration = time.perf_counter() - start_time
 
+    # 에러 결과와 성공 결과 분리
+    actual_results = []
+    errors = []
+    for r in results:
+        if isinstance(r, Exception):
+            errors.append(r)
+        else:
+            actual_results.append(r)
+
     # 통계 계산
-    successful_results = [r for r in results if r["success"]]
+    successful_results = [r for r in actual_results if r["success"]]
     ttfts = [r["ttft"] for r in successful_results if r["ttft"] is not None]
     total_times = [r["total_time"] for r in successful_results if r["total_time"] is not None]
 
@@ -147,12 +157,17 @@ def setup_mock_llm():
     async def mock_astream(*args, **kwargs):
         # 가짜 토큰 스트리밍 시뮬레이션
         tokens = ["This ", "is ", "a ", "mocked ", "response ", "for ", "performance ", "testing."]
-        await asyncio.sleep(0.2) # Initial delay (TTFT)
+        await asyncio.sleep(0.1) # Initial delay (TTFT)
         for token in tokens:
             yield AIMessageChunk(content=token)
-            await asyncio.sleep(0.05) # Inter-token delay
+            await asyncio.sleep(0.02) # Inter-token delay
+
+    async def mock_ainvoke(*args, **kwargs):
+        return AIMessageChunk(content="Mocked standalone response")
 
     mock_llm.astream = mock_astream
+    mock_llm.ainvoke = mock_ainvoke
+    mock_llm.invoke = MagicMock(side_effect=lambda *a, **k: AIMessageChunk(content="Mocked response"))
     return mock_llm
 
 

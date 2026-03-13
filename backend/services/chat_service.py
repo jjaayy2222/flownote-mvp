@@ -7,6 +7,7 @@ import re
 import time
 from typing import Any, AsyncGenerator, Dict, List, Optional, TypedDict
 from functools import lru_cache
+import hashlib
 
 from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
@@ -151,6 +152,12 @@ class ChatService:
                 f"Detail: {e}. Raising exception to fail fast."
             )
             raise
+
+    def _hash_string(self, text: str) -> str:
+        """민감 정보(user_id 등)를 로그용으로 해싱하는 헬퍼"""
+        if not text:
+            return ""
+        return hashlib.sha256(text.encode()).hexdigest()
 
     def _get_streaming_llm(self):
         """스트리밍용 ChatOpenAI 객체 생성"""
@@ -419,7 +426,7 @@ Standalone Question:"""
             logger.info(
                 "Dynamic alpha optimization applied",
                 extra={
-                    "user_id": user_id,
+                    "user_id_hash": self._hash_string(user_id),
                     "applied_alpha": applied_alpha,
                     "default_alpha": 0.5,
                 },
