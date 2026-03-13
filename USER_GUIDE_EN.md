@@ -16,11 +16,12 @@
 4. [Classifying Files](#4-classifying-files)
 5. [Using Search](#5-using-search)
 6. [Hybrid RAG Search](#6-hybrid-rag-search)
-7. [Dashboard Features](#7-dashboard-features)
-8. [Automation Settings](#8-automation-settings)
-9. [Obsidian Integration](#9-obsidian-integration)
-10. [Language Settings](#10-language-settings)
-11. [Troubleshooting](#11-troubleshooting)
+7. [AI Assistant Chat](#7-ai-assistant-chat)
+8. [Dashboard Features](#8-dashboard-features)
+9. [Automation Settings](#9-automation-settings)
+10. [Obsidian Integration](#10-obsidian-integration)
+11. [Language Settings](#11-language-settings)
+12. [Troubleshooting](#12-troubleshooting)
 
 ---
 
@@ -341,9 +342,33 @@ python scripts/bootstrap_index.py --vault /path/to/your/vault --clear
 
 ---
 
-## 7. Dashboard Features
+## 7. AI Assistant Chat
 
-### 7.1 Dashboard Overview
+Directly consult with the **AI Assistant**, a core v7.0 feature, to extract insights and answers from your stored knowledge.
+
+### 7.1 Starting a Chat
+
+1. Click the **💬 AI Chat** button at the bottom or in the sidebar of the dashboard to open the chat window.
+2. Type your question in the input field at the bottom and press Enter.
+
+### 7.2 Key Features and Characteristics
+
+- **Real-time Streaming (SSE)**: Text is rendered in real-time as it's being generated, minimizing wait times.
+- **Intelligent Inline Citations**: Source numbers like `[1]` and `[2]` are displayed within the answer.
+  - **Clicking Numbers**: Clicking a citation number opens the `Source Panel` on the right, allowing you to instantly view the original document snippet.
+- **Security Guardrails (PII Masking)**: Sensitive personal information (emails, phone numbers) is automatically masked (`010-****-1234`) when detected in answers or sources.
+- **Persistent Session Management**: Manages a unique `user_id` via browser `localStorage`, ensuring chat history persists even after closing the browser.
+
+### 7.3 Effective Chatting Tips
+
+- **Be Specific**: Instead of asking "How do I write a project proposal?", try "Summarize the key objectives and milestones of 'Project A' in my Projects category."
+- **Verify Sources**: If an answer seems questionable, click the inline citation numbers to verify exactly where in your documents the information came from.
+
+---
+
+## 8. Dashboard Features
+
+### 8.1 Dashboard Overview
 
 The dashboard consists of 3 main sections:
 
@@ -362,7 +387,7 @@ The dashboard consists of 3 main sections:
 - **MCP Server Status**: Connection status
 - **Last Sync**: Last synchronization time
 
-### 7.2 Real-time Updates
+### 8.2 Real-time Updates
 
 WebSocket-based real-time updates:
 - Instant reflection when file classification completes
@@ -371,9 +396,9 @@ WebSocket-based real-time updates:
 
 ---
 
-## 8. Automation Settings
+## 9. Automation Settings
 
-### 8.1 Auto Reclassification
+### 9.1 Auto Reclassification
 
 **Configuration location**: `backend/celery_app/config.py`
 
@@ -390,7 +415,7 @@ WebSocket-based real-time updates:
 2. Reclassifies with latest AI model
 3. Records results in logs
 
-### 8.2 Smart Archiving
+### 9.2 Smart Archiving
 
 ```python
 # Archive old projects every Sunday at midnight
@@ -405,7 +430,7 @@ WebSocket-based real-time updates:
 2. Suggests moving to Archives
 3. Moves after user approval
 
-### 8.3 Monitor with Flower
+### 9.3 Monitor with Flower
 
 Check at `http://localhost:5555`:
 - Running tasks
@@ -414,9 +439,9 @@ Check at `http://localhost:5555`:
 
 ---
 
-## 9. Obsidian Integration
+## 10. Obsidian Integration
 
-### 9.1 MCP Server Configuration
+### 10.1 MCP Server Configuration
 
 **Claude Desktop config file** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
 
@@ -432,7 +457,7 @@ Check at `http://localhost:5555`:
 }
 ```
 
-### 9.2 Obsidian Vault Integration
+### 10.2 Obsidian Vault Integration
 
 1. **Modify configuration file** (`.env`):
 ```env
@@ -445,7 +470,7 @@ OBSIDIAN_AUTO_SYNC=true
 SYNC_INTERVAL=300  # Every 5 minutes
 ```
 
-### 9.3 Conflict Resolution
+### 10.3 Conflict Resolution
 
 When file conflicts occur:
 
@@ -464,9 +489,9 @@ When file conflicts occur:
 
 ---
 
-## 10. Language Settings
+## 11. Language Settings
 
-### 10.1 Web UI Language Switching
+### 11.1 Web UI Language Switching
 
 1. Click **language switcher** in top-right corner
 2. Select **한국어** or **English**
@@ -477,7 +502,7 @@ When file conflicts occur:
 - Korean (ko)
 - English (en)
 
-### 10.2 API Response Language
+### 11.2 API Response Language
 
 Set `Accept-Language` header in HTTP requests:
 
@@ -488,9 +513,9 @@ curl -H "Accept-Language: en" http://localhost:8000/api/classify
 
 ---
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
-### 11.1 Common Issues
+### 12.1 Common Issues
 
 #### ❌ Redis Connection Error
 ```
@@ -540,7 +565,7 @@ WebSocket connection failed
 2. Check error messages in browser console
 3. Check firewall settings
 
-### 11.2 Check Logs
+### 12.2 Check Logs
 
 **Backend logs:**
 ```bash
@@ -558,7 +583,7 @@ cd web_ui
 npm run dev
 ```
 
-### 11.3 Database Reset
+### 12.3 Database Reset
 
 **Warning: All data will be deleted!**
 
@@ -573,7 +598,7 @@ rm -rf data/uploads/*
 python -m uvicorn backend.main:app --reload
 ```
 
-### 11.4 Hybrid Search Troubleshooting
+### 12.4 Hybrid Search Troubleshooting
 
 #### ❌ No results or irrelevant results
 **Cause**: Index not built or outdated index
@@ -611,7 +636,17 @@ openai.RateLimitError: Rate limit exceeded
 python scripts/bootstrap_index.py --vault /path/to/your/vault --concurrency 2
 ```
 
-### 11.5 Get Support
+### 12.5 AI Assistant Chat Troubleshooting
+
+#### ❌ Citation numbers [n] appear but clicking them does nothing
+**Cause**: Source data loading failure or regex parsing error.
+**Solution**: Refresh the page (F5) and try asking again. If the issue persists, check the `web_ui` logs.
+
+#### ❌ Question submitted but no answer begins
+**Cause**: Backend API server not running or OpenAI API quota exceeded.
+**Solution**: Check the server logs in `Terminal 1` for any error messages.
+
+### 12.6 Get Support
 
 - **GitHub Issues**: [github.com/jjaayy2222/flownote-mvp/issues](https://github.com/jjaayy2222/flownote-mvp/issues)
 - **Email**: qkfkadmlEkf@gmail.com
