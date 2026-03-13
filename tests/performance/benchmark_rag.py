@@ -29,6 +29,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# [Performance] 로그 요약 및 가독성을 위한 상수 (Review 반영)
+_LOG_MSG_TRUNCATE_LEN = 100
+_LOG_REPR_TRUNCATE_LEN = 50
+
 
 
 
@@ -93,10 +97,12 @@ async def run_load_test(chat_service: ChatService, queries: List[str], concurren
         if errors:
             first_err = errors[0]
             err_msg = str(first_err)
-            # [Performance] 요약 로그는 간결하게 유지 (100자 제한)
-            truncated_msg = (err_msg[:100] + '...') if len(err_msg) > 100 else err_msg
-            logger.error(f"First error summary: {repr(first_err)[:50]}... msg={truncated_msg}")
-            logger.debug("Full error traceback", exc_info=first_err)
+            # [Performance] 요약 로그는 간결하게 유지 (상수 사용)
+            truncated_msg = (err_msg[:_LOG_MSG_TRUNCATE_LEN] + '...') if len(err_msg) > _LOG_MSG_TRUNCATE_LEN else err_msg
+            logger.error(f"First error summary: {repr(first_err)[:_LOG_REPR_TRUNCATE_LEN]}... msg={truncated_msg}")
+            
+            # [Robustness] exc_info에 예외 객체를 직접 전달하여 상세 트레이스백 확보 (v3.10+ 지원)
+            logger.debug("Full error details for debugging", exc_info=first_err)
             
     logger.info("=" * 50)
 
