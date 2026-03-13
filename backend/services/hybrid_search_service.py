@@ -9,6 +9,7 @@
 """
 
 import logging
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Dict, Any, List, Optional
@@ -353,6 +354,40 @@ class HybridSearchService:
         faiss_ready = self.faiss_retriever.size() > 0
         bm25_ready = len(self.bm25_retriever.documents) > 0
         return faiss_ready and bm25_ready
+
+    def determine_alpha(self, query: str) -> float:
+        """
+        질의의 언어적 특성을 분석하여 최적의 RRF alpha 값을 추천합니다.
+
+        [Optimization Logic]
+        1. Semantic-Rich (High Alpha): 자연어 문장, 질문형 어미, 추상적 용어 포함 시 FAISS 비중 확대.
+        2. Keyword-Dense (Low Alpha): 따옴표, 날짜, 고유 코드, 짧은 단어 패턴 포함 시 BM25 비중 확대.
+        """
+        if not query or not query.strip():
+            return 0.5
+
+        # A. Semantic Bias (Dense 우선)
+        # 구어체 문장, 의문사, "의미", "방법" 등을 묻는 패턴
+        semantic_patterns = [
+            r"(어떻게|방법|이유|왜|설명|알려|정리|해줘|뭐야|란|무엇|인가요|나 요|있나요)",
+            r"(의미|뜻|차이|비교|특징)",
+        ]
+        if any(re.search(p, query) for p in semantic_patterns):
+            return 0.7
+
+        # B. Keyword Bias (Sparse 우선)
+        # 따옴표로 감싸진 용어, 날짜 형식(YYYY-MM), 버전(v1.0), 특정 코드(ID-123)
+        keyword_patterns = [
+            r"([\"']).*?\1",  # 따옴표
+            r"\d{4}[-./]\d{2}",  # 날짜형
+            r"v\d+\.\d+",  # 버전형
+            r"(\w+-\d+)",  # 코드형 (예: ISS-614)
+        ]
+        if any(re.search(p, query) for p in keyword_patterns):
+            return 0.3
+
+        # C. Default: 중립
+        return 0.5
 
     # ------------------------------------------------------------------
     # 내부 헬퍼

@@ -401,9 +401,20 @@ Standalone Question:"""
                 effective_query = await self._rephrase_query(query, history)
                 rephrase_duration = time.perf_counter() - rephrase_start
 
-        # 1. Custom Retriever 구성
+        # 1. [Optimization] Alpha 자동 조절 로직 적용 (Issue #614 Step 3)
+        # 기본값이 0.5인 경우에만 질의 분석을 통해 동적으로 결정합니다.
+        applied_alpha = alpha
+        if alpha == 0.5:
+            applied_alpha = self.hybrid_search_service.determine_alpha(effective_query)
+            if applied_alpha != alpha:
+                logger.info(
+                    f"Dynamic alpha adjustment: {alpha} -> {applied_alpha} "
+                    f"for query: '{effective_query[:30]}...'"
+                )
+
+        # 2. Custom Retriever 구성
         retriever = HybridSearchLangChainRetriever(
-            service=self.hybrid_search_service, k=k, alpha=alpha
+            service=self.hybrid_search_service, k=k, alpha=applied_alpha
         )
 
         # 4. Streaming 실행 (astream_events v2 사용)
