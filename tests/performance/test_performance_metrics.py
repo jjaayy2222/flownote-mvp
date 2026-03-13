@@ -6,13 +6,7 @@ import asyncio
 from typing import List, AsyncGenerator
 from unittest.mock import MagicMock
 
-# benchmark_rag에서 measure_stream_performance를 가져오기 위해 상위 경로 추가가 필요할 수 있음
-import sys
-import os
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
-from tests.performance.benchmark_rag import measure_stream_performance
+from tests.performance.collector import measure_stream_performance
 
 class FakeChatService:
     """

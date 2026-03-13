@@ -22,6 +22,7 @@ from backend.services.chat_service import ChatService
 from backend.services.chat_history_service import ChatHistoryService
 from backend.services.onboarding_service import OnboardingService
 from backend.api.models import ChatMessage
+from tests.performance.collector import measure_stream_performance
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
@@ -29,67 +30,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def measure_stream_performance(
-    chat_service: ChatService, 
-    query: str, 
-    user_id: str = "test_user",
-    session_id: Optional[str] = None
-) -> Dict:
-    """
-    stream_chat을 호출하여 TTFT 및 전체 지연 시간을 측정합니다.
-    """
-    start_time = time.perf_counter()
-    ttft = None
-    total_time = None
-    first_chunk_received = False
-    chunks_count = 0
-    chars_count = 0
-    full_response = ""
-
-    try:
-        async for sse_event in chat_service.stream_chat(
-            query=query, 
-            user_id=user_id, 
-            session_id=session_id
-        ):
-            # sse_event는 "data: {...}\n\n" 형식임
-            if sse_event.startswith("data: "):
-                data_str = sse_event[6:].strip()
-                if data_str == "[DONE]":
-                    break
-                
-                try:
-                    event_data = json.loads(data_str)
-                    event_type = event_data.get("type")
-                    
-                    if event_type == "token":
-                        if not first_chunk_received:
-                            ttft = time.perf_counter() - start_time
-                            first_chunk_received = True
-                        
-                        chunks_count += 1
-                        chunk_content = event_data.get("content", "")
-                        chars_count += len(chunk_content)
-                        full_response += chunk_content
-                except json.JSONDecodeError:
-                    continue
-
-        total_time = time.perf_counter() - start_time
-        stream_duration = total_time - (ttft or 0)
-        
-        return {
-            "query": query,
-            "ttft": ttft,
-            "total_time": total_time,
-            "chunks_count": chunks_count,
-            "chars_count": chars_count,
-            "cps": chunks_count / stream_duration if stream_duration > 0 else 0,
-            "chars_per_sec": chars_count / stream_duration if stream_duration > 0 else 0,
-            "success": True
-        }
-    except Exception as e:
-        logger.error(f"Stream performance measurement failed: {e}")
-        return {"query": query, "success": False, "error": str(e), "ttft": None, "total_time": None}
 
 
 async def run_load_test(chat_service: ChatService, queries: List[str], concurrency: int = 5):
@@ -142,6 +82,17 @@ async def run_load_test(chat_service: ChatService, queries: List[str], concurren
         logger.info(f"Avg Total Time:   {avg_total_time:.4f}s")
     logger.info(f"System Throughput: {tps:.2f} queries/sec")
     logger.info(f"Total Duration:   {total_duration:.2f}s")
+    
+    # [Robustness] 에러 요약 로깅 (Review 반영)
+    if errors or len(actual_results) > len(successful_results):
+        failed_internal = len(actual_results) - len(successful_results)
+        logger.warning(
+            f"⚠️ Partial failures detected: Exceptions={len(errors)}, "
+            f"Logical failures={failed_internal}"
+        )
+        if errors:
+            logger.error(f"First exception sample: {errors[0]}")
+            
     logger.info("=" * 50)
 
 
