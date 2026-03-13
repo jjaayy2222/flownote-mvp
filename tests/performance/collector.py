@@ -68,10 +68,10 @@ async def measure_stream_performance(
         total_time = time.perf_counter() - start_time
         stream_duration = total_time - (ttft or 0)
         
-        # [Fail Safe] Division by zero 방어
+        # [Fail Safe] ttft가 None이면(토큰 수신 실패) 그대로 None 유지 (Review 반영)
         return {
             "query": query,
-            "ttft": ttft if ttft is not None else total_time,
+            "ttft": ttft,
             "total_time": total_time,
             "chunks_count": chunks_count,
             "chars_count": chars_count,
