@@ -108,10 +108,14 @@ class ChatService:
         hybrid_search_service: HybridSearchService,
         onboarding_service: OnboardingService,
         chat_history_service: ChatHistoryService,
+        llm: Optional[Any] = None,
+        streaming_llm: Optional[Any] = None,
     ):
         self.hybrid_search_service = hybrid_search_service
         self.onboarding_service = onboarding_service
         self.chat_history_service = chat_history_service
+        self._custom_llm = llm
+        self._custom_streaming_llm = streaming_llm
 
         import os
 
@@ -154,6 +158,12 @@ class ChatService:
 
     def _get_llm(self, streaming: bool = False):
         """ChatOpenAI 객체 생성 (기본값: non-streaming)"""
+        # [Optimization] 주입된 커스텀 LLM이 있는 경우 우선 사용 (명시적 의존성 주입 지원)
+        if streaming and self._custom_streaming_llm:
+            return self._custom_streaming_llm
+        if not streaming and self._custom_llm:
+            return self._custom_llm
+
         from langchain_openai import ChatOpenAI
         import os
 
@@ -383,7 +393,7 @@ Standalone Question:"""
         user_id: str,
         session_id: Optional[str] = None,
         k: int = 5,
-        alpha: float = 0.5,
+        alpha: Optional[float] = None,
     ) -> AsyncGenerator[str, None]:
         """질의를 받아 RAG 체인을 실행하고 SSE 규격에 맞게 결과 청크를 반환하는 비동기 제너레이터"""
         start_time = time.perf_counter()
@@ -402,15 +412,18 @@ Standalone Question:"""
                 rephrase_duration = time.perf_counter() - rephrase_start
 
         # 1. [Optimization] Alpha 자동 조절 로직 적용 (Issue #614 Step 3)
-        # 기본값이 0.5인 경우에만 질의 분석을 통해 동적으로 결정합니다.
+        # alpha가 명시적으로 주어지지 않은 경우(None)에만 질의 분석을 통해 동적으로 결정합니다.
         applied_alpha = alpha
-        if alpha == 0.5:
+        if alpha is None:
             applied_alpha = self.hybrid_search_service.determine_alpha(effective_query)
-            if applied_alpha != alpha:
-                logger.info(
-                    f"Dynamic alpha adjustment: {alpha} -> {applied_alpha} "
-                    f"for query: '{effective_query[:30]}...'"
-                )
+            logger.info(
+                "Dynamic alpha optimization applied",
+                extra={
+                    "user_id": user_id,
+                    "applied_alpha": applied_alpha,
+                    "default_alpha": 0.5,
+                },
+            )
 
         # 2. Custom Retriever 구성
         retriever = HybridSearchLangChainRetriever(

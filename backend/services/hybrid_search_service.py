@@ -23,6 +23,17 @@ from fastapi.concurrency import run_in_threadpool
 
 logger = logging.getLogger(__name__)
 
+# [Optimization] 질의 분석용 정규식 패턴 (미리 컴파일하여 부하가 큰 런타임 성능 확보)
+_SEMANTIC_PATTERN = re.compile(
+    r"(어떻게|방법|이유|왜|설명|알려|정리|해줘|뭐야|란|무엇|인가요|나요|있나요|의미|뜻|차이|비교|특징)"
+)
+_KEYWORD_PATTERN = re.compile(
+    r"([\"']).*?\1|"  # 따옴표로 감싸진 용어
+    r"\d{4}[-./]\d{2}|"  # 날짜형 (YYYY-MM)
+    r"v\d+\.\d+|"  # 버전형 (v1.0)
+    r"(\w+-\d+)"  # 코드형 (예: ISS-614)
+)
+
 
 @dataclass
 class HybridSearchResult:
@@ -366,24 +377,12 @@ class HybridSearchService:
         if not query or not query.strip():
             return 0.5
 
-        # A. Semantic Bias (Dense 우선)
-        # 구어체 문장, 의문사, "의미", "방법" 등을 묻는 패턴
-        semantic_patterns = [
-            r"(어떻게|방법|이유|왜|설명|알려|정리|해줘|뭐야|란|무엇|인가요|나 요|있나요)",
-            r"(의미|뜻|차이|비교|특징)",
-        ]
-        if any(re.search(p, query) for p in semantic_patterns):
+        # A. Semantic Bias (Dense 우선): 질문형, 설명 요청, 자연어 문장 패턴
+        if _SEMANTIC_PATTERN.search(query):
             return 0.7
 
-        # B. Keyword Bias (Sparse 우선)
-        # 따옴표로 감싸진 용어, 날짜 형식(YYYY-MM), 버전(v1.0), 특정 코드(ID-123)
-        keyword_patterns = [
-            r"([\"']).*?\1",  # 따옴표
-            r"\d{4}[-./]\d{2}",  # 날짜형
-            r"v\d+\.\d+",  # 버전형
-            r"(\w+-\d+)",  # 코드형 (예: ISS-614)
-        ]
-        if any(re.search(p, query) for p in keyword_patterns):
+        # B. Keyword Bias (Sparse 우선): 고유 명사, 코드, 날짜, 인용구 패턴
+        if _KEYWORD_PATTERN.search(query):
             return 0.3
 
         # C. Default: 중립

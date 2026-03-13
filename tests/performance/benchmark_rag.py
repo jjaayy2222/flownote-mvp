@@ -42,7 +42,8 @@ async def measure_stream_performance(
     ttft = None
     total_time = None
     first_chunk_received = False
-    tokens_count = 0
+    chunks_count = 0
+    chars_count = 0
     full_response = ""
 
     try:
@@ -66,19 +67,24 @@ async def measure_stream_performance(
                             ttft = time.perf_counter() - start_time
                             first_chunk_received = True
                         
-                        tokens_count += 1
-                        full_response += event_data.get("content", "")
+                        chunks_count += 1
+                        chunk_content = event_data.get("content", "")
+                        chars_count += len(chunk_content)
+                        full_response += chunk_content
                 except json.JSONDecodeError:
                     continue
 
         total_time = time.perf_counter() - start_time
+        stream_duration = total_time - (ttft or 0)
         
         return {
             "query": query,
             "ttft": ttft,
             "total_time": total_time,
-            "tokens_count": tokens_count,
-            "tps": tokens_count / (total_time - (ttft or 0)) if total_time and ttft and tokens_count > 0 else 0,
+            "chunks_count": chunks_count,
+            "chars_count": chars_count,
+            "cps": chunks_count / stream_duration if stream_duration > 0 else 0,
+            "chars_per_sec": chars_count / stream_duration if stream_duration > 0 else 0,
             "success": True
         }
     except Exception as e:
@@ -129,7 +135,7 @@ async def run_load_test(chat_service: ChatService, queries: List[str], concurren
     logger.info("=" * 50)
 
 
-def setup_mock_llm(chat_service: ChatService):
+def setup_mock_llm():
     """
     실제 API 호출 없이 벤치마크 로직을 검증하기 위한 Mock LLM 설정
     """
@@ -147,11 +153,7 @@ def setup_mock_llm(chat_service: ChatService):
             await asyncio.sleep(0.05) # Inter-token delay
 
     mock_llm.astream = mock_astream
-    # astream_events v2에서 모델 호출을 잡기 위해 mock
-    mock_llm.astream_events = AsyncMock() # 실제로는 complex but easier to patch _get_llm
-    
-    # 더 쉬운 방법: chat_service._get_llm이 mock_llm을 반환하도록 함
-    chat_service._get_llm = MagicMock(return_value=mock_llm)
+    return mock_llm
 
 
 async def run_benchmark(use_mock_llm: bool = True):
@@ -189,15 +191,18 @@ async def run_benchmark(use_mock_llm: bool = True):
     os.environ["GPT4O_MINI_API_KEY"] = os.getenv("GPT4O_MINI_API_KEY") or "mock-key"
     os.environ["RAG_MAX_DOCS"] = "5"
     
+    mock_llm = None
+    if use_mock_llm:
+        logger.info("Using Mock LLM for benchmark logic validation.")
+        mock_llm = setup_mock_llm()
+
     chat_service = ChatService(
         hybrid_search_service=hybrid_search,
         onboarding_service=mock_onboarding,
-        chat_history_service=mock_history
+        chat_history_service=mock_history,
+        llm=mock_llm,
+        streaming_llm=mock_llm
     )
-
-    if use_mock_llm:
-        logger.info("Using Mock LLM for benchmark logic validation.")
-        setup_mock_llm(chat_service)
 
     # 2. 단일 스트리밍 성능 측정 (TTFT Focus)
     logger.info("Benchmark: Measuring Single Stream Performance...")
@@ -205,7 +210,8 @@ async def run_benchmark(use_mock_llm: bool = True):
     if perf_result["success"] and perf_result["ttft"] is not None:
         logger.info(f"✅ Single TTFT: {perf_result['ttft']:.4f}s")
         logger.info(f"✅ Single Total: {perf_result['total_time']:.4f}s")
-        logger.info(f"✅ Tokens count: {perf_result['tokens_count']}")
+        logger.info(f"✅ Chunks count: {perf_result['chunks_count']}")
+        logger.info(f"✅ CPS: {perf_result['cps']:.2f} chunks/sec")
     else:
         logger.warning(f"❌ Single stream test failed or returned no tokens. Error: {perf_result.get('error')}")
     
