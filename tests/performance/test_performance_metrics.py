@@ -24,7 +24,6 @@ class FakeChatService:
     ) -> AsyncGenerator[str, None]:
         for event in self._events:
             yield event
-            await asyncio.sleep(0.01) # 가짜 딜레이
 
 @pytest.mark.asyncio
 async def test_measure_stream_performance_basic_stream_metrics():
@@ -72,6 +71,8 @@ async def test_measure_stream_performance_no_token_events():
     assert result["success"] is True
     assert result["chunks_count"] == 0
     assert result["chars_count"] == 0
+    # 토큰이 전혀 없는 경우 ttft는 None이어야 함 (Review 반영)
+    assert result["ttft"] is None
     assert result["cps"] == 0
     assert result["chars_per_sec"] == 0
 

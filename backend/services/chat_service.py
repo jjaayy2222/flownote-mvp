@@ -157,7 +157,7 @@ class ChatService:
         """민감 정보(user_id 등)를 로그용으로 해싱하는 헬퍼"""
         if not text:
             return ""
-        return hashlib.sha256(text.encode()).hexdigest()
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
     def _get_streaming_llm(self):
         """스트리밍용 ChatOpenAI 객체 생성"""
