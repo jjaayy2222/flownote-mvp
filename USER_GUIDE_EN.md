@@ -642,7 +642,7 @@ python scripts/bootstrap_index.py --vault /path/to/your/vault --concurrency 2
 **Cause**: Source data loading failure or regex parsing error.
 **Solution**: Refresh the page (F5) and try asking again. If the issue persists, check the `web_ui` logs.
 
-#### ❌ Question submitted but no answer begins
+#### ❌ Question submitted but no answer is returned
 **Cause**: Backend API server not running or OpenAI API quota exceeded.
 **Solution**: Check the server logs in `Terminal 1` for any error messages.
 
