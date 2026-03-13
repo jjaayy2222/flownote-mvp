@@ -275,10 +275,22 @@ async def test_rephrase_query_with_history(chat_service):
 @pytest.mark.asyncio
 async def test_rephrase_query_no_history_returns_original(chat_service):
     """
-    [Phase 1] 히스토리가 없으면 LLM 호출 없이 원본 쿼리를 반환하는지 검증
+    [Phase 1] 히스토리가 없으면 LLM 호출 없이 원본 쿼리를 그대로 반환하는지 검증.
+
+    [Review Comment 2 반영]
+    반환값 검증뿐 아니라, `_invoke_rephrase_chain`이 실제로 호출되지 않음을
+    `assert_not_awaited()`로 단언합니다. docstring의 "LLM 호출 없음" 계약이
+    향후 코드 변경에도 유지되는지 보장하는 회귀 방어 장치입니다.
     """
     query = "파이썬에서 비동기 처리 방법은?"
-    result = await chat_service._rephrase_query(query, history=[])
+
+    with patch.object(
+        chat_service, "_invoke_rephrase_chain", new_callable=AsyncMock
+    ) as mock_invoke:
+        result = await chat_service._rephrase_query(query, history=[])
+
+    # 히스토리가 없을 때 LLM chain이 절대 호출되지 않아야 함
+    mock_invoke.assert_not_awaited()
     assert result == query
 
 
