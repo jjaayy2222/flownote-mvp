@@ -16,7 +16,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, call, patch
 from langchain_core.documents import Document
 
-from backend.services.chat_service import ChatService
+from backend.services.chat_service import ChatService, REPHRASE_HISTORY_WINDOW
 from backend.services.hybrid_search_service import HybridSearchService
 from backend.services.onboarding_service import OnboardingService
 from backend.services.chat_history_service import ChatHistoryService
@@ -291,10 +291,12 @@ async def test_rephrase_query_truncates_history_to_last_five(chat_service):
     chat_service.py의 HISTORY_WINDOW = 5 계약이 실수로 변경되는 것을 방지합니다.
     _invoke_rephrase_chain에 전달된 context_history 인수를 캡쳐하여 검증합니다.
     """
-    # 5개를 초과하는 10개의 히스토리 구성
-    # [주의] "msg-1"~"msg-9"처럼 부분 문자열 충돌이 없는 고유한 문자열을 사용합니다.
-    # 예: "질문 1"은 "질문 10"의 부분 문자열이므로 오탐을 유발할 수 있습니다.
-    messages = [f"msg-{chr(ord('A') + i)}" for i in range(10)]  # msg-A ~ msg-J
+    # REPHRASE_HISTORY_WINDOW * 2 개의 히스토리를 구성하여 잘라내기 동작 검증
+    # [Engineering Decision] 하드코딩된 숫자 대신 모듈 상수를 import하여 SSOT를 유지합니다.
+    # chat_service.py의 REPHRASE_HISTORY_WINDOW 값이 바뀌면 이 테스트도 자동으로 연동됩니다.
+    total = REPHRASE_HISTORY_WINDOW * 2  # 10개
+    # [주의] 부분 문자열 충돌이 없는 고유한 문자열을 사용합니다. (예: 'msg-A'~'msg-J')
+    messages = [f"msg-{chr(ord('A') + i)}" for i in range(total)]
     history = [
         ChatMessage(role="user", content=msg) for msg in messages
     ]
@@ -312,12 +314,12 @@ async def test_rephrase_query_truncates_history_to_last_five(chat_service):
     assert len(captured_calls) == 1, "chain이 정확히 1회 호출되어야 합니다."
     captured_context = captured_calls[0]
 
-    # 최근 5개(msg-F ~ msg-J)만 포함되어야 함
-    for msg in messages[-5:]:
+    # 최근 REPHRASE_HISTORY_WINDOW 개만 포함되어야 함
+    for msg in messages[-REPHRASE_HISTORY_WINDOW:]:
         assert msg in captured_context, f"'{msg}'가 context에 포함되어야 합니다."
 
-    # 이전 5개(msg-A ~ msg-E)는 포함되지 않아야 함
-    for msg in messages[:5]:
+    # 그보다 오래된 메시지들은 포함되지 않아야 함
+    for msg in messages[:-REPHRASE_HISTORY_WINDOW]:
         assert msg not in captured_context, f"'{msg}'는 context에서 제외되어야 합니다."
 
 

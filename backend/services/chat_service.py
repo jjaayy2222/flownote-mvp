@@ -10,6 +10,7 @@ from functools import lru_cache
 
 from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
+from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import (
     ChatPromptTemplate,
     SystemMessagePromptTemplate,
@@ -35,6 +36,11 @@ MAX_SOURCE_PAGE_CONTENT_LEN = 500
 
 # [Engineering Excellence] 메타데이터 폴백을 안전하게 식별하기 위한 내부 센티널 (리뷰 반영)
 _METADATA_SENTINEL = object()
+
+# [Contract] 질의 재구성(Query Rephrasing) 시 사용할 최근 대화 히스토리 윈도우 크기.
+# 이 값을 변경하면 test_rephrase_query_truncates_history 테스트가 실패합니다.
+# 테스트에서 이 상수를 직접 import하여 단일 진실 공급원(SSOT)으로 유지하세요.
+REPHRASE_HISTORY_WINDOW = 5
 
 
 class SourceDocumentPayload(TypedDict):
@@ -318,8 +324,6 @@ class ChatService:
         `chat_service._invoke_rephrase_chain`을 직접 패치할 수 있도록 합니다.
         이는 LangChain 버전 업그레이드에 대한 취약성을 제거합니다.
         """
-        from langchain_core.output_parsers import StrOutputParser
-
         rephrase_template = """Given the following conversation history and a follow-up question, rephrase the follow-up question to be a standalone question that can be understood without the conversation history.
 If the follow-up question is already standalone, return it exactly as is.
 
@@ -339,11 +343,10 @@ Standalone Question:"""
         if not history:
             return query
 
-        # [Contract] 최근 5개의 메시지만 맥락으로 사용합니다.
-        # 이 값을 변경하면 test_rephrase_query_truncates_history 테스트가 실패합니다.
-        HISTORY_WINDOW = 5
+        # [Contract] 모듈 상수 REPHRASE_HISTORY_WINDOW를 사용하여 히스토리 잘라내기.
+        # 테스트(test_rephrase_query_truncates_history)가 이 상수를 import하여 동기화됩니다.
         context_history = "\n".join(
-            [f"{m.role}: {m.content}" for m in history[-HISTORY_WINDOW:]]
+            [f"{m.role}: {m.content}" for m in history[-REPHRASE_HISTORY_WINDOW:]]
         )
 
         try:
