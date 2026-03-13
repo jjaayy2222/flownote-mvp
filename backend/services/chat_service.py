@@ -1,3 +1,5 @@
+# backend/services/chat_service.py
+
 import json
 import logging
 import asyncio
@@ -8,6 +10,7 @@ from functools import lru_cache
 
 from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
+from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import (
     ChatPromptTemplate,
     SystemMessagePromptTemplate,
@@ -33,6 +36,11 @@ MAX_SOURCE_PAGE_CONTENT_LEN = 500
 
 # [Engineering Excellence] 메타데이터 폴백을 안전하게 식별하기 위한 내부 센티널 (리뷰 반영)
 _METADATA_SENTINEL = object()
+
+# [Contract] 질의 재구성(Query Rephrasing) 시 사용할 최근 대화 히스토리 윈도우 크기.
+# 이 값을 변경하면 test_rephrase_query_truncates_history 테스트가 실패합니다.
+# 테스트에서 이 상수를 직접 import하여 단일 진실 공급원(SSOT)으로 유지하세요.
+REPHRASE_HISTORY_WINDOW = 5
 
 
 class SourceDocumentPayload(TypedDict):
@@ -306,16 +314,16 @@ class ChatService:
         )
         return ttft
 
-    async def _rephrase_query(self, query: str, history: List[ChatMessage]) -> str:
-        """이전 대화 맥락을 기반으로 질의 재구성 (Query Rewriting)"""
-        if not history:
-            return query
+    async def _invoke_rephrase_chain(self, context_history: str, query: str) -> str:
+        """
+        재구성 체인(prompt | llm | StrOutputParser)을 빌드하고 실행합니다.
 
-        from langchain_core.output_parsers import StrOutputParser
-
-        # 최근 5개 정도의 대화만 맥락으로 사용
-        context_history = "\n".join([f"{m.role}: {m.content}" for m in history[-5:]])
-
+        [Engineering Decision - Testability]
+        LangChain 체인 빌드 및 실행 로직을 별도 메서드로 추출하여 테스트 시
+        LangChain 내부 경로(RunnableSequence 등)에 의존하지 않고
+        `chat_service._invoke_rephrase_chain`을 직접 패치할 수 있도록 합니다.
+        이는 LangChain 버전 업그레이드에 대한 취약성을 제거합니다.
+        """
         rephrase_template = """Given the following conversation history and a follow-up question, rephrase the follow-up question to be a standalone question that can be understood without the conversation history.
 If the follow-up question is already standalone, return it exactly as is.
 
@@ -326,15 +334,23 @@ Follow-up Question: {query}
 Standalone Question:"""
 
         rephrase_prompt = ChatPromptTemplate.from_template(rephrase_template)
-        # 쿼리 재구성 작업은 스트리밍이 필요 없으므로 일반 LLM 사용
         llm = self._get_llm(streaming=False)
-
         chain = rephrase_prompt | llm | StrOutputParser()
+        return await chain.ainvoke({"history": context_history, "query": query})
+
+    async def _rephrase_query(self, query: str, history: List[ChatMessage]) -> str:
+        """이전 대화 맥락을 기반으로 질의 재구성 (Query Rewriting)"""
+        if not history:
+            return query
+
+        # [Contract] 모듈 상수 REPHRASE_HISTORY_WINDOW를 사용하여 히스토리 잘라내기.
+        # 테스트(test_rephrase_query_truncates_history)가 이 상수를 import하여 동기화됩니다.
+        context_history = "\n".join(
+            [f"{m.role}: {m.content}" for m in history[-REPHRASE_HISTORY_WINDOW:]]
+        )
 
         try:
-            standalone_query = await chain.ainvoke(
-                {"history": context_history, "query": query}
-            )
+            standalone_query = await self._invoke_rephrase_chain(context_history, query)
             logger.info(
                 "Rephrased query",
                 extra={
