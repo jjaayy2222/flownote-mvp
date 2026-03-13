@@ -92,7 +92,11 @@ async def run_load_test(chat_service: ChatService, queries: List[str], concurren
         )
         if errors:
             first_err = errors[0]
-            logger.error(f"First error summary: type={type(first_err).__name__}, msg={str(first_err)}")
+            err_msg = str(first_err)
+            # [Performance] 요약 로그는 간결하게 유지 (100자 제한)
+            truncated_msg = (err_msg[:100] + '...') if len(err_msg) > 100 else err_msg
+            logger.error(f"First error summary: {repr(first_err)[:50]}... msg={truncated_msg}")
+            logger.debug("Full error traceback", exc_info=first_err)
             
     logger.info("=" * 50)
 

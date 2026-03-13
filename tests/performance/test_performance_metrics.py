@@ -24,8 +24,6 @@ class FakeChatService:
     ) -> AsyncGenerator[str, None]:
         for event in self._events:
             yield event
-            # 코루틴 스케줄링을 위해 yield 하되, 테스트 속도를 위해 실제 지연은 제거 (Review 반영)
-            await asyncio.sleep(0)
 
 @pytest.mark.asyncio
 async def test_measure_stream_performance_basic_stream_metrics():
