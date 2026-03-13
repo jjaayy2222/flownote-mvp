@@ -587,7 +587,7 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
   - [x] E2E 검색 품질 검증 완료
   - [x] Redis 검색 결과 캐싱
   - [x] SSE 기반 실시간 스트리밍 답변
-  - [x] 인용(Inline Citations) 시스템 및 17차 리팩토링 완료
+  - [x] 고도화된 안정성 및 최적화된 인용(Inline Citations) 시스템
   - [x] 개인정보(PII) 자동 마스킹 및 보안 가드레일
   - [x] 소스 중복 제거 및 UI 최적화
   - [x] TTFT 측정 및 단계별 지연 시간(Query Rephrasing / Search / Generation) 부하 분석
