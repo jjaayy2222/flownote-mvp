@@ -311,7 +311,7 @@ class ChatService:
         if not history:
             return query
 
-        from langchain_core.output_parsers import StringOutputParser
+        from langchain_core.output_parsers import StrOutputParser
 
         # 최근 5개 정도의 대화만 맥락으로 사용
         context_history = "\n".join([f"{m.role}: {m.content}" for m in history[-5:]])
@@ -329,7 +329,7 @@ Standalone Question:"""
         # 쿼리 재구성 작업은 스트리밍이 필요 없으므로 일반 LLM 사용
         llm = self._get_llm(streaming=False)
 
-        chain = rephrase_prompt | llm | StringOutputParser()
+        chain = rephrase_prompt | llm | StrOutputParser()
 
         try:
             standalone_query = await chain.ainvoke(
