@@ -587,7 +587,7 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
   - [x] E2E search quality validation complete
   - [x] Redis search result caching
   - [x] SSE-based real-time streaming responses
-  - [x] Inline citation system and 17 iterations of refactoring complete
+  - [x] Enhanced stability and optimized inline citation system
   - [x] Automatic PII masking & security guardrails
   - [x] Source deduplication & UI optimization
   - [x] TTFT measurement & load analysis for each stage (Query Rephrasing / Search / Generation)
