@@ -70,7 +70,7 @@ async def run_load_test(chat_service: ChatService, queries: List[str], concurren
     tps = len(successful_results) / total_duration if total_duration > 0 else 0
 
     logger.info("=" * 50)
-    logger.info("🚀 LOAD TEST RESULTS")
+    logger.info("LOAD TEST RESULTS")
     logger.info("-" * 50)
     logger.info(f"Concurrency:      {concurrency}")
     logger.info(f"Total Queries:    {len(queries)}")
@@ -87,11 +87,12 @@ async def run_load_test(chat_service: ChatService, queries: List[str], concurren
     if errors or len(actual_results) > len(successful_results):
         failed_internal = len(actual_results) - len(successful_results)
         logger.warning(
-            f"⚠️ Partial failures detected: Exceptions={len(errors)}, "
+            f"Partial failures detected: Exceptions={len(errors)}, "
             f"Logical failures={failed_internal}"
         )
         if errors:
-            logger.error(f"First exception sample: {errors[0]}")
+            first_err = errors[0]
+            logger.error(f"First error summary: type={type(first_err).__name__}, msg={str(first_err)}")
             
     logger.info("=" * 50)
 
