@@ -33,6 +33,10 @@ logger = logging.getLogger(__name__)
 _LOG_MSG_TRUNCATE_LEN = 100
 _LOG_REPR_TRUNCATE_LEN = 50
 
+def _truncate(text: str, limit: int) -> str:
+    """텍스트가 제한 길이를 넘으면 자르고 '...'을 붙입니다."""
+    return (text[:limit] + "...") if len(text) > limit else text
+
 
 
 
@@ -96,10 +100,11 @@ async def run_load_test(chat_service: ChatService, queries: List[str], concurren
         )
         if errors:
             first_err = errors[0]
-            err_msg = str(first_err)
-            # [Performance] 요약 로그는 간결하게 유지 (상수 사용)
-            truncated_msg = (err_msg[:_LOG_MSG_TRUNCATE_LEN] + '...') if len(err_msg) > _LOG_MSG_TRUNCATE_LEN else err_msg
-            logger.error(f"First error summary: {repr(first_err)[:_LOG_REPR_TRUNCATE_LEN]}... msg={truncated_msg}")
+            # [Performance] 요약 로그는 헬퍼를 통해 간결하게 유지 (Review 반영)
+            repr_summary = _truncate(repr(first_err), _LOG_REPR_TRUNCATE_LEN)
+            msg_summary = _truncate(str(first_err), _LOG_MSG_TRUNCATE_LEN)
+            
+            logger.error(f"First error summary: {repr_summary} msg={msg_summary}")
             
             # [Robustness] exc_info에 예외 객체를 직접 전달하여 상세 트레이스백 확보 (v3.10+ 지원)
             logger.debug("Full error details for debugging", exc_info=first_err)
