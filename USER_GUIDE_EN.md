@@ -263,13 +263,13 @@ If AI classification is inaccurate:
 - **Category filter**: Search specific PARA categories
 - **Date range**: Search files within a specific period
 
-> 💡 Starting with v7.0, **Hybrid RAG Search** is available for more accurate results. See [Chapter 6](#6-hybrid-rag-search) for details.
+> 💡 **Hybrid RAG Search** is available for more accurate results. See [Chapter 6](#6-hybrid-rag-search) for details.
 
 ---
 
 ## 6. Hybrid RAG Search
 
-The **Hybrid RAG Search** introduced in v7.0 combines semantic (Dense) and keyword (Sparse) search to deliver significantly more accurate results.
+The **Hybrid RAG Search** introduced in FlowNote combines semantic (Dense) and keyword (Sparse) search to deliver significantly more accurate results.
 
 ### 6.1 Search Engine Architecture
 
@@ -344,7 +344,7 @@ python scripts/bootstrap_index.py --vault /path/to/your/vault --clear
 
 ## 7. AI Assistant Chat
 
-Directly consult with the **AI Assistant**, a core v7.0 feature, to extract insights and answers from your stored knowledge.
+Directly consult with the **AI Assistant**, a core FlowNote feature, to extract insights and answers from your stored knowledge.
 
 ### 7.1 Starting a Chat
 
@@ -356,7 +356,7 @@ Directly consult with the **AI Assistant**, a core v7.0 feature, to extract insi
 - **Real-time Streaming (SSE)**: Text is rendered in real-time as it's being generated, minimizing wait times.
 - **Intelligent Inline Citations**: Source numbers like `[1]` and `[2]` are displayed within the answer.
   - **Clicking Numbers**: Clicking a citation number opens the `Source Panel` on the right, allowing you to instantly view the original document snippet.
-- **Security Guardrails (PII Masking)**: Sensitive personal information (emails, phone numbers) is automatically masked (`010-****-1234`) when detected in answers or sources.
+- **Security Guardrails (PII Masking)**: Sensitive personal information (emails, phone numbers) is automatically masked (e.g., `+1-***-***-1234` or `user@****.com`) when detected in answers or sources.
 - **Persistent Session Management**: Manages a unique `user_id` via browser `localStorage`, ensuring chat history persists even after closing the browser.
 
 ### 7.3 Effective Chatting Tips
