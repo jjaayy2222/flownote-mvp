@@ -88,25 +88,19 @@ def router_edge(state: AgentState) -> Literal["planner", "responder"]:
     # 토큰화 기반의 헬퍼 함수를 통해 캡슐화된 인사말/길이 검증 및 여부 판별
     is_simple_greeting = _is_simple_greeting(cleaned_query)
     
+    # 로그 메타데이터 중복 방지를 위한 공통 속성 딕셔너리 분리
+    router_log_extra = {
+        "query_length": len(cleaned_query),
+        "max_greeting_length": _MAX_GREETING_LENGTH
+    }
+    
     # 인사말 판별기(내부 길이 제한 등 로직 포함)를 통과하면 응답자 모드로 직행
     if is_simple_greeting:
         # 민감 정보(PII) 마스킹 관점과 구조화된 로깅 지침 준수
-        logger.info(
-            "[Router] 단순 대화 감지 -> responder", 
-            extra={
-                "query_length": len(cleaned_query),
-                "max_threshold": _MAX_GREETING_LENGTH
-            }
-        )
+        logger.info("[Router] 단순 대화 감지 -> responder", extra=router_log_extra)
         return "responder"
         
-    logger.info(
-        "[Router] 검색/추론 도구 필요 판단 -> planner", 
-        extra={
-            "query_length": len(cleaned_query),
-            "max_threshold": _MAX_GREETING_LENGTH
-        }
-    )
+    logger.info("[Router] 검색/추론 도구 필요 판단 -> planner", extra=router_log_extra)
     return "planner"
 
 
