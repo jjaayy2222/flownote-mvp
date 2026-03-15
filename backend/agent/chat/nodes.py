@@ -90,16 +90,18 @@ def router_edge(state: AgentState) -> Literal["planner", "responder"]:
     
     # 로그 메타데이터 중복 방지를 위한 공통 속성 딕셔너리 분리
     router_log_extra = {
-        "query_length": len(cleaned_query),
+        "cleaned_query_length": len(cleaned_query),
         "max_greeting_length": _MAX_GREETING_LENGTH
     }
     
     # 인사말 판별기(내부 길이 제한 등 로직 포함)를 통과하면 응답자 모드로 직행
     if is_simple_greeting:
         # 민감 정보(PII) 마스킹 관점과 구조화된 로깅 지침 준수
+        router_log_extra["target"] = "responder"
         logger.info("[Router] 단순 대화 감지 -> responder", extra=router_log_extra)
         return "responder"
         
+    router_log_extra["target"] = "planner"
     logger.info("[Router] 검색/추론 도구 필요 판단 -> planner", extra=router_log_extra)
     return "planner"
 
