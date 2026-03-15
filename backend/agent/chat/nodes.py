@@ -14,17 +14,40 @@ _SIMPLE_KOREAN_GREETINGS = ["안녕", "반가워", "누구야"]
 _KOREAN_SUFFIXES = ["", "하세요", "하십니까", "해", "해요", "요", "히", "하신가요"]
 _SIMPLE_LATIN_GREETINGS = ["hello", "hi"]
 
-# 정규식 조건: 문자열 시작(^) 또는 공백(\s) 뒤에 오고, 끝에 공백(\s) 또는 문자열 끝($)이 와야함
-# \b 대신 (?:^|\s) 와 (?=\s|$) 를 사용하여 CJK 및 일반 문자의 경계 문제를 통일성 있게 회피합니다.
-_LATIN_GREETING_RE = re.compile(
-    r"(?:^|\s)(" + "|".join(re.escape(g) for g in _SIMPLE_LATIN_GREETINGS) + r")(?=\s|$)"
-)
+# 단순 인사말로 취급할 최대 쿼리 길이
+_MAX_GREETING_LENGTH = 15
 
-# 한글 인사말은 제한된 접어(조사, 어미 등) 배열 조합과 공백 경계 검사를 통해 합성어 오탐을 차단합니다.
-_KOREAN_GREETING_RE = re.compile(
-    r"(?:^|\s)(" + "|".join(re.escape(g) for g in _SIMPLE_KOREAN_GREETINGS) + r")"
-    r"(?:" + "|".join(re.escape(s) for s in _KOREAN_SUFFIXES) + r")(?=\s|$)"
-)
+# 모듈 로드 시 허용되는 모든 한글 인사말 조합을 생성하여 탐색 복잡도 단축(O(1)) 및 합성어 오탐 완전 차단
+_KOREAN_GREETING_FORMS = {
+    base + suffix
+    for base in _SIMPLE_KOREAN_GREETINGS
+    for suffix in _KOREAN_SUFFIXES
+}
+
+# 라틴 인사말은 단어 단위 소문자 매칭을 위해 Set 구조화
+_LATIN_GREETING_SET = set(_SIMPLE_LATIN_GREETINGS)
+
+def _is_simple_greeting(cleaned_query: str) -> bool:
+    """
+    공백 기준으로 토큰화하여 단순 인사말인지 판별하는 헬퍼 함수
+    정규식 조립의 복잡도를 낮추고 토큰 비교를 통해 경계 매칭을 완벽하게 구현합니다.
+    """
+    # 라틴 인사말 패턴 통일을 위해 영문은 소문자로 정규화 (한글에는 영향 없음)
+    cleaned_query = cleaned_query.lower()
+    
+    tokens = cleaned_query.split()
+    if not tokens:
+        return False
+        
+    # 한글 인사말: 허용된 완전 형태(base + suffix)와의 정확한 토큰 매칭
+    if any(token in _KOREAN_GREETING_FORMS for token in tokens):
+        return True
+        
+    # 라틴 인사말: 단어 단위 일치 매칭 (e.g. "hi", "hello")
+    if any(token in _LATIN_GREETING_SET for token in tokens):
+        return True
+        
+    return False
 
 def router_edge(state: AgentState) -> Literal["planner", "responder"]:
     """
@@ -58,16 +81,11 @@ def router_edge(state: AgentState) -> Literal["planner", "responder"]:
     cleaned_query = re.sub(r"[^\w가-힣\s]", " ", user_query_str)
     cleaned_query = re.sub(r"\s+", " ", cleaned_query).strip()
 
-    # 한글 인사말은 제한된 접미사(조사/어미) 목록과 공백 경계를 결합하여 오탐(합성어) 방지
-    is_korean_greeting = bool(_KOREAN_GREETING_RE.search(cleaned_query))
-    
-    # 라틴 인사말은 공백 경계 기반 매칭 (e.g. "하이브리드"에서 "hi" 오탐 방지)
-    is_latin_greeting = bool(_LATIN_GREETING_RE.search(cleaned_query))
-
-    is_simple_greeting = is_korean_greeting or is_latin_greeting
+    # 토큰화 기반의 헬퍼 함수를 통해 인사말 여부 판별
+    is_simple_greeting = _is_simple_greeting(cleaned_query)
     
     # 쿼리의 길이가 짧고 인사말로 판단되면 단순 채팅 모드로 간주
-    if len(cleaned_query) < 15 and is_simple_greeting:
+    if len(cleaned_query) < _MAX_GREETING_LENGTH and is_simple_greeting:
         # 민감 정보(PII) 마스킹 관점과 구조화된 로깅 지침 준수
         logger.info("[Router] 단순 대화 감지 -> responder", extra={"query_length": len(cleaned_query)})
         return "responder"
