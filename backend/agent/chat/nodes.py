@@ -17,6 +17,10 @@ _SIMPLE_LATIN_GREETINGS = ["hello", "hi"]
 _LATIN_GREETING_RE = re.compile(
     r"\b(" + "|".join(re.escape(g) for g in _SIMPLE_LATIN_GREETINGS) + r")\b"
 )
+# 한글 인사말은 접어(조사, 어미 등)가 붙을 수 있으므로 단어의 시작(\b)만 정규식으로 확인합니다.
+_KOREAN_GREETING_RE = re.compile(
+    r"\b(" + "|".join(re.escape(g) for g in _SIMPLE_KOREAN_GREETINGS) + r")"
+)
 
 def router_edge(state: AgentState) -> Literal["planner", "responder"]:
     """
@@ -50,7 +54,8 @@ def router_edge(state: AgentState) -> Literal["planner", "responder"]:
     cleaned_query = re.sub(r"[^\w가-힣\s]", " ", user_query_str)
     cleaned_query = re.sub(r"\s+", " ", cleaned_query).strip()
 
-    is_korean_greeting = any(greet in cleaned_query for greet in _SIMPLE_KOREAN_GREETINGS)
+    # 한글 인사말 역시 단순 포함 검사가 아닌, 단어 시작 경계 매칭으로 컴파운드 워드(복합어) 오탐 방지
+    is_korean_greeting = bool(_KOREAN_GREETING_RE.search(cleaned_query))
     # 라틴 인사말은 단어 단위 매칭 및 이스케이프가 적용된 사전 컴파일 정규식 사용
     is_latin_greeting = bool(_LATIN_GREETING_RE.search(cleaned_query))
 
@@ -97,7 +102,8 @@ def responder_node(state: AgentState) -> Dict[str, Any]:
     context = state.get("search_context", "")
     
     # TODO: ChatService.stream_chat의 로직을 향후 이 노드로 통합하여 SSE 스트리밍 연동
-    mock_response = "임시 뼈대 단계에서의 시스템 AI 응답입니다."
+    # 확보된 context를 사용하여 Dead Code를 방지하고 향후 RAG 연동의 명확한 목적을 드러냅니다.
+    mock_response = f"임시 뼈대 단계에서의 시스템 AI 응답입니다. (검색된 문맥 길이: {len(context)})"
     
     # 기존 메시지에 AI 답변을 누적시키기 위해 리스트로 반환 (Annotated[operator.add]에 의해 기존 배열에 병합됨)
     return {
