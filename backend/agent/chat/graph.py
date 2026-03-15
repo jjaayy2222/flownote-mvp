@@ -13,7 +13,7 @@ from backend.agent.chat.nodes import router_edge, planner_node, responder_node
 from backend.agent.checkpointer import get_checkpointer
 
 
-def create_chat_workflow(checkpointer: Optional[Any] = None) -> Any:
+def create_chat_workflow(checkpointer: Optional["BaseCheckpointSaver"] = None) -> "CompiledStateGraph":
     """
     채팅 에이전트(Multi-Agent) 워크플로우를 구성하고 컴파일합니다.
     기존의 RAG 검색과 일상 대화를 분기하는 시작점 역할을 합니다.
