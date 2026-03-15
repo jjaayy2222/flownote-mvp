@@ -1,5 +1,6 @@
 # backend/agent/chat/nodes.py
 
+import re
 import logging
 from typing import Dict, Any, Literal
 from langchain_core.messages import AIMessage
@@ -7,6 +8,10 @@ from langchain_core.messages import AIMessage
 from backend.agent.chat.state import AgentState
 
 logger = logging.getLogger(__name__)
+
+# 라우팅 휴리스틱을 위한 상수 (상단 분리 및 하드코딩 제거)
+_SIMPLE_KOREAN_GREETINGS = ["안녕", "반가워", "누구야"]
+_SIMPLE_LATIN_GREETINGS = ["hello", "hi"]
 
 def router_edge(state: AgentState) -> Literal["planner", "responder"]:
     """
@@ -36,14 +41,25 @@ def router_edge(state: AgentState) -> Literal["planner", "responder"]:
     # 안전한 문자열 처리 및 소문자 변환
     user_query_str = str(user_query).strip().lower()
     
-    simple_greetings = ["안녕", "hello", "hi", "반가워", "누구야"]
-    # 쿼리의 길이가 짧고 인사말이 포함되어 있으면 단순 채팅 모드로 간주
-    if len(user_query_str) < 15 and any(greet in user_query_str for greet in simple_greetings):
+    # 기본적인 구두점 제거 및 공백 정규화 (오탐률 최소화 및 안정성 확보)
+    cleaned_query = re.sub(r"[^\w가-힣\s]", " ", user_query_str)
+    cleaned_query = re.sub(r"\s+", " ", cleaned_query).strip()
+
+    # 라틴 인사말은 단어 단위 매칭으로만 판별 (e.g. "하이브리드"에서 "hi" 오탐 방지)
+    latin_greeting_pattern = r"\b(" + "|".join(_SIMPLE_LATIN_GREETINGS) + r")\b"
+
+    is_korean_greeting = any(greet in cleaned_query for greet in _SIMPLE_KOREAN_GREETINGS)
+    is_latin_greeting = bool(re.search(latin_greeting_pattern, cleaned_query))
+
+    is_simple_greeting = is_korean_greeting or is_latin_greeting
+    
+    # 쿼리의 길이가 짧고 인사말로 판단되면 단순 채팅 모드로 간주
+    if len(cleaned_query) < 15 and is_simple_greeting:
         # 민감 정보(PII) 마스킹 관점에서 원본 내용 대신 길이 등 비민감 정보 로깅
-        logger.info(f"[Router] 단순 대화 감지 (길이: {len(user_query_str)}) -> responder")
+        logger.info(f"[Router] 단순 대화 감지 (길이: {len(cleaned_query)}) -> responder")
         return "responder"
         
-    logger.info(f"[Router] 검색/추론 도구 필요 판단 (길이: {len(user_query_str)}) -> planner")
+    logger.info(f"[Router] 검색/추론 도구 필요 판단 (길이: {len(cleaned_query)}) -> planner")
     return "planner"
 
 

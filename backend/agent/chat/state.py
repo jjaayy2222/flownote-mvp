@@ -1,6 +1,6 @@
 # backend/agent/chat/state.py
 
-from typing import Annotated, TypedDict, Any, Optional
+from typing import Annotated, TypedDict, Any, Optional, NotRequired
 from langchain_core.messages import BaseMessage
 import operator
 
@@ -31,10 +31,10 @@ class AgentState(TypedDict):
 
     # 사용자 식별자 및 세션 정보
     user_id: str
-    session_id: Optional[str]
+    session_id: NotRequired[Optional[str]]
 
     # 검색된 정보나 중간 연산 결과물
-    search_context: Optional[str]
+    search_context: NotRequired[Optional[str]]
 
     # 클라이언트에게 반환할 최종 완성 답변
-    final_answer: Optional[str]
+    final_answer: NotRequired[Optional[str]]
