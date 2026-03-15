@@ -32,6 +32,10 @@ def _is_simple_greeting(cleaned_query: str) -> bool:
     공백 기준으로 토큰화하여 단순 인사말인지 판별하는 헬퍼 함수
     정규식 조립의 복잡도를 낮추고 토큰 비교를 통해 경계 매칭을 완벽하게 구현합니다.
     """
+    # 불필요한 토큰화 연산을 방지하기 위한 조기 반환(Early Return) 패턴 및 길이 캡슐화
+    if len(cleaned_query) >= _MAX_GREETING_LENGTH:
+        return False
+
     # 라틴 인사말 패턴 통일을 위해 영문은 소문자로 정규화 (한글에는 영향 없음)
     cleaned_query = cleaned_query.lower()
     
@@ -81,11 +85,11 @@ def router_edge(state: AgentState) -> Literal["planner", "responder"]:
     cleaned_query = re.sub(r"[^\w가-힣\s]", " ", user_query_str)
     cleaned_query = re.sub(r"\s+", " ", cleaned_query).strip()
 
-    # 토큰화 기반의 헬퍼 함수를 통해 인사말 여부 판별
+    # 토큰화 기반의 헬퍼 함수를 통해 캡슐화된 인사말/길이 검증 및 여부 판별
     is_simple_greeting = _is_simple_greeting(cleaned_query)
     
-    # 쿼리의 길이가 짧고 인사말로 판단되면 단순 채팅 모드로 간주
-    if len(cleaned_query) < _MAX_GREETING_LENGTH and is_simple_greeting:
+    # 길이가 짧은 단순 인사말로 판단되면 응답자 모드로 직행
+    if is_simple_greeting:
         # 민감 정보(PII) 마스킹 관점과 구조화된 로깅 지침 준수
         logger.info("[Router] 단순 대화 감지 -> responder", extra={"query_length": len(cleaned_query)})
         return "responder"
