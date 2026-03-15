@@ -13,6 +13,11 @@ logger = logging.getLogger(__name__)
 _SIMPLE_KOREAN_GREETINGS = ["안녕", "반가워", "누구야"]
 _SIMPLE_LATIN_GREETINGS = ["hello", "hi"]
 
+# 정규식 특수 문자 이스케이프 처리 및 모듈 레벨에서 1회만 미리 컴파일 (성능 및 오탐 방지)
+_LATIN_GREETING_RE = re.compile(
+    r"\b(" + "|".join(re.escape(g) for g in _SIMPLE_LATIN_GREETINGS) + r")\b"
+)
+
 def router_edge(state: AgentState) -> Literal["planner", "responder"]:
     """
     조건부 엣지(Conditional Edge):
@@ -45,11 +50,9 @@ def router_edge(state: AgentState) -> Literal["planner", "responder"]:
     cleaned_query = re.sub(r"[^\w가-힣\s]", " ", user_query_str)
     cleaned_query = re.sub(r"\s+", " ", cleaned_query).strip()
 
-    # 라틴 인사말은 단어 단위 매칭으로만 판별 (e.g. "하이브리드"에서 "hi" 오탐 방지)
-    latin_greeting_pattern = r"\b(" + "|".join(_SIMPLE_LATIN_GREETINGS) + r")\b"
-
     is_korean_greeting = any(greet in cleaned_query for greet in _SIMPLE_KOREAN_GREETINGS)
-    is_latin_greeting = bool(re.search(latin_greeting_pattern, cleaned_query))
+    # 라틴 인사말은 단어 단위 매칭 및 이스케이프가 적용된 사전 컴파일 정규식 사용
+    is_latin_greeting = bool(_LATIN_GREETING_RE.search(cleaned_query))
 
     is_simple_greeting = is_korean_greeting or is_latin_greeting
     
@@ -88,6 +91,10 @@ def responder_node(state: AgentState) -> Dict[str, Any]:
     - 대화 이력(messages)과 Planner가 획득한 context를 융합하여 LLM을 호출합니다.
     """
     logger.info("[Responder Node] 실행 중... (최종 응답 생성)")
+    
+    # NotRequired 필드에 대한 안전한 접근 (.get 사용 필수)
+    # Planner에서 넘어온 문맥 정보가 없다면 빈 문자열로 처리
+    context = state.get("search_context", "")
     
     # TODO: ChatService.stream_chat의 로직을 향후 이 노드로 통합하여 SSE 스트리밍 연동
     mock_response = "임시 뼈대 단계에서의 시스템 AI 응답입니다."
