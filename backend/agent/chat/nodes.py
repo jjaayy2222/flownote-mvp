@@ -50,14 +50,14 @@ def _build_e164_exclusion_lookahead(max_digits: int) -> str:
         max_digits: 허용되는 최대 숫자 자릿수. (정수형)
 
     Raises:
-        TypeError: max_digits가 정수가 아니거나 불리언(bool) 타입일 때 발생.
+        TypeError: max_digits가 순수 정수(int) 타입이 아닐 때 발생.
         ValueError: max_digits가 0 이하일 때 발생.
     """
-    # [Engineering Decision] 명시적 정수형(int)만 허용하되, 불리언(bool)은 엄격히 차단
-    if not isinstance(max_digits, int) or isinstance(max_digits, bool):
+    # [Engineering Decision] 보안 설정의 결정론적 동작을 위해 순수 int 타입만 허용 (bool 등 서브클래스 차단)
+    # [Review History] isinstance vs type() 논쟁 결과, 가장 엄격하고 단순한 type() 체크로 최종 확정함.
+    if type(max_digits) is not int:
         raise TypeError(
-            f"max_digits must be an integer (bool not allowed), "
-            f"but got {type(max_digits).__name__}: {max_digits}"
+            f"max_digits must be a strict integer, but got {type(max_digits).__name__}: {max_digits}"
         )
     
     if max_digits <= 0:
