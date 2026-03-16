@@ -2,6 +2,7 @@
 
 import re
 import logging
+import numbers
 from itertools import islice
 from typing import Dict, Any, Literal, cast, List, TypedDict
 from langchain_core.messages import AIMessage, SystemMessage, BaseMessage  # type: ignore[import, import-untyped, reportMissingImports]
@@ -47,16 +48,16 @@ def _build_e164_exclusion_lookahead(max_digits: int) -> str:
     긴 숫자 시퀀스를 제외하기 위한 부정 룩어헤드 패턴을 생성합니다.
     
     Args:
-        max_digits: 허용되는 최대 숫자 자릿수. (정수형)
+        max_digits: 허용되는 최대 숫자 자릿수. (정수 계열 타입)
 
     Raises:
-        TypeError: max_digits가 정수 계열(int)이 아니거나 불리언(bool)일 때 발생.
+        TypeError: max_digits가 정수 계열(numbers.Integral)이 아니거나 불리언(bool)일 때 발생.
         ValueError: max_digits가 0 이하일 때 발생.
     """
-    # [Engineering Decision] 불리언(bool)의 정수 변환 오용을 차단하되, 다른 정수 서브클래스는 허용하여 유연성 확보.
-    if not isinstance(max_digits, int) or isinstance(max_digits, bool):
+    # [Engineering Decision] numbers.Integral을 사용하여 모든 정수 계열 타입을 수용하되, bool은 엄격히 차단.
+    if not isinstance(max_digits, numbers.Integral) or isinstance(max_digits, bool):
         raise TypeError(
-            f"max_digits must be an integer type (excluding bool), but got {type(max_digits).__name__}: {max_digits}"
+            f"max_digits must be an integral type (excluding bool), but got {type(max_digits).__name__}: {max_digits}"
         )
     
     if max_digits <= 0:
