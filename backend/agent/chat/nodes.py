@@ -3,12 +3,12 @@
 import re
 import logging
 from itertools import islice
-from typing import Dict, Any, Literal, cast, List
-from langchain_core.messages import AIMessage, SystemMessage, BaseMessage
+from typing import Dict, Any, Literal, cast, List, TypedDict
+from langchain_core.messages import AIMessage, SystemMessage, BaseMessage  # type: ignore
 
-from backend.agent.chat.state import AgentState
-from backend.agent.chat.tools import search_documents_tool
-from backend.services.chat_service import get_chat_service
+from backend.agent.chat.state import AgentState  # type: ignore
+from backend.agent.chat.tools import search_documents_tool  # type: ignore
+from backend.services.chat_service import get_chat_service  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,14 @@ _LATIN_GREETING_SET = set(_SIMPLE_LATIN_GREETINGS)
 # ─────────────────────────────────────────────────────────────────────────────
 # 타입 정의 및 공통 헬퍼
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+class PlannerResult(TypedDict):
+    """Planner 노드의 실행 결과를 명시하고 가독성을 높이기 위한 TypedDict"""
+
+    search_context: str
+    planner_failed: bool
+    planner_error_message: str
 
 
 def _is_simple_greeting(cleaned_query: str) -> bool:
@@ -78,7 +86,7 @@ def _truncate_context(raw_context: str) -> str:
 async def _run_planner_with_tools(
     plan_messages: List[BaseMessage],
     base_context: str,
-) -> Dict[str, Any]:
+) -> PlannerResult:
     """
     LLM에 도구 호출 권한을 부여하고, 도구를 실행하여 search_context를 반환하는 오케스트레이션 헬퍼.
     """
@@ -101,8 +109,9 @@ async def _run_planner_with_tools(
             )
             for tool_call in typed_response.tool_calls:
                 tool_name = tool_call.get("name")
-                raw_args = tool_call.get("args") or {}
+                raw_args = tool_call.get("args")
 
+                # [Comment 1 적용] 예측 불가능한 LLM 인자 타입에 대한 방어 로직 (방어적 코딩)
                 if not isinstance(raw_args, dict):
                     logger.warning(
                         "[Tool Dispatch] 예상치 못한 args 타입 무시",
@@ -134,12 +143,11 @@ async def _run_planner_with_tools(
         else:
             logger.info("[Planner] LLM이 도구 없이 자체 판단 가능으로 결론내렸습니다.")
     except Exception as e:
-        # 광범위한 예외를 삼키더라도 발생 원인을 파악할 수 있도록 error_msg와 exc_info 기록
+        # [Comment 3 적용] PII 누출 방지를 위해 str(e) 로깅 제거
         logger.error(
             "[Planner] LLM 추론 중 에러 발생",
             extra={
                 "error_type": type(e).__name__,
-                "error_msg": str(e),
             },
             exc_info=True,
         )
@@ -252,7 +260,12 @@ async def planner_node(state: AgentState) -> Dict[str, Any]:
     )
     plan_messages = [sys_prompt] + messages
 
-    return await _run_planner_with_tools(plan_messages, base_context)
+    result = await _run_planner_with_tools(plan_messages, base_context)
+    return {
+        "search_context": result["search_context"],
+        "planner_failed": result["planner_failed"],
+        "planner_error_message": result["planner_error_message"],
+    }
 
 
 async def responder_node(state: AgentState) -> Dict[str, Any]:
@@ -300,11 +313,11 @@ async def responder_node(state: AgentState) -> Dict[str, Any]:
             else str(response)
         )
     except Exception as e:
+        # [Comment 3 적용] PII 누출 방지를 위해 str(e) 로깅 제거
         logger.error(
             "[Responder Node] LLM 응답 생성 실패",
             extra={
                 "error_type": type(e).__name__,
-                "error_msg": str(e),
             },
             exc_info=True,
         )
