@@ -83,6 +83,14 @@ def _truncate_context(raw_context: str) -> str:
     return head + suffix
 
 
+def _safe_truncate_error_msg(e: Exception, max_chars: int = 200) -> str:
+    """
+    Exception 객체의 PII 유출을 방지하기 위해 예외 메시지의 앞부분만 안전하게 잘라 반환합니다.
+    (Pyre2 String Slicing TypeError 우회를 위해 islice 사용)
+    """
+    return "".join(islice(str(e), max_chars))
+
+
 async def _run_planner_with_tools(
     plan_messages: List[BaseMessage],
     base_context: str,
@@ -112,6 +120,10 @@ async def _run_planner_with_tools(
                 raw_args = tool_call.get("args")
 
                 if raw_args is None:
+                    logger.debug(
+                        "[Tool Dispatch] 전달된 args가 없어 빈 dict로 초기화합니다.",
+                        extra={"tool_name": tool_name},
+                    )
                     tool_args = {}
                 elif not isinstance(raw_args, dict):
                     logger.warning(
@@ -150,7 +162,7 @@ async def _run_planner_with_tools(
             extra={
                 "error_type": type(e).__name__,
                 # PII 노출 방지를 위해 전체 메시지 대신 앞부분만 저장 (Pyre2 우회)
-                "error_msg": "".join(islice(str(e), 200)),
+                "error_msg": _safe_truncate_error_msg(e),
                 "security": "Traceback omitted for PII protection; error_msg truncated",
             },
         )
@@ -322,7 +334,7 @@ async def responder_node(state: AgentState) -> Dict[str, Any]:
             extra={
                 "error_type": type(e).__name__,
                 # PII 노출 방지를 위해 전체 메시지 대신 앞부분만 저장 (Pyre2 우회)
-                "error_msg": "".join(islice(str(e), 200)),
+                "error_msg": _safe_truncate_error_msg(e),
                 "security": "Traceback omitted for PII protection; error_msg truncated",
             },
         )
