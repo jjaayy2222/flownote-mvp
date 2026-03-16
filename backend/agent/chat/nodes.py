@@ -111,8 +111,9 @@ async def _run_planner_with_tools(
                 tool_name = tool_call.get("name")
                 raw_args = tool_call.get("args")
 
-                # [Comment 1 적용] 예측 불가능한 LLM 인자 타입에 대한 방어 로직 (방어적 코딩)
-                if not isinstance(raw_args, dict):
+                if raw_args is None:
+                    tool_args = {}
+                elif not isinstance(raw_args, dict):
                     logger.warning(
                         "[Tool Dispatch] 예상치 못한 args 타입 무시",
                         extra={
@@ -121,8 +122,8 @@ async def _run_planner_with_tools(
                         },
                     )
                     continue
-
-                tool_args = raw_args
+                else:
+                    tool_args = raw_args
 
                 if tool_name != "search_documents_tool":
                     logger.debug(
@@ -143,12 +144,14 @@ async def _run_planner_with_tools(
         else:
             logger.info("[Planner] LLM이 도구 없이 자체 판단 가능으로 결론내렸습니다.")
     except Exception as e:
-        # [Comment 3 반영] Traceback의 payload가 PII를 노출할 수 있으므로 exc_info=True 제거
+        # 디버깅을 위해 예외 메시지는 안전하게(truncate) 로그에 남긴다.
         logger.error(
             "[Planner] LLM 추론 중 에러 발생",
             extra={
                 "error_type": type(e).__name__,
-                "security": "Traceback omitted for PII protection",
+                # PII 노출 방지를 위해 전체 메시지 대신 앞부분만 저장 (Pyre2 우회)
+                "error_msg": "".join(islice(str(e), 200)),
+                "security": "Traceback omitted for PII protection; error_msg truncated",
             },
         )
         planner_failed = True
@@ -313,12 +316,14 @@ async def responder_node(state: AgentState) -> Dict[str, Any]:
             else str(response)
         )
     except Exception as e:
-        # [Comment 3 반영] Traceback의 payload가 PII를 노출할 수 있으므로 exc_info=True 제거
+        # 디버깅을 위해 예외 메시지는 안전하게(truncate) 로그에 남긴다.
         logger.error(
             "[Responder Node] LLM 응답 생성 실패",
             extra={
                 "error_type": type(e).__name__,
-                "security": "Traceback omitted for PII protection",
+                # PII 노출 방지를 위해 전체 메시지 대신 앞부분만 저장 (Pyre2 우회)
+                "error_msg": "".join(islice(str(e), 200)),
+                "security": "Traceback omitted for PII protection; error_msg truncated",
             },
         )
         final_answer = (
