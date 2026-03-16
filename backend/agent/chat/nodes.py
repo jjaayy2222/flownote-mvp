@@ -75,6 +75,107 @@ def _truncate_context(raw_context: str) -> str:
     return head + suffix
 
 
+async def _run_planner_with_tools(
+    plan_messages: List[BaseMessage],
+    base_context: str,
+) -> Dict[str, Any]:
+    """
+    LLM에 도구 호출 권한을 부여하고, 도구를 실행하여 search_context를 반환하는 오케스트레이션 헬퍼.
+    """
+    chat_svc = get_chat_service()
+    llm = chat_svc._get_llm(streaming=False)
+    llm_with_tools = llm.bind_tools([search_documents_tool])
+
+    ctx_parts: List[str] = [base_context] if base_context else []
+    planner_failed = False
+    planner_error_message = ""
+
+    try:
+        response = await llm_with_tools.ainvoke(plan_messages)
+        typed_response = cast(AIMessage, response)
+
+        if hasattr(typed_response, "tool_calls") and typed_response.tool_calls:
+            logger.info(
+                "[Planner] LLM이 도구 호출을 결정했습니다.",
+                extra={"tool_call_count": len(typed_response.tool_calls)},
+            )
+            for tool_call in typed_response.tool_calls:
+                tool_name = tool_call.get("name")
+                raw_args = tool_call.get("args") or {}
+
+                if not isinstance(raw_args, dict):
+                    logger.warning(
+                        "[Tool Dispatch] 예상치 못한 args 타입 무시",
+                        extra={
+                            "tool_name": tool_name,
+                            "args_type": type(raw_args).__name__,
+                        },
+                    )
+                    continue
+
+                tool_args = raw_args
+
+                if tool_name != "search_documents_tool":
+                    logger.debug(
+                        "[Tool Dispatch] 미지원 도구 요청 무시",
+                        extra={"tool_name": tool_name},
+                    )
+                    continue
+
+                query_arg = str(tool_args.get("query", ""))
+                logger.info(
+                    "[Planner] -> search_documents_tool 호출",
+                    extra={"query_length": len(query_arg)},
+                )
+                tool_res = str(await search_documents_tool.ainvoke(tool_args))
+                ctx_parts.append(
+                    f"\n[검색 결과 (쿼리 길이: {len(query_arg)}자)]\n{tool_res}\n"
+                )
+        else:
+            logger.info("[Planner] LLM이 도구 없이 자체 판단 가능으로 결론내렸습니다.")
+    except Exception as e:
+        # 광범위한 예외를 삼키더라도 발생 원인을 파악할 수 있도록 error_msg와 exc_info 기록
+        logger.error(
+            "[Planner] LLM 추론 중 에러 발생",
+            extra={
+                "error_type": type(e).__name__,
+                "error_msg": str(e),
+            },
+            exc_info=True,
+        )
+        planner_failed = True
+        planner_error_message = "Planner 실행 중 오류가 발생했습니다. 검색 결과 없이 직접 응답을 시도합니다."
+
+    raw_context = _truncate_context("".join(ctx_parts).strip())
+    return {
+        "search_context": raw_context,
+        "planner_failed": planner_failed,
+        "planner_error_message": planner_error_message,
+    }
+
+
+def _build_responder_system_message(
+    user_context_msg: str,
+    context: str,
+) -> SystemMessage:
+    """
+    Responder용 시스템 프롬프트를 조립하는 헬퍼.
+    """
+    context_block = ""
+    if context:
+        context_block = f"\n\nContext:\n{context}"
+
+    system_template = f"""{user_context_msg}
+
+Answer the user's question clearly and accurately, summarizing the information logically.
+If you are provided with context below, use ONLY the provided context to answer.
+If the given context does not contain the answer, politely state that you cannot find the answer in the provided internal documents, and then answer cautiously based on your general knowledge.
+Do not mention the words "context" or "provided text" explicitly to the user.
+If you used any document from the context, YOU MUST use inline citations in the format [1], [2] at the end of the sentence.{context_block}
+"""
+    return SystemMessage(content=system_template)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 노드 & 엣지 (Thin Orchestrators)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -91,7 +192,6 @@ def router_edge(state: AgentState) -> Literal["planner", "responder"]:
         logger.debug("[Router] 메시지가 없어 responder로 라우팅")
         return "responder"
 
-    # 짧은 단일 목적 헬퍼는 라우터 내부에 인라인하여 호출 흐름 간소화
     user_query = ""
     for msg in reversed(messages):
         if getattr(msg, "type", None) == "human" and hasattr(msg, "content"):
@@ -124,12 +224,11 @@ def router_edge(state: AgentState) -> Literal["planner", "responder"]:
 
 async def planner_node(state: AgentState) -> Dict[str, Any]:
     """
-    계획자(Planner) 노드:
-    - 도구 호출 여부를 직접 루프 안에서 조율하고 딕셔너리로 상태를 반환합니다.
-    - 제어 흐름 편의성을 위해 내부 로직이 모두 인라인(inline)화 되어 있습니다.
+    계획자(Planner) 노드 — Thin Orchestrator:
+    - 상태를 수집하고 헬퍼를 호출하여 도구 실행 및 컨텍스트를 구성한 후 반환합니다.
 
     [Engineering Decision - Coupling]
-    현재 ChatService._get_llm을 통해 LLM을 획득합니다.
+    현재 시스템 내에서 LLM 결합 방식에 대한 의존성이 존재하며,
     Phase 3 Integration 단계에서 LLM 제공자를 DI(의존성 주입)로 분리할 예정입니다.
     """
     logger.info("[Planner Node] 실행 중... (도구 호출 및 검색 활용 계획)")
@@ -144,7 +243,6 @@ async def planner_node(state: AgentState) -> Dict[str, Any]:
 
     base_context = str(state.get("search_context", "") or "")
 
-    # 일회성 시스템 프롬프트 조립 로컬 인라인화
     sys_prompt = SystemMessage(
         content=(
             "당신은 사용자의 질문을 분석하고 외부 지식이 필요한 경우 적절한 도구를 실행하여 정보를 수집하는 Planner입니다.\n"
@@ -154,81 +252,13 @@ async def planner_node(state: AgentState) -> Dict[str, Any]:
     )
     plan_messages = [sys_prompt] + messages
 
-    chat_svc = get_chat_service()
-    llm = chat_svc._get_llm(streaming=False)
-    llm_with_tools = llm.bind_tools([search_documents_tool])
-
-    ctx_parts: List[str] = [base_context] if base_context else []
-    planner_failed = False
-    planner_error_message = ""
-
-    try:
-        response = await llm_with_tools.ainvoke(plan_messages)
-        typed_response = cast(AIMessage, response)
-
-        if hasattr(typed_response, "tool_calls") and typed_response.tool_calls:
-            logger.info(
-                "[Planner] LLM이 도구 호출을 결정했습니다.",
-                extra={"tool_call_count": len(typed_response.tool_calls)},
-            )
-            for tool_call in typed_response.tool_calls:
-                tool_name = tool_call.get("name")
-                raw_args = tool_call.get("args") or {}
-
-                # [Comment 1 적용] 예측 불가능한 LLM 인자 타입에 대한 방어 로직 (방어적 코딩)
-                if not isinstance(raw_args, dict):
-                    logger.warning(
-                        "[Tool Dispatch] 예상치 못한 args 타입 무시",
-                        extra={
-                            "tool_name": tool_name,
-                            "args_type": type(raw_args).__name__,
-                        },
-                    )
-                    continue
-
-                tool_args = raw_args
-
-                if tool_name != "search_documents_tool":
-                    logger.debug(
-                        "[Tool Dispatch] 미지원 도구 요청 무시",
-                        extra={"tool_name": tool_name},
-                    )
-                    continue
-
-                query_arg = str(tool_args.get("query", ""))
-                logger.info(
-                    "[Planner] -> search_documents_tool 호출",
-                    extra={"query_length": len(query_arg)},
-                )
-                tool_res = str(await search_documents_tool.ainvoke(tool_args))
-                ctx_parts.append(
-                    f"\n[검색 결과 (쿼리 길이: {len(query_arg)}자)]\n{tool_res}\n"
-                )
-        else:
-            logger.info("[Planner] LLM이 도구 없이 자체 판단 가능으로 결론내렸습니다.")
-    except Exception as e:
-        logger.error(
-            "[Planner] LLM 추론 중 에러 발생",
-            extra={"error_type": type(e).__name__},
-        )
-        planner_failed = True
-        planner_error_message = "Planner 실행 중 오류가 발생했습니다. 검색 결과 없이 직접 응답을 시도합니다."
-
-    raw_context = _truncate_context("".join(ctx_parts).strip())
-
-    # [Comment 2 적용] PlannerResult 튜플 및 래퍼 함수를 제거하고 평탄하게 딕셔너리 즉시 반환
-    return {
-        "search_context": raw_context,
-        "planner_failed": planner_failed,
-        "planner_error_message": planner_error_message,
-    }
+    return await _run_planner_with_tools(plan_messages, base_context)
 
 
 async def responder_node(state: AgentState) -> Dict[str, Any]:
     """
-    응답 생성자(Responder) 노드:
+    응답 생성자(Responder) 노드 — Thin Orchestrator:
     - Planner가 수집한 context와 대화 이력을 융합하여 최종 응답을 생성합니다.
-    - planner_failed 플래그로 폴백 여부를 판단하며, search_context 내부를 검사하지 않습니다.
 
     [Engineering Decision - Coupling]
     현재 ChatService._get_user_context_prompt_text를 통해 사용자 맥락을 획득합니다.
@@ -256,21 +286,7 @@ async def responder_node(state: AgentState) -> Dict[str, Any]:
 
     chat_svc = get_chat_service()
     user_context_msg = chat_svc._get_user_context_prompt_text(user_id)
-
-    # [Comment 2 적용] 시스템 프롬프트 조립 과정을 로컬로 인라인
-    context_block = ""
-    if context:
-        context_block = f"\n\nContext:\n{context}"
-
-    system_template = f"""{user_context_msg}
-
-Answer the user's question clearly and accurately, summarizing the information logically.
-If you are provided with context below, use ONLY the provided context to answer.
-If the given context does not contain the answer, politely state that you cannot find the answer in the provided internal documents, and then answer cautiously based on your general knowledge.
-Do not mention the words "context" or "provided text" explicitly to the user.
-If you used any document from the context, YOU MUST use inline citations in the format [1], [2] at the end of the sentence.{context_block}
-"""
-    sys_msg = SystemMessage(content=system_template)
+    sys_msg = _build_responder_system_message(user_context_msg, context)
 
     llm = chat_svc._get_llm(streaming=False)
     final_messages = [sys_msg] + messages
@@ -286,7 +302,11 @@ If you used any document from the context, YOU MUST use inline citations in the 
     except Exception as e:
         logger.error(
             "[Responder Node] LLM 응답 생성 실패",
-            extra={"error_type": type(e).__name__},
+            extra={
+                "error_type": type(e).__name__,
+                "error_msg": str(e),
+            },
+            exc_info=True,
         )
         final_answer = (
             "죄송합니다, 현재 트래픽이 많거나 응답 생성 중에 내부적인 통신 오류가 발생했습니다. "
