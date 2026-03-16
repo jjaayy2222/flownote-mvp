@@ -33,6 +33,15 @@ _LATIN_GREETING_SET = set(_SIMPLE_LATIN_GREETINGS)
 # [Engineering Decision] 에러 메시지 로깅 시 PII 보호를 위한 잘라내기 길이
 _MAX_ERROR_MSG_CHARS: int = 200
 
+# [Engineering Decision] 고빈도 로깅 경로의 성능 최적화를 위한 정규식 프리컴파일
+_EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+# 한국/국제 전화번호 마스킹: 01x, 02 등 한국 번호와 +국가번호가 포함된 국제 규격 대응. 
+# 하이픈/공백이 없는 밀집 형태(Compact form) 및 다양한 국가 코드 대응을 위해 패턴 완화.
+_PHONE_PATTERN = re.compile(
+    r"(?<!\d)(?:\+?\d{1,3}[- ]?)?\(?0?\d{1,4}\)?[- ]?\d{3,4}[- ]?\d{4}(?!\d)"
+)
+_TOKEN_PATTERN = re.compile(r"\b[0-9A-Za-z]{32,}\b")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 타입 정의 및 공통 헬퍼
@@ -91,25 +100,14 @@ def _sanitize_pii_in_text(text: str) -> str:
     텍스트 내의 이메일, 전화번호, 인증 토큰 등 민감 정보(PII)를 탐지하여 마스킹합니다.
     """
     # 1. 이메일 주소 마스킹
-    sanitized = re.sub(
-        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
-        "[REDACTED_EMAIL]",
-        text,
-    )
-    # 2. 한국/국제 전화번호 마스킹
-    # \b 대신 lookaround를 사용하여 +로 시작하는 번호 매칭 성능 강화 및 단순 숫자 시퀀스(ID/타임스탬프) 오탐 방지
-    # 패턴: (숫자가 아닌 문자 혹은 시작) + (선택적 +국가코드) + (2~4자리) + (3~4자리) + (4자리 숫자)
-    sanitized = re.sub(
-        r"(?<!\d)(?:\+?\d{1,3}[- ]?)?\d{2,4}[- ]\d{3,4}[- ]\d{4}(?!\d)",
-        "[REDACTED_PHONE]",
-        sanitized,
-    )
-    # 3. 토큰/해시로 보이는 긴 무작위 문자열 마스킹 (32자 이상)
-    sanitized = re.sub(
-        r"\b[0-9A-Za-z]{32,}\b",
-        "[REDACTED_TOKEN]",
-        sanitized,
-    )
+    sanitized = _EMAIL_PATTERN.sub("[REDACTED_EMAIL]", text)
+
+    # 2. 한국/국제 전화번호 마스킹 (프리컴파일 패턴 사용)
+    sanitized = _PHONE_PATTERN.sub("[REDACTED_PHONE]", sanitized)
+
+    # 3. 토큰/해시 마스킹 (32자 이상)
+    sanitized = _TOKEN_PATTERN.sub("[REDACTED_TOKEN]", sanitized)
+
     return sanitized
 
 
