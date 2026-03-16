@@ -181,6 +181,7 @@ claude_desktop_config.json
 
 # Pyright/Pyre2 IDE 개인 설정 (사용자별 가상환경 경로 포함)
 pyrightconfig.json
+.pyre_configuration
 
 # 테스트용 파일
 temp_test_vault/

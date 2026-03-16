@@ -3,7 +3,7 @@
 import re
 import logging
 from itertools import islice
-from typing import Dict, Any, Literal, cast, List, Tuple
+from typing import Dict, Any, Literal, cast, List, TypedDict
 from langchain_core.messages import AIMessage, SystemMessage, BaseMessage
 
 from backend.agent.chat.state import AgentState
@@ -32,8 +32,16 @@ _LATIN_GREETING_SET = set(_SIMPLE_LATIN_GREETINGS)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 헬퍼 함수 (관심사 분리 / Comment 5 반영)
+# 타입 정의 및 공통 헬퍼
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+class PlannerResult(TypedDict):
+    """Planner 노드의 실행 결과를 명시하고 가독성을 높이기 위한 TypedDict"""
+
+    search_context: str
+    planner_failed: bool
+    planner_error_message: str
 
 
 def _is_simple_greeting(cleaned_query: str) -> bool:
@@ -54,22 +62,9 @@ def _is_simple_greeting(cleaned_query: str) -> bool:
     return False
 
 
-def _get_last_human_content(messages: List[BaseMessage]) -> str:
-    """
-    메시지 목록에서 가장 마지막 Human 메시지의 내용을 반환하는 헬퍼.
-    메시지가 없거나 Human 메시지가 없으면 빈 문자열 반환.
-    [Comment 5 반영] router_edge의 방어적 루프를 헬퍼로 추출하여 라우터를 명확하게 유지.
-    """
-    for msg in reversed(messages):
-        if getattr(msg, "type", None) == "human" and hasattr(msg, "content"):
-            return str(cast(BaseMessage, msg).content)
-    return ""
-
-
 def _truncate_context(raw_context: str) -> str:
     """
     search_context가 LLM 토큰 예산을 초과하지 않도록 최대 길이로 잘라내는 헬퍼.
-    [Comment 5 반영] 잘라내기 로직을 planner_node에서 분리하여 재사용성 확보.
     """
     if len(raw_context) <= _MAX_SEARCH_CONTEXT_CHARS:
         return raw_context
@@ -88,40 +83,12 @@ def _truncate_context(raw_context: str) -> str:
     return head + suffix
 
 
-async def _execute_tool_call(tool_call: Dict[str, Any], ctx_parts: List[str]) -> None:
-    """
-    단일 도구 호출을 실행하고 결과를 ctx_parts에 누산하는 헬퍼.
-    [Comment 5 반영] planner_node에서 도구 디스패치 루프를 분리.
-    미지원 도구는 조용히 무시하여 향후 추가 도구 확장에 열린 구조 유지.
-    """
-    tool_name = tool_call["name"]
-    tool_args = tool_call["args"]
-
-    if tool_name != "search_documents_tool":
-        logger.debug(
-            "[Tool Dispatch] 미지원 도구 요청 무시", extra={"tool_name": tool_name}
-        )
-        return
-
-    query_arg = str(tool_args.get("query", ""))
-    # [PII 보호] query 원문이 아닌 길이(비민감 메타데이터)만 로깅
-    logger.info(
-        "[Planner] -> search_documents_tool 호출",
-        extra={"query_length": len(query_arg)},
-    )
-    tool_res = str(await search_documents_tool.ainvoke(tool_args))
-    ctx_parts.append(f"\n[검색 결과 (쿼리 길이: {len(query_arg)}자)]\n{tool_res}\n")
-
-
 async def _run_planner_with_tools(
     plan_messages: List[BaseMessage], base_context: str
-) -> Tuple[str, bool, str]:
+) -> PlannerResult:
     """
     LLM에 도구 호출 권한을 부여하고, 도구를 실행하여 search_context를 반환하는 핵심 헬퍼.
-    [Comment 5 반영] planner_node의 핵심 로직을 분리하여 planner_node를 thin orchestrator로 유지.
-
-    Returns:
-        (search_context, planner_failed, planner_error_message)
+    [Comment 1, 2 적용] _execute_tool_call 인라인화 및 튜플 대신 명시적인 PlannerResult 기반 반환
     """
     chat_svc = get_chat_service()
     llm = chat_svc._get_llm(streaming=False)
@@ -141,9 +108,27 @@ async def _run_planner_with_tools(
                 extra={"tool_call_count": len(typed_response.tool_calls)},
             )
             for tool_call in typed_response.tool_calls:
-                await _execute_tool_call(tool_call, ctx_parts)
+                tool_name = tool_call["name"]
+                tool_args = tool_call["args"]
+
+                if tool_name != "search_documents_tool":
+                    logger.debug(
+                        "[Tool Dispatch] 미지원 도구 요청 무시",
+                        extra={"tool_name": tool_name},
+                    )
+                    continue
+
+                query_arg = str(tool_args.get("query", ""))
+                # [PII 보호] query 원문이 아닌 길이(비민감 메타데이터)만 로깅
+                logger.info(
+                    "[Planner] -> search_documents_tool 호출",
+                    extra={"query_length": len(query_arg)},
+                )
+                tool_res = str(await search_documents_tool.ainvoke(tool_args))
+                ctx_parts.append(
+                    f"\n[검색 결과 (쿼리 길이: {len(query_arg)}자)]\n{tool_res}\n"
+                )
         else:
-            # [Overall Comment 2 / Comment 3 반영]
             # 도구 미사용 시 placeholder 문구를 search_context에 삽입하지 않음.
             # "ONLY the provided context" 지침과의 충돌 방지 + 플래그로만 상태 관리.
             logger.info("[Planner] LLM이 도구 없이 자체 판단 가능으로 결론내렸습니다.")
@@ -157,23 +142,12 @@ async def _run_planner_with_tools(
         planner_error_message = "Planner 실행 중 오류가 발생했습니다. 검색 결과 없이 직접 응답을 시도합니다."
 
     raw_context = _truncate_context("".join(ctx_parts).strip())
-    return raw_context, planner_failed, planner_error_message
 
-
-def _build_planner_messages(state: AgentState) -> List[BaseMessage]:
-    """
-    Planner용 시스템 프롬프트와 대화 메시지를 조립하는 헬퍼.
-    [Comment 5 반영] 프롬프트 조립 관심사를 분리하여 테스트 및 수정 용이성 확보.
-    """
-    messages = state.get("messages", [])
-    sys_prompt = SystemMessage(
-        content=(
-            "당신은 사용자의 질문을 분석하고 외부 지식이 필요한 경우 적절한 도구를 실행하여 정보를 수집하는 Planner입니다.\n"
-            "질문에 답하기 위해 프로젝트 내부 문서, 규정, 특정 지식 확인이 필요하다면 즉시 'search_documents_tool'을 호출하세요.\n"
-            "단순 안부 이외의 대부분의 사실 확인은 이 도구를 통해 컨텍스트를 얻는 것이 안전합니다."
-        )
-    )
-    return [sys_prompt] + messages
+    return {
+        "search_context": raw_context,
+        "planner_failed": planner_failed,
+        "planner_error_message": planner_error_message,
+    }
 
 
 def _build_responder_system_message(
@@ -181,9 +155,7 @@ def _build_responder_system_message(
 ) -> SystemMessage:
     """
     Responder용 시스템 프롬프트를 조립하는 헬퍼.
-    [Comment 5 반영] 프롬프트 조립 관심사를 분리.
-    [Comment 2 반영] context가 없을 때 'Context:' 블록 자체를 생략하여 불필요한 토큰 낭비와
-    지침("ONLY the provided context") 불일관성 방지.
+    context가 없을 때 'Context:' 블록 자체를 생략하여 불필요한 토큰 낭비 방지.
     """
     context_block = ""
     if context:
@@ -210,14 +182,19 @@ def router_edge(state: AgentState) -> Literal["planner", "responder"]:
     조건부 엣지(Conditional Edge):
     가장 마지막 Human 메시지의 의도를 파악하여
     복잡한 추론/검색이 필요한지(planner), 단순 인사말인지(responder) 판별합니다.
-    [Comment 5 반영] _get_last_human_content 헬퍼로 메시지 탐색 로직을 분리.
     """
     messages = state.get("messages", [])
     if not messages:
         logger.debug("[Router] 메시지가 없어 responder로 라우팅")
         return "responder"
 
-    user_query = _get_last_human_content(messages)
+    # [Comment 3 적용] 짧은 단일 목적 헬퍼는 라우터 내부에 인라인하여 호출 흐름 간소화
+    user_query = ""
+    for msg in reversed(messages):
+        if getattr(msg, "type", None) == "human" and hasattr(msg, "content"):
+            user_query = str(cast(BaseMessage, msg).content)
+            break
+
     if not user_query:
         logger.debug("[Router] 사용자 메시지를 찾을 수 없어 responder로 라우팅")
         return "responder"
@@ -245,8 +222,7 @@ def router_edge(state: AgentState) -> Literal["planner", "responder"]:
 async def planner_node(state: AgentState) -> Dict[str, Any]:
     """
     계획자(Planner) 노드 — Thin Orchestrator:
-    - 헬퍼를 조합하여 도구 호출 여부를 판단하고 search_context를 갱신합니다.
-    - 실패 여부는 planner_failed 플래그로만 관리하며 search_context를 오염시키지 않습니다.
+    - 도구 호출 여부를 직접 흐름으로 조율하고, PlannerResult 반환값을 이용해 명시적으로 상태 관리합니다.
 
     [Engineering Decision - Coupling]
     현재 ChatService._get_llm을 통해 LLM을 획득합니다.
@@ -263,16 +239,24 @@ async def planner_node(state: AgentState) -> Dict[str, Any]:
         }
 
     base_context = str(state.get("search_context", "") or "")
-    plan_messages = _build_planner_messages(state)
 
-    search_context, planner_failed, planner_error_message = (
-        await _run_planner_with_tools(plan_messages, base_context)
+    # [Comment 3 적용] 짧은 헬퍼 대신 시스템 프롬프트 조립 과정을 로컬로 인라인하여 로직 시각화
+    sys_prompt = SystemMessage(
+        content=(
+            "당신은 사용자의 질문을 분석하고 외부 지식이 필요한 경우 적절한 도구를 실행하여 정보를 수집하는 Planner입니다.\n"
+            "질문에 답하기 위해 프로젝트 내부 문서, 규정, 특정 지식 확인이 필요하다면 즉시 'search_documents_tool'을 호출하세요.\n"
+            "단순 안부 이외의 대부분의 사실 확인은 이 도구를 통해 컨텍스트를 얻는 것이 안전합니다."
+        )
     )
+    plan_messages = [sys_prompt] + messages
+
+    # [Comment 1, 2 적용] 튜플 대신 PlannerResult TypedDict를 사용하여 결합도를 낮추고 명확성 부여.
+    result = await _run_planner_with_tools(plan_messages, base_context)
 
     return {
-        "search_context": search_context,
-        "planner_failed": planner_failed,
-        "planner_error_message": planner_error_message,
+        "search_context": result["search_context"],
+        "planner_failed": result["planner_failed"],
+        "planner_error_message": result["planner_error_message"],
     }
 
 
