@@ -30,6 +30,9 @@ _KOREAN_GREETING_FORMS = {
 }
 _LATIN_GREETING_SET = set(_SIMPLE_LATIN_GREETINGS)
 
+# [Engineering Decision] 에러 메시지 로깅 시 PII 보호를 위한 잘라내기 길이
+_MAX_ERROR_MSG_CHARS: int = 200
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 타입 정의 및 공통 헬퍼
@@ -83,12 +86,40 @@ def _truncate_context(raw_context: str) -> str:
     return head + suffix
 
 
-def _safe_truncate_error_msg(e: Exception, max_chars: int = 200) -> str:
+def _sanitize_pii_in_text(text: str) -> str:
     """
-    Exception 객체의 PII 유출을 방지하기 위해 예외 메시지의 앞부분만 안전하게 잘라 반환합니다.
-    (Pyre2 String Slicing TypeError 우회를 위해 islice 사용)
+    텍스트 내의 이메일, 전화번호, 인증 토큰 등 민감 정보(PII)를 탐지하여 마스킹합니다.
     """
-    return "".join(islice(str(e), max_chars))
+    # 1. 이메일 주소 마스킹
+    sanitized = re.sub(
+        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
+        "[REDACTED_EMAIL]",
+        text,
+    )
+    # 2. 한국/국제 전화번호 마스킹
+    # \b 대신 lookaround를 사용하여 +로 시작하는 번호 매칭 성능 강화 및 단순 숫자 시퀀스(ID/타임스탬프) 오탐 방지
+    # 패턴: (숫자가 아닌 문자 혹은 시작) + (선택적 +국가코드) + (2~4자리) + (3~4자리) + (4자리 숫자)
+    sanitized = re.sub(
+        r"(?<!\d)(?:\+?\d{1,3}[- ]?)?\d{2,4}[- ]\d{3,4}[- ]\d{4}(?!\d)",
+        "[REDACTED_PHONE]",
+        sanitized,
+    )
+    # 3. 토큰/해시로 보이는 긴 무작위 문자열 마스킹 (32자 이상)
+    sanitized = re.sub(
+        r"\b[0-9A-Za-z]{32,}\b",
+        "[REDACTED_TOKEN]",
+        sanitized,
+    )
+    return sanitized
+
+
+def _safe_truncate_error_msg(e: Exception, max_chars: int = _MAX_ERROR_MSG_CHARS) -> str:
+    """
+    Exception 객체의 PII 유출을 방지하기 위해 마스킹 처리 후 앞부분만 안전하게 잘라 반환합니다.
+    """
+    sanitized = _sanitize_pii_in_text(str(e))
+    # Pyre2 String Slicing TypeError 우회를 위해 islice 사용
+    return "".join(islice(sanitized, max_chars))
 
 
 async def _run_planner_with_tools(
@@ -161,9 +192,9 @@ async def _run_planner_with_tools(
             "[Planner] LLM 추론 중 에러 발생",
             extra={
                 "error_type": type(e).__name__,
-                # PII 노출 방지를 위해 전체 메시지 대신 앞부분만 저장 (Pyre2 우회)
+                # PII 노출 방지를 위해 정제 및 잘라냄 (Pyre2 우회)
                 "error_msg": _safe_truncate_error_msg(e),
-                "security": "Traceback omitted for PII protection; error_msg truncated",
+                "security": "Traceback omitted for PII protection; error_msg sanitized and truncated",
             },
         )
         planner_failed = True
@@ -333,9 +364,9 @@ async def responder_node(state: AgentState) -> Dict[str, Any]:
             "[Responder Node] LLM 응답 생성 실패",
             extra={
                 "error_type": type(e).__name__,
-                # PII 노출 방지를 위해 전체 메시지 대신 앞부분만 저장 (Pyre2 우회)
+                # PII 노출 방지를 위해 정제 및 잘라냄 (Pyre2 우회)
                 "error_msg": _safe_truncate_error_msg(e),
-                "security": "Traceback omitted for PII protection; error_msg truncated",
+                "security": "Traceback omitted for PII protection; error_msg sanitized and truncated",
             },
         )
         final_answer = (
