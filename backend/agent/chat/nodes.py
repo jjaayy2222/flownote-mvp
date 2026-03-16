@@ -41,20 +41,25 @@ _EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 # - 의도적 제외: 6자리 이하의 단순 숫자 시퀀스(ID, 순번 등)는 마스킹하지 않음.
 # - 의도적 제외: E.164 표준(\`_E164_MAX_DIGITS\`자)을 초과하는 \`_E164_MAX_DIGITS + 1\`자리 이상의 연속 숫자는 엄격히 제외.
 
-# [Negative Lookahead 패턴] 
-# 데이터 ID, 타임스탬프, 시리얼 번호 등 전화번호 표준(E.164)을 초과하는 
-# 긴 숫자 시퀀스를 정규식 매칭 대상에서 물리적으로 제외하기 위한 상한선 체크 블록입니다.
-_E164_EXCLUSION_LOOKAHEAD = rf"""
+def _build_e164_exclusion_lookahead(max_digits: int) -> str:
+    """
+    데이터 ID, 타임스탬프 등 전화번호 표준(E.164)을 초과하는 
+    긴 숫자 시퀀스를 제외하기 위한 부정 룩어헤드 패턴을 생성합니다.
+    """
+    return rf"""
     (?!                                         # [Negative Lookahead]
-        (?:\D?\d){{{_E164_MAX_DIGITS + 1},}}      # (구분자?\d) 패턴이 상한(_E164_MAX_DIGITS + 1) 이상 반복 검사
+        (?:\D?\d){{{max_digits + 1},}}            # (구분자?\d) 패턴이 상한({max_digits}+1) 이상 반복 검사
         (?!\d)                                  # 독립된 긴 시퀀스인 경우 매칭 거부
     )
-"""
+    """
+
+# [Negative Lookahead 패턴] 
+_E164_EXCLUSION_LOOKAHEAD = _build_e164_exclusion_lookahead(_E164_MAX_DIGITS)
 
 _PHONE_PATTERN = re.compile(
     rf"""
     (?<!\d)                                     # 앞에 숫자가 없어야 함
-    {_E164_EXCLUSION_LOOKAHEAD}
+    (?:{_E164_EXCLUSION_LOOKAHEAD})              # [Explicit Boundary] 16자 이상 시퀀스 차단 블록
     (?:\+?\d{{1,3}}[- .]?)?                     # 선택적인 국가 코드 (+82 등)
     \(?0?\d{{1,4}}\)?                           # 지역번호 또는 서비스 번호 (010, 02 등)
     [- .]?\d{{3,5}}                             # 중간 마디 (국제 규격 대응을 위해 5자리까지 허용)
