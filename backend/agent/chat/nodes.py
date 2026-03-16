@@ -83,6 +83,14 @@ def _truncate_context(raw_context: str) -> str:
     return head + suffix
 
 
+def _safe_truncate_error_msg(e: Exception, max_chars: int = 200) -> str:
+    """
+    Exception 객체의 PII 유출을 방지하기 위해 예외 메시지의 앞부분만 안전하게 잘라 반환합니다.
+    (Pyre2 String Slicing TypeError 우회를 위해 islice 사용)
+    """
+    return "".join(islice(str(e), max_chars))
+
+
 async def _run_planner_with_tools(
     plan_messages: List[BaseMessage],
     base_context: str,
@@ -111,8 +119,13 @@ async def _run_planner_with_tools(
                 tool_name = tool_call.get("name")
                 raw_args = tool_call.get("args")
 
-                # [Comment 1 적용] 예측 불가능한 LLM 인자 타입에 대한 방어 로직 (방어적 코딩)
-                if not isinstance(raw_args, dict):
+                if raw_args is None:
+                    logger.debug(
+                        "[Tool Dispatch] 전달된 args가 없어 빈 dict로 초기화합니다.",
+                        extra={"tool_name": tool_name},
+                    )
+                    tool_args = {}
+                elif not isinstance(raw_args, dict):
                     logger.warning(
                         "[Tool Dispatch] 예상치 못한 args 타입 무시",
                         extra={
@@ -121,8 +134,8 @@ async def _run_planner_with_tools(
                         },
                     )
                     continue
-
-                tool_args = raw_args
+                else:
+                    tool_args = raw_args
 
                 if tool_name != "search_documents_tool":
                     logger.debug(
@@ -143,12 +156,14 @@ async def _run_planner_with_tools(
         else:
             logger.info("[Planner] LLM이 도구 없이 자체 판단 가능으로 결론내렸습니다.")
     except Exception as e:
-        # [Comment 3 반영] Traceback의 payload가 PII를 노출할 수 있으므로 exc_info=True 제거
+        # 디버깅을 위해 예외 메시지는 안전하게(truncate) 로그에 남긴다.
         logger.error(
             "[Planner] LLM 추론 중 에러 발생",
             extra={
                 "error_type": type(e).__name__,
-                "security": "Traceback omitted for PII protection",
+                # PII 노출 방지를 위해 전체 메시지 대신 앞부분만 저장 (Pyre2 우회)
+                "error_msg": _safe_truncate_error_msg(e),
+                "security": "Traceback omitted for PII protection; error_msg truncated",
             },
         )
         planner_failed = True
@@ -313,12 +328,14 @@ async def responder_node(state: AgentState) -> Dict[str, Any]:
             else str(response)
         )
     except Exception as e:
-        # [Comment 3 반영] Traceback의 payload가 PII를 노출할 수 있으므로 exc_info=True 제거
+        # 디버깅을 위해 예외 메시지는 안전하게(truncate) 로그에 남긴다.
         logger.error(
             "[Responder Node] LLM 응답 생성 실패",
             extra={
                 "error_type": type(e).__name__,
-                "security": "Traceback omitted for PII protection",
+                # PII 노출 방지를 위해 전체 메시지 대신 앞부분만 저장 (Pyre2 우회)
+                "error_msg": _safe_truncate_error_msg(e),
+                "security": "Traceback omitted for PII protection; error_msg truncated",
             },
         )
         final_answer = (
