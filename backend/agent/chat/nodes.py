@@ -3,12 +3,12 @@
 import re
 import logging
 from itertools import islice
-from typing import Dict, Any, Literal, cast, List
-from langchain_core.messages import AIMessage, SystemMessage, BaseMessage
+from typing import Dict, Any, Literal, cast, List, TypedDict
+from langchain_core.messages import AIMessage, SystemMessage, BaseMessage  # type: ignore[import, import-untyped, reportMissingImports]
 
-from backend.agent.chat.state import AgentState
-from backend.agent.chat.tools import search_documents_tool
-from backend.services.chat_service import get_chat_service
+from backend.agent.chat.state import AgentState  # type: ignore[import, import-untyped, reportMissingImports]
+from backend.agent.chat.tools import search_documents_tool  # type: ignore[import, import-untyped, reportMissingImports]
+from backend.services.chat_service import get_chat_service  # type: ignore[import, import-untyped, reportMissingImports]
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,14 @@ _LATIN_GREETING_SET = set(_SIMPLE_LATIN_GREETINGS)
 # ─────────────────────────────────────────────────────────────────────────────
 # 타입 정의 및 공통 헬퍼
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+class PlannerResult(TypedDict):
+    """Planner 노드의 실행 결과를 명시하고 가독성을 높이기 위한 TypedDict"""
+
+    search_context: str
+    planner_failed: bool
+    planner_error_message: str
 
 
 def _is_simple_greeting(cleaned_query: str) -> bool:
@@ -78,7 +86,7 @@ def _truncate_context(raw_context: str) -> str:
 async def _run_planner_with_tools(
     plan_messages: List[BaseMessage],
     base_context: str,
-) -> Dict[str, Any]:
+) -> PlannerResult:
     """
     LLM에 도구 호출 권한을 부여하고, 도구를 실행하여 search_context를 반환하는 오케스트레이션 헬퍼.
     """
@@ -101,8 +109,9 @@ async def _run_planner_with_tools(
             )
             for tool_call in typed_response.tool_calls:
                 tool_name = tool_call.get("name")
-                raw_args = tool_call.get("args") or {}
+                raw_args = tool_call.get("args")
 
+                # [Comment 1 적용] 예측 불가능한 LLM 인자 타입에 대한 방어 로직 (방어적 코딩)
                 if not isinstance(raw_args, dict):
                     logger.warning(
                         "[Tool Dispatch] 예상치 못한 args 타입 무시",
@@ -134,14 +143,13 @@ async def _run_planner_with_tools(
         else:
             logger.info("[Planner] LLM이 도구 없이 자체 판단 가능으로 결론내렸습니다.")
     except Exception as e:
-        # 광범위한 예외를 삼키더라도 발생 원인을 파악할 수 있도록 error_msg와 exc_info 기록
+        # [Comment 3 반영] Traceback의 payload가 PII를 노출할 수 있으므로 exc_info=True 제거
         logger.error(
             "[Planner] LLM 추론 중 에러 발생",
             extra={
                 "error_type": type(e).__name__,
-                "error_msg": str(e),
+                "security": "Traceback omitted for PII protection",
             },
-            exc_info=True,
         )
         planner_failed = True
         planner_error_message = "Planner 실행 중 오류가 발생했습니다. 검색 결과 없이 직접 응답을 시도합니다."
@@ -222,7 +230,7 @@ def router_edge(state: AgentState) -> Literal["planner", "responder"]:
     return "planner"
 
 
-async def planner_node(state: AgentState) -> Dict[str, Any]:
+async def planner_node(state: AgentState) -> PlannerResult:
     """
     계획자(Planner) 노드 — Thin Orchestrator:
     - 상태를 수집하고 헬퍼를 호출하여 도구 실행 및 컨텍스트를 구성한 후 반환합니다.
@@ -252,7 +260,12 @@ async def planner_node(state: AgentState) -> Dict[str, Any]:
     )
     plan_messages = [sys_prompt] + messages
 
-    return await _run_planner_with_tools(plan_messages, base_context)
+    result = await _run_planner_with_tools(plan_messages, base_context)
+    return {
+        "search_context": result["search_context"],
+        "planner_failed": result["planner_failed"],
+        "planner_error_message": result["planner_error_message"],
+    }
 
 
 async def responder_node(state: AgentState) -> Dict[str, Any]:
@@ -300,13 +313,13 @@ async def responder_node(state: AgentState) -> Dict[str, Any]:
             else str(response)
         )
     except Exception as e:
+        # [Comment 3 반영] Traceback의 payload가 PII를 노출할 수 있으므로 exc_info=True 제거
         logger.error(
             "[Responder Node] LLM 응답 생성 실패",
             extra={
                 "error_type": type(e).__name__,
-                "error_msg": str(e),
+                "security": "Traceback omitted for PII protection",
             },
-            exc_info=True,
         )
         final_answer = (
             "죄송합니다, 현재 트래픽이 많거나 응답 생성 중에 내부적인 통신 오류가 발생했습니다. "
