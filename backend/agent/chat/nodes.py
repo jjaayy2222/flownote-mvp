@@ -54,8 +54,8 @@ def _build_e164_exclusion_lookahead(max_digits: int) -> str:
         TypeError: max_digits가 정수 계열(numbers.Integral)이 아니거나 불리언(bool)일 때 발생.
         ValueError: max_digits가 0 이하일 때 발생.
     """
-    # [Engineering Decision] numbers.Integral을 사용하여 모든 정수 계열 타입을 수용하되, bool은 엄격히 차단.
-    if not isinstance(max_digits, numbers.Integral) or isinstance(max_digits, bool):
+    # [Engineering Decision] bool을 정수형에서 명시적으로 먼저 걸러내어 타입 의미론적 명확성 확보 (numbers.Integral 호환)
+    if isinstance(max_digits, bool) or not isinstance(max_digits, numbers.Integral):
         raise TypeError(
             f"max_digits must be an integral type (excluding bool), but got {type(max_digits).__name__}: {max_digits}"
         )
