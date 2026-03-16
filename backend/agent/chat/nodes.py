@@ -30,19 +30,27 @@ _KOREAN_GREETING_FORMS = {
 }
 _LATIN_GREETING_SET = set(_SIMPLE_LATIN_GREETINGS)
 
-# [Engineering Decision] 에러 메시지 로깅 시 PII 보호를 위한 잘라내기 길이
+# [Engineering Decision] 에러 메시지 로깅 시 PII 보호를 위한 설정
 _MAX_ERROR_MSG_CHARS: int = 200
+_E164_MAX_DIGITS: int = 15  # 국제 전화번호 표준 최대 자릿수
 
 # [Engineering Decision] 고빈도 로깅 경로의 성능 최적화를 위한 정규식 프리컴파일
 _EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-# [Engineering Decision] PII 마스킹 정규식 정책 및 경계 조건 (Boundary Conditions)
+
+# [Engineering Decision] PII 마스킹 정규식 정책 및 VERBOSE 구조화
 # - 의도적 제외: 6자리 이하의 단순 숫자 시퀀스(ID, 순번 등)는 마스킹하지 않음.
-# - 의도적 제외: 16자리 이상의 연속된 숫자는 일반적인 전화번호 범위를 벗어나므로 엄격히 제외 (E.164 최장 15자 준수).
-# - 탐지 대상: 한국형(01x-xxx-xxxx) 및 국제 규격 지원을 위해 중간 마디 5자리(\d{3,5})까지 의도적 허용.
-# - 오탐 방지: 룩어라운드를 사용하여 타임스탬프 일부가 잘려 매칭되거나 16자 이상의 데이터 ID가 매치되는 것을 차단.
-# - 구분자: 하이픈(-), 공백( ), 점(.) 및 구분자가 없는 밀집 포맷 지원.
+# - 의도적 제외: E.164 표준(15자)을 초과하는 16자리 이상의 연속된 숫자는 엄격히 제외.
 _PHONE_PATTERN = re.compile(
-    r"(?<!\d)(?!(?:\D?\d){16,}(?!\d))(?:\+?\d{1,3}[- .]?)?\(?0?\d{1,4}\)?[- .]?\d{3,5}[- .]?\d{4}(?!\d)"
+    r"""
+    (?<!\d)                             # 앞에 숫자가 없어야 함
+    (?!(?:\D?\d){""" + str(_E164_MAX_DIGITS + 1) + r""",}(?!\d))  # 16자 이상의 숫자 시퀀스 매칭 차단 (상한 강제)
+    (?:\+?\d{1,3}[- .]?)?               # 선택적인 국가 코드 (+82 등)
+    \(?0?\d{1,4}\)?                     # 지역번호 또는 서비스 번호 (010, 02 등)
+    [- .]?\d{3,5}                       # 중간 마디 (국제 규격 대응을 위해 5자리까지 허용)
+    [- .]?\d{4}                         # 끝 마디
+    (?!\d)                              # 뒤에 숫자가 없어야 함
+    """,
+    re.VERBOSE,
 )
 _TOKEN_PATTERN = re.compile(r"\b[0-9A-Za-z]{32,}\b")
 
