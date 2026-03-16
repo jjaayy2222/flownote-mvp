@@ -4,11 +4,11 @@ import re
 import logging
 from itertools import islice
 from typing import Dict, Any, Literal, cast, List, TypedDict
-from langchain_core.messages import AIMessage, SystemMessage, BaseMessage  # type: ignore
+from langchain_core.messages import AIMessage, SystemMessage, BaseMessage  # type: ignore[import, import-untyped, reportMissingImports]
 
-from backend.agent.chat.state import AgentState  # type: ignore
-from backend.agent.chat.tools import search_documents_tool  # type: ignore
-from backend.services.chat_service import get_chat_service  # type: ignore
+from backend.agent.chat.state import AgentState  # type: ignore[import, import-untyped, reportMissingImports]
+from backend.agent.chat.tools import search_documents_tool  # type: ignore[import, import-untyped, reportMissingImports]
+from backend.services.chat_service import get_chat_service  # type: ignore[import, import-untyped, reportMissingImports]
 
 logger = logging.getLogger(__name__)
 
@@ -143,13 +143,13 @@ async def _run_planner_with_tools(
         else:
             logger.info("[Planner] LLM이 도구 없이 자체 판단 가능으로 결론내렸습니다.")
     except Exception as e:
-        # [Comment 3 적용] PII 누출 방지를 위해 str(e) 로깅 제거
+        # [Comment 3 반영] Traceback의 payload가 PII를 노출할 수 있으므로 exc_info=True 제거
         logger.error(
             "[Planner] LLM 추론 중 에러 발생",
             extra={
                 "error_type": type(e).__name__,
+                "security": "Traceback omitted for PII protection",
             },
-            exc_info=True,
         )
         planner_failed = True
         planner_error_message = "Planner 실행 중 오류가 발생했습니다. 검색 결과 없이 직접 응답을 시도합니다."
@@ -230,7 +230,7 @@ def router_edge(state: AgentState) -> Literal["planner", "responder"]:
     return "planner"
 
 
-async def planner_node(state: AgentState) -> Dict[str, Any]:
+async def planner_node(state: AgentState) -> PlannerResult:
     """
     계획자(Planner) 노드 — Thin Orchestrator:
     - 상태를 수집하고 헬퍼를 호출하여 도구 실행 및 컨텍스트를 구성한 후 반환합니다.
@@ -313,13 +313,13 @@ async def responder_node(state: AgentState) -> Dict[str, Any]:
             else str(response)
         )
     except Exception as e:
-        # [Comment 3 적용] PII 누출 방지를 위해 str(e) 로깅 제거
+        # [Comment 3 반영] Traceback의 payload가 PII를 노출할 수 있으므로 exc_info=True 제거
         logger.error(
             "[Responder Node] LLM 응답 생성 실패",
             extra={
                 "error_type": type(e).__name__,
+                "security": "Traceback omitted for PII protection",
             },
-            exc_info=True,
         )
         final_answer = (
             "죄송합니다, 현재 트래픽이 많거나 응답 생성 중에 내부적인 통신 오류가 발생했습니다. "
