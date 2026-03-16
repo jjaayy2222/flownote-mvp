@@ -36,7 +36,7 @@ class AgentState(TypedDict):
     # 입력된 정보나 중간 연산 결과물
     search_context: NotRequired[Optional[str]]
 
-    # 플래너 실패 여부 플래그 는 search_context에 시스템 메시지가 실핑되지 않도록 별도 상태로 관리
+    # 플래너 실패 여부 플래그는 search_context에 시스템 메시지가 실리지 않도록 별도 상태로 관리
     planner_failed: NotRequired[Optional[bool]]
     planner_error_message: NotRequired[Optional[str]]
 
