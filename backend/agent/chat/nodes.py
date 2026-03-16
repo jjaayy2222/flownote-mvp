@@ -47,10 +47,17 @@ def _build_e164_exclusion_lookahead(max_digits: int) -> str:
     긴 숫자 시퀀스를 제외하기 위한 부정 룩어헤드 패턴을 생성합니다.
     
     Args:
-        max_digits: 허용되는 최대 숫자 자릿수 (양의 정수 가정)
+        max_digits: 허용되는 최대 숫자 자릿수. (정수형)
+
+    Raises:
+        ValueError: max_digits가 0 이하거나 정수 타입이 아닐 때 발생.
     """
+    # [Engineering Decision] 타입 및 값에 대한 엄격한 방어적 프로그래밍
+    if not isinstance(max_digits, int) or isinstance(max_digits, bool):
+        raise ValueError(f"max_digits must be an integer, but got {type(max_digits).__name__}: {max_digits}")
+    
     if max_digits <= 0:
-        raise ValueError("max_digits must be a positive integer.")
+        raise ValueError(f"max_digits must be a positive integer, but got: {max_digits}")
     return rf"""
     (?!                                         # [Negative Lookahead]
         (?:\D?\d){{{max_digits + 1},}}            # (구분자?\d) 패턴이 상한({max_digits}+1) 이상 반복 검사
