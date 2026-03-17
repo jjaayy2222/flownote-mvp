@@ -15,14 +15,18 @@ class SerializedDoc(TypedDict):
     """
     JSON 직렬화 가능한 정규화된 문서 구조.
 
-    [Contract]
-    - 모든 필드는 직렬화 가능한 원시 타입만 포함합니다.
-    - `metadata` 필드는 항상 `dict` 타입이 보장됩니다.
-      호출자는 별도의 isinstance 체크 없이 `safe_doc["metadata"].get(...)` 등을 안전하게 호출할 수 있습니다.
+    [Contract] 이 TypedDict의 모든 필드는 실제로 JSON 직렬화 가능한 원시 타입으로
+    _normalize_doc를 통해 강제(타입 코어션)될 때만 생성되어야 합니다.
+
+    - `id`      : 문서의 식별자. 원칙적으로 str로 저장되며, 없는 경우 None.
+    - `score`   : 검색 점수. 원칙적으로 float로 저장되며, 파싱이 불가한 경우 None.
+    - `content` : 문서 본문. 항상 str. None 입력 시 ''(empty string)으로 폴백.
+    - `metadata`: 원본 메타데이터 dict. 로우 레벨 필드는 Any를 허용하지만,
+                  모든 값은 직렬화 시 json.dumps(기본값 default=str)로 방어됨.
     """
-    id: Optional[Any]
-    score: Optional[Any]
-    content: Any
+    id: Optional[str]
+    score: Optional[float]
+    content: str
     metadata: Dict[str, Any]
 
 
@@ -31,26 +35,51 @@ def _normalize_doc(doc: Any) -> SerializedDoc:
     검색 결과 문서(dict 또는 LangChain Document 유사 객체)를
     JSON 직렬화 가능한 SerializedDoc로 정규화하여 반환합니다.
 
-    [Contract]
-    - 반환된 SerializedDoc의 `metadata` 필드는 항상 `dict` 타입입니다. (None 또는 비-dict 입력 시 {} 로 폴백)
-    - 호출자는 metadata에 대한 추가 isinstance 검사 없이 안전하게 접근할 수 있습니다.
+    [Contract 실제 구현 보장]
+    - `id`      : str로 코어션. 없거나 None인 경우만 None 유지.
+    - `score`   : float로 코어션. 파싱 불가한 입력 시 None으로 폴백 (예외 없이).
+    - `content` : str로 코어션. None 입력 시 ''(empty string)로 폴백.
+    - `metadata`: dict 100% 부보. None 또는 비-dict 입력 시 {} 폴백.
 
     Args:
         doc: dict 또는 .page_content / .metadata / .id / .score 속성을 갖는 객체.
     """
     is_dict = isinstance(doc, dict)
-    content = (
+
+    # --- content 정규화: str 보장 ---
+    raw_content = (
         doc.get("content", "")
         if is_dict
         else getattr(doc, "page_content", getattr(doc, "content", ""))
     )
+    content: str = str(raw_content) if raw_content is not None else ""
 
+    # --- metadata 정규화: dict 보장 ---
     raw_metadata = doc.get("metadata", {}) if is_dict else getattr(doc, "metadata", {})
     metadata: Dict[str, Any] = raw_metadata if isinstance(raw_metadata, dict) else {}
 
+    # --- id 정규화: Optional[str] ---
+    raw_id = doc.get("id") if is_dict else getattr(doc, "id", None)
+    normalized_id: Optional[str] = str(raw_id) if raw_id is not None else None
+
+    # --- score 정규화: Optional[float] ---
+    raw_score = doc.get("score") if is_dict else getattr(doc, "score", None)
+    normalized_score: Optional[float]
+    if raw_score is None:
+        normalized_score = None
+    else:
+        try:
+            normalized_score = float(raw_score)
+        except (ValueError, TypeError):
+            logger.warning(
+                "[Tool] score 정규화 실패, None으로 폴백",
+                extra={"score_type": type(raw_score).__name__},
+            )
+            normalized_score = None
+
     return {
-        "id": doc.get("id") if is_dict else getattr(doc, "id", None),
-        "score": doc.get("score") if is_dict else getattr(doc, "score", None),
+        "id": normalized_id,
+        "score": normalized_score,
         "content": content,
         "metadata": metadata,
     }
