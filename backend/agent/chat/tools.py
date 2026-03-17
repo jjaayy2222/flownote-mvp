@@ -61,11 +61,15 @@ def _normalize_doc(doc: Any) -> SerializedDoc:
     # --- id 정규화: Optional[str] — metadata 경고 로깅 콘텍스트를 위해 먼저 추출 ---
     raw_id = doc.get("id") if is_dict else getattr(doc, "id", None)
     normalized_id: Optional[str] = str(raw_id) if raw_id is not None else None
-    # [Security] isinstance 가드로 Pyre2 타입 좁히기 시도. _MAX_LOG_DOC_ID_LEN으로 잘라 PII 방지.
+    # [주의] normalized_id는 위 63행에서 str(raw_id)로 코어션되었으므로 항상 str | None.
+    # → isinstance(normalized_id, str)은 사실상 "normalized_id is not None"과 동일.
+    # → int, UUID 등 비-str raw_id도 이미 str()로 변환된 뒤 이 가드에 도달하므로 로깅에서 탈락하지 않음.
+    # [Security] _MAX_LOG_DOC_ID_LEN으로 잘라 PII 방지.
     # type: ignore[index]: isinstance(str) 블록 내에서도 Pyre2가 str 슬라이스를 오판단하는 알려진 False Positive.
     if isinstance(normalized_id, str):
         _doc_id_for_log: Optional[str] = normalized_id[:_MAX_LOG_DOC_ID_LEN]  # type: ignore[index]
     else:
+        # raw_id가 None이었을 때만 이 분기에 도달 (str() 코어션 보장에 의해 str 탈락 없음)
         _doc_id_for_log = None
 
     # --- content 정규화: str 보장 ---
