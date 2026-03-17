@@ -61,7 +61,7 @@ def _normalize_doc(doc: Any) -> SerializedDoc:
     else:
         # 업스트림 스키마 변경이나 오류를 조기에 탐지하기 위해 경고 로깅
         logger.warning(
-            "[Tool] metadata가 dict가 아닌 타입. {}로 폴백",
+            "[Tool] metadata가 dict가 아닌 타입. 빈 dict로 폴백",
             extra={"metadata_type": type(raw_metadata).__name__},
         )
         metadata = {}
