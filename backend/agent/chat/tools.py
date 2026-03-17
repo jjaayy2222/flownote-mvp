@@ -22,13 +22,14 @@ def _serialize_doc(doc: Any) -> dict:
         else getattr(doc, "page_content", getattr(doc, "content", ""))
     )
 
+    raw_metadata = doc.get("metadata", {}) if is_dict else getattr(doc, "metadata", {})
+    metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
+
     return {
         "id": doc.get("id") if is_dict else getattr(doc, "id", None),
         "score": doc.get("score") if is_dict else getattr(doc, "score", None),
         "content": content,
-        "metadata": doc.get("metadata", {})
-        if is_dict
-        else getattr(doc, "metadata", {}),
+        "metadata": metadata,
     }
 
 
@@ -72,9 +73,8 @@ async def search_documents_tool(query: str, k: int = 5) -> dict:
                 # [Optimization] Pyre2 slice False Positive 방지를 위한 명시적 str 변환 후 조작
                 content_str = str(content_str[:_MAX_DOC_CONTENT_CHARS]) + "...(truncated)"  # type: ignore[index]
 
-            metadata = safe_doc.get("metadata")
-            if not isinstance(metadata, dict):
-                metadata = {}
+            # `_serialize_doc` 보장: metadata는 항상 dict
+            metadata = safe_doc["metadata"]
             source = metadata.get("source", "unknown")
             formatted_results.append(
                 f"--- Document {i} (Source: {source}) ---\n{content_str}"
