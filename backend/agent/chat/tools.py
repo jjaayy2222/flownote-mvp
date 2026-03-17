@@ -1,7 +1,7 @@
 # backend/agent/chat/tools.py
 
 import logging
-from typing import Any
+from typing import Any, Dict, List, Optional, TypedDict
 from langchain_core.tools import tool  # type: ignore[import, import-untyped, reportMissingImports]
 from backend.services.hybrid_search_service import get_hybrid_search_service  # type: ignore[import, import-untyped, reportMissingImports]
 
@@ -11,9 +11,32 @@ logger = logging.getLogger(__name__)
 _MAX_DOC_CONTENT_CHARS = 1_000
 
 
-def _serialize_doc(doc: Any) -> dict:
+class SerializedDoc(TypedDict):
     """
-    검색 결과 문서(dict 또는 Document 객체)를 JSON 직렬화 가능한 dict로 변환합니다.
+    JSON 직렬화 가능한 정규화된 문서 구조.
+
+    [Contract]
+    - 모든 필드는 직렬화 가능한 원시 타입만 포함합니다.
+    - `metadata` 필드는 항상 `dict` 타입이 보장됩니다.
+      호출자는 별도의 isinstance 체크 없이 `safe_doc["metadata"].get(...)` 등을 안전하게 호출할 수 있습니다.
+    """
+    id: Optional[Any]
+    score: Optional[Any]
+    content: Any
+    metadata: Dict[str, Any]
+
+
+def _normalize_doc(doc: Any) -> SerializedDoc:
+    """
+    검색 결과 문서(dict 또는 LangChain Document 유사 객체)를
+    JSON 직렬화 가능한 SerializedDoc로 정규화하여 반환합니다.
+
+    [Contract]
+    - 반환된 SerializedDoc의 `metadata` 필드는 항상 `dict` 타입입니다. (None 또는 비-dict 입력 시 {} 로 폴백)
+    - 호출자는 metadata에 대한 추가 isinstance 검사 없이 안전하게 접근할 수 있습니다.
+
+    Args:
+        doc: dict 또는 .page_content / .metadata / .id / .score 속성을 갖는 객체.
     """
     is_dict = isinstance(doc, dict)
     content = (
@@ -23,7 +46,7 @@ def _serialize_doc(doc: Any) -> dict:
     )
 
     raw_metadata = doc.get("metadata", {}) if is_dict else getattr(doc, "metadata", {})
-    metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
+    metadata: Dict[str, Any] = raw_metadata if isinstance(raw_metadata, dict) else {}
 
     return {
         "id": doc.get("id") if is_dict else getattr(doc, "id", None),
@@ -63,7 +86,7 @@ async def search_documents_tool(query: str, k: int = 5) -> dict:
         formatted_results = []
         
         for i, doc in enumerate(docs, 1):
-            safe_doc = _serialize_doc(doc)
+            safe_doc: SerializedDoc = _normalize_doc(doc)
             serialized_docs.append(safe_doc)
 
             # 단일 문서 최대 길이 적용
@@ -73,7 +96,7 @@ async def search_documents_tool(query: str, k: int = 5) -> dict:
                 # [Optimization] Pyre2 slice False Positive 방지를 위한 명시적 str 변환 후 조작
                 content_str = str(content_str[:_MAX_DOC_CONTENT_CHARS]) + "...(truncated)"  # type: ignore[index]
 
-            # `_serialize_doc` 보장: metadata는 항상 dict
+            # `_normalize_doc` Contract: metadata는 항상 dict (SerializedDoc 타입 보장)
             metadata = safe_doc["metadata"]
             source = metadata.get("source", "unknown")
             formatted_results.append(
