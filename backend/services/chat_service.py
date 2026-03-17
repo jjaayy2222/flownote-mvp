@@ -97,7 +97,8 @@ class HybridSearchLangChainRetriever(BaseRetriever):
         """Provides backward-compatibility for traditional BaseRetriever interface."""
         if run_manager:
             # 기존 제공된 config 딕셔너리를 무조건 덮어쓰지 않고 추출(Merge)
-            config = cast(Dict[str, Any], kwargs.get("config", {}) or {})
+            raw_config = kwargs.get("config") or {}
+            config: Dict[str, Any] = dict(raw_config)
             # run_manager 콜백을 병합하면서, 다른 config 키(태그, 메타데이터 등)를 보존
             config["callbacks"] = run_manager.get_child()
             kwargs["config"] = config
@@ -167,6 +168,8 @@ class ChatService:
     def _get_llm(self, streaming: bool = False):
         """ChatOpenAI 객체 생성 (기본값: non-streaming)"""
         # [Optimization] 주입된 커스텀 LLM이 있는 경우 우선 사용 (명시적 의존성 주입 지원)
+        if streaming and self._custom_streaming_llm:
+            return self._custom_streaming_llm
         if not streaming and self._custom_llm:
             return self._custom_llm
 
@@ -271,7 +274,7 @@ class ChatService:
                 # 명시적으로 존재하나 문자열이 아닌 경우에만 추적을 위해 경고 로깅
                 if not isinstance(raw_source, str):
                     # [Security] 로그 비대화 방지 및 보안을 위해 출력 값 제한
-                    safe_val = "".join(islice(source_path, 100))
+                    safe_val = source_path[:100]  # type: ignore
                     if len(source_path) > 100:
                         safe_val += "..."
 
@@ -296,12 +299,7 @@ class ChatService:
                         if "/" in source_path
                         else source_path
                     ),
-                    "page_content": "".join(
-                        islice(
-                            self._mask_pii(doc.page_content),
-                            MAX_SOURCE_PAGE_CONTENT_LEN,
-                        )
-                    ),
+                    "page_content": self._mask_pii(doc.page_content)[:MAX_SOURCE_PAGE_CONTENT_LEN],  # type: ignore
                 }
             )
 
@@ -312,7 +310,6 @@ class ChatService:
         *,
         start_time: float,
         rephrase_duration: float,
-        search_duration: float,
         user_id: str,
     ) -> float:
         """
@@ -327,7 +324,6 @@ class ChatService:
             extra={
                 "ttft": ttft,
                 "rephrase_duration": rephrase_duration,
-                "search_duration": search_duration,
                 "user_id": user_id,
             },
         )
@@ -364,10 +360,9 @@ Standalone Question:"""
 
         # [Contract] 모듈 상수 REPHRASE_HISTORY_WINDOW를 사용하여 히스토리 잘라내기.
         # 테스트(test_rephrase_query_truncates_history)가 이 상수를 import하여 동기화됩니다.
-        truncated_history = list(islice(reversed(history), REPHRASE_HISTORY_WINDOW))
-        truncated_history.reverse()
+        truncated_history = history[-REPHRASE_HISTORY_WINDOW:]  # type: ignore
         context_history = "\n".join(
-            [f"{m.role}: {m.content}" for m in truncated_history]
+            f"{m.role}: {m.content}" for m in truncated_history
         )
 
         try:
@@ -481,7 +476,6 @@ Standalone Question:"""
                             _ = self._log_ttft_once(
                                 start_time=start_time,
                                 rephrase_duration=rephrase_duration,
-                                search_duration=search_duration, # search_duration은 planner 응답 내 통계에 따라 업데이트 하거나 일단 0.0 보냄. 에이전트라서 측정 시점이 다름
                                 user_id=user_id,
                             )
                             ttft_recorded = True

@@ -1,8 +1,8 @@
 # backend/agent/chat/tools.py
 
 import logging
-from langchain_core.tools import tool
-from backend.services.hybrid_search_service import get_hybrid_search_service
+from langchain_core.tools import tool  # type: ignore[import, import-untyped, reportMissingImports]
+from backend.services.hybrid_search_service import get_hybrid_search_service  # type: ignore[import, import-untyped, reportMissingImports]
 
 logger = logging.getLogger(__name__)
 
@@ -35,23 +35,40 @@ async def search_documents_tool(query: str, k: int = 5) -> dict:
             logger.info("[Tool] 검색 결과 없음", extra={"k": k})
             return {"context": "관련된 문서 정보를 찾을 수 없습니다.", "docs": []}
 
+        # JSON-serializable 변환용 리스트
+        serialized_docs = []
         formatted_results = []
+        
         for i, doc in enumerate(docs, 1):
-            content = doc.get("content", "")
-            # 단일 문서 최대 길이 적용
-            if len(content) > _MAX_DOC_CONTENT_CHARS:
-                content = content[:_MAX_DOC_CONTENT_CHARS] + "...(truncated)"
+            # dict이거나 Document 객체일 수 있으므로 범용적으로 처리
+            is_dict = isinstance(doc, dict)
+            content = doc.get("content", "") if is_dict else getattr(doc, "page_content", getattr(doc, "content", ""))
+            
+            safe_doc = {
+                "id": doc.get("id") if is_dict else getattr(doc, "id", None),
+                "score": doc.get("score") if is_dict else getattr(doc, "score", None),
+                "content": content,
+                "metadata": doc.get("metadata", {}) if is_dict else getattr(doc, "metadata", {}),
+            }
+            serialized_docs.append(safe_doc)
 
-            metadata = doc.get("metadata", {})
+            # 단일 문서 최대 길이 적용
+            content_str = str(content)
+            if len(content_str) > _MAX_DOC_CONTENT_CHARS:
+                content_str = content_str[:_MAX_DOC_CONTENT_CHARS] + "...(truncated)"  # type: ignore
+
+            metadata = safe_doc.get("metadata")
+            if not isinstance(metadata, dict):
+                metadata = {}
             source = metadata.get("source", "unknown")
-            formatted_results.append(f"--- Document {i} (Source: {source}) ---\n{content}")
+            formatted_results.append(f"--- Document {i} (Source: {source}) ---\n{content_str}")
 
         final_context = "\n\n".join(formatted_results)
         logger.info(
             "[Tool] 문서 검색 완료",
             extra={"doc_count": len(docs), "total_length": len(final_context)}
         )
-        return {"context": final_context, "docs": docs}
+        return {"context": final_context, "docs": serialized_docs}
 
     except Exception as e:
         # [Overall Comment 3 / Comment 2 반영]
