@@ -1,6 +1,7 @@
 # backend/agent/chat/tools.py
 
 import logging
+from typing import Any
 from langchain_core.tools import tool  # type: ignore[import, import-untyped, reportMissingImports]
 from backend.services.hybrid_search_service import get_hybrid_search_service  # type: ignore[import, import-untyped, reportMissingImports]
 
@@ -8,6 +9,28 @@ logger = logging.getLogger(__name__)
 
 # 도구 내 단일 문서 최대 길이 상수 (하드코딩 방지)
 _MAX_DOC_CONTENT_CHARS = 1_000
+
+
+def _serialize_doc(doc: Any) -> dict:
+    """
+    검색 결과 문서(dict 또는 Document 객체)를 JSON 직렬화 가능한 dict로 변환합니다.
+    """
+    is_dict = isinstance(doc, dict)
+    content = (
+        doc.get("content", "")
+        if is_dict
+        else getattr(doc, "page_content", getattr(doc, "content", ""))
+    )
+
+    raw_metadata = doc.get("metadata", {}) if is_dict else getattr(doc, "metadata", {})
+    metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
+
+    return {
+        "id": doc.get("id") if is_dict else getattr(doc, "id", None),
+        "score": doc.get("score") if is_dict else getattr(doc, "score", None),
+        "content": content,
+        "metadata": metadata,
+    }
 
 
 @tool
@@ -40,28 +63,22 @@ async def search_documents_tool(query: str, k: int = 5) -> dict:
         formatted_results = []
         
         for i, doc in enumerate(docs, 1):
-            # dict이거나 Document 객체일 수 있으므로 범용적으로 처리
-            is_dict = isinstance(doc, dict)
-            content = doc.get("content", "") if is_dict else getattr(doc, "page_content", getattr(doc, "content", ""))
-            
-            safe_doc = {
-                "id": doc.get("id") if is_dict else getattr(doc, "id", None),
-                "score": doc.get("score") if is_dict else getattr(doc, "score", None),
-                "content": content,
-                "metadata": doc.get("metadata", {}) if is_dict else getattr(doc, "metadata", {}),
-            }
+            safe_doc = _serialize_doc(doc)
             serialized_docs.append(safe_doc)
 
             # 단일 문서 최대 길이 적용
+            content = safe_doc["content"]
             content_str = str(content)
             if len(content_str) > _MAX_DOC_CONTENT_CHARS:
-                content_str = content_str[:_MAX_DOC_CONTENT_CHARS] + "...(truncated)"  # type: ignore
+                # [Optimization] Pyre2 slice False Positive 방지를 위한 명시적 str 변환 후 조작
+                content_str = str(content_str[:_MAX_DOC_CONTENT_CHARS]) + "...(truncated)"  # type: ignore[index]
 
-            metadata = safe_doc.get("metadata")
-            if not isinstance(metadata, dict):
-                metadata = {}
+            # `_serialize_doc` 보장: metadata는 항상 dict
+            metadata = safe_doc["metadata"]
             source = metadata.get("source", "unknown")
-            formatted_results.append(f"--- Document {i} (Source: {source}) ---\n{content_str}")
+            formatted_results.append(
+                f"--- Document {i} (Source: {source}) ---\n{content_str}"
+            )
 
         final_context = "\n\n".join(formatted_results)
         logger.info(
