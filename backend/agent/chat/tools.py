@@ -1,7 +1,7 @@
 # backend/agent/chat/tools.py
 
 import logging
-from typing import Any
+from typing import Any, Dict, List, Optional, TypedDict
 from langchain_core.tools import tool  # type: ignore[import, import-untyped, reportMissingImports]
 from backend.services.hybrid_search_service import get_hybrid_search_service  # type: ignore[import, import-untyped, reportMissingImports]
 
@@ -11,23 +11,75 @@ logger = logging.getLogger(__name__)
 _MAX_DOC_CONTENT_CHARS = 1_000
 
 
-def _serialize_doc(doc: Any) -> dict:
+class SerializedDoc(TypedDict):
     """
-    검색 결과 문서(dict 또는 Document 객체)를 JSON 직렬화 가능한 dict로 변환합니다.
+    JSON 직렬화 가능한 정규화된 문서 구조.
+
+    [Contract] 이 TypedDict의 모든 필드는 실제로 JSON 직렬화 가능한 원시 타입으로
+    _normalize_doc를 통해 강제(타입 코어션)될 때만 생성되어야 합니다.
+
+    - `id`      : 문서의 식별자. 원칙적으로 str로 저장되며, 없는 경우 None.
+    - `score`   : 검색 점수. 원칙적으로 float로 저장되며, 파싱이 불가한 경우 None.
+    - `content` : 문서 본문. 항상 str. None 입력 시 ''(empty string)으로 폴백.
+    - `metadata`: 원본 메타데이터 dict. 로우 레벨 필드는 Any를 허용하지만,
+                  모든 값은 직렬화 시 json.dumps(기본값 default=str)로 방어됨.
+    """
+    id: Optional[str]
+    score: Optional[float]
+    content: str
+    metadata: Dict[str, Any]
+
+
+def _normalize_doc(doc: Any) -> SerializedDoc:
+    """
+    검색 결과 문서(dict 또는 LangChain Document 유사 객체)를
+    JSON 직렬화 가능한 SerializedDoc로 정규화하여 반환합니다.
+
+    [Contract 실제 구현 보장]
+    - `id`      : str로 코어션. 없거나 None인 경우만 None 유지.
+    - `score`   : float로 코어션. 파싱 불가한 입력 시 None으로 폴백 (예외 없이).
+    - `content` : str로 코어션. None 입력 시 ''(empty string)로 폴백.
+    - `metadata`: dict 100% 부보. None 또는 비-dict 입력 시 {} 폴백.
+
+    Args:
+        doc: dict 또는 .page_content / .metadata / .id / .score 속성을 갖는 객체.
     """
     is_dict = isinstance(doc, dict)
-    content = (
+
+    # --- content 정규화: str 보장 ---
+    raw_content = (
         doc.get("content", "")
         if is_dict
         else getattr(doc, "page_content", getattr(doc, "content", ""))
     )
+    content: str = str(raw_content) if raw_content is not None else ""
 
+    # --- metadata 정규화: dict 보장 ---
     raw_metadata = doc.get("metadata", {}) if is_dict else getattr(doc, "metadata", {})
-    metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
+    metadata: Dict[str, Any] = raw_metadata if isinstance(raw_metadata, dict) else {}
+
+    # --- id 정규화: Optional[str] ---
+    raw_id = doc.get("id") if is_dict else getattr(doc, "id", None)
+    normalized_id: Optional[str] = str(raw_id) if raw_id is not None else None
+
+    # --- score 정규화: Optional[float] ---
+    raw_score = doc.get("score") if is_dict else getattr(doc, "score", None)
+    normalized_score: Optional[float]
+    if raw_score is None:
+        normalized_score = None
+    else:
+        try:
+            normalized_score = float(raw_score)
+        except (ValueError, TypeError):
+            logger.warning(
+                "[Tool] score 정규화 실패, None으로 폴백",
+                extra={"score_type": type(raw_score).__name__},
+            )
+            normalized_score = None
 
     return {
-        "id": doc.get("id") if is_dict else getattr(doc, "id", None),
-        "score": doc.get("score") if is_dict else getattr(doc, "score", None),
+        "id": normalized_id,
+        "score": normalized_score,
         "content": content,
         "metadata": metadata,
     }
@@ -63,7 +115,7 @@ async def search_documents_tool(query: str, k: int = 5) -> dict:
         formatted_results = []
         
         for i, doc in enumerate(docs, 1):
-            safe_doc = _serialize_doc(doc)
+            safe_doc: SerializedDoc = _normalize_doc(doc)
             serialized_docs.append(safe_doc)
 
             # 단일 문서 최대 길이 적용
@@ -73,7 +125,7 @@ async def search_documents_tool(query: str, k: int = 5) -> dict:
                 # [Optimization] Pyre2 slice False Positive 방지를 위한 명시적 str 변환 후 조작
                 content_str = str(content_str[:_MAX_DOC_CONTENT_CHARS]) + "...(truncated)"  # type: ignore[index]
 
-            # `_serialize_doc` 보장: metadata는 항상 dict
+            # `_normalize_doc` Contract: metadata는 항상 dict (SerializedDoc 타입 보장)
             metadata = safe_doc["metadata"]
             source = metadata.get("source", "unknown")
             formatted_results.append(
