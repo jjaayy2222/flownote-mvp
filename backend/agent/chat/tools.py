@@ -1,7 +1,7 @@
 # backend/agent/chat/tools.py
 
 import logging
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, Optional, TypedDict, cast
 from langchain_core.tools import tool  # type: ignore[import, import-untyped, reportMissingImports]
 from backend.services.hybrid_search_service import get_hybrid_search_service  # type: ignore[import, import-untyped, reportMissingImports]
 
@@ -56,7 +56,15 @@ def _normalize_doc(doc: Any) -> SerializedDoc:
 
     # --- metadata 정규화: dict 보장 ---
     raw_metadata = doc.get("metadata", {}) if is_dict else getattr(doc, "metadata", {})
-    metadata: Dict[str, Any] = raw_metadata if isinstance(raw_metadata, dict) else {}
+    if isinstance(raw_metadata, dict):
+        metadata: Dict[str, Any] = raw_metadata
+    else:
+        # 업스트림 스키마 변경이나 오류를 조기에 탐지하기 위해 경고 로깅
+        logger.warning(
+            "[Tool] metadata가 dict가 아닌 타입. 빈 dict로 폴백",
+            extra={"metadata_type": type(raw_metadata).__name__},
+        )
+        metadata = {}
 
     # --- id 정규화: Optional[str] ---
     raw_id = doc.get("id") if is_dict else getattr(doc, "id", None)
@@ -77,12 +85,12 @@ def _normalize_doc(doc: Any) -> SerializedDoc:
             )
             normalized_score = None
 
-    return {
+    return cast(SerializedDoc, {
         "id": normalized_id,
         "score": normalized_score,
         "content": content,
         "metadata": metadata,
-    }
+    })
 
 
 @tool
