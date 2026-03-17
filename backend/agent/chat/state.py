@@ -42,3 +42,6 @@ class AgentState(TypedDict):
 
     # 클라이언트에게 반환할 최종 완성 답변
     final_answer: NotRequired[Optional[str]]
+
+    # 검색된 원본 문서 목록(SSE 'sources' 전송용)
+    source_documents: NotRequired[Optional[list[dict]]]

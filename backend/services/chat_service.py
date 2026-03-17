@@ -5,30 +5,31 @@ import logging
 import asyncio
 import re
 import time
-from typing import Any, AsyncGenerator, Dict, List, Optional, TypedDict
-from functools import lru_cache
 import hashlib
+from functools import lru_cache
+from itertools import islice
+from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, TypedDict, cast
 
-from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun
-from langchain_core.documents import Document
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import (
+from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun  # type: ignore[import, import-untyped, reportMissingImports]
+from langchain_core.documents import Document  # type: ignore[import, import-untyped, reportMissingImports]
+from langchain_core.output_parsers import StrOutputParser  # type: ignore[import, import-untyped, reportMissingImports]
+from langchain_core.prompts import (  # type: ignore[import, import-untyped, reportMissingImports]
     ChatPromptTemplate,
     SystemMessagePromptTemplate,
     HumanMessagePromptTemplate,
 )
-from langchain_core.retrievers import BaseRetriever
+from langchain_core.retrievers import BaseRetriever  # type: ignore[import, import-untyped, reportMissingImports]
 
-from backend.services.hybrid_search_service import (
+from backend.services.hybrid_search_service import (  # type: ignore[import, import-untyped, reportMissingImports]
     HybridSearchService,
     get_hybrid_search_service,
 )
-from backend.services.onboarding_service import OnboardingService
-from backend.services.chat_history_service import (
+from backend.services.onboarding_service import OnboardingService  # type: ignore[import, import-untyped, reportMissingImports]
+from backend.services.chat_history_service import (  # type: ignore[import, import-untyped, reportMissingImports]
     ChatHistoryService,
     get_chat_history_service,
 )
-from backend.api.models import ChatMessage
+from backend.api.models import ChatMessage  # type: ignore[import, import-untyped, reportMissingImports]
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +97,8 @@ class HybridSearchLangChainRetriever(BaseRetriever):
         """Provides backward-compatibility for traditional BaseRetriever interface."""
         if run_manager:
             # 기존 제공된 config 딕셔너리를 무조건 덮어쓰지 않고 추출(Merge)
-            config = kwargs.pop("config", {}) or {}
+            raw_config = kwargs.get("config") or {}
+            config: Dict[str, Any] = dict(raw_config)
             # run_manager 콜백을 병합하면서, 다른 config 키(태그, 메타데이터 등)를 보존
             config["callbacks"] = run_manager.get_child()
             kwargs["config"] = config
@@ -171,7 +173,7 @@ class ChatService:
         if not streaming and self._custom_llm:
             return self._custom_llm
 
-        from langchain_openai import ChatOpenAI
+        from langchain_openai import ChatOpenAI  # type: ignore[import, import-untyped, reportMissingImports]
         import os
 
         # 기본 OPENAI_API_KEY가 없는 환경이므로 .env의 커스텀 환경변수를 명시적으로 주입
@@ -272,7 +274,7 @@ class ChatService:
                 # 명시적으로 존재하나 문자열이 아닌 경우에만 추적을 위해 경고 로깅
                 if not isinstance(raw_source, str):
                     # [Security] 로그 비대화 방지 및 보안을 위해 출력 값 제한
-                    safe_val = source_path[:100]
+                    safe_val = source_path[:100]  # type: ignore
                     if len(source_path) > 100:
                         safe_val += "..."
 
@@ -297,9 +299,7 @@ class ChatService:
                         if "/" in source_path
                         else source_path
                     ),
-                    "page_content": self._mask_pii(doc.page_content)[
-                        :MAX_SOURCE_PAGE_CONTENT_LEN
-                    ],
+                    "page_content": self._mask_pii(doc.page_content)[:MAX_SOURCE_PAGE_CONTENT_LEN],  # type: ignore
                 }
             )
 
@@ -310,7 +310,6 @@ class ChatService:
         *,
         start_time: float,
         rephrase_duration: float,
-        search_duration: float,
         user_id: str,
     ) -> float:
         """
@@ -325,7 +324,6 @@ class ChatService:
             extra={
                 "ttft": ttft,
                 "rephrase_duration": rephrase_duration,
-                "search_duration": search_duration,
                 "user_id": user_id,
             },
         )
@@ -362,8 +360,9 @@ Standalone Question:"""
 
         # [Contract] 모듈 상수 REPHRASE_HISTORY_WINDOW를 사용하여 히스토리 잘라내기.
         # 테스트(test_rephrase_query_truncates_history)가 이 상수를 import하여 동기화됩니다.
+        truncated_history = history[-REPHRASE_HISTORY_WINDOW:]  # type: ignore
         context_history = "\n".join(
-            [f"{m.role}: {m.content}" for m in history[-REPHRASE_HISTORY_WINDOW:]]
+            f"{m.role}: {m.content}" for m in truncated_history
         )
 
         try:
@@ -418,123 +417,58 @@ Standalone Question:"""
                 effective_query = await self._rephrase_query(query, history)
                 rephrase_duration = time.perf_counter() - rephrase_start
 
-        # 1. [Optimization] Alpha 자동 조절 로직 적용 (Issue #614 Step 3)
-        # alpha가 명시적으로 주어지지 않은 경우(None)에만 질의 분석을 통해 동적으로 결정합니다.
-        applied_alpha = alpha
-        if alpha is None:
-            applied_alpha = self.hybrid_search_service.determine_alpha(effective_query)
-            logger.info(
-                "Dynamic alpha optimization applied",
-                extra={
-                    "user_id_hash": self._hash_string(user_id),
-                    "applied_alpha": applied_alpha,
-                    "default_alpha": 0.5,
-                },
-            )
+        # 1. 메시지 컨텍스트 및 초기 State 구성
+        from langchain_core.messages import HumanMessage, AIMessage, BaseMessage  # type: ignore[import, import-untyped, reportMissingImports]
+        langchain_history: List[BaseMessage] = []
+        for msg in history:
+            if msg.role == "user":
+                langchain_history.append(HumanMessage(content=msg.content))
+            else:
+                langchain_history.append(AIMessage(content=msg.content))
 
-        # 2. Custom Retriever 구성
-        retriever = HybridSearchLangChainRetriever(
-            service=self.hybrid_search_service, k=k, alpha=applied_alpha
-        )
+        langchain_history.append(HumanMessage(content=effective_query))
 
-        # 4. Streaming 실행 (astream_events v2 사용)
+        initial_state = {
+            "messages": langchain_history,
+            "user_id": user_id,
+            "session_id": session_id,
+        }
+
+        # 2. workflow 컴파일 및 의존성 주입
+        from backend.agent.chat.graph import create_chat_workflow  # type: ignore[import, import-untyped, reportMissingImports]
+        agent_graph = create_chat_workflow(checkpointer=None)
+
+        # 3. Streaming 실행 (astream_events v2 사용)
         is_cancelled = False
-        full_content = ""
+        full_content_list: List[str] = []
         ttft_recorded = False
+        search_duration = 0.0
 
         try:
-            # 1.5. 검색 실행 (재구성된 쿼리 사용)
-            search_start = time.perf_counter()
-            source_docs: List[Document] = await retriever.aget_relevant_documents(
-                effective_query
-            )
-            search_duration = time.perf_counter() - search_start
-
-            # 2. 사용자 상황에 맞춘 시스템 프롬프트 템플릿 작성
-            user_context_msg = self._get_user_context_prompt_text(user_id)
-
-            system_template = f"""{user_context_msg}
-
-Answer the user's question clearly and accurately, using ONLY the context provided below.
-If you cannot answer the question using the context, state "주어진 문서 내용에서는 답변을 찾을 수 없습니다." and do not guess.
-
-[Important Rule: Citations]
-- You MUST use inline citations to indicate the source of your information.
-- Use the format [1], [2], etc., corresponding to the Document number provided in the context.
-- Place the citation at the end of the sentence or paragraph it supports.
-- Citations must be plain `[1]`, `[2]`, etc. tokens with no surrounding markdown links or additional formatting (for example, do NOT output `[1](url)` or `[**1**]`).
-- Do not mention the words "context" or "provided text" explicitly.
-- Do not add a separate "Sources" or "References" section at the end of your answer; the citations [1], [2] within the text are sufficient.
-
-Context: 
-{{context}}
-"""
-            prompt_messages = [
-                SystemMessagePromptTemplate.from_template(system_template),
-            ]
-            prompt_messages.append(HumanMessagePromptTemplate.from_template("{input}"))
-            prompt = ChatPromptTemplate.from_messages(prompt_messages)
-
-            # 3. 단일 책임 RAG 파이프라인
-            def format_docs(docs: List[Document]) -> str:
-                """Format retrieved documents securely into a bounded-length context string."""
-                limited_docs = docs[: self.rag_max_docs]
-                contents: List[str] = []
-                total_length = 0
-
-                for i, doc in enumerate(limited_docs, 1):
-                    content = doc.page_content or ""
-                    header = f"--- Document {i} ---"
-
-                    doc_suffix = "...(truncated)"
-                    if len(content) > self.rag_max_doc_chars:
-                        safe_len = max(0, self.rag_max_doc_chars - len(doc_suffix))
-                        content = content[:safe_len] + doc_suffix
-
-                    doc_text = f"{header}\n{content}\n"
-
-                    remaining = self.rag_max_total_chars - total_length
-                    if remaining <= 0:
-                        break
-
-                    if len(doc_text) > remaining:
-                        total_limit_suffix = " ...(truncated due to total length limit)"
-                        if remaining > len(total_limit_suffix):
-                            doc_text = (
-                                doc_text[: remaining - len(total_limit_suffix)]
-                                + total_limit_suffix
-                            )
-                        else:
-                            doc_text = doc_text[:remaining]
-
-                    contents.append(doc_text)
-                    total_length += len(doc_text)
-
-                return "\n\n".join(contents)
-
-            # 3) LLM 초기화 및 파이프라인 구성
-            llm = self._get_streaming_llm()
-            rag_chain = prompt | llm
-
-            # 4) [Orchestration] 소스 중복 제거 및 페이로드 생성
-            deduplicated_source_docs, sources_payload = self._dedupe_and_build_sources(
-                source_docs
-            )
-
-            if sources_payload:
-                yield self._format_sse_event("sources", data=sources_payload)
-
-            # 5) 컨텍스트 주입 및 LLM 스트리밍
-            context_str = format_docs(deduplicated_source_docs)
-            chain_input = {
-                "input": query,
-                "context": context_str,
-            }
-
-            async for event in rag_chain.astream_events(chain_input, version="v2"):
+            async for event in agent_graph.astream_events(initial_state, version="v2"):
                 kind = event["event"]
+                name = event.get("name")
 
-                if kind == "on_chat_model_stream":
+                # Planner 노드 완료 시 검색된 source payload 추출하여 SSE 전송
+                if name == "planner" and kind == "on_chain_end":
+                    planner_output = event["data"].get("output", {})
+                    source_docs_raw = planner_output.get("source_documents", [])
+                    
+                    if source_docs_raw:
+                        source_docs = []
+                        for doc_dict in source_docs_raw:
+                            content = doc_dict.get("content", "")
+                            metadata = dict(doc_dict.get("metadata", {}))
+                            metadata["id"] = doc_dict.get("id", "")
+                            metadata["score"] = doc_dict.get("score", 0.0)
+                            source_docs.append(Document(page_content=content, metadata=metadata))
+                        
+                        deduplicated_source_docs, sources_payload = self._dedupe_and_build_sources(source_docs)
+                        if sources_payload:
+                            yield self._format_sse_event("sources", data=sources_payload)
+
+                # LLM 스트리밍 토큰 청크 추출하여 SSE 전송 (Responder 동작 시 발생)
+                elif kind == "on_chat_model_stream":
                     chunk = event["data"].get("chunk")
                     if chunk and getattr(chunk, "content", None):
                         # TTFT(Time To First Token) 기록 및 성능 로깅 (헬퍼 사용)
@@ -542,14 +476,14 @@ Context:
                             _ = self._log_ttft_once(
                                 start_time=start_time,
                                 rephrase_duration=rephrase_duration,
-                                search_duration=search_duration,
                                 user_id=user_id,
                             )
                             ttft_recorded = True
 
-                        full_content += chunk.content
+                        content_chunk = str(chunk.content)
+                        full_content_list.append(content_chunk)
                         # 스트리밍 토큰은 실시간성을 위해 마스킹 없이 우선 전송
-                        yield self._format_sse_event("token", data=chunk.content)
+                        yield self._format_sse_event("token", data=content_chunk)
 
         except asyncio.CancelledError:
             is_cancelled = True
@@ -566,6 +500,7 @@ Context:
             )
 
         if not is_cancelled:
+            full_content = "".join(full_content_list)
             if session_id and full_content:
                 # 저장 시 최종 결과물(질의 및 답변)에 대해 PII 마스킹 적용
                 masked_query = self._mask_pii(query)
