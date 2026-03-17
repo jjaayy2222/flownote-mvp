@@ -274,7 +274,7 @@ class ChatService:
                 # 명시적으로 존재하나 문자열이 아닌 경우에만 추적을 위해 경고 로깅
                 if not isinstance(raw_source, str):
                     # [Security] 로그 비대화 방지 및 보안을 위해 출력 값 제한
-                    safe_val = source_path[:100]  # type: ignore
+                    safe_val = source_path[:100]  # type: ignore[index]
                     if len(source_path) > 100:
                         safe_val += "..."
 
@@ -299,7 +299,7 @@ class ChatService:
                         if "/" in source_path
                         else source_path
                     ),
-                    "page_content": self._mask_pii(doc.page_content)[:MAX_SOURCE_PAGE_CONTENT_LEN],  # type: ignore
+                    "page_content": self._mask_pii(doc.page_content)[:MAX_SOURCE_PAGE_CONTENT_LEN],  # type: ignore[index]
                 }
             )
 
@@ -360,7 +360,7 @@ Standalone Question:"""
 
         # [Contract] 모듈 상수 REPHRASE_HISTORY_WINDOW를 사용하여 히스토리 잘라내기.
         # 테스트(test_rephrase_query_truncates_history)가 이 상수를 import하여 동기화됩니다.
-        truncated_history = history[-REPHRASE_HISTORY_WINDOW:]  # type: ignore
+        truncated_history = history[-REPHRASE_HISTORY_WINDOW:]  # type: ignore[index]
         context_history = "\n".join(
             f"{m.role}: {m.content}" for m in truncated_history
         )
@@ -442,7 +442,6 @@ Standalone Question:"""
         is_cancelled = False
         full_content_list: List[str] = []
         ttft_recorded = False
-        search_duration = 0.0
 
         try:
             async for event in agent_graph.astream_events(initial_state, version="v2"):
