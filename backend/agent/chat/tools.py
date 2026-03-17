@@ -11,7 +11,7 @@ _MAX_DOC_CONTENT_CHARS = 1_000
 
 
 @tool
-async def search_documents_tool(query: str, k: int = 5) -> str:
+async def search_documents_tool(query: str, k: int = 5) -> dict:
     """
     RAG 기반 사내 문서 검색 도구입니다.
     사용자의 질문이나 분석 의도와 관련된 지식 베이스 문서를 검색합니다.
@@ -33,7 +33,7 @@ async def search_documents_tool(query: str, k: int = 5) -> str:
         docs = result.results
         if not docs:
             logger.info("[Tool] 검색 결과 없음", extra={"k": k})
-            return "관련된 문서 정보를 찾을 수 없습니다."
+            return {"context": "관련된 문서 정보를 찾을 수 없습니다.", "docs": []}
 
         formatted_results = []
         for i, doc in enumerate(docs, 1):
@@ -51,7 +51,7 @@ async def search_documents_tool(query: str, k: int = 5) -> str:
             "[Tool] 문서 검색 완료",
             extra={"doc_count": len(docs), "total_length": len(final_context)}
         )
-        return final_context
+        return {"context": final_context, "docs": docs}
 
     except Exception as e:
         # [Overall Comment 3 / Comment 2 반영]
@@ -61,4 +61,4 @@ async def search_documents_tool(query: str, k: int = 5) -> str:
             "[Tool] 검색 중 오류 발생",
             extra={"error_type": type(e).__name__}
         )
-        return "문서 검색 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+        return {"context": "문서 검색 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.", "docs": []}

@@ -98,6 +98,7 @@ class PlannerResult(TypedDict):
     search_context: str
     planner_failed: bool
     planner_error_message: str
+    source_documents: list[dict]
 
 
 def _is_simple_greeting(cleaned_query: str) -> bool:
@@ -178,6 +179,7 @@ async def _run_planner_with_tools(
     ctx_parts: List[str] = [base_context] if base_context else []
     planner_failed = False
     planner_error_message = ""
+    source_documents: List[dict] = []
 
     try:
         response = await llm_with_tools.ainvoke(plan_messages)
@@ -222,7 +224,16 @@ async def _run_planner_with_tools(
                     "[Planner] -> search_documents_tool 호출",
                     extra={"query_length": len(query_arg)},
                 )
-                tool_res = str(await search_documents_tool.ainvoke(tool_args))
+                tool_res_raw = await search_documents_tool.ainvoke(tool_args)
+                tool_res: str = ""
+                if isinstance(tool_res_raw, dict):
+                    tool_res = str(tool_res_raw.get("context", ""))
+                    docs_chunk = tool_res_raw.get("docs", [])
+                    if isinstance(docs_chunk, list):
+                        source_documents.extend(docs_chunk)
+                else:
+                    tool_res = str(tool_res_raw)
+
                 ctx_parts.append(
                     f"\n[검색 결과 (쿼리 길이: {len(query_arg)}자)]\n{tool_res}\n"
                 )
@@ -247,6 +258,7 @@ async def _run_planner_with_tools(
         "search_context": raw_context,
         "planner_failed": planner_failed,
         "planner_error_message": planner_error_message,
+        "source_documents": source_documents,
     }
 
 
@@ -335,6 +347,7 @@ async def planner_node(state: AgentState) -> PlannerResult:
             "search_context": "",
             "planner_failed": False,
             "planner_error_message": "",
+            "source_documents": [],
         }
 
     base_context = str(state.get("search_context", "") or "")
@@ -353,6 +366,7 @@ async def planner_node(state: AgentState) -> PlannerResult:
         "search_context": result["search_context"],
         "planner_failed": result["planner_failed"],
         "planner_error_message": result["planner_error_message"],
+        "source_documents": cast(list[dict], result.get("source_documents", [])),
     }
 
 
@@ -389,7 +403,7 @@ async def responder_node(state: AgentState) -> Dict[str, Any]:
     user_context_msg = chat_svc._get_user_context_prompt_text(user_id)
     sys_msg = _build_responder_system_message(user_context_msg, context)
 
-    llm = chat_svc._get_llm(streaming=False)
+    llm = chat_svc._get_llm(streaming=True)
     final_messages = [sys_msg] + messages
 
     try:
