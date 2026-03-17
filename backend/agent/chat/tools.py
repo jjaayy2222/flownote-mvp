@@ -9,6 +9,8 @@ logger = logging.getLogger(__name__)
 
 # 도구 내 단일 문서 최대 길이 상수 (하드코딩 방지)
 _MAX_DOC_CONTENT_CHARS = 1_000
+# [Security] 로그에 포함되는 doc_id의 최대 길이 제한 (PII 경계값 명시)
+_MAX_LOG_DOC_ID_LEN = 50
 
 
 class SerializedDoc(TypedDict):
@@ -59,10 +61,16 @@ def _normalize_doc(doc: Any) -> SerializedDoc:
     # --- id 정규화: Optional[str] — metadata 경고 로깅 콘텍스트를 위해 먼저 추출 ---
     raw_id = doc.get("id") if is_dict else getattr(doc, "id", None)
     normalized_id: Optional[str] = str(raw_id) if raw_id is not None else None
-    # [Security] normalized_id는 이미 Optional[str]이므로 str() 재래핑 불필요.
-    # 우연한 PII 포함 방지를 위해 50자로 잘라서 로깅 컨텍스트로만 활용.
-    # type: ignore[index]: is not None 가드가 있음에도 Pyre2가 str 슬라이스를 오판단하는 False Positive 우회.
-    _doc_id_for_log: Optional[str] = normalized_id[:50] if normalized_id is not None else None  # type: ignore[index]
+    # [주의] normalized_id는 위 63행에서 str(raw_id)로 코어션되었으므로 항상 str | None.
+    # → isinstance(normalized_id, str)은 사실상 "normalized_id is not None"과 동일.
+    # → int, UUID 등 비-str raw_id도 이미 str()로 변환된 뒤 이 가드에 도달하므로 로깅에서 탈락하지 않음.
+    # [Security] _MAX_LOG_DOC_ID_LEN으로 잘라 PII 방지.
+    # type: ignore[index]: isinstance(str) 블록 내에서도 Pyre2가 str 슬라이스를 오판단하는 알려진 False Positive.
+    if isinstance(normalized_id, str):
+        _doc_id_for_log: Optional[str] = normalized_id[:_MAX_LOG_DOC_ID_LEN]  # type: ignore[index]
+    else:
+        # raw_id가 None이었을 때만 이 분기에 도달 (str() 코어션 보장에 의해 str 탈락 없음)
+        _doc_id_for_log = None
 
     # --- content 정규화: str 보장 ---
     raw_content = (
@@ -178,6 +186,6 @@ async def search_documents_tool(query: str, k: int = 5) -> dict:
         # → 경로·서비스명·인프라 정보 누출 방지
         logger.error(
             "[Tool] 검색 중 오류 발생",
-            extra={"error_type": type(e).__name__}
+            extra=_build_log_extra(None, error_type=type(e).__name__),
         )
         return {"context": "문서 검색 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.", "docs": []}
