@@ -46,6 +46,12 @@ def _normalize_doc(doc: Any) -> SerializedDoc:
     """
     is_dict = isinstance(doc, dict)
 
+    # --- id 정규화: Optional[str] — metadata 경고 로깅 콘텍스트를 위해 먼저 추출 ---
+    raw_id = doc.get("id") if is_dict else getattr(doc, "id", None)
+    normalized_id: Optional[str] = str(raw_id) if raw_id is not None else None
+    # [Security] id 값은 디버깅 컨텍스트이지만, 우연한 PII 포함 방지를 위해 50자로 잘라서 사용
+    _doc_id_for_log: Optional[str] = (str(normalized_id)[:50] if normalized_id is not None else None)  # type: ignore[index]
+
     # --- content 정규화: str 보장 ---
     raw_content = (
         doc.get("content", "")
@@ -59,16 +65,12 @@ def _normalize_doc(doc: Any) -> SerializedDoc:
     if isinstance(raw_metadata, dict):
         metadata: Dict[str, Any] = raw_metadata
     else:
-        # 업스트림 스키마 변경이나 오류를 조기에 탐지하기 위해 경고 로깅
+        # 업스트림 스키마 변경이나 오류를 조기에 탐지하기 위해 경고 로깅 (doc_id 식별 콘텍스트 포함)
         logger.warning(
             "[Tool] metadata가 dict가 아닌 타입. 빈 dict로 폴백",
-            extra={"metadata_type": type(raw_metadata).__name__},
+            extra={"metadata_type": type(raw_metadata).__name__, "doc_id": _doc_id_for_log},
         )
         metadata = {}
-
-    # --- id 정규화: Optional[str] ---
-    raw_id = doc.get("id") if is_dict else getattr(doc, "id", None)
-    normalized_id: Optional[str] = str(raw_id) if raw_id is not None else None
 
     # --- score 정규화: Optional[float] ---
     raw_score = doc.get("score") if is_dict else getattr(doc, "score", None)
@@ -81,10 +83,15 @@ def _normalize_doc(doc: Any) -> SerializedDoc:
         except (ValueError, TypeError):
             logger.warning(
                 "[Tool] score 정규화 실패, None으로 폴백",
-                extra={"score_type": type(raw_score).__name__},
+                extra={"score_type": type(raw_score).__name__, "doc_id": _doc_id_for_log},
             )
             normalized_score = None
 
+    # [Engineering Decision] Python TypedDict의 구조적 한계로 인해 반환 시 dict 리터럴은
+    # 타입 체커가 SerializedDoc 계약을 자동 검증하지 않습니다.
+    # 이 cast는 해당 단언이 필요하지만, 부정확한 cast가 아닙니다:
+    # 반환 지점에 도달하는 모든 필드(normalized_id, normalized_score, content, metadata)는
+    # 각각 위에서 명시적으로 타입 어노테이션되었으므로 mypy가 해당 시점까지 개별 유효성을 검증합니다.
     return cast(SerializedDoc, {
         "id": normalized_id,
         "score": normalized_score,
