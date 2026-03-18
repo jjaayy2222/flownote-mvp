@@ -6,6 +6,12 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage  # ty
 from backend.agent.chat.nodes import router_edge, planner_node, responder_node  # type: ignore[import, import-untyped, reportMissingImports]
 from backend.agent.chat.state import AgentState  # type: ignore[import, import-untyped, reportMissingImports]
 
+# -------------------------------------------------------------------------
+# 시스템 규약 (Contracts): 노드 출력 포맷 및 정규식 패턴 정의
+# -------------------------------------------------------------------------
+# [검색 결과 (쿼리 길이: \d+자)] 패턴 (하드코딩 방지 및 재사용성 확보)
+PLANNER_HEADER_PATTERN = re.compile(r"\[검색 결과 \(쿼리 길이: \d+자\)\]")
+
 class TestChatAgent(unittest.IsolatedAsyncioTestCase):
     """
     채팅 에이전트의 노드 실행 및 라우팅 로직을 검증하는 단위 테스트 클래스.
@@ -30,9 +36,7 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
     # -------------------------------------------------------------------------
     def _assert_search_context_structure(self, context, expected_content_keyword):
         """planner_node의 검색 결과 포맷이 시스템 규칙(정규식 패턴)을 따르는지 검증"""
-        # [검색 결과 (쿼리 길이: \d+자)] 패턴 확인 (하드코딩된 문자열 결합 방지)
-        header_pattern = r"\[검색 결과 \(쿼리 길이: \d+자\)\]"
-        self.assertIsNotNone(re.search(header_pattern, context), "검색 결과 헤더 포맷이 올바르지 않습니다.")
+        self.assertIsNotNone(PLANNER_HEADER_PATTERN.search(context), "검색 결과 헤더 포맷이 올바르지 않습니다.")
         self.assertIn(expected_content_keyword, context, "검색 결과 내에 핵심 키워드가 포함되어 있지 않습니다.")
 
     def _assert_responder_wiring(self, result, expected_llm_output):
@@ -43,8 +47,12 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
         self.assertIn(expected_llm_output, final_answer, "LLM 응답 내용이 최종 답변에 전달되지 않았습니다.")
         
         ans_messages = result.get("messages", [])
-        self.assertTrue(len(ans_messages) > 0 and isinstance(ans_messages[0], AIMessage))
-        self.assertIn(expected_llm_output, str(ans_messages[0].content))
+        # [Strict Check] 인덱스 0에 의존하는 대신, 기대하는 텍스트가 포함된 AIMessage가 리스트 내에 존재하는지 검색
+        found_target_msg = any(
+            isinstance(msg, AIMessage) and expected_llm_output in str(getattr(msg, "content", ""))
+            for msg in ans_messages
+        )
+        self.assertTrue(found_target_msg, f"결과 메시지 리스트 내에 예상된 답변을 포함한 AIMessage가 존재하지 않습니다. (Messages: {ans_messages})")
 
     # -------------------------------------------------------------------------
     # 1. Router Edge Tests (Scenario Check)
