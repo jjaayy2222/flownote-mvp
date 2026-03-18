@@ -94,8 +94,11 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
         # Execute
         result = await planner_node(state)
         
-        # Verify State Update
-        self.assertIn("업무 보고서", result.get("search_context", ""))
+        # Verify State Update - [Strict Check] 핵심 비즈니스 정보와 시스템 포맷(Header) 동시 검증
+        search_context = result.get("search_context", "")
+        self.assertIn("업무 보고서", search_context)
+        self.assertIn("[검색 결과 (쿼리 길이:", search_context)  # 시스템 생성 헤더 포맷 유지 확인
+        
         self.assertEqual(len(result.get("source_documents", [])), 1)
         self.assertFalse(result.get("planner_failed", False))
         
@@ -134,11 +137,13 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
     @patch("backend.agent.chat.nodes.get_chat_service")
     async def test_responder_node_state_transition(self, mock_get_svc):
         """Responder 노드가 최종 답변을 생성하고 final_answer를 업데이트하는지 확인"""
+        expected_answer = "보고서에 따르면 프로젝트 A가 진행 중입니다."
+
         # Mock ChatService & LLM
         mock_svc = MagicMock()
         mock_llm = MagicMock()
         # Mock LLM response - AsyncMock 생성 시 return_value를 즉시 할당하여 중복 제거
-        mock_llm.ainvoke = AsyncMock(return_value=AIMessage(content="보고서에 따르면 프로젝트 A가 진행 중입니다."))
+        mock_llm.ainvoke = AsyncMock(return_value=AIMessage(content=expected_answer))
         
         mock_get_svc.return_value = mock_svc
         mock_svc._get_llm.return_value = mock_llm
@@ -150,8 +155,10 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
         
         result = await responder_node(state)
         
-        # Verify State Update - 핵심 의미 포함 여부만 확인
-        self.assertIn("프로젝트 A", result.get("final_answer", ""))
+        # Verify State Update - [Strict Check] Mock 데이터와 100% 일치 및 비어있지 않음 보장
+        final_answer = result.get("final_answer", "")
+        self.assertTrue(len(final_answer) > 0)
+        self.assertEqual(final_answer, expected_answer)
         
         # Null Safety check for message list
         ans_messages = result.get("messages", [])
