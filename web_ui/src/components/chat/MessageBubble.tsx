@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -51,17 +51,21 @@ function FallbackCitation({
   );
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user';
+  // ... (기존 본문은 memo 내부로 포함됨)
 
-  // ai v6: sources는 metadata에서 추출 (route.ts에서 metadata 청크로 전달)
-  const metadata = (message.metadata ?? {}) as Record<string, unknown>;
-  const rawSources = metadata.sources;
-  const sources: SourceItem[] = Array.isArray(rawSources)
-    ? (rawSources as unknown[])
-        .flat()
-        .filter((item): item is SourceItem => typeof item === 'object' && item !== null)
-    : [];
+
+  // [Optimization] useMemo로 메타데이터 소스 캐싱 (Stale Ref 방지 및 Null Safety 강화)
+  const sources: SourceItem[] = useMemo(() => {
+    const metadata = (message.metadata ?? {}) as Record<string, unknown>;
+    const rawSources = metadata.sources;
+    return Array.isArray(rawSources)
+      ? (rawSources as unknown[])
+          .flat()
+          .filter((item): item is SourceItem => typeof item === 'object' && item !== null)
+      : [];
+  }, [message.metadata]);
 
   // Slide-over 상태
   const [selectedSource, setSelectedSource] = useState<SourceItem | null>(null);
@@ -162,18 +166,21 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     },
   };
 
-  const textContent = (message.parts ?? [])
-    .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-    .map((p) => p.text)
-    .join('');
+  // [Performance] 텍스트 및 인용 처리 최적화 (토큰 증분 시에만 연산되도록 useMemo 적용)
+  const processedContent = useMemo(() => {
+    const textContent = (message.parts ?? [])
+      .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+      .map((p) => p.text)
+      .join('');
 
-  // AI 답변 내 [1], [2] 패턴을 인라인 인용 링크로 변환 (isUser가 아닐 때만 적용)
-  // [Optimization] 호이스팅된 INLINE_CITATION_REGEX를 사용하여 성능을 최적화하고 일관성을 유지합니다.
-  const processedContent = isUser
-    ? textContent
-    : textContent.replace(INLINE_CITATION_REGEX, (match, code, num) => {
-        return code ? code : `[${num}](cite:${num})`;
-      });
+    if (isUser) return textContent;
+
+    // AI 답변 내 [1], [2] 패턴을 인라인 인용 링크로 변환
+    // [Optimization] 호이스팅된 INLINE_CITATION_REGEX를 사용하여 성능을 최적화합니다.
+    return textContent.replace(INLINE_CITATION_REGEX, (match, code, num) => {
+      return code ? code : `[${num}](cite:${num})`;
+    });
+  }, [message.parts, isUser]);
 
   return (
     <>
@@ -250,4 +257,4 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       />
     </>
   );
-}
+});
