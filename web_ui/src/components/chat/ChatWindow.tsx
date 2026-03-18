@@ -9,7 +9,7 @@ import { MessageBubble } from './MessageBubble';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Send, Loader2 } from 'lucide-react';
+import { Send, Loader2, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 
 /** 초기 환영 메시지 */
@@ -23,6 +23,10 @@ const WELCOME_MESSAGE: UIMessage = {
     },
   ],
 };
+
+/** 스크롤 관련 상수 */
+const SCROLL_BOTTOM_THRESHOLD = 100; // 바닥으로 간주하는 임계치 (pixel)
+const SHOW_BUTTON_THRESHOLD = 300;   // 하단 이동 버튼을 표시하는 거리 (pixel)
 
 
 
@@ -70,7 +74,22 @@ function getOrCreateStoredId(storageKey: string, prefix: string): string {
 
 export function ChatWindow() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
   const [input, setInput] = useState('');
+  
+  // 마운트 시점 및 스크롤 영역 렌더링 후 뷰포트 엘리먼트 초기화
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      const viewport = scrollContainerRef.current.querySelector(
+        '[data-radix-scroll-area-viewport]'
+      ) as HTMLDivElement;
+      if (viewport) viewportRef.current = viewport;
+    }
+  }, []);
+  
+  // 스마트 스크롤 제어 상태
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+  const [showScrollButton, setShowScrollButton] = useState(false);
 
   // 0. ID 상태 지연 초기화 (Lazy Initializer)
   const [sessionId, setSessionId] = useState<string>(() => 
@@ -85,16 +104,21 @@ export function ChatWindow() {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [alpha, setAlpha] = useState<number>(CHAT_CONFIG.DEFAULT_ALPHA);
 
-  const scrollToBottom = useCallback(() => {
-    if (scrollContainerRef.current) {
-      const viewport = scrollContainerRef.current.querySelector(
-        '[data-radix-scroll-area-viewport]'
-      );
-      if (viewport) {
-        viewport.scrollTop = viewport.scrollHeight;
+  const scrollToBottom = useCallback((force = false) => {
+    const viewport = viewportRef.current;
+    if (viewport && (autoScrollEnabled || force)) {
+      // force일 때는 부드러운 스크롤 애니메이션 효과 적용
+      viewport.scrollTo({
+        top: viewport.scrollHeight,
+        behavior: force ? 'smooth' : 'auto'
+      });
+      
+      if (force) {
+        setAutoScrollEnabled(true);
+        setShowScrollButton(false);
       }
     }
-  }, []);
+  }, [autoScrollEnabled]);
 
   // useChat 옵션 메모이제이션 (성능 최적화 및 불필요한 effect 방지)
   const chatOptions = useMemo(() => ({
@@ -216,9 +240,12 @@ export function ChatWindow() {
   const isLoading = status === 'streaming' || status === 'submitted';
 
   // 새 메시지 수신 시 자동 스크롤
+  // 새 메시지 수신 시 자동 스크롤 (사용자가 위를 보고 있지 않을 때만)
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, isLoading, scrollToBottom]);
+    if (autoScrollEnabled) {
+      scrollToBottom();
+    }
+  }, [messages, isLoading, autoScrollEnabled, scrollToBottom]);
 
   const handleSubmit = useCallback(
     (e?: React.FormEvent) => {
@@ -285,23 +312,61 @@ export function ChatWindow() {
       </div>
 
       {/* 메시지 목록 */}
-      <ScrollArea className="flex-1 w-full" ref={scrollContainerRef}>
-        <div className="flex flex-col gap-0 w-full max-w-4xl mx-auto p-4 py-8">
-          {messages.map((m: UIMessage) => (
-            <MessageBubble key={m.id} message={m} />
-          ))}
+      <div className="flex-1 overflow-hidden relative group">
+        <ScrollArea 
+          className="h-full w-full" 
+          ref={scrollContainerRef}
+          onScrollCapture={() => {
+            const viewport = viewportRef.current;
+            if (!viewport) return;
 
-          {error && (
-            <div className="text-center text-sm text-red-600 bg-red-50 p-4 rounded-xl border border-red-100 max-w-md mx-auto my-6 shadow-sm">
-              <span className="font-semibold block mb-1">통신 에러 발생</span>
-              {error.message || '네트워크 연결이 지연되고 있습니다.'}
-            </div>
-          )}
+            const { scrollTop, scrollHeight, clientHeight } = viewport;
+            const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+            
+            // 바닥 근처인지 판단
+            const isAtBottom = distanceFromBottom < SCROLL_BOTTOM_THRESHOLD;
+            
+            if (isAtBottom) {
+              setAutoScrollEnabled(true);
+              setShowScrollButton(false);
+            } else {
+              // 사용자가 수동으로 위로 스크롤함 -> 자동 스크롤 방지
+              setAutoScrollEnabled(false);
+              
+              // 바닥에서 일정 거리 이상 떨어지면 하단 이동 버튼 표시 (리뷰 반영: 100~300 구간 명시적 리셋)
+              setShowScrollButton(distanceFromBottom > SHOW_BUTTON_THRESHOLD);
+            }
+          }}
+        >
+          <div className="flex flex-col gap-0 w-full max-w-4xl mx-auto p-4 py-8">
+            {messages.map((m: UIMessage) => (
+              <MessageBubble key={m.id} message={m} />
+            ))}
 
-          {/* 스크롤 앵커 */}
-          <div className="h-4" />
-        </div>
-      </ScrollArea>
+            {error && (
+              <div className="text-center text-sm text-red-600 bg-red-50 p-4 rounded-xl border border-red-100 max-w-md mx-auto my-6 shadow-sm">
+                <span className="font-semibold block mb-1">통신 에러 발생</span>
+                {error.message || '네트워크 연결이 지연되고 있습니다.'}
+              </div>
+            )}
+
+            {/* 스크롤 앵커 */}
+            <div className="h-4" />
+          </div>
+        </ScrollArea>
+
+        {/* 하단 이동 버튼 (스마트 스크롤 가드 작동 시 노출) */}
+        {showScrollButton && (
+          <Button
+            size="sm"
+            onClick={() => scrollToBottom(true)}
+            className="absolute bottom-6 right-8 rounded-full shadow-lg border border-slate-200 bg-white/90 backdrop-blur-sm hover:bg-slate-50 text-slate-600 z-20 flex items-center gap-2 px-4 h-10 transition-all animate-in fade-in zoom-in duration-300"
+          >
+            <ChevronDown className="w-4 h-4 text-blue-500" />
+            <span className="text-xs font-bold">최근 메시지로 이동</span>
+          </Button>
+        )}
+      </div>
 
       {/* 입력 영역 */}
       <div className="p-4 bg-white/80 backdrop-blur-md border-t border-slate-200 sticky bottom-0 z-10 w-full">
