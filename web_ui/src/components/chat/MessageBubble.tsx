@@ -77,11 +77,11 @@ function areTextPartsEqual(prev?: UIMessage['parts'], next?: UIMessage['parts'])
  * - 메타데이터 구조 가드 및 얕은 배열 비교 수행
  */
 function areSourcesEqual(
-  prevMeta: UIMessage['metadata'],
-  nextMeta: UIMessage['metadata']
+  prevMeta: UIMessage['metadata'] | undefined,
+  nextMeta: UIMessage['metadata'] | undefined
 ): boolean {
-  const prevS = (prevMeta as { sources?: unknown[] } | undefined)?.sources;
-  const nextS = (nextMeta as { sources?: unknown[] } | undefined)?.sources;
+  const prevS = (prevMeta as { sources?: SourceItem[] } | undefined)?.sources;
+  const nextS = (nextMeta as { sources?: SourceItem[] } | undefined)?.sources;
 
   if (prevS === nextS) return true;
   if (!Array.isArray(prevS) || !Array.isArray(nextS)) return false;
