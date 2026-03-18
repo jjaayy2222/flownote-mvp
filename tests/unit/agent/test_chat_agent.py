@@ -1,4 +1,5 @@
 import unittest
+import copy
 from unittest.mock import MagicMock, patch, AsyncMock
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage  # type: ignore[import, import-untyped, reportMissingImports]
 from backend.agent.chat.nodes import router_edge, planner_node, responder_node  # type: ignore[import, import-untyped, reportMissingImports]
@@ -23,7 +24,7 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
     # -------------------------------------------------------------------------
     def test_router_greeting_scenario(self):
         """일상 대화(인사) 시 responder로 라우팅되는지 확인"""
-        state = self.base_state.copy()
+        state = copy.deepcopy(self.base_state)
         state["messages"] = [HumanMessage(content="안녕! 반가워.")]
         
         result = router_edge(state)
@@ -31,7 +32,7 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
 
     def test_router_query_scenario(self):
         """지식 검색이 필요한 질문 시 planner로 라우팅되는지 확인"""
-        state = self.base_state.copy()
+        state = copy.deepcopy(self.base_state)
         state["messages"] = [HumanMessage(content="오늘의 업무 보고서 내용을 알려줘.")]
         
         result = router_edge(state)
@@ -39,7 +40,7 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
 
     def test_router_complex_reasoning_scenario(self):
         """복잡한 추론이 필요한 질문 시 planner로 라우팅되는지 확인"""
-        state = self.base_state.copy()
+        state = copy.deepcopy(self.base_state)
         state["messages"] = [HumanMessage(content="지난주 판매 데이터를 분석해서 이번주 전략을 세워줘.")]
         
         result = router_edge(state)
@@ -82,7 +83,7 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
             "docs": [{"id": "doc1", "content": "..."}]
         })
         
-        state = self.base_state.copy()
+        state = copy.deepcopy(self.base_state)
         state["messages"] = [HumanMessage(content="보고서 알려줘")]
         
         # Execute
@@ -92,6 +93,9 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
         self.assertIn("3/18 업무 보고서", result.get("search_context", ""))
         self.assertEqual(len(result.get("source_documents", [])), 1)
         self.assertFalse(result.get("planner_failed", False))
+        
+        # Verify Tool Call Arguments
+        mock_tool.ainvoke.assert_called_with({"query": "업무 보고서"})
 
     @patch("backend.agent.chat.nodes.get_chat_service")
     async def test_responder_node_state_transition(self, mock_get_svc):
@@ -107,7 +111,7 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
         # Mock LLM response
         mock_llm.ainvoke.return_value = AIMessage(content="보고서에 따르면 프로젝트 A가 진행 중입니다.")
         
-        state = self.base_state.copy()
+        state = copy.deepcopy(self.base_state)
         state["search_context"] = "프로젝트 A 진행 중."
         state["messages"] = [HumanMessage(content="보고서 알려줘")]
         
