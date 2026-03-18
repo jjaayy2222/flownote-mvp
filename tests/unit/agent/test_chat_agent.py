@@ -121,9 +121,13 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
         # Execute
         result = await planner_node(state)
         
-        # Verify Failure State
+        # Verify Failure State (Atomic Update Check)
         self.assertTrue(result.get("planner_failed"))
         self.assertIn("오류가 발생했습니다", str(result.get("planner_error_message", "")))
+        
+        # [Strict Check] 실패 시 검색 문맥이나 문서 목록이 오염되지 않았는지(초기값 유지) 검증
+        self.assertEqual(result.get("search_context", ""), "")
+        self.assertEqual(result.get("source_documents", []), [])
 
     @patch("backend.agent.chat.nodes.get_chat_service")
     async def test_responder_node_state_transition(self, mock_get_svc):
@@ -131,13 +135,12 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
         # Mock ChatService & LLM
         mock_svc = MagicMock()
         mock_llm = MagicMock()
-        mock_llm.ainvoke = AsyncMock()
+        # Mock LLM response - AsyncMock 생성 시 return_value를 즉시 할당하여 중복 제거
+        mock_llm.ainvoke = AsyncMock(return_value=AIMessage(content="보고서에 따르면 프로젝트 A가 진행 중입니다."))
+        
         mock_get_svc.return_value = mock_svc
         mock_svc._get_llm.return_value = mock_llm
         mock_svc._get_user_context_prompt_text.return_value = "User is a manager."
-        
-        # Mock LLM response
-        mock_llm.ainvoke.return_value = AIMessage(content="보고서에 따르면 프로젝트 A가 진행 중입니다.")
         
         state = copy.deepcopy(self.base_state)
         state["search_context"] = "프로젝트 A 진행 중."
