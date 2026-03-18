@@ -6,6 +6,10 @@ from backend.agent.chat.nodes import router_edge, planner_node, responder_node  
 from backend.agent.chat.state import AgentState  # type: ignore[import, import-untyped, reportMissingImports]
 
 class TestChatAgent(unittest.IsolatedAsyncioTestCase):
+    """
+    채팅 에이전트의 노드 실행 및 라우팅 로직을 검증하는 단위 테스트 클래스.
+    모든 테스트는 독립성을 보장하기 위해 AgentState를 deepcopy하여 사용합니다.
+    """
     def setUp(self):
         self.user_id = "test_user"
         self.session_id = "test_session"
@@ -49,13 +53,14 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
     # -------------------------------------------------------------------------
     # 2. Node Execution & State Transition Tests (Mock LLM)
     # -------------------------------------------------------------------------
+    
     @patch("backend.agent.chat.nodes.get_chat_service")
     @patch("backend.agent.chat.nodes.search_documents_tool")
-    async def test_planner_node_state_transition(self, mock_tool, mock_get_svc):
-        """Planner 노드가 도구를 호출하고 상태(search_context)를 업데이트하는지 확인"""
+    async def test_planner_node_success_with_tool(self, mock_tool, mock_get_svc):
+        """Planner 노드가 도구를 1회 호출하고 상태(search_context)를 정확히 업데이트하는지 검증"""
         # 1. Mock ChatService & LLM
         mock_svc = MagicMock()
-        mock_llm = MagicMock()  # bind_tools is synchronous
+        mock_llm = MagicMock()
         mock_get_svc.return_value = mock_svc
         mock_svc._get_llm.return_value = mock_llm
         
@@ -94,8 +99,31 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result.get("source_documents", [])), 1)
         self.assertFalse(result.get("planner_failed", False))
         
-        # Verify Tool Call Arguments
-        mock_tool.ainvoke.assert_called_with({"query": "업무 보고서"})
+        # [Strict Check] 인자와 호출 횟수 검증
+        mock_tool.ainvoke.assert_called_once_with({"query": "업무 보고서"})
+
+    @patch("backend.agent.chat.nodes.get_chat_service")
+    async def test_planner_node_failure_handling(self, mock_get_svc):
+        """LLM 호출 또는 도구 실행 실패 시 planner_failed 플래그와 에러 메시지가 설정되는지 검증 (Fail-safe)"""
+        # Mock LLM Exception during ainvoke
+        mock_svc = MagicMock()
+        mock_llm = MagicMock()
+        llm_with_tools = MagicMock()
+        llm_with_tools.ainvoke = AsyncMock(side_effect=Exception("API Connection Error"))
+        
+        mock_llm.bind_tools.return_value = llm_with_tools
+        mock_get_svc.return_value = mock_svc
+        mock_svc._get_llm.return_value = mock_llm
+        
+        state = copy.deepcopy(self.base_state)
+        state["messages"] = [HumanMessage(content="Hello")]
+        
+        # Execute
+        result = await planner_node(state)
+        
+        # Verify Failure State
+        self.assertTrue(result.get("planner_failed"))
+        self.assertIn("오류가 발생했습니다", str(result.get("planner_error_message", "")))
 
     @patch("backend.agent.chat.nodes.get_chat_service")
     async def test_responder_node_state_transition(self, mock_get_svc):
@@ -119,7 +147,11 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
         
         # Verify State Update
         self.assertEqual(result.get("final_answer"), "보고서에 따르면 프로젝트 A가 진행 중입니다.")
-        self.assertIsInstance(result["messages"][0], AIMessage)
+        
+        # Null Safety check for message list
+        ans_messages = result.get("messages", [])
+        self.assertTrue(len(ans_messages) > 0)
+        self.assertIsInstance(ans_messages[0], AIMessage)
 
 if __name__ == "__main__":
     unittest.main()
