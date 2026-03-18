@@ -50,25 +50,41 @@ function getTextParts(parts: UIMessage['parts'] | undefined): TextPart[] {
  * [Pure Function] 전체 텍스트 내용만 추출하는 헬퍼 (DRY 원칙)
  * - 실제 문자열이 필요한 렌더링/처리 경로에서만 사용할 것 (리뷰 반영)
  */
-function getTextContent(parts: UIMessage['parts']): string {
+function getTextContent(parts: UIMessage['parts'] | undefined): string {
   return getTextParts(parts).map(p => p.text).join('');
 }
 
 /**
  * [Pure Function] 텍스트 내용 고등 동등성 비교 헬퍼 (리뷰 반영)
- * - 비-텍스트 파트는 무시하고 텍스트 내용만 순서대로 비교
+ * - 새로운 배열 할당 없이 두 개의 포인터로 순회하여 GC 부하 최소화 (Zero-allocation)
+ * - 비-텍스트 파트는 건너뛰어 의미적 콘텐츠 동등성 유지
  */
 function areTextPartsEqual(prev?: UIMessage['parts'], next?: UIMessage['parts']): boolean {
-  if (prev === next) return true;
+  const p = prev ?? [];
+  const n = next ?? [];
+  
+  if (p === n) return true;
 
-  const prevTextParts = getTextParts(prev);
-  const nextTextParts = getTextParts(next);
+  let pi = 0;
+  let ni = 0;
 
-  if (prevTextParts.length !== nextTextParts.length) return false;
+  while (pi < p.length || ni < n.length) {
+    // 1. 이전 파츠에서 텍스트가 아닌 것 건너뛰기
+    while (pi < p.length && p[pi]?.type !== 'text') pi++;
+    // 2. 새로운 파츠에서 텍스트가 아닌 것 건너뛰기
+    while (ni < n.length && n[ni]?.type !== 'text') ni++;
 
-  for (let i = 0; i < prevTextParts.length; i++) {
-    if (prevTextParts[i].text !== nextTextParts[i].text) return false;
+    const pPart = p[pi] as TextPart | undefined;
+    const nPart = n[ni] as TextPart | undefined;
+
+    // 3. 둘 중 하나만 존재하거나 텍스트 내용이 다르면 false
+    if (pPart?.text !== nPart?.text) return false;
+
+    // 4. 다음 파트로 이동
+    if (pi < p.length) pi++;
+    if (ni < n.length) ni++;
   }
+
   return true;
 }
 
@@ -96,7 +112,7 @@ function areSourcesEqual(
 /** 
  * [Pure Function] 메타데이터에서 소스 리스트 추출 (리뷰 반영)
  */
-function extractSources(metadata: UIMessage['metadata']): SourceItem[] {
+function extractSources(metadata: UIMessage['metadata'] | undefined): SourceItem[] {
   const meta = (metadata as Record<string, unknown> | undefined) ?? {};
   const rawSources = meta.sources;
 
