@@ -95,17 +95,19 @@ export function ChatWindow() {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [alpha, setAlpha] = useState<number>(CHAT_CONFIG.DEFAULT_ALPHA);
 
-  // [수정] 성농(Cache), 안정성(Liveness), 타입 안전성을 모두 갖춘 최종 완성형 조회 로직
+  // [수정] 성농(Cache), 안정성(Liveness), 타입 안전성, 소속(Containment)을 모두 갖춘 3중 검증 로직
   const getOrInitViewport = useCallback((): HTMLDivElement | null => {
     const container = scrollContainerRef.current;
     if (!container) return null;
 
-    // 1. [최적화 & 안전성] 캐시된 엘리먼트가 '실제로' 존재하고 문서에 연결되어 있으면 재사용
-    if (viewportRef.current && viewportRef.current.isConnected) {
+    // 1. [최종 무결성] 캐시된 엘리먼트가 있고, (1)문서에 연결되어 있으며, (2)현재 컨테이너의 자식이면 재사용
+    if (viewportRef.current && 
+        viewportRef.current.isConnected && 
+        container.contains(viewportRef.current)) {
       return viewportRef.current;
     }
 
-    // 2. 캐시가 없거나 문서에서 떨어졌다면 새로 조회 (instanceof 가드로 안전성 확보)
+    // 2. 캐시가 없거나 유효하지 않으면 새로 조회 및 타입 체크
     const el = container.querySelector('[data-radix-scroll-area-viewport]');
     const viewport = el instanceof HTMLDivElement ? el : null;
     
