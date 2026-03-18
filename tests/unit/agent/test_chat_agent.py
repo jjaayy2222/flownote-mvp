@@ -1,5 +1,6 @@
 import unittest
 import copy
+import re
 from unittest.mock import MagicMock, patch, AsyncMock
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage  # type: ignore[import, import-untyped, reportMissingImports]
 from backend.agent.chat.nodes import router_edge, planner_node, responder_node  # type: ignore[import, import-untyped, reportMissingImports]
@@ -8,7 +9,8 @@ from backend.agent.chat.state import AgentState  # type: ignore[import, import-u
 class TestChatAgent(unittest.IsolatedAsyncioTestCase):
     """
     채팅 에이전트의 노드 실행 및 라우팅 로직을 검증하는 단위 테스트 클래스.
-    모든 테스트는 독립성을 보장하기 위해 AgentState를 deepcopy하여 사용합니다.
+    모든 테스트는 독립성을 보장하기 위해 AgentState를 deepcopy하여 사용하며,
+    시스템 포맷 변경에 유연하게 대응하도록 정규식 기반 검증을 수행합니다.
     """
     def setUp(self):
         self.user_id = "test_user"
@@ -22,6 +24,27 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
             "planner_error_message": "",
             "source_documents": []
         }
+
+    # -------------------------------------------------------------------------
+    # 0. Test Assert Helpers (Encapsulation of Brittle Logic)
+    # -------------------------------------------------------------------------
+    def _assert_search_context_structure(self, context, expected_content_keyword):
+        """planner_node의 검색 결과 포맷이 시스템 규칙(정규식 패턴)을 따르는지 검증"""
+        # [검색 결과 (쿼리 길이: \d+자)] 패턴 확인 (하드코딩된 문자열 결합 방지)
+        header_pattern = r"\[검색 결과 \(쿼리 길이: \d+자\)\]"
+        self.assertIsNotNone(re.search(header_pattern, context), "검색 결과 헤더 포맷이 올바르지 않습니다.")
+        self.assertIn(expected_content_keyword, context, "검색 결과 내에 핵심 키워드가 포함되어 있지 않습니다.")
+
+    def _assert_responder_wiring(self, result, expected_llm_output):
+        """responder_node가 LLM 출력을 오염 없이 전달하고 배선이 올바른지 검증"""
+        final_answer = result.get("final_answer", "")
+        self.assertTrue(len(final_answer) > 0, "최종 답변이 비어있습니다.")
+        # 의미적 내용이 포함되어 있는지 확인 (미세한 문구 변화에 탄력적으로 대응)
+        self.assertIn(expected_llm_output, final_answer, "LLM 응답 내용이 최종 답변에 전달되지 않았습니다.")
+        
+        ans_messages = result.get("messages", [])
+        self.assertTrue(len(ans_messages) > 0 and isinstance(ans_messages[0], AIMessage))
+        self.assertIn(expected_llm_output, str(ans_messages[0].content))
 
     # -------------------------------------------------------------------------
     # 1. Router Edge Tests (Scenario Check)
@@ -57,32 +80,28 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
     @patch("backend.agent.chat.nodes.get_chat_service")
     @patch("backend.agent.chat.nodes.search_documents_tool")
     async def test_planner_node_success_with_tool(self, mock_tool, mock_get_svc):
-        """Planner 노드가 도구를 1회 호출하고 상태(search_context)를 정확히 업데이트하는지 검증"""
-        # 1. Mock ChatService & LLM
+        """Planner 노드가 도구를 호출하고 구조화된 컨텍스트를 생성하는지 검증"""
+        query_keyword = "업무 보고서"
         mock_svc = MagicMock()
         mock_llm = MagicMock()
         mock_get_svc.return_value = mock_svc
         mock_svc._get_llm.return_value = mock_llm
         
-        # 2. llm.bind_tools should return a runnable with an async ainvoke
         llm_with_tools = MagicMock()
         llm_with_tools.ainvoke = AsyncMock()
         mock_llm.bind_tools.return_value = llm_with_tools
 
-        # 3. Define the tool call we expect
         mock_tool_call = {
             "name": "search_documents_tool",
-            "args": {"query": "업무 보고서"},
+            "args": {"query": query_keyword},
             "id": "call_abc123"
         }
         
-        # 4. Mock the LLM response containing the tool call
-        mock_response = MagicMock(spec=AIMessage)
-        mock_response.content = ""
-        mock_response.tool_calls = [mock_tool_call]
-        llm_with_tools.ainvoke.return_value = mock_response
+        mock_llm_response = MagicMock(spec=AIMessage)
+        mock_llm_response.content = ""
+        mock_llm_response.tool_calls = [mock_tool_call]
+        llm_with_tools.ainvoke.return_value = mock_llm_response
         
-        # 5. Mock the Tool itself (its ainvoke method)
         mock_tool.ainvoke = AsyncMock(return_value={
             "context": "3/18 업무 보고서: 프로젝트 A 진행 중.",
             "docs": [{"id": "doc1", "content": "..."}]
@@ -94,18 +113,17 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
         # Execute
         result = await planner_node(state)
         
-        # Verify State Update
-        self.assertIn("업무 보고서", result.get("search_context", ""))
+        # Verify Structure via Helper (Regex 기반 검증)
+        self._assert_search_context_structure(result.get("search_context", ""), "3/18 업무 보고서")
         self.assertEqual(len(result.get("source_documents", [])), 1)
         self.assertFalse(result.get("planner_failed", False))
         
-        # [Strict Check] 인자와 호출 횟수 검증
-        mock_tool.ainvoke.assert_called_once_with({"query": "업무 보고서"})
+        # Strict Argument Check
+        mock_tool.ainvoke.assert_called_once_with({"query": query_keyword})
 
     @patch("backend.agent.chat.nodes.get_chat_service")
     async def test_planner_node_failure_handling(self, mock_get_svc):
-        """LLM 호출 또는 도구 실행 실패 시 planner_failed 플래그와 에러 메시지가 설정되는지 검증 (Fail-safe)"""
-        # Mock LLM Exception during ainvoke
+        """LLM 장애 시 Fail-safe가 작동하며 상태 원자성이 유지되는지 검증"""
         mock_svc = MagicMock()
         mock_llm = MagicMock()
         llm_with_tools = MagicMock()
@@ -121,24 +139,22 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
         # Execute
         result = await planner_node(state)
         
-        # Verify Failure State (Atomic Update Check)
+        # Verify Failure State (Keyword Check)
         self.assertTrue(result.get("planner_failed"))
-        # 오류 메시지 전체 매칭 대신 핵심 키워드 유무만 확인하여 결합도 낮춤
         self.assertIn("오류가 발생했습니다", str(result.get("planner_error_message", "")))
         
-        # [Strict Check] 실패 시 검색 문맥이나 문서 목록이 오염되지 않았는지(입력 상태 유지) 검증
-        # 하드코딩된 "" 이나 [] 대신 입력값과 직접 비교하여 기본값 변경에 유연하게 대응
+        # Verify Atomic State (No pollution)
         self.assertEqual(result.get("search_context"), state.get("search_context"))
         self.assertEqual(result.get("source_documents"), state.get("source_documents"))
 
     @patch("backend.agent.chat.nodes.get_chat_service")
     async def test_responder_node_state_transition(self, mock_get_svc):
-        """Responder 노드가 최종 답변을 생성하고 final_answer를 업데이트하는지 확인"""
-        # Mock ChatService & LLM
+        """Responder 노드의 배선 및 답변 생성 무결성 검증"""
+        llm_output = "보고서에 따르면 프로젝트 A가 진행 중입니다."
+
         mock_svc = MagicMock()
         mock_llm = MagicMock()
-        # Mock LLM response - AsyncMock 생성 시 return_value를 즉시 할당하여 중복 제거
-        mock_llm.ainvoke = AsyncMock(return_value=AIMessage(content="보고서에 따르면 프로젝트 A가 진행 중입니다."))
+        mock_llm.ainvoke = AsyncMock(return_value=AIMessage(content=llm_output))
         
         mock_get_svc.return_value = mock_svc
         mock_svc._get_llm.return_value = mock_llm
@@ -150,13 +166,8 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
         
         result = await responder_node(state)
         
-        # Verify State Update - 핵심 의미 포함 여부만 확인
-        self.assertIn("프로젝트 A", result.get("final_answer", ""))
-        
-        # Null Safety check for message list
-        ans_messages = result.get("messages", [])
-        self.assertTrue(len(ans_messages) > 0)
-        self.assertIsInstance(ans_messages[0], AIMessage)
+        # Verify Wiring via Helper (Contract Testing)
+        self._assert_responder_wiring(result, llm_output)
 
 if __name__ == "__main__":
     unittest.main()
