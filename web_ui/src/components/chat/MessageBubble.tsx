@@ -41,7 +41,9 @@ function extractSources(metadata: UIMessage['metadata']): SourceItem[] {
   return Array.isArray(rawSources)
     ? (rawSources as unknown[])
         .flat()
-        .filter((item): item is SourceItem => typeof item === 'object' && item !== null)
+        .filter((item): item is SourceItem => 
+          item !== null && typeof item === 'object' && 'id' in item
+        )
     : [];
 }
 
@@ -50,7 +52,9 @@ function extractSources(metadata: UIMessage['metadata']): SourceItem[] {
  */
 function buildProcessedContent(parts: UIMessage['parts'], isUser: boolean): string {
   const textContent = (parts ?? [])
-    .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+    .filter((p): p is { type: 'text'; text: string } => 
+      p !== null && typeof p === 'object' && p.type === 'text'
+    )
     .map((p) => p.text)
     .join('');
 
@@ -271,11 +275,21 @@ export const MessageBubble = memo(
   );
   },
   (prev, next) => {
-    // [PR 리뷰 반영] 메시지 객체 참조가 바뀌어도 ID, 내용 길이, 메타데이터가 같으면 유지
-    return (
-      prev.message.id === next.message.id &&
-      prev.message.parts.length === next.message.parts.length &&
-      prev.message.metadata === next.message.metadata
-    );
+    // 1. 객 참조가 같으면 즉시 트루 (가장 빠른 비교)
+    if (prev.message === next.message) return true;
+
+    // 2. ID가 다르면 무조건 리렌더링
+    if (prev.message.id !== next.message.id) return false;
+    
+    // 3. [PR 리뷰 반영] 정합성 보장을 위한 텍스트 콘텐츠 요약 비교
+    const getSummary = (parts?: UIMessage['parts']) => 
+      parts?.filter(p => p.type === 'text').map(p => (p as { text: string }).text).join('') ?? '';
+    
+    if (getSummary(prev.message.parts) !== getSummary(next.message.parts)) return false;
+    
+    // 4. 메타데이터(sources 등)가 바뀌었는지 확인 (JSON 기반 정밀 비교)
+    if (JSON.stringify(prev.message.metadata) !== JSON.stringify(next.message.metadata)) return false;
+
+    return true;
   }
 );
