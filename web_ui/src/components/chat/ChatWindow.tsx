@@ -25,8 +25,7 @@ const WELCOME_MESSAGE: UIMessage = {
 };
 
 /** 스크롤 관련 상수 */
-const SCROLL_BOTTOM_THRESHOLD = 100; // 바닥으로 간주하는 임계치 (pixel)
-const SHOW_BUTTON_THRESHOLD = 300;   // 하단 이동 버튼을 표시하는 거리 (pixel)
+const SCROLL_THRESHOLD = 100; // 바닥 인식 및 버튼 표시 통합 임계치 (pixel)
 
 
 
@@ -104,10 +103,19 @@ export function ChatWindow() {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [alpha, setAlpha] = useState<number>(CHAT_CONFIG.DEFAULT_ALPHA);
 
+  // [추가] scroll-area viewport를 조회/초기화하는 헬퍼 (DRY 원칙 적용)
+  const getOrInitViewport = useCallback((): HTMLDivElement | null => {
+    if (!viewportRef.current && scrollContainerRef.current) {
+      viewportRef.current = scrollContainerRef.current.querySelector(
+        '[data-radix-scroll-area-viewport]'
+      ) as HTMLDivElement | null;
+    }
+    return viewportRef.current;
+  }, []);
+
   const scrollToBottom = useCallback((force = false) => {
-    const viewport = viewportRef.current;
+    const viewport = getOrInitViewport();
     if (viewport && (autoScrollEnabled || force)) {
-      // force일 때는 부드러운 스크롤 애니메이션 효과 적용
       viewport.scrollTo({
         top: viewport.scrollHeight,
         behavior: force ? 'smooth' : 'auto'
@@ -118,7 +126,28 @@ export function ChatWindow() {
         setShowScrollButton(false);
       }
     }
-  }, [autoScrollEnabled]);
+  }, [autoScrollEnabled, getOrInitViewport]);
+
+  /** 
+   * [수정] 스크롤 이벤트 핸들러 (불필요한 상태 업데이트 가드 추가로 성능 최적화) 
+   */
+  const handleScrollManual = useCallback(() => {
+    const viewport = getOrInitViewport();
+    if (!viewport) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = viewport;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    const isNowAtBottom = distanceFromBottom < SCROLL_THRESHOLD;
+    
+    // [성능 최적화] 상태가 실제로 바뀔 때만 업데이트 호출 (가드 적용)
+    if (isNowAtBottom) {
+      if (!autoScrollEnabled) setAutoScrollEnabled(true);
+      if (showScrollButton) setShowScrollButton(false);
+    } else {
+      if (autoScrollEnabled) setAutoScrollEnabled(false);
+      if (!showScrollButton) setShowScrollButton(true);
+    }
+  }, [autoScrollEnabled, showScrollButton, getOrInitViewport]);
 
   // useChat 옵션 메모이제이션 (성능 최적화 및 불필요한 effect 방지)
   const chatOptions = useMemo(() => ({
@@ -316,27 +345,7 @@ export function ChatWindow() {
         <ScrollArea 
           className="h-full w-full" 
           ref={scrollContainerRef}
-          onScrollCapture={() => {
-            const viewport = viewportRef.current;
-            if (!viewport) return;
-
-            const { scrollTop, scrollHeight, clientHeight } = viewport;
-            const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-            
-            // 바닥 근처인지 판단
-            const isAtBottom = distanceFromBottom < SCROLL_BOTTOM_THRESHOLD;
-            
-            if (isAtBottom) {
-              setAutoScrollEnabled(true);
-              setShowScrollButton(false);
-            } else {
-              // 사용자가 수동으로 위로 스크롤함 -> 자동 스크롤 방지
-              setAutoScrollEnabled(false);
-              
-              // 바닥에서 일정 거리 이상 떨어지면 하단 이동 버튼 표시 (리뷰 반영: 100~300 구간 명시적 리셋)
-              setShowScrollButton(distanceFromBottom > SHOW_BUTTON_THRESHOLD);
-            }
-          }}
+          onScrollCapture={handleScrollManual}
         >
           <div className="flex flex-col gap-0 w-full max-w-4xl mx-auto p-4 py-8">
             {messages.map((m: UIMessage) => (
