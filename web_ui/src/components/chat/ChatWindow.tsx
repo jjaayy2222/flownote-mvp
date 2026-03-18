@@ -73,9 +73,8 @@ function getOrCreateStoredId(storageKey: string, prefix: string): string {
 
 export function ChatWindow() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  // [추가] 성능과 안정성을 모두 잡기 위한 조건부 캐싱용 Ref
-  const lastContainerRef = useRef<HTMLDivElement | null>(null);
-  const viewportCacheRef = useRef<HTMLDivElement | null>(null);
+  // [수정] 캐싱과 타입 안전성을 모두 담당하는 단일 Ref (isConnected 활용)
+  const viewportRef = useRef<HTMLDivElement | null>(null);
 
   const [input, setInput] = useState('');
   
@@ -96,24 +95,23 @@ export function ChatWindow() {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [alpha, setAlpha] = useState<number>(CHAT_CONFIG.DEFAULT_ALPHA);
 
-  // [수정] 성농(Cache)과 안정성(Stale Ref 방지), 타입 안전성을 모두 고려한 스마트 조회
+  // [수정] 성농(Cache), 안정성(Liveness), 타입 안전성, 소속(Containment)을 모두 갖춘 3중 검증 로직
   const getOrInitViewport = useCallback((): HTMLDivElement | null => {
     const container = scrollContainerRef.current;
     if (!container) return null;
 
-    // 1. [최적화] 컨테이너가 이전과 같다면 캐시된 뷰포트 즉시 반환 (DOM 쿼리 생략)
-    if (container === lastContainerRef.current && viewportCacheRef.current) {
-      return viewportCacheRef.current;
+    // 1. [최종 무결성] 캐시된 엘리먼트가 있고, (1)문서에 연결되어 있으며, (2)현재 컨테이너의 자식이면 재사용
+    if (viewportRef.current && 
+        viewportRef.current.isConnected && 
+        container.contains(viewportRef.current)) {
+      return viewportRef.current;
     }
 
-    // 2. [안정성] 컨테이너가 바뀌었거나 캐시가 없으면 새로 조회
-    lastContainerRef.current = container;
+    // 2. 캐시가 없거나 유효하지 않으면 새로 조회 및 타입 체크
     const el = container.querySelector('[data-radix-scroll-area-viewport]');
-    
-    // 3. [타입 안전성] instanceof 가드로 런타임 타입 체크 (리뷰 반영)
     const viewport = el instanceof HTMLDivElement ? el : null;
-    viewportCacheRef.current = viewport;
     
+    viewportRef.current = viewport;
     return viewport;
   }, []);
 
