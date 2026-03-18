@@ -31,6 +31,40 @@ const INLINE_CITATION_REGEX = new RegExp(
 );
 const DEFAULT_FALLBACK_TITLE = "출처 정보 없음";
 
+/** 
+ * [Pure Function] 메타데이터에서 소스 리스트 추출 (리뷰 반영)
+ */
+function extractSources(metadata: UIMessage['metadata']): SourceItem[] {
+  const meta = (metadata ?? {}) as Record<string, unknown>;
+  const rawSources = meta.sources;
+
+  return Array.isArray(rawSources)
+    ? (rawSources as unknown[])
+        .flat()
+        .filter((item): item is SourceItem => 
+          item !== null && typeof item === 'object' && 'id' in item
+        )
+    : [];
+}
+
+/** 
+ * [Pure Function] 텍스트 가공 및 인용 링크 변환 (리뷰 반영)
+ */
+function buildProcessedContent(parts: UIMessage['parts'], isUser: boolean): string {
+  const textContent = (parts ?? [])
+    .filter((p): p is { type: 'text'; text: string } => 
+      p !== null && typeof p === 'object' && p.type === 'text'
+    )
+    .map((p) => p.text)
+    .join('');
+
+  if (isUser) return textContent;
+
+  return textContent.replace(INLINE_CITATION_REGEX, (match, code, num) => {
+    return code ? code : `[${num}](cite:${num})`;
+  });
+}
+
 /**
  * [Refactoring] 유효하지 않거나 누락된 인용 소스에 대한 일관된 폴백 렌더러
  * 리뷰 코멘트에 따라 툴팁 텍스트를 prop으로 분리하여 재사용성을 높였습니다.
@@ -51,21 +85,13 @@ function FallbackCitation({
   );
 }
 
-export const MessageBubble = memo(function MessageBubble({ message }: MessageBubbleProps) {
-  const isUser = message.role === 'user';
-  // ... (기존 본문은 memo 내부로 포함됨)
+export const MessageBubble = memo(
+  function MessageBubble({ message }: MessageBubbleProps) {
+    const isUser = message.role === 'user';
 
 
-  // [Optimization] useMemo로 메타데이터 소스 캐싱 (Stale Ref 방지 및 Null Safety 강화)
-  const sources: SourceItem[] = useMemo(() => {
-    const metadata = (message.metadata ?? {}) as Record<string, unknown>;
-    const rawSources = metadata.sources;
-    return Array.isArray(rawSources)
-      ? (rawSources as unknown[])
-          .flat()
-          .filter((item): item is SourceItem => typeof item === 'object' && item !== null)
-      : [];
-  }, [message.metadata]);
+  // [Optimization] 순수 함수와 useMemo를 결합한 소스 추출 (유지보수성 향상)
+  const sources = useMemo(() => extractSources(message.metadata), [message.metadata]);
 
   // Slide-over 상태
   const [selectedSource, setSelectedSource] = useState<SourceItem | null>(null);
@@ -166,21 +192,11 @@ export const MessageBubble = memo(function MessageBubble({ message }: MessageBub
     },
   };
 
-  // [Performance] 텍스트 및 인용 처리 최적화 (토큰 증분 시에만 연산되도록 useMemo 적용)
-  const processedContent = useMemo(() => {
-    const textContent = (message.parts ?? [])
-      .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-      .map((p) => p.text)
-      .join('');
-
-    if (isUser) return textContent;
-
-    // AI 답변 내 [1], [2] 패턴을 인라인 인용 링크로 변환
-    // [Optimization] 호이스팅된 INLINE_CITATION_REGEX를 사용하여 성능을 최적화합니다.
-    return textContent.replace(INLINE_CITATION_REGEX, (match, code, num) => {
-      return code ? code : `[${num}](cite:${num})`;
-    });
-  }, [message.parts, isUser]);
+  // [Performance] 순수 함수와 useMemo를 결합한 콘텐츠 변환 (가독성 향상)
+  const processedContent = useMemo(
+    () => buildProcessedContent(message.parts, isUser),
+    [message.parts, isUser]
+  );
 
   return (
     <>
@@ -257,4 +273,23 @@ export const MessageBubble = memo(function MessageBubble({ message }: MessageBub
       />
     </>
   );
-});
+  },
+  (prev, next) => {
+    // 1. 객 참조가 같으면 즉시 트루 (가장 빠른 비교)
+    if (prev.message === next.message) return true;
+
+    // 2. ID가 다르면 무조건 리렌더링
+    if (prev.message.id !== next.message.id) return false;
+    
+    // 3. [PR 리뷰 반영] 정합성 보장을 위한 텍스트 콘텐츠 요약 비교
+    const getSummary = (parts?: UIMessage['parts']) => 
+      parts?.filter(p => p.type === 'text').map(p => (p as { text: string }).text).join('') ?? '';
+    
+    if (getSummary(prev.message.parts) !== getSummary(next.message.parts)) return false;
+    
+    // 4. 메타데이터(sources 등)가 바뀌었는지 확인 (JSON 기반 정밀 비교)
+    if (JSON.stringify(prev.message.metadata) !== JSON.stringify(next.message.metadata)) return false;
+
+    return true;
+  }
+);
