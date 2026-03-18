@@ -21,6 +21,11 @@ type CodeProps = React.ComponentPropsWithoutRef<'code'> & {
   inline?: boolean;
 };
 
+/** 
+ * [Types] 메시지 파트 중 텍스트 타입 정의 (리뷰 반영) 
+ */
+type TextPart = { type: 'text'; text: string };
+
 // [Constants] 인용 관련 공용 패턴 및 기본 텍스트
 // 중앙 집중화를 통해 정규식 불일치 가능성을 원천 차단했습니다.
 const CITATION_ID_FRAGMENT = '(?:[1-9]\\d*)';
@@ -34,18 +39,51 @@ const DEFAULT_FALLBACK_TITLE = "출처 정보 없음";
 /** 
  * [Pure Function] 텍스트 파트만 안전하게 추출하는 헬퍼 (리뷰 반영)
  */
-function getTextParts(parts: UIMessage['parts']): { type: 'text'; text: string }[] {
+function getTextParts(parts: UIMessage['parts']): TextPart[] {
   return (parts ?? []).filter(
-    (p): p is { type: 'text'; text: string } =>
+    (p): p is TextPart =>
       p !== null && typeof p === 'object' && p.type === 'text'
   );
 }
 
 /** 
  * [Pure Function] 전체 텍스트 내용만 추출하는 헬퍼 (DRY 원칙)
+ * - 실제 문자열이 필요한 렌더링/처리 경로에서만 사용할 것 (리뷰 반영)
  */
 function getTextContent(parts: UIMessage['parts']): string {
   return getTextParts(parts).map(p => p.text).join('');
+}
+
+/**
+ * [Pure Function] 텍스트 내용 고속 비교 헬퍼 (리뷰 반영)
+ * - 문자열 할당 없이 조기 종료 (Performance)
+ */
+function areTextPartsEqual(prev?: UIMessage['parts'], next?: UIMessage['parts']): boolean {
+  const pArr = prev ?? [];
+  const nArr = next ?? [];
+  
+  if (pArr === nArr) return true;
+  if (pArr.length !== nArr.length) return false;
+
+  for (let i = 0; i < pArr.length; i++) {
+    const p = pArr[i];
+    const n = nArr[i];
+    
+    // 구조가 다르거나 텍스트가 다르면 即 false
+    if (p?.type !== 'text' || n?.type !== 'text' || (p as TextPart).text !== (n as TextPart).text) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * [Pure Function] 배열 얕은 비교 헬퍼 (리뷰 반영)
+ */
+function shallowArrayEqual<T>(a: T[] | undefined, b: T[] | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  return a.every((v, i) => v === b[i]);
 }
 
 /** 
@@ -293,13 +331,14 @@ export const MessageBubble = memo(
     // 2. ID가 다르면 무조건 리렌더링
     if (prev.message.id !== next.message.id) return false;
     
-    // 3. [PR 리뷰 반영] getTextContent 공용 헬퍼를 사용한 일관된 텍스트 비교
-    if (getTextContent(prev.message.parts) !== getTextContent(next.message.parts)) return false;
-
-    // 4. 메타데이터 중 렌더링에 영향 주는 핵심 필드(sources) 참조 비교
-    const prevMeta = prev.message.metadata as Record<string, unknown> | undefined;
-    const nextMeta = next.message.metadata as Record<string, unknown> | undefined;
-    if (prevMeta?.sources !== nextMeta?.sources) return false;
+    // 3. [PR 리뷰 반영] 할당 없는 고속 콘텐트 비교 도입
+    if (!areTextPartsEqual(prev.message.parts, next.message.parts)) return false;
+    
+    // 4. [PR 리뷰 반영] 얕은 배열 비교를 통한 메타데이터 동등성 체크 (Stability 강화)
+    const prevSources = (prev.message.metadata as Record<string, unknown> | undefined)?.sources;
+    const nextSources = (next.message.metadata as Record<string, unknown> | undefined)?.sources;
+    
+    if (!shallowArrayEqual(prevSources as unknown[], nextSources as unknown[])) return false;
 
     return true;
   }
