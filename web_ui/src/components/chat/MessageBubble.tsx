@@ -42,12 +42,33 @@ function getTextParts(parts: UIMessage['parts']): { type: 'text'; text: string }
 }
 
 /** 
+ * [Pure Function] 전체 텍스트 내용만 추출하는 헬퍼 (DRY 원칙)
+ */
+function getTextContent(parts: UIMessage['parts']): string {
+  return getTextParts(parts).map(p => p.text).join('');
+}
+
+/** 
+ * [Pure Function] 메타데이터에서 소스 리스트 추출 (리뷰 반영)
+ */
+function extractSources(metadata: UIMessage['metadata']): SourceItem[] {
+  const meta = (metadata as Record<string, unknown> | undefined) ?? {};
+  const rawSources = meta.sources;
+
+  return Array.isArray(rawSources)
+    ? (rawSources as unknown[])
+        .flat()
+        .filter((item): item is SourceItem => 
+          item !== null && typeof item === 'object' && 'id' in item
+        )
+    : [];
+}
+
+/** 
  * [Pure Function] 텍스트 가공 및 인용 링크 변환 (리뷰 반영)
  */
 function buildProcessedContent(parts: UIMessage['parts'], isUser: boolean): string {
-  const textContent = getTextParts(parts)
-    .map((p) => p.text)
-    .join('');
+  const textContent = getTextContent(parts);
 
   if (isUser) return textContent;
 
@@ -82,17 +103,7 @@ export const MessageBubble = memo(
 
 
   // [Optimization] 순수 함수와 useMemo를 결합한 소스 추출 (유지보수성 향상)
-  const sources = useMemo(() => {
-    const meta = (message.metadata ?? {}) as Record<string, unknown>;
-    const rawSources = meta.sources;
-    return Array.isArray(rawSources)
-      ? (rawSources as unknown[])
-          .flat()
-          .filter((item): item is SourceItem => 
-            item !== null && typeof item === 'object' && 'id' in item
-          )
-      : [];
-  }, [message.metadata]);
+  const sources = useMemo(() => extractSources(message.metadata), [message.metadata]);
 
   // Slide-over 상태
   const [selectedSource, setSelectedSource] = useState<SourceItem | null>(null);
@@ -282,17 +293,13 @@ export const MessageBubble = memo(
     // 2. ID가 다르면 무조건 리렌더링
     if (prev.message.id !== next.message.id) return false;
     
-    // 3. [PR 리뷰 반영] getTextParts 헬퍼를 사용한 일관된 텍스트 합계 비교
-    const prevText = getTextParts(prev.message.parts).map(p => p.text).join('');
-    const nextText = getTextParts(next.message.parts).map(p => p.text).join('');
-    
-    if (prevText !== nextText) return false;
+    // 3. [PR 리뷰 반영] getTextContent 공용 헬퍼를 사용한 일관된 텍스트 비교
+    if (getTextContent(prev.message.parts) !== getTextContent(next.message.parts)) return false;
+
     // 4. 메타데이터 중 렌더링에 영향 주는 핵심 필드(sources) 참조 비교
-    // (JSON.stringify 대신 필드 레벨 비교로 성능 최적화)
-    const prevSources = (prev.message.metadata as Record<string, unknown> | undefined)?.sources;
-    const nextSources = (next.message.metadata as Record<string, unknown> | undefined)?.sources;
-    
-    if (prevSources !== nextSources) return false;
+    const prevMeta = prev.message.metadata as Record<string, unknown> | undefined;
+    const nextMeta = next.message.metadata as Record<string, unknown> | undefined;
+    if (prevMeta?.sources !== nextMeta?.sources) return false;
 
     return true;
   }
