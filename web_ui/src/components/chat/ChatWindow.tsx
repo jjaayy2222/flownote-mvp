@@ -24,6 +24,10 @@ const WELCOME_MESSAGE: UIMessage = {
   ],
 };
 
+/** 스크롤 관련 상수 */
+const SCROLL_BOTTOM_THRESHOLD = 100; // 바닥으로 간주하는 임계치 (pixel)
+const SHOW_BUTTON_THRESHOLD = 300;   // 하단 이동 버튼을 표시하는 거리 (pixel)
+
 
 
 const defaultChatTransport = new DefaultChatTransport({ api: '/api/chat' });
@@ -70,7 +74,18 @@ function getOrCreateStoredId(storageKey: string, prefix: string): string {
 
 export function ChatWindow() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
   const [input, setInput] = useState('');
+  
+  // 마운트 시점 및 스크롤 영역 렌더링 후 뷰포트 엘리먼트 초기화
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      const viewport = scrollContainerRef.current.querySelector(
+        '[data-radix-scroll-area-viewport]'
+      ) as HTMLDivElement;
+      if (viewport) viewportRef.current = viewport;
+    }
+  }, []);
   
   // 스마트 스크롤 제어 상태
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
@@ -90,22 +105,17 @@ export function ChatWindow() {
   const [alpha, setAlpha] = useState<number>(CHAT_CONFIG.DEFAULT_ALPHA);
 
   const scrollToBottom = useCallback((force = false) => {
-    if (scrollContainerRef.current && (autoScrollEnabled || force)) {
-      const viewport = scrollContainerRef.current.querySelector(
-        '[data-radix-scroll-area-viewport]'
-      ) as HTMLDivElement;
+    const viewport = viewportRef.current;
+    if (viewport && (autoScrollEnabled || force)) {
+      // force일 때는 부드러운 스크롤 애니메이션 효과 적용
+      viewport.scrollTo({
+        top: viewport.scrollHeight,
+        behavior: force ? 'smooth' : 'auto'
+      });
       
-      if (viewport) {
-        // force일 때는 부드러운 스크롤 애니메이션 효과 적용
-        viewport.scrollTo({
-          top: viewport.scrollHeight,
-          behavior: force ? 'smooth' : 'auto'
-        });
-        
-        if (force) {
-          setAutoScrollEnabled(true);
-          setShowScrollButton(false);
-        }
+      if (force) {
+        setAutoScrollEnabled(true);
+        setShowScrollButton(false);
       }
     }
   }, [autoScrollEnabled]);
@@ -307,12 +317,14 @@ export function ChatWindow() {
           className="h-full w-full" 
           ref={scrollContainerRef}
           onScrollCapture={() => {
-            const viewport = scrollContainerRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLDivElement;
+            const viewport = viewportRef.current;
             if (!viewport) return;
 
             const { scrollTop, scrollHeight, clientHeight } = viewport;
-            // 바닥에서 100px 이내면 바닥으로 간주
-            const isAtBottom = scrollHeight - scrollTop - clientHeight < 100;
+            const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+            
+            // 바닥 근처인지 판단
+            const isAtBottom = distanceFromBottom < SCROLL_BOTTOM_THRESHOLD;
             
             if (isAtBottom) {
               setAutoScrollEnabled(true);
@@ -320,10 +332,9 @@ export function ChatWindow() {
             } else {
               // 사용자가 수동으로 위로 스크롤함 -> 자동 스크롤 방지
               setAutoScrollEnabled(false);
-              // 바닥에서 300px 이상 떨어지면 하단 이동 버튼 표시
-              if (scrollHeight - scrollTop - clientHeight > 300) {
-                setShowScrollButton(true);
-              }
+              
+              // 바닥에서 일정 거리 이상 떨어지면 하단 이동 버튼 표시 (리뷰 반영: 100~300 구간 명시적 리셋)
+              setShowScrollButton(distanceFromBottom > SHOW_BUTTON_THRESHOLD);
             }
           }}
         >
