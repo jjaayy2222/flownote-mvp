@@ -73,18 +73,7 @@ function getOrCreateStoredId(storageKey: string, prefix: string): string {
 
 export function ChatWindow() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const viewportRef = useRef<HTMLDivElement | null>(null);
   const [input, setInput] = useState('');
-  
-  // 마운트 시점 및 스크롤 영역 렌더링 후 뷰포트 엘리먼트 초기화
-  useEffect(() => {
-    if (scrollContainerRef.current) {
-      const viewport = scrollContainerRef.current.querySelector(
-        '[data-radix-scroll-area-viewport]'
-      ) as HTMLDivElement;
-      if (viewport) viewportRef.current = viewport;
-    }
-  }, []);
   
   // 스마트 스크롤 제어 상태
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
@@ -103,14 +92,11 @@ export function ChatWindow() {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [alpha, setAlpha] = useState<number>(CHAT_CONFIG.DEFAULT_ALPHA);
 
-  // [추가] scroll-area viewport를 조회/초기화하는 헬퍼 (DRY 원칙 적용)
+  // [수정] scroll-area viewport를 항상 최신 ref에서 조회 (Stale Ref 방지)
   const getOrInitViewport = useCallback((): HTMLDivElement | null => {
-    if (!viewportRef.current && scrollContainerRef.current) {
-      viewportRef.current = scrollContainerRef.current.querySelector(
-        '[data-radix-scroll-area-viewport]'
-      ) as HTMLDivElement | null;
-    }
-    return viewportRef.current;
+    return scrollContainerRef.current?.querySelector(
+      '[data-radix-scroll-area-viewport]'
+    ) as HTMLDivElement | null;
   }, []);
 
   const scrollToBottom = useCallback((force = false) => {
