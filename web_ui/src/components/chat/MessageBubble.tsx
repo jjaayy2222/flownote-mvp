@@ -32,10 +32,27 @@ const INLINE_CITATION_REGEX = new RegExp(
 const DEFAULT_FALLBACK_TITLE = "출처 정보 없음";
 
 /** 
+ * [Pure Function] 텍스트 파트만 안전하게 추출하는 헬퍼 (리뷰 반영)
+ */
+function getTextParts(parts: UIMessage['parts']): { type: 'text'; text: string }[] {
+  return (parts ?? []).filter(
+    (p): p is { type: 'text'; text: string } =>
+      p !== null && typeof p === 'object' && p.type === 'text'
+  );
+}
+
+/** 
+ * [Pure Function] 전체 텍스트 내용만 추출하는 헬퍼 (DRY 원칙)
+ */
+function getTextContent(parts: UIMessage['parts']): string {
+  return getTextParts(parts).map(p => p.text).join('');
+}
+
+/** 
  * [Pure Function] 메타데이터에서 소스 리스트 추출 (리뷰 반영)
  */
 function extractSources(metadata: UIMessage['metadata']): SourceItem[] {
-  const meta = (metadata ?? {}) as Record<string, unknown>;
+  const meta = (metadata as Record<string, unknown> | undefined) ?? {};
   const rawSources = meta.sources;
 
   return Array.isArray(rawSources)
@@ -51,12 +68,7 @@ function extractSources(metadata: UIMessage['metadata']): SourceItem[] {
  * [Pure Function] 텍스트 가공 및 인용 링크 변환 (리뷰 반영)
  */
 function buildProcessedContent(parts: UIMessage['parts'], isUser: boolean): string {
-  const textContent = (parts ?? [])
-    .filter((p): p is { type: 'text'; text: string } => 
-      p !== null && typeof p === 'object' && p.type === 'text'
-    )
-    .map((p) => p.text)
-    .join('');
+  const textContent = getTextContent(parts);
 
   if (isUser) return textContent;
 
@@ -275,20 +287,19 @@ export const MessageBubble = memo(
   );
   },
   (prev, next) => {
-    // 1. 객 참조가 같으면 즉시 트루 (가장 빠른 비교)
+    // 1. 객체 참조가 같으면 즉시 트루 (가장 빠른 비교)
     if (prev.message === next.message) return true;
 
     // 2. ID가 다르면 무조건 리렌더링
     if (prev.message.id !== next.message.id) return false;
     
-    // 3. [PR 리뷰 반영] 정합성 보장을 위한 텍스트 콘텐츠 요약 비교
-    const getSummary = (parts?: UIMessage['parts']) => 
-      parts?.filter(p => p.type === 'text').map(p => (p as { text: string }).text).join('') ?? '';
-    
-    if (getSummary(prev.message.parts) !== getSummary(next.message.parts)) return false;
-    
-    // 4. 메타데이터(sources 등)가 바뀌었는지 확인 (JSON 기반 정밀 비교)
-    if (JSON.stringify(prev.message.metadata) !== JSON.stringify(next.message.metadata)) return false;
+    // 3. [PR 리뷰 반영] getTextContent 공용 헬퍼를 사용한 일관된 텍스트 비교
+    if (getTextContent(prev.message.parts) !== getTextContent(next.message.parts)) return false;
+
+    // 4. 메타데이터 중 렌더링에 영향 주는 핵심 필드(sources) 참조 비교
+    const prevMeta = prev.message.metadata as Record<string, unknown> | undefined;
+    const nextMeta = next.message.metadata as Record<string, unknown> | undefined;
+    if (prevMeta?.sources !== nextMeta?.sources) return false;
 
     return true;
   }
