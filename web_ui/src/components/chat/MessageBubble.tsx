@@ -50,26 +50,48 @@ function getTextParts(parts: UIMessage['parts'] | undefined): TextPart[] {
  * [Pure Function] 전체 텍스트 내용만 추출하는 헬퍼 (DRY 원칙)
  * - 실제 문자열이 필요한 렌더링/처리 경로에서만 사용할 것 (리뷰 반영)
  */
-function getTextContent(parts: UIMessage['parts']): string {
+function getTextContent(parts: UIMessage['parts'] | undefined): string {
   return getTextParts(parts).map(p => p.text).join('');
 }
 
 /**
+ * [Pure Function] 텍스트 파트만 지연 평가(Lazy)로 순회하는 제너레이터 (리뷰 반영)
+ * - 새로운 배열 할당 없이 필요한 파트만 하나씩 반환 (Zero-allocation)
+ */
+function* iterateTextParts(parts: UIMessage['parts'] | undefined): Generator<TextPart, void> {
+  const arr = parts ?? [];
+  for (let i = 0; i < arr.length; i++) {
+    const part = arr[i];
+    // 타입 가드를 통해 안전하게 텍스트 파트만 선별
+    if (part !== null && typeof part === 'object' && part.type === 'text') {
+      yield part as TextPart;
+    }
+  }
+}
+
+/**
  * [Pure Function] 텍스트 내용 고등 동등성 비교 헬퍼 (리뷰 반영)
- * - 비-텍스트 파트는 무시하고 텍스트 내용만 순서대로 비교
+ * - 제너레이터를 활용하여 메모리 할당 없이 의미적 콘텐츠 동등성 검증
  */
 function areTextPartsEqual(prev?: UIMessage['parts'], next?: UIMessage['parts']): boolean {
   if (prev === next) return true;
 
-  const prevTextParts = getTextParts(prev);
-  const nextTextParts = getTextParts(next);
+  const pIter = iterateTextParts(prev);
+  const nIter = iterateTextParts(next);
 
-  if (prevTextParts.length !== nextTextParts.length) return false;
+  while (true) {
+    const pRes = pIter.next();
+    const nRes = nIter.next();
 
-  for (let i = 0; i < prevTextParts.length; i++) {
-    if (prevTextParts[i].text !== nextTextParts[i].text) return false;
+    // 둘 중 하나가 끝났을 때의 처리
+    if (pRes.done || nRes.done) {
+      // 두 이터레이터가 동시에 종료되어야만 동등함 (텍스트 파트 개수 일치 확인)
+      return pRes.done === nRes.done;
+    }
+
+    // 텍스트 내용이 다르면 리렌더링 트리거
+    if (pRes.value.text !== nRes.value.text) return false;
   }
-  return true;
 }
 
 /**
@@ -96,7 +118,7 @@ function areSourcesEqual(
 /** 
  * [Pure Function] 메타데이터에서 소스 리스트 추출 (리뷰 반영)
  */
-function extractSources(metadata: UIMessage['metadata']): SourceItem[] {
+function extractSources(metadata: UIMessage['metadata'] | undefined): SourceItem[] {
   const meta = (metadata as Record<string, unknown> | undefined) ?? {};
   const rawSources = meta.sources;
 
