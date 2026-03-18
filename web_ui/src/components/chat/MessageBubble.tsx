@@ -56,24 +56,35 @@ function getTextContent(parts: UIMessage['parts']): string {
 
 /**
  * [Pure Function] 텍스트 내용 고속 비교 헬퍼 (리뷰 반영)
- * - 문자열 할당 없이 조기 종료 (Performance)
+ * - 새로운 배열/문자열 할당 없이 두 포인터로 순회 (Zero-allocation)
+ * - 비-텍스트 파트는 건너뛰어 이전 동작(getTextContent 기반 비교)과 의미적 동등성 유지
  */
 function areTextPartsEqual(prev?: UIMessage['parts'], next?: UIMessage['parts']): boolean {
-  const pArr = prev ?? [];
-  const nArr = next ?? [];
+  const p = prev ?? [];
+  const n = next ?? [];
   
-  if (pArr === nArr) return true;
-  if (pArr.length !== nArr.length) return false;
+  if (p === n) return true;
 
-  for (let i = 0; i < pArr.length; i++) {
-    const p = pArr[i];
-    const n = nArr[i];
-    
-    // 구조가 다르거나 텍스트가 다르면 即 false
-    if (p?.type !== 'text' || n?.type !== 'text' || (p as TextPart).text !== (n as TextPart).text) {
-      return false;
-    }
+  let pi = 0;
+  let ni = 0;
+
+  while (pi < p.length || ni < n.length) {
+    // 이전 파츠에서 텍스트가 아닌 것 건너뛰기
+    while (pi < p.length && p[pi]?.type !== 'text') pi++;
+    // 새로운 파츠에서 텍스트가 아닌 것 건너뛰기
+    while (ni < n.length && n[ni]?.type !== 'text') ni++;
+
+    const pPart = p[pi] as TextPart | undefined;
+    const nPart = n[ni] as TextPart | undefined;
+
+    // 둘 중 하나만 끝났거나 텍스트 내용이 다르면 false
+    if (pPart?.text !== nPart?.text) return false;
+
+    // 다음 파트로 이동
+    if (pi < p.length) pi++;
+    if (ni < n.length) ni++;
   }
+
   return true;
 }
 
@@ -335,10 +346,11 @@ export const MessageBubble = memo(
     if (!areTextPartsEqual(prev.message.parts, next.message.parts)) return false;
     
     // 4. [PR 리뷰 반영] 얕은 배열 비교를 통한 메타데이터 동등성 체크 (Stability 강화)
-    const prevSources = (prev.message.metadata as Record<string, unknown> | undefined)?.sources;
-    const nextSources = (next.message.metadata as Record<string, unknown> | undefined)?.sources;
+    // 구조적 캐스팅을 통해 타입 안정성 확보
+    const prevSources = (prev.message.metadata as { sources?: unknown[] } | undefined)?.sources;
+    const nextSources = (next.message.metadata as { sources?: unknown[] } | undefined)?.sources;
     
-    if (!shallowArrayEqual(prevSources as unknown[], nextSources as unknown[])) return false;
+    if (!shallowArrayEqual(prevSources, nextSources)) return false;
 
     return true;
   }
