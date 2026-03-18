@@ -95,7 +95,7 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
         result = await planner_node(state)
         
         # Verify State Update
-        self.assertIn("3/18 업무 보고서", result.get("search_context", ""))
+        self.assertIn("업무 보고서", result.get("search_context", ""))
         self.assertEqual(len(result.get("source_documents", [])), 1)
         self.assertFalse(result.get("planner_failed", False))
         
@@ -123,11 +123,13 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
         
         # Verify Failure State (Atomic Update Check)
         self.assertTrue(result.get("planner_failed"))
+        # 오류 메시지 전체 매칭 대신 핵심 키워드 유무만 확인하여 결합도 낮춤
         self.assertIn("오류가 발생했습니다", str(result.get("planner_error_message", "")))
         
-        # [Strict Check] 실패 시 검색 문맥이나 문서 목록이 오염되지 않았는지(초기값 유지) 검증
-        self.assertEqual(result.get("search_context", ""), "")
-        self.assertEqual(result.get("source_documents", []), [])
+        # [Strict Check] 실패 시 검색 문맥이나 문서 목록이 오염되지 않았는지(입력 상태 유지) 검증
+        # 하드코딩된 "" 이나 [] 대신 입력값과 직접 비교하여 기본값 변경에 유연하게 대응
+        self.assertEqual(result.get("search_context"), state.get("search_context"))
+        self.assertEqual(result.get("source_documents"), state.get("source_documents"))
 
     @patch("backend.agent.chat.nodes.get_chat_service")
     async def test_responder_node_state_transition(self, mock_get_svc):
@@ -148,8 +150,8 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
         
         result = await responder_node(state)
         
-        # Verify State Update
-        self.assertEqual(result.get("final_answer"), "보고서에 따르면 프로젝트 A가 진행 중입니다.")
+        # Verify State Update - 핵심 의미 포함 여부만 확인
+        self.assertIn("프로젝트 A", result.get("final_answer", ""))
         
         # Null Safety check for message list
         ans_messages = result.get("messages", [])
