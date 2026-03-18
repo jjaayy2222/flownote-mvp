@@ -39,7 +39,7 @@ const DEFAULT_FALLBACK_TITLE = "출처 정보 없음";
 /** 
  * [Pure Function] 텍스트 파트만 안전하게 추출하는 헬퍼 (리뷰 반영)
  */
-function getTextParts(parts: UIMessage['parts']): TextPart[] {
+function getTextParts(parts: UIMessage['parts'] | undefined): TextPart[] {
   return (parts ?? []).filter(
     (p): p is TextPart =>
       p !== null && typeof p === 'object' && p.type === 'text'
@@ -55,46 +55,42 @@ function getTextContent(parts: UIMessage['parts']): string {
 }
 
 /**
- * [Pure Function] 텍스트 내용 고속 비교 헬퍼 (리뷰 반영)
- * - 새로운 배열/문자열 할당 없이 두 포인터로 순회 (Zero-allocation)
- * - 비-텍스트 파트는 건너뛰어 이전 동작(getTextContent 기반 비교)과 의미적 동등성 유지
+ * [Pure Function] 텍스트 내용 고등 동등성 비교 헬퍼 (리뷰 반영)
+ * - 비-텍스트 파트는 무시하고 텍스트 내용만 순서대로 비교
  */
 function areTextPartsEqual(prev?: UIMessage['parts'], next?: UIMessage['parts']): boolean {
-  const p = prev ?? [];
-  const n = next ?? [];
-  
-  if (p === n) return true;
+  if (prev === next) return true;
 
-  let pi = 0;
-  let ni = 0;
+  const prevTextParts = getTextParts(prev);
+  const nextTextParts = getTextParts(next);
 
-  while (pi < p.length || ni < n.length) {
-    // 이전 파츠에서 텍스트가 아닌 것 건너뛰기
-    while (pi < p.length && p[pi]?.type !== 'text') pi++;
-    // 새로운 파츠에서 텍스트가 아닌 것 건너뛰기
-    while (ni < n.length && n[ni]?.type !== 'text') ni++;
+  if (prevTextParts.length !== nextTextParts.length) return false;
 
-    const pPart = p[pi] as TextPart | undefined;
-    const nPart = n[ni] as TextPart | undefined;
-
-    // 둘 중 하나만 끝났거나 텍스트 내용이 다르면 false
-    if (pPart?.text !== nPart?.text) return false;
-
-    // 다음 파트로 이동
-    if (pi < p.length) pi++;
-    if (ni < n.length) ni++;
+  for (let i = 0; i < prevTextParts.length; i++) {
+    if (prevTextParts[i].text !== nextTextParts[i].text) return false;
   }
-
   return true;
 }
 
 /**
- * [Pure Function] 배열 얕은 비교 헬퍼 (리뷰 반영)
+ * [Pure Function] 소스 리스트 동등성 비교 도메인 헬퍼 (리뷰 반영)
+ * - 메타데이터 구조 가드 및 얕은 배열 비교 수행
  */
-function shallowArrayEqual<T>(a: T[] | undefined, b: T[] | undefined): boolean {
-  if (a === b) return true;
-  if (!a || !b || a.length !== b.length) return false;
-  return a.every((v, i) => v === b[i]);
+function areSourcesEqual(
+  prevMeta: UIMessage['metadata'] | undefined,
+  nextMeta: UIMessage['metadata'] | undefined
+): boolean {
+  const prevS = (prevMeta as { sources?: SourceItem[] } | undefined)?.sources;
+  const nextS = (nextMeta as { sources?: SourceItem[] } | undefined)?.sources;
+
+  if (prevS === nextS) return true;
+  if (!Array.isArray(prevS) || !Array.isArray(nextS)) return false;
+  if (prevS.length !== nextS.length) return false;
+
+  for (let i = 0; i < prevS.length; i++) {
+    if (prevS[i] !== nextS[i]) return false;
+  }
+  return true;
 }
 
 /** 
@@ -342,15 +338,9 @@ export const MessageBubble = memo(
     // 2. ID가 다르면 무조건 리렌더링
     if (prev.message.id !== next.message.id) return false;
     
-    // 3. [PR 리뷰 반영] 할당 없는 고속 콘텐트 비교 도입
+    // 3. [PR 리뷰 반영] 간결하고 명확한 도메인 헬퍼 기반 비교
     if (!areTextPartsEqual(prev.message.parts, next.message.parts)) return false;
-    
-    // 4. [PR 리뷰 반영] 얕은 배열 비교를 통한 메타데이터 동등성 체크 (Stability 강화)
-    // 구조적 캐스팅을 통해 타입 안정성 확보
-    const prevSources = (prev.message.metadata as { sources?: unknown[] } | undefined)?.sources;
-    const nextSources = (next.message.metadata as { sources?: unknown[] } | undefined)?.sources;
-    
-    if (!shallowArrayEqual(prevSources, nextSources)) return false;
+    if (!areSourcesEqual(prev.message.metadata, next.message.metadata)) return false;
 
     return true;
   }
