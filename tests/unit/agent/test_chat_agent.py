@@ -1,16 +1,23 @@
 import unittest
 import copy
 import re
+from itertools import islice
 from unittest.mock import MagicMock, patch, AsyncMock
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage  # type: ignore[import, import-untyped, reportMissingImports]
 from backend.agent.chat.nodes import router_edge, planner_node, responder_node  # type: ignore[import, import-untyped, reportMissingImports]
 from backend.agent.chat.state import AgentState  # type: ignore[import, import-untyped, reportMissingImports]
 
+# -------------------------------------------------------------------------
+# 시스템 규약 (Contracts): 노드 출력 포맷 및 정규식 패턴 정의
+# -------------------------------------------------------------------------
+# [검색 결과 (쿼리 길이: \d+자)] 패턴 (하드코딩 방지 및 재사용성 확보)
+PLANNER_HEADER_PATTERN = re.compile(r"\[검색 결과 \(쿼리 길이: \d+자\)\]")
+
 class TestChatAgent(unittest.IsolatedAsyncioTestCase):
     """
     채팅 에이전트의 노드 실행 및 라우팅 로직을 검증하는 단위 테스트 클래스.
     모든 테스트는 독립성을 보장하기 위해 AgentState를 deepcopy하여 사용하며,
-    시스템 포맷 변경에 유연하게 대응하도록 정규식 기반 검증을 수행합니다.
+    CI 환경에서의 디버깅 편의성을 위해 요약된 실패 메시지를 제공합니다.
     """
     def setUp(self):
         self.user_id = "test_user"
@@ -26,25 +33,49 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
         }
 
     # -------------------------------------------------------------------------
-    # 0. Test Assert Helpers (Encapsulation of Brittle Logic)
+    # 0. Test Assert Helpers (Encapsulation and Debuggability)
     # -------------------------------------------------------------------------
+    def _summarize_messages(self, messages, limit=5):
+        """대규모 메시지 리스트를 디버깅용으로 요약하여 반환 (가독성 증대 및 로그 오염 방지)"""
+        if not messages:
+            return "[]"
+        summary = []
+        for msg in messages[-limit:]:
+            m_type = type(msg).__name__
+            # [Pyre2 Workaround] Pyre2의 str 슬라이싱 버그 우회를 위해 islice 사용
+            content_str = str(getattr(msg, "content", ""))
+            content_preview = "".join(islice(content_str, 20)).replace("\n", " ")
+            summary.append(f"{m_type}('{content_preview}...')")  # type: ignore[arg-type]
+        
+        prefix = f"(showing last {limit}) " if len(messages) > limit else ""
+        return prefix + " -> ".join(summary)
+
     def _assert_search_context_structure(self, context, expected_content_keyword):
         """planner_node의 검색 결과 포맷이 시스템 규칙(정규식 패턴)을 따르는지 검증"""
-        # [검색 결과 (쿼리 길이: \d+자)] 패턴 확인 (하드코딩된 문자열 결합 방지)
-        header_pattern = r"\[검색 결과 \(쿼리 길이: \d+자\)\]"
-        self.assertIsNotNone(re.search(header_pattern, context), "검색 결과 헤더 포맷이 올바르지 않습니다.")
+        self.assertIsNotNone(PLANNER_HEADER_PATTERN.search(context), "검색 결과 헤더 포맷이 올바르지 않습니다.")
         self.assertIn(expected_content_keyword, context, "검색 결과 내에 핵심 키워드가 포함되어 있지 않습니다.")
 
     def _assert_responder_wiring(self, result, expected_llm_output):
-        """responder_node가 LLM 출력을 오염 없이 전달하고 배선이 올바른지 검증"""
+        """responder_node가 LLM 출력을 정확한 위치(마지막 메시지)에 적재했는지 검증"""
         final_answer = result.get("final_answer", "")
         self.assertTrue(len(final_answer) > 0, "최종 답변이 비어있습니다.")
-        # 의미적 내용이 포함되어 있는지 확인 (미세한 문구 변화에 탄력적으로 대응)
-        self.assertIn(expected_llm_output, final_answer, "LLM 응답 내용이 최종 답변에 전달되지 않았습니다.")
+        self.assertIn(expected_llm_output, final_answer, "LLM 응답 내용이 최종 답변 필드에 전달되지 않았습니다.")
         
         ans_messages = result.get("messages", [])
-        self.assertTrue(len(ans_messages) > 0 and isinstance(ans_messages[0], AIMessage))
-        self.assertIn(expected_llm_output, str(ans_messages[0].content))
+        self.assertTrue(len(ans_messages) > 0, "결과 메시지 리스트가 비어있습니다.")
+        
+        # [Strict Check] any() 대신 '마지막' 메시지를 타겟팅하여 오탐 방지 (Future-proofing)
+        last_msg = ans_messages[-1]
+        msg_summary = self._summarize_messages(ans_messages)
+        
+        self.assertIsInstance(
+            last_msg, AIMessage, 
+            f"마지막 메시지가 AIMessage가 아닙니다. (요약: {msg_summary})"
+        )
+        self.assertIn(
+            expected_llm_output, str(getattr(last_msg, "content", "")),
+            f"최신 AIMessage 내에 예상된 답변이 포함되어 있지 않습니다. (요약: {msg_summary})"
+        )
 
     # -------------------------------------------------------------------------
     # 1. Router Edge Tests (Scenario Check)
@@ -166,7 +197,7 @@ class TestChatAgent(unittest.IsolatedAsyncioTestCase):
         
         result = await responder_node(state)
         
-        # Verify Wiring via Helper (Contract Testing)
+        # Verify Wiring via Helper (Summary-based debugging)
         self._assert_responder_wiring(result, llm_output)
 
 if __name__ == "__main__":
