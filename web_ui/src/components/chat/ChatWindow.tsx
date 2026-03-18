@@ -25,8 +25,7 @@ const WELCOME_MESSAGE: UIMessage = {
 };
 
 /** 스크롤 관련 상수 */
-const SCROLL_BOTTOM_THRESHOLD = 100; // 바닥으로 간주하는 임계치 (pixel)
-const SHOW_BUTTON_THRESHOLD = 300;   // 하단 이동 버튼을 표시하는 거리 (pixel)
+const SCROLL_THRESHOLD = 100; // 바닥 인식 및 버튼 표시 통합 임계치 (pixel)
 
 
 
@@ -105,9 +104,13 @@ export function ChatWindow() {
   const [alpha, setAlpha] = useState<number>(CHAT_CONFIG.DEFAULT_ALPHA);
 
   const scrollToBottom = useCallback((force = false) => {
+    // viewportRef가 없으면 실시간으로 다시 찾음 (방어적 코딩)
+    if (!viewportRef.current && scrollContainerRef.current) {
+      viewportRef.current = scrollContainerRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLDivElement;
+    }
+
     const viewport = viewportRef.current;
     if (viewport && (autoScrollEnabled || force)) {
-      // force일 때는 부드러운 스크롤 애니메이션 효과 적용
       viewport.scrollTo({
         top: viewport.scrollHeight,
         behavior: force ? 'smooth' : 'auto'
@@ -119,6 +122,33 @@ export function ChatWindow() {
       }
     }
   }, [autoScrollEnabled]);
+
+  /** 
+   * [수정] 스크롤 이벤트 핸들러 (useCallback 추출로 가독성 및 성능 개선) 
+   */
+  const handleScrollManual = useCallback(() => {
+    if (!viewportRef.current && scrollContainerRef.current) {
+      viewportRef.current = scrollContainerRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLDivElement;
+    }
+    
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = viewport;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    
+    // 바닥 근처인지 판단 (통합 임계치 사용)
+    const isAtBottom = distanceFromBottom < SCROLL_THRESHOLD;
+    
+    if (isAtBottom) {
+      setAutoScrollEnabled(true);
+      setShowScrollButton(false);
+    } else {
+      // 바닥을 벗어나는 즉시 자동 스크롤을 끄고 하단 이동 버튼 노출 (사용자 혼란 방지)
+      setAutoScrollEnabled(false);
+      setShowScrollButton(true);
+    }
+  }, []);
 
   // useChat 옵션 메모이제이션 (성능 최적화 및 불필요한 effect 방지)
   const chatOptions = useMemo(() => ({
@@ -316,27 +346,7 @@ export function ChatWindow() {
         <ScrollArea 
           className="h-full w-full" 
           ref={scrollContainerRef}
-          onScrollCapture={() => {
-            const viewport = viewportRef.current;
-            if (!viewport) return;
-
-            const { scrollTop, scrollHeight, clientHeight } = viewport;
-            const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-            
-            // 바닥 근처인지 판단
-            const isAtBottom = distanceFromBottom < SCROLL_BOTTOM_THRESHOLD;
-            
-            if (isAtBottom) {
-              setAutoScrollEnabled(true);
-              setShowScrollButton(false);
-            } else {
-              // 사용자가 수동으로 위로 스크롤함 -> 자동 스크롤 방지
-              setAutoScrollEnabled(false);
-              
-              // 바닥에서 일정 거리 이상 떨어지면 하단 이동 버튼 표시 (리뷰 반영: 100~300 구간 명시적 리셋)
-              setShowScrollButton(distanceFromBottom > SHOW_BUTTON_THRESHOLD);
-            }
-          }}
+          onScrollCapture={handleScrollManual}
         >
           <div className="flex flex-col gap-0 w-full max-w-4xl mx-auto p-4 py-8">
             {messages.map((m: UIMessage) => (
