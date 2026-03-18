@@ -55,37 +55,43 @@ function getTextContent(parts: UIMessage['parts'] | undefined): string {
 }
 
 /**
+ * [Pure Function] 텍스트 파트만 지연 평가(Lazy)로 순회하는 제너레이터 (리뷰 반영)
+ * - 새로운 배열 할당 없이 필요한 파트만 하나씩 반환 (Zero-allocation)
+ */
+function* iterateTextParts(parts: UIMessage['parts'] | undefined): Generator<TextPart, void> {
+  const arr = parts ?? [];
+  for (let i = 0; i < arr.length; i++) {
+    const part = arr[i];
+    // 타입 가드를 통해 안전하게 텍스트 파트만 선별
+    if (part !== null && typeof part === 'object' && part.type === 'text') {
+      yield part as TextPart;
+    }
+  }
+}
+
+/**
  * [Pure Function] 텍스트 내용 고등 동등성 비교 헬퍼 (리뷰 반영)
- * - 새로운 배열 할당 없이 두 개의 포인터로 순회하여 GC 부하 최소화 (Zero-allocation)
- * - 비-텍스트 파트는 건너뛰어 의미적 콘텐츠 동등성 유지
+ * - 제너레이터를 활용하여 메모리 할당 없이 의미적 콘텐츠 동등성 검증
  */
 function areTextPartsEqual(prev?: UIMessage['parts'], next?: UIMessage['parts']): boolean {
-  const p = prev ?? [];
-  const n = next ?? [];
-  
-  if (p === n) return true;
+  if (prev === next) return true;
 
-  let pi = 0;
-  let ni = 0;
+  const pIter = iterateTextParts(prev);
+  const nIter = iterateTextParts(next);
 
-  while (pi < p.length || ni < n.length) {
-    // 1. 이전 파츠에서 텍스트가 아닌 것 건너뛰기
-    while (pi < p.length && p[pi]?.type !== 'text') pi++;
-    // 2. 새로운 파츠에서 텍스트가 아닌 것 건너뛰기
-    while (ni < n.length && n[ni]?.type !== 'text') ni++;
+  while (true) {
+    const pRes = pIter.next();
+    const nRes = nIter.next();
 
-    const pPart = p[pi] as TextPart | undefined;
-    const nPart = n[ni] as TextPart | undefined;
+    // 둘 중 하나가 끝났을 때의 처리
+    if (pRes.done || nRes.done) {
+      // 두 이터레이터가 동시에 종료되어야만 동등함 (텍스트 파트 개수 일치 확인)
+      return pRes.done === nRes.done;
+    }
 
-    // 3. 둘 중 하나만 존재하거나 텍스트 내용이 다르면 false
-    if (pPart?.text !== nPart?.text) return false;
-
-    // 4. 다음 파트로 이동
-    if (pi < p.length) pi++;
-    if (ni < n.length) ni++;
+    // 텍스트 내용이 다르면 리렌더링 트리거
+    if (pRes.value.text !== nRes.value.text) return false;
   }
-
-  return true;
 }
 
 /**
