@@ -103,13 +103,18 @@ export function ChatWindow() {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [alpha, setAlpha] = useState<number>(CHAT_CONFIG.DEFAULT_ALPHA);
 
-  const scrollToBottom = useCallback((force = false) => {
-    // viewportRef가 없으면 실시간으로 다시 찾음 (방어적 코딩)
+  // [추가] scroll-area viewport를 조회/초기화하는 헬퍼 (DRY 원칙 적용)
+  const getOrInitViewport = useCallback((): HTMLDivElement | null => {
     if (!viewportRef.current && scrollContainerRef.current) {
-      viewportRef.current = scrollContainerRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLDivElement;
+      viewportRef.current = scrollContainerRef.current.querySelector(
+        '[data-radix-scroll-area-viewport]'
+      ) as HTMLDivElement | null;
     }
+    return viewportRef.current;
+  }, []);
 
-    const viewport = viewportRef.current;
+  const scrollToBottom = useCallback((force = false) => {
+    const viewport = getOrInitViewport();
     if (viewport && (autoScrollEnabled || force)) {
       viewport.scrollTo({
         top: viewport.scrollHeight,
@@ -121,34 +126,28 @@ export function ChatWindow() {
         setShowScrollButton(false);
       }
     }
-  }, [autoScrollEnabled]);
+  }, [autoScrollEnabled, getOrInitViewport]);
 
   /** 
-   * [수정] 스크롤 이벤트 핸들러 (useCallback 추출로 가독성 및 성능 개선) 
+   * [수정] 스크롤 이벤트 핸들러 (불필요한 상태 업데이트 가드 추가로 성능 최적화) 
    */
   const handleScrollManual = useCallback(() => {
-    if (!viewportRef.current && scrollContainerRef.current) {
-      viewportRef.current = scrollContainerRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLDivElement;
-    }
-    
-    const viewport = viewportRef.current;
+    const viewport = getOrInitViewport();
     if (!viewport) return;
 
     const { scrollTop, scrollHeight, clientHeight } = viewport;
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    const isNowAtBottom = distanceFromBottom < SCROLL_THRESHOLD;
     
-    // 바닥 근처인지 판단 (통합 임계치 사용)
-    const isAtBottom = distanceFromBottom < SCROLL_THRESHOLD;
-    
-    if (isAtBottom) {
-      setAutoScrollEnabled(true);
-      setShowScrollButton(false);
+    // [성능 최적화] 상태가 실제로 바뀔 때만 업데이트 호출 (가드 적용)
+    if (isNowAtBottom) {
+      if (!autoScrollEnabled) setAutoScrollEnabled(true);
+      if (showScrollButton) setShowScrollButton(false);
     } else {
-      // 바닥을 벗어나는 즉시 자동 스크롤을 끄고 하단 이동 버튼 노출 (사용자 혼란 방지)
-      setAutoScrollEnabled(false);
-      setShowScrollButton(true);
+      if (autoScrollEnabled) setAutoScrollEnabled(false);
+      if (!showScrollButton) setShowScrollButton(true);
     }
-  }, []);
+  }, [autoScrollEnabled, showScrollButton, getOrInitViewport]);
 
   // useChat 옵션 메모이제이션 (성능 최적화 및 불필요한 effect 방지)
   const chatOptions = useMemo(() => ({
