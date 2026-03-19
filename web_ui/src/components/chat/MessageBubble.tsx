@@ -14,6 +14,8 @@ import type { Components } from 'react-markdown';
 
 interface MessageBubbleProps {
   message: UIMessage;
+  isLast?: boolean;
+  isStreaming?: boolean;
 }
 
 // react-markdown v10 code 컴포넌트 타입
@@ -132,17 +134,49 @@ function extractSources(metadata: UIMessage['metadata'] | undefined): SourceItem
 }
 
 /** 
- * [Pure Function] 텍스트 가공 및 인용 링크 변환 (리뷰 반영)
+ * [Pure Function] 텍스트 가공 및 인용 링크 변환 (리뷰 반영) 
  */
-function buildProcessedContent(parts: UIMessage['parts'], isUser: boolean): string {
+function buildProcessedContent(
+  parts: UIMessage['parts'], 
+  isUser: boolean,
+  shouldPatch: boolean
+): string {
   const textContent = getTextContent(parts);
 
   if (isUser) return textContent;
 
-  return textContent.replace(INLINE_CITATION_REGEX, (match, code, num) => {
+  // 1. 인용 변환
+  const citedContent = textContent.replace(INLINE_CITATION_REGEX, (match, code, num) => {
     return code ? code : `[${num}](cite:${num})`;
   });
+
+  // 2. 점진적 파싱 보호 (스트리밍 중인 경우에만 한정적으로 수행)
+  return shouldPatch ? patchPartialMarkdown(citedContent) : citedContent;
 }
+
+/**
+ * [Pure Function] 점진적 파싱 보강 (Incremental Parsing Protection)
+ * 라인 단위 상태 추적을 통해 코드 블록이 열려 있는 경우에만 임시로 닫아 줍니다.
+ */
+function patchPartialMarkdown(markdown: string): string {
+  const lines = markdown.split('\n');
+  let inCodeBlock = false;
+  
+  for (const line of lines) {
+    // 팁: 마크다운 표준에 따라 줄 시작 부분이 3개 이상의 백틱이면 코드 블록 토글
+    if (line.trim().startsWith('```')) {
+      inCodeBlock = !inCodeBlock;
+    }
+  }
+
+  if (inCodeBlock) {
+    // 코드 블록이 열린 채로 끝났다면 닫는 펜스를 추가하여 렌더링 깨짐 방지
+    return markdown + '\n\n```';
+  }
+  
+  return markdown;
+}
+
 
 /**
  * [Refactoring] 유효하지 않거나 누락된 인용 소스에 대한 일관된 폴백 렌더러
@@ -165,7 +199,7 @@ function FallbackCitation({
 }
 
 export const MessageBubble = memo(
-  function MessageBubble({ message }: MessageBubbleProps) {
+  function MessageBubble({ message, isLast = false, isStreaming = false }: MessageBubbleProps) {
     const isUser = message.role === 'user';
 
 
@@ -271,10 +305,10 @@ export const MessageBubble = memo(
     },
   };
 
-  // [Performance] 순수 함수와 useMemo를 결합한 콘텐츠 변환 (가독성 향상)
+  // [Performance] 순수 함수와 useMemo를 결합한 콘텐츠 변환
   const processedContent = useMemo(
-    () => buildProcessedContent(message.parts, isUser),
-    [message.parts, isUser]
+    () => buildProcessedContent(message.parts, isUser, isLast && isStreaming),
+    [message.parts, isUser, isLast, isStreaming]
   );
 
   return (
@@ -354,13 +388,17 @@ export const MessageBubble = memo(
   );
   },
   (prev, next) => {
-    // 1. 객체 참조가 같으면 즉시 트루 (가장 빠른 비교)
+    // 1. Prop 기반 상태 변화 체크 (마크다운 파싱 가드 상태 전환용)
+    if (prev.isLast !== next.isLast) return false;
+    if (prev.isStreaming !== next.isStreaming) return false;
+
+    // 2. 객체 참조가 같으면 즉시 트루 (가장 빠른 비교)
     if (prev.message === next.message) return true;
 
-    // 2. ID가 다르면 무조건 리렌더링
+    // 3. ID가 다르면 무조건 리렌더링
     if (prev.message.id !== next.message.id) return false;
     
-    // 3. [PR 리뷰 반영] 간결하고 명확한 도메인 헬퍼 기반 비교
+    // 4. [PR 리뷰 반영] 간결하고 명확한 도메인 헬퍼 기반 비교
     if (!areTextPartsEqual(prev.message.parts, next.message.parts)) return false;
     if (!areSourcesEqual(prev.message.metadata, next.message.metadata)) return false;
 
