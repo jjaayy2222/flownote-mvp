@@ -139,10 +139,30 @@ function buildProcessedContent(parts: UIMessage['parts'], isUser: boolean): stri
 
   if (isUser) return textContent;
 
-  return textContent.replace(INLINE_CITATION_REGEX, (match, code, num) => {
+  // 1. 인용 변환
+  const citedContent = textContent.replace(INLINE_CITATION_REGEX, (match, code, num) => {
     return code ? code : `[${num}](cite:${num})`;
   });
+
+  // 2. 점진적 파싱 보호 (코드 블록 등 유효하지 않은 마크다운 구조 보완)
+  return patchPartialMarkdown(citedContent);
 }
+
+/**
+ * [Pure Function] 점진적 파싱 보강 (Incremental Parsing Protection)
+ * 스트리밍 중 깨지는 마크다운 구조(코드 블록 등)를 임시로 닫아 렌더링 안정성을 확보합니다.
+ */
+function patchPartialMarkdown(markdown: string): string {
+  // 1. 코드 블록 (```) 홀수 개수 확인 및 자동 닫기
+  const codeBlockCount = (markdown.match(/```/g) || []).length;
+  if (codeBlockCount % 2 !== 0) {
+    // 팁: 마지막 ``` 뒤에 개행이 없는 경우를 대비해 유연하게 줄바꿈 추가
+    return markdown + '\n\n```';
+  }
+  
+  return markdown;
+}
+
 
 /**
  * [Refactoring] 유효하지 않거나 누락된 인용 소스에 대한 일관된 폴백 렌더러
