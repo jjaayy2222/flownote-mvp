@@ -10,7 +10,6 @@ export const INLINE_CITATION_REGEX = new RegExp(
   `(\`{1,3}[\\s\\S]*?\`{1,3})|\\[(${CITATION_ID_FRAGMENT})\\](?!\\s*[\\(:])`,
   'g'
 );
-export const DEFAULT_FALLBACK_TITLE = "출처 정보 없음";
 
 /**
  * [Types] 메시지 파트 중 텍스트 타입 정의
@@ -31,44 +30,27 @@ export function getTextParts(parts: UIMessage['parts'] | undefined): TextPart[] 
  * [Pure Function] 전체 텍스트 내용만 추출하는 헬퍼
  */
 export function getTextContent(parts: UIMessage['parts'] | undefined): string {
-  return (parts ?? [])
-    .filter((p): p is TextPart => p !== null && typeof p === 'object' && p.type === 'text')
+  return getTextParts(parts)
     .map(p => p.text)
     .join('');
 }
 
 /**
- * [Pure Function] 텍스트 파트만 지연 평가(Lazy)로 순회하는 제너레이터
- */
-function* iterateTextParts(parts: UIMessage['parts'] | undefined): Generator<TextPart, void> {
-  const arr = parts ?? [];
-  for (let i = 0; i < arr.length; i++) {
-    const part = arr[i];
-    if (part !== null && typeof part === 'object' && part.type === 'text') {
-      yield part as TextPart;
-    }
-  }
-}
-
-/**
  * [Pure Function] 텍스트 내용 고등 동등성 비교 헬퍼
+ * [PR 리뷰 반영] 제너레이터 대신 원시 배열을 활용하여 로직 단순화
  */
 export function areTextPartsEqual(prev?: UIMessage['parts'], next?: UIMessage['parts']): boolean {
   if (prev === next) return true;
 
-  const pIter = iterateTextParts(prev);
-  const nIter = iterateTextParts(next);
+  const prevParts = getTextParts(prev);
+  const nextParts = getTextParts(next);
 
-  while (true) {
-    const pRes = pIter.next();
-    const nRes = nIter.next();
-
-    if (pRes.done || nRes.done) {
-      return pRes.done === nRes.done;
-    }
-
-    if (pRes.value.text !== nRes.value.text) return false;
+  if (prevParts.length !== nextParts.length) return false;
+  
+  for (let i = 0; i < prevParts.length; i++) {
+    if (prevParts[i].text !== nextParts[i].text) return false;
   }
+  return true;
 }
 
 /**

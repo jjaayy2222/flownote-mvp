@@ -14,7 +14,6 @@ import type { Components } from 'react-markdown';
 import { stabilizeIncompleteMarkdown } from '@/lib/markdown';
 import { 
   CITATION_VALIDATION_REGEX, 
-  DEFAULT_FALLBACK_TITLE,
   extractSources,
   buildProcessedContent,
   areTextPartsEqual,
@@ -45,7 +44,7 @@ function ensureRenderableMarkdown(markdown: string, shouldPatch: boolean): strin
 function FallbackCitation({ 
   children, 
   className, 
-  title = DEFAULT_FALLBACK_TITLE 
+  title = "출처 정보 없음" 
 }: { 
   children: React.ReactNode; 
   className?: string; 

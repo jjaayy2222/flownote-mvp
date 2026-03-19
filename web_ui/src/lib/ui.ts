@@ -4,9 +4,6 @@ import { UI_CONFIG } from '@/config/ui';
 
 /**
  * Type helper for Throttle keys
- */
-/**
- * Type helper for Throttle keys
  * Excludes '_INTERNAL_FALLBACK' as it is an internal safety mechanism, not a valid toast type key.
  */
 type ThrottleKey = Exclude<keyof typeof UI_CONFIG.TOAST.THROTTLE_MS, '_INTERNAL_FALLBACK'>;

@@ -12,5 +12,5 @@ export const STORAGE_KEYS = {
 export const CHAT_CONFIG = {
   DEFAULT_K: 3,
   DEFAULT_ALPHA: 0.5,
-  DEFAULT_USER_ID: 'test_user_123',
+  DEFAULT_USER_ID: process.env.NODE_ENV === 'production' ? undefined : 'test_user_123',
 } as const;
