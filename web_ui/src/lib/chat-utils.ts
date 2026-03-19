@@ -1,5 +1,5 @@
 import type { UIMessage } from 'ai';
-import { SourceItem } from '@/components/chat/SourcePanel';
+import { type SourceItem } from '@/types/chat';
 
 /**
  * [Constants] 인용 및 텍스트 처리 정규식
