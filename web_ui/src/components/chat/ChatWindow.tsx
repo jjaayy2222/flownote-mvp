@@ -115,15 +115,18 @@ export function ChatWindow() {
     return viewport;
   }, []);
 
-  const scrollToBottom = useCallback((force = false) => {
+  const scrollToBottom = useCallback((behavior: 'auto' | 'smooth' = 'auto') => {
     const viewport = getOrInitViewport();
-    if (viewport && (autoScrollEnabled || force)) {
+    if (viewport && (autoScrollEnabled || behavior === 'smooth')) {
+      // [PR 리뷰 반영] 상황에 맞는 스크롤 동작 수행
+      // - smooth: 버튼 클릭(강제 이동) 또는 새 메시지 시작 시
+      // - auto: 스트리밍 중 토큰 수신 시 (성능 및 실시간성 확보)
       viewport.scrollTo({
         top: viewport.scrollHeight,
-        behavior: force ? 'smooth' : 'auto'
+        behavior: behavior
       });
       
-      if (force) {
+      if (behavior === 'smooth') {
         setAutoScrollEnabled(true);
         setShowScrollButton(false);
       }
@@ -139,6 +142,8 @@ export function ChatWindow() {
 
     const { scrollTop, scrollHeight, clientHeight } = viewport;
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    
+    // [정밀 튜닝] 바닥에서 100px 이상 떨어지면 자동 스크롤 중단
     const isNowAtBottom = distanceFromBottom < SCROLL_THRESHOLD;
     
     // [성능 최적화] 상태가 실제로 바뀔 때만 업데이트 호출 (가드 적용)
@@ -146,10 +151,22 @@ export function ChatWindow() {
       if (!autoScrollEnabled) setAutoScrollEnabled(true);
       if (showScrollButton) setShowScrollButton(false);
     } else {
+      // 바닥이 아니면 자동 스크롤을 끄고 메시지 안착 버튼을 보여줍니다.
       if (autoScrollEnabled) setAutoScrollEnabled(false);
       if (!showScrollButton) setShowScrollButton(true);
     }
   }, [autoScrollEnabled, showScrollButton, getOrInitViewport]);
+
+  /**
+   * [신규] 사용자 직접 개입(휠/터치) 감지 로직
+   * 바닥 임계치 이전에 수동 조작이 발생하면 즉시 자동 스크롤을 중단합니다.
+   */
+  const handleUserInteraction = useCallback(() => {
+    if (autoScrollEnabled) {
+      setAutoScrollEnabled(false);
+      setShowScrollButton(true);
+    }
+  }, [autoScrollEnabled]);
 
   // useChat 옵션 메모이제이션 (성능 최적화 및 불필요한 effect 방지)
   const chatOptions = useMemo(() => ({
@@ -348,8 +365,12 @@ export function ChatWindow() {
           className="h-full w-full" 
           ref={scrollContainerRef}
           onScrollCapture={handleScrollManual}
+          onWheel={handleUserInteraction}
+          onTouchStart={handleUserInteraction}
         >
-          <div className="flex flex-col gap-0 w-full max-w-4xl mx-auto p-4 py-8">
+          <div 
+            className="flex flex-col gap-0 w-full max-w-4xl mx-auto p-4 py-8"
+          >
             {messages.map((m: UIMessage, idx: number) => (
               <MessageBubble 
                 key={m.id} 
@@ -375,7 +396,7 @@ export function ChatWindow() {
         {showScrollButton && (
           <Button
             size="sm"
-            onClick={() => scrollToBottom(true)}
+            onClick={() => scrollToBottom('smooth')}
             className="absolute bottom-6 right-8 rounded-full shadow-lg border border-slate-200 bg-white/90 backdrop-blur-sm hover:bg-slate-50 text-slate-600 z-20 flex items-center gap-2 px-4 h-10 transition-all animate-in fade-in zoom-in duration-300"
           >
             <ChevronDown className="w-4 h-4 text-blue-500" />
