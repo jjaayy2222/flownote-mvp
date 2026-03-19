@@ -81,6 +81,8 @@ export function ChatWindow() {
   // 스마트 스크롤 제어 상태
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  // [신규] 읽지 않은 메시지 상태 (가드 작동 중 데이터 유입 시)
+  const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
 
   // 0. ID 상태 지연 초기화 (Lazy Initializer)
   const [sessionId, setSessionId] = useState<string>(() => 
@@ -129,6 +131,8 @@ export function ChatWindow() {
       if (behavior === 'smooth') {
         setAutoScrollEnabled(true);
         setShowScrollButton(false);
+        // [신규] 바닥 강제 이동 시 읽지 않은 상태 초기화
+        setHasUnreadMessages(false);
       }
     }
   }, [autoScrollEnabled, getOrInitViewport]);
@@ -150,12 +154,14 @@ export function ChatWindow() {
     if (isNowAtBottom) {
       if (!autoScrollEnabled) setAutoScrollEnabled(true);
       if (showScrollButton) setShowScrollButton(false);
+      // [신규] 수동으로 바닥에 도달했을 때도 읽지 않은 상태 초기화
+      if (hasUnreadMessages) setHasUnreadMessages(false);
     } else {
       // 바닥이 아니면 자동 스크롤을 끄고 메시지 안착 버튼을 보여줍니다.
       if (autoScrollEnabled) setAutoScrollEnabled(false);
       if (!showScrollButton) setShowScrollButton(true);
     }
-  }, [autoScrollEnabled, showScrollButton, getOrInitViewport]);
+  }, [autoScrollEnabled, showScrollButton, hasUnreadMessages, getOrInitViewport]);
 
   /**
    * [신규] 사용자 직접 개입(휠/터치) 감지 로직
@@ -287,11 +293,13 @@ export function ChatWindow() {
 
   const isLoading = status === 'streaming' || status === 'submitted';
 
-  // 새 메시지 수신 시 자동 스크롤
   // 새 메시지 수신 시 자동 스크롤 (사용자가 위를 보고 있지 않을 때만)
   useEffect(() => {
     if (autoScrollEnabled) {
       scrollToBottom();
+    } else if (isLoading) {
+      // [신규] 사용자가 위를 보고 있는 도중 데이터가 들어오면 뱃지 활성화
+      setHasUnreadMessages(true);
     }
   }, [messages, isLoading, autoScrollEnabled, scrollToBottom]);
 
@@ -397,10 +405,18 @@ export function ChatWindow() {
           <Button
             size="sm"
             onClick={() => scrollToBottom('smooth')}
-            className="absolute bottom-6 right-8 rounded-full shadow-lg border border-slate-200 bg-white/90 backdrop-blur-sm hover:bg-slate-50 text-slate-600 z-20 flex items-center gap-2 px-4 h-10 transition-all animate-in fade-in zoom-in duration-300"
+            className={`
+              absolute bottom-6 right-8 rounded-full shadow-lg border border-slate-200 
+              bg-white/90 backdrop-blur-sm hover:bg-slate-50 text-slate-600 z-20 
+              flex items-center gap-2 px-4 h-10 transition-all 
+              animate-in fade-in zoom-in duration-300
+              ${hasUnreadMessages ? 'ring-2 ring-blue-500 ring-offset-2' : ''}
+            `}
           >
-            <ChevronDown className="w-4 h-4 text-blue-500" />
-            <span className="text-xs font-bold">최근 메시지로 이동</span>
+            <ChevronDown className={`w-4 h-4 ${hasUnreadMessages ? 'text-blue-500 animate-bounce' : 'text-slate-400'}`} />
+            <span className="text-xs font-bold text-slate-700">
+              {hasUnreadMessages ? '새 메시지 도착' : '최근 메시지로 이동'}
+            </span>
           </Button>
         )}
       </div>
