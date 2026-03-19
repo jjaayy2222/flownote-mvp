@@ -9,7 +9,8 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { UIMessage } from 'ai';
-import { SourcePanel, SourceItem } from './SourcePanel';
+import { SourcePanel } from './SourcePanel';
+import { type SourceItem } from '@/types/chat';
 import type { Components } from 'react-markdown';
 import { stabilizeIncompleteMarkdown } from '@/lib/markdown';
 import { 
@@ -69,8 +70,9 @@ function areMessageBubblePropsEqual(prev: MessageBubbleProps, next: MessageBubbl
   // 2. 메시지 객체 참조 동일성 (가장 빠른 레퍼런스 체크)
   if (prev.message === next.message) return true;
 
-  // 3. 메시지 ID 동일성
+  // 3. 메시지 ID 또는 역할 동일성 (역할 변경 시 스타일이 바뀌어야 함)
   if (prev.message.id !== next.message.id) return false;
+  if (prev.message.role !== next.message.role) return false;
   
   // 4. 의미적 콘텐츠 동등성 (텍스트 파트 및 소스 리스트)
   if (!areTextPartsEqual(prev.message.parts, next.message.parts)) return false;

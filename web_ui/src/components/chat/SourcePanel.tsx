@@ -11,15 +11,7 @@ import {
 } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-
-export interface SourceItem {
-  id?: string;
-  score?: number;
-  page_content?: string;
-  source?: string;
-  title?: string;
-  [key: string]: unknown;
-}
+import { type SourceItem } from '@/types/chat';
 
 interface SourcePanelProps {
   source: SourceItem | null;
