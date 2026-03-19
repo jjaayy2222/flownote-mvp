@@ -350,8 +350,13 @@ export function ChatWindow() {
           onScrollCapture={handleScrollManual}
         >
           <div className="flex flex-col gap-0 w-full max-w-4xl mx-auto p-4 py-8">
-            {messages.map((m: UIMessage) => (
-              <MessageBubble key={m.id} message={m} />
+            {messages.map((m: UIMessage, idx: number) => (
+              <MessageBubble 
+                key={m.id} 
+                message={m} 
+                isLast={idx === messages.length - 1} 
+                isStreaming={status === 'streaming'}
+              />
             ))}
 
             {error && (
