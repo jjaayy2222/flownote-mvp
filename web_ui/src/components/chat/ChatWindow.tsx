@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import { useChat } from '@ai-sdk/react';
 import type { UIMessage } from 'ai';
 import { DefaultChatTransport } from 'ai';
-import { CHAT_CONFIG, STORAGE_KEYS } from '@/lib/constants';
+import { CHAT_CONFIG, STORAGE_KEYS, UI_CONFIG } from '@/lib/constants';
 import { MessageBubble } from './MessageBubble';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
@@ -24,8 +24,8 @@ const WELCOME_MESSAGE: UIMessage = {
   ],
 };
 
-/** 스크롤 관련 상수 */
-const SCROLL_THRESHOLD = 100; // 바닥 인식 및 버튼 표시 통합 임계치 (pixel)
+/** 스크롤 관련 상수 (UI_CONFIG 참고) */
+const SCROLL_THRESHOLD = UI_CONFIG.SCROLL_THRESHOLD; 
 
 
 
@@ -214,7 +214,7 @@ export function ChatWindow() {
         if (ignore) return;
 
         if (res.ok) {
-          const data = await res.json();
+          const data = await res.json().catch(() => ({ messages: [] }));
           if (ignore) return;
 
           if (data.messages && data.messages.length > 0) {
@@ -323,7 +323,9 @@ export function ChatWindow() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)] w-full max-w-6xl mx-auto border border-slate-200 rounded-2xl shadow-sm bg-slate-50/50 overflow-hidden relative">
+    <div 
+      className="flex flex-col w-full max-w-6xl mx-auto border border-slate-200 rounded-2xl shadow-sm bg-slate-50/50 overflow-hidden relative h-[calc(100vh-var(--chat-height-offset))]"
+    >
       {/* 헤더 */}
       <div className="bg-white/80 backdrop-blur-md border-b px-6 py-4 flex items-center justify-between shadow-sm z-10 sticky top-0">
         <div>

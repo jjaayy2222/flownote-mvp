@@ -14,3 +14,12 @@ export const CHAT_CONFIG = {
   DEFAULT_ALPHA: 0.5,
   DEFAULT_USER_ID: process.env.NODE_ENV === 'production' ? undefined : 'test_user_123',
 } as const;
+
+/**
+ * UI/UX 관련 상수 설정
+ */
+export const UI_CONFIG = {
+  SCROLL_THRESHOLD: 100, // UX 바닥 인식 임계치 (px)
+  LAYOUT_HEIGHT_OFFSET: '120px', // h-[calc(100vh-120px)] 와 연계
+  ANIMATION_DURATION: 300, // 트랜지션 시간 (ms)
+} as const;
