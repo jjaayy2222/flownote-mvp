@@ -26,6 +26,12 @@ const WELCOME_MESSAGE: UIMessage = {
 
 const defaultChatTransport = new DefaultChatTransport({ api: '/api/chat' });
 
+interface HistoryMessage {
+  role: 'assistant' | 'user';
+  content: string;
+  timestamp?: string | number;
+}
+
 /**
  * 범용 ID 생성 헬퍼
  */
@@ -182,12 +188,6 @@ export function ChatWindow() {
           });
 
           if (data.messages && data.messages.length > 0) {
-            interface HistoryMessage {
-              role: 'assistant' | 'user';
-              content: string;
-              timestamp?: string | number;
-            }
-
             const historyMessages: UIMessage[] = data.messages.map((m: HistoryMessage, index: number) => ({
               id: `hist-${index}-${sessionId}`,
               role: m.role,
@@ -226,17 +226,18 @@ export function ChatWindow() {
       if (!res.ok) throw new Error('Failed to clear history');
 
       const newSid = generateId('sess');
-      try {
-        localStorage.setItem(STORAGE_KEYS.CHAT_SESSION_ID, newSid);
-      } catch (err) {
-        console.warn('[Storage] Failed to update session_id in localStorage:', err);
-      }
+      
+      // [Review 반영] 저장소 쓰기 성공 시에만 메모리 상태 업데이트 (원자성 확보)
+      localStorage.setItem(STORAGE_KEYS.CHAT_SESSION_ID, newSid);
+      
       setSessionId(newSid);
       setMessages([WELCOME_MESSAGE]);
       toast.success('대화가 초기화되었습니다.');
     } catch (err: unknown) {
-      console.error('[ChatWindow] Clear History Error:', err);
-      toast.error('초기화 중 오류 발생');
+      console.error('[ChatWindow] Clear/Reset History Error:', err);
+      toast.error('초기화 중 오류 발생', {
+        description: err instanceof Error ? err.message : '저장소 접근 권한을 확인해주세요.'
+      });
     }
   };
 
@@ -257,6 +258,21 @@ export function ChatWindow() {
     sendMessage({ role: 'user', parts: [{ type: 'text', text: trimmed }] });
     setInput('');
   }, [input, isLoading, sendMessage]);
+
+  const handleRetry = useCallback(() => {
+    if (isLoading) return;
+    
+    // 마지막 사용자 메시지를 찾아 다시 전송 시도
+    const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
+    const content = lastUserMessage?.parts?.[0]?.type === 'text' ? lastUserMessage.parts[0].text : '';
+    
+    if (content) {
+      sendMessage({ role: 'user', parts: [{ type: 'text', text: content }] });
+    } else {
+      // 메시지를 찾을 수 없는 경우 기존 handleSubmit 호출 (input에 텍스트가 남았을 때 대비)
+      handleSubmit();
+    }
+  }, [messages, isLoading, sendMessage, handleSubmit]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -322,13 +338,17 @@ export function ChatWindow() {
               />
             ))}
             {error && (
-              <div className="p-4 mb-4 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+              <div 
+                role="alert"
+                aria-live="polite"
+                className="p-4 mb-4 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 flex items-center gap-2 animate-in fade-in slide-in-from-top-2"
+              >
                 <span className="font-bold">Error:</span>
                 <span>{error.message || '메시지 전송 중 오류가 발생했습니다.'}</span>
                 <Button 
                   variant="ghost" 
                   size="sm" 
-                  onClick={() => handleSubmit()} 
+                  onClick={handleRetry} 
                   className="ml-auto h-6 text-[10px] hover:bg-red-100"
                 >
                   재시도
