@@ -227,7 +227,7 @@ export function ChatWindow() {
 
       const newSid = generateId('sess');
       
-      // [Review 반영] 저장소 쓰기 성공 시에만 메모리 상태 업데이트 (원자성 확보)
+      // [Review 반영] 저장소 쓰기 성공 시에만 메모리 상태 업데이트
       localStorage.setItem(STORAGE_KEYS.CHAT_SESSION_ID, newSid);
       
       setSessionId(newSid);
@@ -236,7 +236,7 @@ export function ChatWindow() {
     } catch (err: unknown) {
       console.error('[ChatWindow] Clear/Reset History Error:', err);
       toast.error('초기화 중 오류 발생', {
-        description: err instanceof Error ? err.message : '저장소 접근 권한을 확인해주세요.'
+        description: err instanceof Error ? err.message : '저장소 권한을 확인해주세요.'
       });
     }
   };
@@ -339,7 +339,7 @@ export function ChatWindow() {
             ))}
             {error && (
               <div 
-                role="alert"
+                role="alert" 
                 aria-live="polite"
                 className="p-4 mb-4 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 flex items-center gap-2 animate-in fade-in slide-in-from-top-2"
               >
