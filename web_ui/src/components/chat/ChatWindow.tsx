@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import { useChat } from '@ai-sdk/react';
 import type { UIMessage } from 'ai';
 import { DefaultChatTransport } from 'ai';
-import { CHAT_CONFIG, STORAGE_KEYS } from '@/lib/constants';
+import { CHAT_CONFIG, STORAGE_KEYS, UI_CONFIG } from '@/lib/constants';
 import { MessageBubble } from './MessageBubble';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
@@ -24,11 +24,6 @@ const WELCOME_MESSAGE: UIMessage = {
   ],
 };
 
-/** 스크롤 관련 상수 */
-const SCROLL_THRESHOLD = 100; // 바닥 인식 및 버튼 표시 통합 임계치 (pixel)
-
-
-
 const defaultChatTransport = new DefaultChatTransport({ api: '/api/chat' });
 
 /**
@@ -40,56 +35,41 @@ function generateId(prefix: string): string {
 
 /**
  * Storage에서 ID를 가져오거나 없으면 새로 생성하여 저장하는 유틸리티
- * 
- * [Refinement] localStorage 접근 시 보안 설정이나 시크릿 모드 등으로 인한
- * 런타임 에러를 방지하기 위해 try/catch 가드를 적용했습니다.
  */
 function getOrCreateStoredId(storageKey: string, prefix: string): string {
-  // 서버 사이드 렌더링 시에는 빈 문자열 반환 (hydration mismatch 방지)
   if (typeof window === 'undefined') return '';
 
   let id: string | null = null;
-  
-  // 1. 기존 ID 로드 시도
   try {
     id = localStorage.getItem(storageKey);
   } catch (err) {
-    console.warn(`[Storage] Failed to read ${storageKey} from localStorage:`, err);
+    console.warn(`[Storage] Failed to read ${storageKey}:`, err);
   }
 
-  // 2. ID가 없으면 생성 후 저장 시도
   if (!id) {
     id = generateId(prefix);
     try {
       localStorage.setItem(storageKey, id);
     } catch (err) {
-      // 저장이 실패하더라도 현재 세션에서는 생성된 ID를 사용함
-      console.warn(`[Storage] Failed to save ${storageKey} to localStorage:`, err);
+      console.warn(`[Storage] Failed to save ${storageKey}:`, err);
     }
   }
-  
   return id;
 }
 
 export function ChatWindow() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  // [수정] 캐싱과 타입 안전성을 모두 담당하는 단일 Ref (isConnected 활용)
   const viewportRef = useRef<HTMLDivElement | null>(null);
 
   const [input, setInput] = useState('');
-  
-  // 스마트 스크롤 제어 상태
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  // [신규] 읽지 않은 메시지 상태 (가드 작동 중 데이터 유입 시)
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
 
-  // 0. ID 상태 지연 초기화 (Lazy Initializer)
   const [sessionId, setSessionId] = useState<string>(() => 
     getOrCreateStoredId(STORAGE_KEYS.CHAT_SESSION_ID, 'sess')
   );
 
-  // userId는 컴포넌트 생명주기 동안 변경되지 않으므로 setter 없이 상태로만 유지 (Lint 경고 해결)
   const [userId] = useState<string>(() => 
     getOrCreateStoredId(STORAGE_KEYS.USER_ID, 'user')
   );
@@ -97,22 +77,18 @@ export function ChatWindow() {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [alpha, setAlpha] = useState<number>(CHAT_CONFIG.DEFAULT_ALPHA);
 
-  // [수정] 성농(Cache), 안정성(Liveness), 타입 안전성, 소속(Containment)을 모두 갖춘 3중 검증 로직
   const getOrInitViewport = useCallback((): HTMLDivElement | null => {
     const container = scrollContainerRef.current;
     if (!container) return null;
 
-    // 1. [최종 무결성] 캐시된 엘리먼트가 있고, (1)문서에 연결되어 있으며, (2)현재 컨테이너의 자식이면 재사용
     if (viewportRef.current && 
         viewportRef.current.isConnected && 
         container.contains(viewportRef.current)) {
       return viewportRef.current;
     }
 
-    // 2. 캐시가 없거나 유효하지 않으면 새로 조회 및 타입 체크
     const el = container.querySelector('[data-radix-scroll-area-viewport]');
     const viewport = el instanceof HTMLDivElement ? el : null;
-    
     viewportRef.current = viewport;
     return viewport;
   }, []);
@@ -120,9 +96,6 @@ export function ChatWindow() {
   const scrollToBottom = useCallback((behavior: 'auto' | 'smooth' = 'auto') => {
     const viewport = getOrInitViewport();
     if (viewport && (autoScrollEnabled || behavior === 'smooth')) {
-      // [PR 리뷰 반영] 상황에 맞는 스크롤 동작 수행
-      // - smooth: 버튼 클릭(강제 이동) 또는 새 메시지 시작 시
-      // - auto: 스트리밍 중 토큰 수신 시 (성능 및 실시간성 확보)
       viewport.scrollTo({
         top: viewport.scrollHeight,
         behavior: behavior
@@ -131,15 +104,11 @@ export function ChatWindow() {
       if (behavior === 'smooth') {
         setAutoScrollEnabled(true);
         setShowScrollButton(false);
-        // [신규] 바닥 강제 이동 시 읽지 않은 상태 초기화
         setHasUnreadMessages(false);
       }
     }
   }, [autoScrollEnabled, getOrInitViewport]);
 
-  /** 
-   * [수정] 스크롤 이벤트 핸들러 (불필요한 상태 업데이트 가드 추가로 성능 최적화) 
-   */
   const handleScrollManual = useCallback(() => {
     const viewport = getOrInitViewport();
     if (!viewport) return;
@@ -147,26 +116,19 @@ export function ChatWindow() {
     const { scrollTop, scrollHeight, clientHeight } = viewport;
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
     
-    // [정밀 튜닝] 바닥에서 100px 이상 떨어지면 자동 스크롤 중단
-    const isNowAtBottom = distanceFromBottom < SCROLL_THRESHOLD;
+    // [Refinement] UI_CONFIG.SCROLL_THRESHOLD 직접 사용 (중복 제거)
+    const isNowAtBottom = distanceFromBottom < UI_CONFIG.SCROLL_THRESHOLD;
     
-    // [성능 최적화] 상태가 실제로 바뀔 때만 업데이트 호출 (가드 적용)
     if (isNowAtBottom) {
       if (!autoScrollEnabled) setAutoScrollEnabled(true);
       if (showScrollButton) setShowScrollButton(false);
-      // [신규] 수동으로 바닥에 도달했을 때도 읽지 않은 상태 초기화
       if (hasUnreadMessages) setHasUnreadMessages(false);
     } else {
-      // 바닥이 아니면 자동 스크롤을 끄고 메시지 안착 버튼을 보여줍니다.
       if (autoScrollEnabled) setAutoScrollEnabled(false);
       if (!showScrollButton) setShowScrollButton(true);
     }
   }, [autoScrollEnabled, showScrollButton, hasUnreadMessages, getOrInitViewport]);
 
-  /**
-   * [신규] 사용자 직접 개입(휠/터치) 감지 로직
-   * 바닥 임계치 이전에 수동 조작이 발생하면 즉시 자동 스크롤을 중단합니다.
-   */
   const handleUserInteraction = useCallback(() => {
     if (autoScrollEnabled) {
       setAutoScrollEnabled(false);
@@ -174,7 +136,6 @@ export function ChatWindow() {
     }
   }, [autoScrollEnabled]);
 
-  // useChat 옵션 메모이제이션 (성능 최적화 및 불필요한 effect 방지)
   const chatOptions = useMemo(() => ({
     messages: [WELCOME_MESSAGE],
     transport: defaultChatTransport,
@@ -195,16 +156,11 @@ export function ChatWindow() {
     },
   }), [userId, sessionId, alpha, scrollToBottom]);
 
-  const { messages, sendMessage, status, error, setMessages } = useChat(chatOptions);
+  const { messages, sendMessage, status, setMessages } = useChat(chatOptions);
 
-
-  // 2. 세션 변경 시 히스토리 로드 (sessionId 의존성 추가)
   useEffect(() => {
     if (!sessionId) return;
     let ignore = false;
-
-    // 세션이 변경되면 먼저 메시지 창을 비우고 환영 메시지만 남깁니다.
-    // 이를 통해 이전 세션의 잔여 메시지가 섞이는 현상을 방지합니다.
     setMessages([WELCOME_MESSAGE]);
 
     const loadHistory = async () => {
@@ -214,20 +170,26 @@ export function ChatWindow() {
         if (ignore) return;
 
         if (res.ok) {
-          const data = await res.json();
-          if (ignore) return;
+          // [Refinement] Content-Type 체크 및 JSON 파싱 에러 가시화
+          const contentType = res.headers.get('content-type');
+          if (!contentType || !contentType.includes('application/json')) {
+            throw new Error(`Unexpected content-type: ${contentType}`);
+          }
+
+          const data = await res.json().catch((err) => {
+            console.error('[ChatWindow] JSON Parsing Error:', err);
+            return { messages: [] };
+          });
 
           if (data.messages && data.messages.length > 0) {
-            // 백엔드 메시지를 UIMessage 형식으로 변환
-            const historyMessages: UIMessage[] = data.messages.map((m: { role: string; content: string; timestamp?: string }, index: number) => ({
+            const historyMessages: UIMessage[] = data.messages.map((m: any, index: number) => ({
               id: `hist-${index}-${sessionId}`,
-              role: m.role as 'user' | 'assistant' | 'system' | 'data',
+              role: m.role,
               parts: [{ type: 'text', text: m.content }],
               createdAt: m.timestamp ? new Date(m.timestamp) : undefined,
             }));
 
             setMessages(prev => {
-              // 환영 메시지와 로딩 중 이미 발생했을 수 있는 신규 메시지는 보존
               const currentMessages = prev.filter(m => m.id !== 'welcome');
               return [WELCOME_MESSAGE, ...historyMessages, ...currentMessages];
             });
@@ -239,81 +201,52 @@ export function ChatWindow() {
       } catch (err: unknown) {
         if (!ignore) {
           const errMsg = err instanceof Error ? err.message : 'Unknown error';
-          console.error('Failed to load chat history:', err);
-          toast.error('대화 내역을 불러오는데 실패했습니다.', {
-            description: errMsg,
-          });
+          console.error('[ChatWindow] History Load Error:', err);
+          toast.error('대화 내역 로드 실패', { description: errMsg });
         }
       } finally {
-        if (!ignore) {
-          setIsHistoryLoading(false);
-        }
+        if (!ignore) setIsHistoryLoading(false);
       }
     };
 
     loadHistory();
-    return () => {
-      ignore = true;
-      setIsHistoryLoading(false); // Cleanup 시 로딩 상태 해제 보장
-    };
+    return () => { ignore = true; };
   }, [sessionId, setMessages]);
 
   const handleClearHistory = async () => {
-    if (!sessionId) return;
-    if (!confirm('대화 내용을 모두 초기화하시겠습니까?')) return;
-
+    if (!sessionId || !confirm('대화 내용을 모두 초기화하시겠습니까?')) return;
     try {
-      const res = await fetch(`/api/chat/history?session_id=${sessionId}`, {
-        method: 'DELETE',
-      });
-      
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to clear history');
-      }
+      const res = await fetch(`/api/chat/history?session_id=${sessionId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to clear history');
 
-      // Clear local state and localStorage to get a new session
       const newSid = generateId('sess');
-      try {
-        localStorage.setItem(STORAGE_KEYS.CHAT_SESSION_ID, newSid);
-      } catch (err) {
-        console.warn('[Storage] Failed to update session_id in localStorage:', err);
-      }
+      localStorage.setItem(STORAGE_KEYS.CHAT_SESSION_ID, newSid);
       setSessionId(newSid);
       setMessages([WELCOME_MESSAGE]);
       toast.success('대화가 초기화되었습니다.');
     } catch (err: unknown) {
-      console.error('Clear history error:', err);
-      const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      toast.error('초기화 중 오류가 발생했습니다.', {
-        description: errMsg,
-      });
+      console.error('[ChatWindow] Clear History Error:', err);
+      toast.error('초기화 중 오류 발생');
     }
   };
 
   const isLoading = status === 'streaming' || status === 'submitted';
 
-  // 새 메시지 수신 시 자동 스크롤 (사용자가 위를 보고 있지 않을 때만)
   useEffect(() => {
     if (autoScrollEnabled) {
       scrollToBottom();
     } else if (isLoading) {
-      // [신규] 사용자가 위를 보고 있는 도중 데이터가 들어오면 뱃지 활성화
       setHasUnreadMessages(true);
     }
   }, [messages, isLoading, autoScrollEnabled, scrollToBottom]);
 
-  const handleSubmit = useCallback(
-    (e?: React.FormEvent) => {
-      e?.preventDefault();
-      const trimmed = input.trim();
-      if (!trimmed || isLoading) return;
-
-      sendMessage({ role: 'user', parts: [{ type: 'text', text: trimmed }] });
-      setInput('');
-    },
-    [input, isLoading, sendMessage]
-  );
+  const handleSubmit = useCallback((e?: React.FormEvent) => {
+    e?.preventDefault();
+    const trimmed = input.trim();
+    if (!trimmed || isLoading) return;
+    sendMessage({ role: 'user', parts: [{ type: 'text', text: trimmed }] });
+    setInput('');
+  }, [input, isLoading, sendMessage]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -323,15 +256,15 @@ export function ChatWindow() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)] w-full max-w-6xl mx-auto border border-slate-200 rounded-2xl shadow-sm bg-slate-50/50 overflow-hidden relative">
-      {/* 헤더 */}
+    <div 
+      className="flex flex-col w-full max-w-6xl mx-auto border border-slate-200 rounded-2xl shadow-sm bg-slate-50/50 overflow-hidden relative h-[calc(100vh-var(--chat-height-offset))]"
+    >
       <div className="bg-white/80 backdrop-blur-md border-b px-6 py-4 flex items-center justify-between shadow-sm z-10 sticky top-0">
         <div>
           <h2 className="text-lg font-bold text-slate-800 tracking-tight">Flownote AI</h2>
           <p className="text-xs text-slate-500 font-medium">사용자 데이터 기반 RAG 에이전트</p>
         </div>
         <div className="flex items-center gap-3">
-          {/* 하이브리드 가중치 조절 (간이) */}
           <div className="hidden md:flex flex-col items-end mr-2">
             <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Alpha (Dense/FAISS)</span>
             <select 
@@ -340,34 +273,27 @@ export function ChatWindow() {
               onChange={(e) => setAlpha(parseFloat(e.target.value))}
               className="text-xs bg-transparent border-none focus:ring-0 text-slate-600 font-medium cursor-pointer"
             >
-              <option value="0.0">0.0 (Keyword Only)</option>
-              <option value="0.3">0.3 (Keyword Heavy)</option>
-              <option value="0.5">0.5 (Balanced)</option>
-              <option value="0.7">0.7 (Semantic Heavy)</option>
-              <option value="1.0">1.0 (Semantic Only)</option>
+              <option value="0.0">0.0 (Keyword) </option>
+              <option value="0.3">0.3 </option>
+              <option value="0.5">0.5 </option>
+              <option value="0.7">0.7 </option>
+              <option value="1.0">1.0 (Semantic) </option>
             </select>
           </div>
 
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={handleClearHistory}
-            className="text-slate-400 hover:text-red-500 hover:bg-red-50 text-xs h-8"
-          >
+          <Button variant="ghost" size="sm" onClick={handleClearHistory} className="text-slate-400 hover:text-red-500 hover:bg-red-50 text-xs h-8">
             초기화
           </Button>
 
-          {/* 상태 표시 */}
           {(isLoading || isHistoryLoading) && (
             <div className="flex items-center gap-1.5 text-xs text-blue-500 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-100">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              <span>{isHistoryLoading ? '이전 대화 로드 중...' : '응답 생성 중...'}</span>
+              <span>{isHistoryLoading ? '로드 중...' : '생성 중...'}</span>
             </div>
           )}
         </div>
       </div>
 
-      {/* 메시지 목록 */}
       <div className="flex-1 overflow-hidden relative group">
         <ScrollArea 
           className="h-full w-full" 
@@ -376,9 +302,7 @@ export function ChatWindow() {
           onWheel={handleUserInteraction}
           onTouchStart={handleUserInteraction}
         >
-          <div 
-            className="flex flex-col gap-0 w-full max-w-4xl mx-auto p-4 py-8"
-          >
+          <div className="flex flex-col gap-0 w-full max-w-4xl mx-auto p-4 py-8">
             {messages.map((m: UIMessage, idx: number) => (
               <MessageBubble 
                 key={m.id} 
@@ -387,20 +311,10 @@ export function ChatWindow() {
                 isStreaming={status === 'streaming'}
               />
             ))}
-
-            {error && (
-              <div className="text-center text-sm text-red-600 bg-red-50 p-4 rounded-xl border border-red-100 max-w-md mx-auto my-6 shadow-sm">
-                <span className="font-semibold block mb-1">통신 에러 발생</span>
-                {error.message || '네트워크 연결이 지연되고 있습니다.'}
-              </div>
-            )}
-
-            {/* 스크롤 앵커 */}
             <div className="h-4" />
           </div>
         </ScrollArea>
 
-        {/* 하단 이동 버튼 (스마트 스크롤 가드 작동 시 노출) */}
         {showScrollButton && (
           <Button
             size="sm"
@@ -421,19 +335,15 @@ export function ChatWindow() {
         )}
       </div>
 
-      {/* 입력 영역 */}
       <div className="p-4 bg-white/80 backdrop-blur-md border-t border-slate-200 sticky bottom-0 z-10 w-full">
-        <form
-          onSubmit={handleSubmit}
-          className="max-w-4xl mx-auto flex gap-4 items-end"
-        >
+        <form onSubmit={handleSubmit} className="max-w-4xl mx-auto flex gap-4 items-end">
           <div className="relative w-full shadow-sm rounded-xl">
             <Textarea
               id="chat-input"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="메시지를 입력하세요 (Shift + Enter로 줄바꿈)..."
+              placeholder="메시지를 입력하세요..."
               className="w-full resize-none pr-12 bg-white rounded-xl border-slate-200 focus-visible:ring-1 focus-visible:ring-slate-400 min-h-[56px] max-h-40 text-base py-4"
               rows={1}
               disabled={isLoading}
@@ -443,13 +353,8 @@ export function ChatWindow() {
               size="icon"
               disabled={!input.trim() || isLoading}
               className="absolute right-3 bottom-3 h-8 w-8 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white transition-opacity disabled:opacity-50"
-              aria-label="메시지 전송"
             >
-              {isLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Send className="w-4 h-4 ml-0.5" />
-              )}
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 ml-0.5" />}
             </Button>
           </div>
         </form>
