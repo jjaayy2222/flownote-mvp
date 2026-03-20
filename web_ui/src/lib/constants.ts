@@ -20,5 +20,4 @@ export const CHAT_CONFIG = {
  */
 export const UI_CONFIG = {
   SCROLL_THRESHOLD: 100, // UX 바닥 인식 임계치 (px)
-  ANIMATION_DURATION: 300, // 트랜지션 시간 (ms)
 } as const;
