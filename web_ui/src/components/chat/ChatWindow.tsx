@@ -156,7 +156,7 @@ export function ChatWindow() {
     },
   }), [userId, sessionId, alpha, scrollToBottom]);
 
-  const { messages, sendMessage, status, setMessages } = useChat(chatOptions);
+  const { messages, sendMessage, status, setMessages, error } = useChat(chatOptions);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -182,7 +182,13 @@ export function ChatWindow() {
           });
 
           if (data.messages && data.messages.length > 0) {
-            const historyMessages: UIMessage[] = data.messages.map((m: any, index: number) => ({
+            interface HistoryMessage {
+              role: 'assistant' | 'user';
+              content: string;
+              timestamp?: string | number;
+            }
+
+            const historyMessages: UIMessage[] = data.messages.map((m: HistoryMessage, index: number) => ({
               id: `hist-${index}-${sessionId}`,
               role: m.role,
               parts: [{ type: 'text', text: m.content }],
@@ -220,7 +226,11 @@ export function ChatWindow() {
       if (!res.ok) throw new Error('Failed to clear history');
 
       const newSid = generateId('sess');
-      localStorage.setItem(STORAGE_KEYS.CHAT_SESSION_ID, newSid);
+      try {
+        localStorage.setItem(STORAGE_KEYS.CHAT_SESSION_ID, newSid);
+      } catch (err) {
+        console.warn('[Storage] Failed to update session_id in localStorage:', err);
+      }
       setSessionId(newSid);
       setMessages([WELCOME_MESSAGE]);
       toast.success('대화가 초기화되었습니다.');
@@ -311,6 +321,20 @@ export function ChatWindow() {
                 isStreaming={status === 'streaming'}
               />
             ))}
+            {error && (
+              <div className="p-4 mb-4 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+                <span className="font-bold">Error:</span>
+                <span>{error.message || '메시지 전송 중 오류가 발생했습니다.'}</span>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => handleSubmit()} 
+                  className="ml-auto h-6 text-[10px] hover:bg-red-100"
+                >
+                  재시도
+                </Button>
+              </div>
+            )}
             <div className="h-4" />
           </div>
         </ScrollArea>
@@ -319,6 +343,7 @@ export function ChatWindow() {
           <Button
             size="sm"
             onClick={() => scrollToBottom('smooth')}
+            aria-label="최근 메시지로 이동"
             className={`
               absolute bottom-6 right-8 rounded-full shadow-lg border border-slate-200 
               bg-white/90 backdrop-blur-sm hover:bg-slate-50 text-slate-600 z-20 
@@ -351,6 +376,7 @@ export function ChatWindow() {
             <Button
               type="submit"
               size="icon"
+              aria-label="메시지 전송"
               disabled={!input.trim() || isLoading}
               className="absolute right-3 bottom-3 h-8 w-8 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white transition-opacity disabled:opacity-50"
             >
