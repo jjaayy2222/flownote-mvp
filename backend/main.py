@@ -115,8 +115,8 @@ app.add_exception_handler(RequestValidationError, validation_exception_handler)
 async def redis_unavailable_handler(request: Request, exc: RedisUnavailableError) -> JSONResponse:
     """Redis 연결 불가 시 전역 503 응답 반환.
 
-    chat_history_service의 모든 엜드포인트에서 각자 RedisUnavailableError를
-    쪵치하지 않아도 이 핸들러가 자동으로 503으로 변환한다.
+    chat_history_service의 모든 엔드포인트에서 각자 RedisUnavailableError를
+    처리하지 않아도 이 핸들러가 자동으로 503으로 변환한다.
     """
     logger.warning(
         "Redis unavailable: %s",

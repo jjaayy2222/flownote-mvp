@@ -3,9 +3,8 @@
 import hashlib
 import json
 import logging
-from functools import wraps
 from json import JSONDecodeError
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 from backend.services.redis_pubsub import redis_client
 from backend.api.models import ChatMessage
@@ -27,7 +26,7 @@ _PREVIEW_MAX_LEN = 80
 # 커스텀 예외
 # ─────────────────────────────────────────────────────────────
 class RedisUnavailableError(RuntimeError):
-    """Redis 연결 불가 시 발생. 전역 예외 핸들러에서 503으로 변환된다."""
+    """Redis 연결 불가 시 발생. main.py의 전역 핸들러에서 503으로 변환된다."""
 
 
 # ─────────────────────────────────────────────────────────────
@@ -43,38 +42,20 @@ def _mask_id(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()[:12]
 
 
-# ─────────────────────────────────────────────────────────────
-# 로깅·재전파 데코레이터
-# ─────────────────────────────────────────────────────────────
-def _log_and_reraise(
-    log_message: str,
-    extra_builder: Callable[..., Dict[str, Any]],
-):
-    """공개 메서드용 데코레이터.
+def _log_and_reraise_generic(
+    message: str,
+    extra: Dict[str, Any],
+    exc: Exception,
+) -> None:
+    """예외 종류에 따라 선별적으로 로깅하고 재전파한다.
 
-    - RedisUnavailableError: 이미 _ensure_connected에서 로깅됨.
-      중복 로깅 없이 그대로 다시 던진다.
-    - 그 외 예외: log_message와 extra_builder로 구성한 컨텍스트를
-      logger.exception()으로 기록한 뒤 다시 던진다.
+    - RedisUnavailableError: _ensure_connected에서 이미 로깅됨. 중복 없이 재전파.
+    - 그 외 예외: message와 extra로 logger.exception을 기록한 후 재전파.
     """
-
-    def decorator(func: Callable) -> Callable:
-        @wraps(func)
-        async def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
-            try:
-                return await func(self, *args, **kwargs)
-            except RedisUnavailableError:
-                raise  # 이미 로깅됨, 중복 로깅 방지
-            except Exception as e:
-                logger.exception(
-                    log_message,
-                    extra=extra_builder(e, *args, **kwargs),
-                )
-                raise
-
-        return wrapper
-
-    return decorator
+    if isinstance(exc, RedisUnavailableError):
+        raise exc  # 중복 로깅 방지
+    logger.exception(message, extra=extra)
+    raise exc
 
 
 class ChatHistoryService:
@@ -154,9 +135,8 @@ class ChatHistoryService:
 
     async def _get_session_meta(self, session_id: str) -> Optional[Dict[str, Any]]:
         """session_id에 해당하는 메타데이터 dict를 읽어 반환한다."""
-        key = self._session_meta_key(session_id)
         return await self._load_json_dict(
-            key,
+            self._session_meta_key(session_id),
             log_context="get_session_meta",
             id_hash=_mask_id(session_id),
         )
@@ -167,6 +147,50 @@ class ChatHistoryService:
         await redis_client.redis.set(key, json.dumps(meta, ensure_ascii=False))
         await redis_client.redis.expire(key, self.ttl)
 
+    async def _build_session_meta(
+        self,
+        session_id: str,
+        user_id: Optional[str],
+        *,
+        new_preview: Optional[str],
+        now: datetime,
+        force_meta: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """메타 dict를 구성하여 반환한다.
+
+        force_meta가 있으면 Redis 읽기를 건너뛰고 복사본을 기반으로 구성한다.
+        force_meta가 없으면 기존 메타를 읽어 last_active_at·preview만 업데이트한다.
+        """
+        now_iso = now.isoformat()
+        if force_meta is not None:
+            meta = dict(force_meta)  # caller의 dict 직접 변경 방지
+        else:
+            meta = await self._get_session_meta(session_id) or {}
+
+        effective_user_id = user_id or meta.get("user_id")
+        meta.setdefault("session_id", session_id)
+        meta.setdefault("created_at", now_iso)
+        meta["last_active_at"] = now_iso
+        if new_preview is not None:
+            meta["preview"] = new_preview[:_PREVIEW_MAX_LEN]
+        if effective_user_id:
+            meta["user_id"] = effective_user_id
+
+        return meta
+
+    async def _update_session_index(
+        self,
+        session_id: str,
+        user_id: Optional[str],
+        now: datetime,
+    ) -> None:
+        """ZSET score를 갱신하여 최근 활성 순 정렬을 동기화한다."""
+        if not user_id:
+            return
+        user_sessions_key = self._user_sessions_key(user_id)
+        await redis_client.redis.zadd(user_sessions_key, {session_id: now.timestamp()})
+        await redis_client.redis.expire(user_sessions_key, self.ttl)
+
     async def _touch_session(
         self,
         session_id: str,
@@ -176,48 +200,21 @@ class ChatHistoryService:
         now: Optional[datetime] = None,
         force_meta: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """세션 메타의 last_active_at·preview와 ZSET score를 단일 지점에서 갱신한다.
+        """세션 메타와 ZSET score를 단일 지점에서 갱신하는 오케스트레이터.
 
-        force_meta가 제공된 경우 Redis 읽기를 건너뛰고 해당 dict를 그대로 저장한다.
-        force_meta가 None인 경우 기존 메타를 읽어 last_active_at과 preview만 업데이트한다.
-
-        user_id가 None이면 저장된 메타에서 복원하여 ZSET score도 갱신한다.
+        _build_session_meta로 메타를 구성하고 _save_session_meta로 저장한 뒤,
+        _update_session_index로 ZSET score를 갱신한다.
         """
         now = now or _now_utc()
-        now_iso = now.isoformat()
-        now_score = now.timestamp()
-
-        if force_meta is not None:
-            meta = force_meta
-        else:
-            meta = await self._get_session_meta(session_id) or {}
-
-        # user_id 결정: 인자 우선, 없으면 메타에서 복원
-        effective_user_id = user_id or meta.get("user_id")
-
-        meta.setdefault("session_id", session_id)
-        meta.setdefault("created_at", now_iso)
-        meta["last_active_at"] = now_iso
-        if new_preview is not None:
-            meta["preview"] = new_preview[:_PREVIEW_MAX_LEN]
-
+        meta = await self._build_session_meta(
+            session_id, user_id,
+            new_preview=new_preview, now=now, force_meta=force_meta,
+        )
         await self._save_session_meta(session_id, meta)
-
-        # ZSET score 갱신 (최근 활성 순 정렬 일관성 유지)
-        if effective_user_id:
-            user_sessions_key = self._user_sessions_key(effective_user_id)
-            await redis_client.redis.zadd(user_sessions_key, {session_id: now_score})
-            await redis_client.redis.expire(user_sessions_key, self.ttl)
+        await self._update_session_index(session_id, meta.get("user_id"), now)
 
     # ── 공개 API ───────────────────────────────────────────────
 
-    @_log_and_reraise(
-        "Failed to register session",
-        lambda e, session_id, user_id, *args, **kwargs: {
-            "session_id_hash": _mask_id(session_id),
-            "error": str(e),
-        },
-    )
     async def register_session(
         self,
         session_id: str,
@@ -237,41 +234,41 @@ class ChatHistoryService:
         if not session_id or not user_id:
             raise ValueError("session_id and user_id are required.")
 
-        await self._ensure_connected("register_session")
+        try:
+            await self._ensure_connected("register_session")
 
-        now = _now_utc()
+            now = _now_utc()
+            existing_meta = await self._get_session_meta(session_id)
+            created_at = (
+                existing_meta.get("created_at", now.isoformat())
+                if existing_meta
+                else now.isoformat()
+            )
 
-        # 기존 created_at 보존 (재등록 시에도 최초 생성 시각 유지)
-        existing_meta = await self._get_session_meta(session_id)
-        created_at = (
-            existing_meta.get("created_at", now.isoformat())
-            if existing_meta
-            else now.isoformat()
-        )
+            force_meta: Dict[str, Any] = {
+                "session_id": session_id,
+                "user_id": user_id,
+                "name": name,
+                "created_at": created_at,
+                "preview": preview,
+            }
+            # ZSET 갱신 포함: _touch_session에 완전 위임 (SSOT)
+            await self._touch_session(
+                session_id, user_id, now=now, force_meta=force_meta
+            )
 
-        # 전체 메타를 구성하여 _touch_session에 위임 (SSOT: ZSET 갱신 로직 단일화)
-        force_meta: Dict[str, Any] = {
-            "session_id": session_id,
-            "user_id": user_id,
-            "name": name,
-            "created_at": created_at,
-            "preview": preview,
-        }
-        await self._touch_session(
-            session_id, user_id, now=now, force_meta=force_meta
-        )
+        except Exception as e:
+            _log_and_reraise_generic(
+                "Failed to register session",
+                {"session_id_hash": _mask_id(session_id), "error": str(e)},
+                e,
+            )
 
-    @_log_and_reraise(
-        "Failed to list sessions",
-        lambda e, user_id, *args, **kwargs: {
-            "user_id_hash": _mask_id(user_id),
-            "error": str(e),
-        },
-    )
     async def list_sessions(self, user_id: str) -> List[Dict[str, Any]]:
         """사용자의 세션 목록을 최근 활성순으로 반환한다.
 
-        보안: 메타의 user_id가 요청자와 일치하는 항목만 포함한다 (교차 유저 데이터 차단).
+        mget을 사용해 N+1 Redis 호출을 ZSET 1회 + mget 1회로 최적화한다.
+        보안: 메타의 user_id가 요청자와 일치하는 항목만 포함한다.
 
         Raises:
             ValueError: user_id 누락.
@@ -280,41 +277,58 @@ class ChatHistoryService:
         if not user_id:
             raise ValueError("user_id is required.")
 
-        await self._ensure_connected("list_sessions")
+        try:
+            await self._ensure_connected("list_sessions")
 
-        user_sessions_key = self._user_sessions_key(user_id)
-        # str() 캐스팅: decode_responses 설정이 바뀌어도 방어적으로 str 보장
-        raw_ids = await redis_client.redis.zrevrange(user_sessions_key, 0, -1)
-        sessions: List[Dict[str, Any]] = []
-        for raw_sid in raw_ids:
-            sid = str(raw_sid)
-            meta = await self._load_json_dict(
-                self._session_meta_key(sid),
-                log_context="list_sessions",
-                id_hash=_mask_id(sid),
+            user_sessions_key = self._user_sessions_key(user_id)
+            # str() 캐스팅: decode_responses 설정 변경에 방어적으로 str 보장
+            raw_ids = await redis_client.redis.zrevrange(user_sessions_key, 0, -1)
+            if not raw_ids:
+                return []
+
+            sids = [str(r) for r in raw_ids]
+            meta_keys = [self._session_meta_key(sid) for sid in sids]
+
+            # mget으로 N+1 → 2 Redis 라운드트립으로 최적화
+            raws = await redis_client.redis.mget(*meta_keys)
+
+            sessions: List[Dict[str, Any]] = []
+            for sid, raw in zip(sids, raws):
+                if not raw:
+                    continue
+                try:
+                    meta = json.loads(raw)
+                    if not isinstance(meta, dict):
+                        raise ValueError("JSON is not a dict")
+                except (JSONDecodeError, ValueError) as parse_err:
+                    logger.error(
+                        "Malformed session meta during list_sessions, skipping.",
+                        extra={"session_id_hash": _mask_id(sid), "error": str(parse_err)},
+                    )
+                    continue
+
+                # 보안: ZSET 오염으로 인한 교차 유저 데이터 유출 차단
+                if meta.get("user_id") != user_id:
+                    logger.warning(
+                        "Cross-user session leakage detected and blocked.",
+                        extra={
+                            "user_id_hash": _mask_id(user_id),
+                            "session_id_hash": _mask_id(sid),
+                        },
+                    )
+                    continue
+                sessions.append(meta)
+
+            return sessions
+
+        except Exception as e:
+            _log_and_reraise_generic(
+                "Failed to list sessions",
+                {"user_id_hash": _mask_id(user_id), "error": str(e)},
+                e,
             )
-            if meta is None:
-                continue
-            # 보안: ZSET 오염/재사용으로 인한 교차 유저 데이터 유출 방지
-            if meta.get("user_id") != user_id:
-                logger.warning(
-                    "Cross-user session leakage detected and blocked.",
-                    extra={
-                        "user_id_hash": _mask_id(user_id),
-                        "session_id_hash": _mask_id(sid),
-                    },
-                )
-                continue
-            sessions.append(meta)
-        return sessions
+            return []  # unreachable but satisfies type checker
 
-    @_log_and_reraise(
-        "Failed to rename session",
-        lambda e, session_id, name, *args, **kwargs: {
-            "session_id_hash": _mask_id(session_id),
-            "error": str(e),
-        },
-    )
     async def rename_session(self, session_id: str, name: str) -> bool:
         """세션 이름을 수정한다. 세션이 없으면 False 반환.
 
@@ -325,22 +339,24 @@ class ChatHistoryService:
         if not session_id or not name:
             raise ValueError("session_id and name are required.")
 
-        await self._ensure_connected("rename_session")
+        try:
+            await self._ensure_connected("rename_session")
 
-        meta = await self._get_session_meta(session_id)
-        if meta is None:
-            return False
-        meta["name"] = name
-        await self._save_session_meta(session_id, meta)
-        return True
+            meta = await self._get_session_meta(session_id)
+            if meta is None:
+                return False
+            meta["name"] = name
+            await self._save_session_meta(session_id, meta)
+            return True
 
-    @_log_and_reraise(
-        "Failed to add message to history",
-        lambda e, session_id, *args, **kwargs: {
-            "session_id_hash": _mask_id(session_id),
-            "error": str(e),
-        },
-    )
+        except Exception as e:
+            _log_and_reraise_generic(
+                "Failed to rename session",
+                {"session_id_hash": _mask_id(session_id), "error": str(e)},
+                e,
+            )
+            return False  # unreachable but satisfies type checker
+
     async def add_message(self, session_id: str, role: str, content: str) -> None:
         """메시지를 Redis 리스트에 추가하고 세션 메타와 ZSET score를 갱신한다.
 
@@ -351,32 +367,33 @@ class ChatHistoryService:
         if not session_id or not session_id.strip():
             raise ValueError("session_id is required to add messages to history.")
 
-        await self._ensure_connected("add_message")
+        try:
+            await self._ensure_connected("add_message")
 
-        now = _now_utc()
-        key = self._history_key(session_id)
-        message: Dict[str, Any] = {
-            "role": role,
-            "content": content,
-            "timestamp": now.isoformat(),
-        }
+            now = _now_utc()
+            key = self._history_key(session_id)
+            message: Dict[str, Any] = {
+                "role": role,
+                "content": content,
+                "timestamp": now.isoformat(),
+            }
 
-        await redis_client.redis.rpush(key, json.dumps(message))
-        await redis_client.redis.expire(key, self.ttl)
+            await redis_client.redis.rpush(key, json.dumps(message))
+            await redis_client.redis.expire(key, self.ttl)
 
-        # 메타 preview + last_active_at + ZSET score를 단일 헬퍼로 갱신
-        # user_id=None → _touch_session이 메타에서 user_id를 복원하여 ZSET도 업데이트
-        await self._touch_session(
-            session_id, user_id=None, new_preview=content, now=now
-        )
+            # 메타 preview + last_active_at + ZSET score를 단일 헬퍼로 갱신
+            # user_id=None → _build_session_meta가 메타에서 복원하여 ZSET도 업데이트
+            await self._touch_session(
+                session_id, user_id=None, new_preview=content, now=now
+            )
 
-    @_log_and_reraise(
-        "Failed to get history",
-        lambda e, session_id, *args, **kwargs: {
-            "session_id_hash": _mask_id(session_id),
-            "error": str(e),
-        },
-    )
+        except Exception as e:
+            _log_and_reraise_generic(
+                "Failed to add message to history",
+                {"session_id_hash": _mask_id(session_id), "error": str(e)},
+                e,
+            )
+
     async def get_history(self, session_id: str, limit: int = 20) -> List[ChatMessage]:
         """최근 대화 내역 조회.
 
@@ -387,36 +404,38 @@ class ChatHistoryService:
         if not session_id or not session_id.strip():
             raise ValueError("session_id is required to get chat history.")
 
-        await self._ensure_connected("get_history")
+        try:
+            await self._ensure_connected("get_history")
 
-        key = self._history_key(session_id)
-        data = await redis_client.redis.lrange(key, -limit, -1)
-        messages: List[ChatMessage] = []
-        parse_errors = 0
-        for item in data:
-            msg_dict = self._parse_message(item)
-            if msg_dict is None:
-                parse_errors += 1
-                continue
-            messages.append(ChatMessage(**msg_dict))
-        if parse_errors:
-            # 루프 내 개별 로깅 대신 요약 1회 출력 (로그 스팸 방지)
-            logger.error(
-                "Skipped malformed messages during get_history.",
-                extra={
-                    "session_id_hash": _mask_id(session_id),
-                    "skipped_count": parse_errors,
-                },
+            key = self._history_key(session_id)
+            data = await redis_client.redis.lrange(key, -limit, -1)
+            messages: List[ChatMessage] = []
+            parse_errors = 0
+            for item in data:
+                msg_dict = self._parse_message(item)
+                if msg_dict is None:
+                    parse_errors += 1
+                    continue
+                messages.append(ChatMessage(**msg_dict))
+            if parse_errors:
+                # 루프 내 개별 로깅 대신 요약 1회 출력 (로그 스팸 방지)
+                logger.error(
+                    "Skipped malformed messages during get_history.",
+                    extra={
+                        "session_id_hash": _mask_id(session_id),
+                        "skipped_count": parse_errors,
+                    },
+                )
+            return messages
+
+        except Exception as e:
+            _log_and_reraise_generic(
+                "Failed to get history",
+                {"session_id_hash": _mask_id(session_id), "error": str(e)},
+                e,
             )
-        return messages
+            return []  # unreachable but satisfies type checker
 
-    @_log_and_reraise(
-        "Failed to clear history",
-        lambda e, session_id, *args, **kwargs: {
-            "session_id_hash": _mask_id(session_id),
-            "error": str(e),
-        },
-    )
     async def clear_history(self, session_id: str, user_id: Optional[str] = None) -> None:
         """특정 세션의 히스토리 + 메타 + ZSET 역색인을 완전 삭제한다.
 
@@ -429,21 +448,29 @@ class ChatHistoryService:
         if not session_id or not session_id.strip():
             raise ValueError("session_id is required to clear history.")
 
-        await self._ensure_connected("clear_history")
+        try:
+            await self._ensure_connected("clear_history")
 
-        # user_id 미전달 시 메타에서 복원하여 ZSET도 완전 정리
-        effective_user_id = user_id
-        if not effective_user_id:
-            meta = await self._get_session_meta(session_id)
-            if meta:
-                effective_user_id = meta.get("user_id")
+            # user_id 미전달 시 메타에서 복원하여 ZSET도 완전 정리
+            effective_user_id = user_id
+            if not effective_user_id:
+                meta = await self._get_session_meta(session_id)
+                if meta:
+                    effective_user_id = meta.get("user_id")
 
-        await redis_client.redis.delete(self._history_key(session_id))
-        await redis_client.redis.delete(self._session_meta_key(session_id))
+            await redis_client.redis.delete(self._history_key(session_id))
+            await redis_client.redis.delete(self._session_meta_key(session_id))
 
-        if effective_user_id:
-            user_sessions_key = self._user_sessions_key(effective_user_id)
-            await redis_client.redis.zrem(user_sessions_key, session_id)
+            if effective_user_id:
+                user_sessions_key = self._user_sessions_key(effective_user_id)
+                await redis_client.redis.zrem(user_sessions_key, session_id)
+
+        except Exception as e:
+            _log_and_reraise_generic(
+                "Failed to clear history",
+                {"session_id_hash": _mask_id(session_id), "error": str(e)},
+                e,
+            )
 
 
 def get_chat_history_service() -> ChatHistoryService:
