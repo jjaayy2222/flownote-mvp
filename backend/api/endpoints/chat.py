@@ -21,6 +21,7 @@ from backend.services.chat_service import ChatService, get_chat_service
 from backend.services.chat_history_service import (
     ChatHistoryService,
     get_chat_history_service,
+    RedisUnavailableError,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,6 +83,8 @@ async def get_chat_history(
         return ChatHistoryResponse(
             status="success", session_id=session_id, messages=messages
         )
+    except RedisUnavailableError as e:
+        raise HTTPException(status_code=503, detail="Redis unavailable. Please try again later.")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -102,6 +105,8 @@ async def clear_chat_history(
             "status": "success",
             "message": f"Session {session_id} cleared.",
         }
+    except RedisUnavailableError:
+        raise HTTPException(status_code=503, detail="Redis unavailable. Please try again later.")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -132,6 +137,8 @@ async def register_session(
             name=name,
         )
         return {"status": "success", "session_id": session_id}
+    except RedisUnavailableError:
+        raise HTTPException(status_code=503, detail="Redis unavailable. Please try again later.")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -157,9 +164,10 @@ async def list_sessions(
             sessions=sessions,
             count=len(sessions),
         )
+    except RedisUnavailableError:
+        raise HTTPException(status_code=503, detail="Redis unavailable. Please try again later.")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-
 
 @router.patch(
     "/sessions/{session_id}/name",
@@ -184,5 +192,7 @@ async def rename_session(
                 detail=f"Session '{session_id}' not found.",
             )
         return {"status": "success", "session_id": session_id, "name": body.name}
+    except RedisUnavailableError:
+        raise HTTPException(status_code=503, detail="Redis unavailable. Please try again later.")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
