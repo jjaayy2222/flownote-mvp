@@ -102,11 +102,34 @@ app.add_middleware(
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 from fastapi.exceptions import RequestValidationError
+from fastapi import Request
+from fastapi.responses import JSONResponse
 from backend.api.exceptions import http_exception_handler, validation_exception_handler
+from backend.services.chat_history_service import RedisUnavailableError
 
 app.add_exception_handler(HTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
-logger.info("✅ 전역 예외 처리기 등록 완료 (i18n 지원)")
+
+
+@app.exception_handler(RedisUnavailableError)
+async def redis_unavailable_handler(request: Request, exc: RedisUnavailableError) -> JSONResponse:
+    """Redis 연결 불가 시 전역 503 응답 반환.
+
+    chat_history_service의 모든 엜드포인트에서 각자 RedisUnavailableError를
+    쪵치하지 않아도 이 핸들러가 자동으로 503으로 변환한다.
+    """
+    logger.warning(
+        "Redis unavailable: %s",
+        str(exc),
+        extra={"path": request.url.path},
+    )
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Redis unavailable. Please try again later."},
+    )
+
+
+logger.info("✅ 전역 예외 처리기 등록 완료 (i18n 지원 + Redis 503)")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

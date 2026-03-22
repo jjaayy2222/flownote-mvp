@@ -7,7 +7,6 @@
 import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
-
 from fastapi.responses import StreamingResponse
 
 from backend.api.models import (
@@ -61,6 +60,7 @@ async def stream_chat(
 
 # ─────────────────────────────────────────────────────────────
 # History endpoints (기존)
+# RedisUnavailableError → 503 변환은 main.py의 전역 핸들러에서 처리
 # ─────────────────────────────────────────────────────────────
 
 
