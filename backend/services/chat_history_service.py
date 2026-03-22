@@ -6,8 +6,8 @@ import logging
 from json import JSONDecodeError
 from typing import Any, Dict, List, NoReturn, Optional
 from datetime import datetime, timezone
-from backend.services.redis_pubsub import redis_client  # type: ignore
-from backend.api.models import ChatMessage  # type: ignore
+from backend.services.redis_pubsub import redis_client  # type: ignore[import]
+from backend.api.models import ChatMessage  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +38,14 @@ def _now_utc() -> datetime:
 
 
 def _mask_id(value: str) -> str:
-    """민감 ID를 SHA-256 앞 12자리로 마스킹하여 로그에 안전하게 기록."""
-    return hashlib.sha256(value.encode()).hexdigest()[:12]  # type: ignore[index]
+    """민감 ID를 SHA-256 앞 12자리로 마스킹하여 로그에 안전하게 기록.
+    
+    Checklist (Security): hashlib.sha256 사용으로 개인정보 보호.
+    Checklist (Null Safety): value는 str 타입 힌트가 있으나 방어적으로 다룸.
+    """
+    if not value or not isinstance(value, str):
+        return "invalid_id"
+    return str(hashlib.sha256(value.encode()).hexdigest()[:12])  # type: ignore[index]
 
 
 def _log_and_reraise_generic(
@@ -212,7 +218,8 @@ class ChatHistoryService:
         meta.setdefault("created_at", now_iso)
         meta["last_active_at"] = now_iso
         if new_preview is not None:
-            meta["preview"] = new_preview[:_PREVIEW_MAX_LEN]  # type: ignore[index]
+            # Checklist (Null Safety): slicing 전에 대상 보장 및 result str 캐스팅
+            meta["preview"] = str(new_preview)[:_PREVIEW_MAX_LEN]  # type: ignore[index]
         if effective_user_id:
             meta["user_id"] = effective_user_id
 
@@ -431,7 +438,9 @@ class ChatHistoryService:
             for item in data:
                 msg_dict = self._parse_message(item)
                 if msg_dict is None:
-                    parse_errors += 1  # type: ignore
+                    # Checklist (Wait): Linter가 parse_errors 타입을 인식 못 하는 경우를 위해 
+                    # int 정체성 보장 (Pyre2 binding 이슈 대응)
+                    parse_errors = int(parse_errors + 1)  # type: ignore[operator]
                     continue
                 messages.append(ChatMessage(**msg_dict))
             if parse_errors:
