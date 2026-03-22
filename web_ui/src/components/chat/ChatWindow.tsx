@@ -63,7 +63,17 @@ function getOrCreateStoredId(storageKey: string, prefix: string): string {
   return id;
 }
 
-export function ChatWindow() {
+interface ChatWindowProps {
+  externalSessionId?: string;
+  externalUserId?: string;
+  onSessionChange?: (sessionId: string) => void;
+}
+
+export function ChatWindow({ 
+  externalSessionId, 
+  externalUserId,
+  onSessionChange 
+}: ChatWindowProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
 
@@ -72,13 +82,21 @@ export function ChatWindow() {
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
 
+  // 계층화된 세션 상태 관리 (Prop 우선 -> Storage)
   const [sessionId, setSessionId] = useState<string>(() => 
-    getOrCreateStoredId(STORAGE_KEYS.CHAT_SESSION_ID, 'sess')
+    externalSessionId || getOrCreateStoredId(STORAGE_KEYS.CHAT_SESSION_ID, 'sess')
   );
 
   const [userId] = useState<string>(() => 
-    getOrCreateStoredId(STORAGE_KEYS.USER_ID, 'user')
+    externalUserId || getOrCreateStoredId(STORAGE_KEYS.USER_ID, 'user')
   );
+
+  // Prop 변화 감지하여 상태 동기화
+  useEffect(() => {
+    if (externalSessionId && externalSessionId !== sessionId) {
+      setSessionId(externalSessionId);
+    }
+  }, [externalSessionId, sessionId]);
 
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [alpha, setAlpha] = useState<number>(CHAT_CONFIG.DEFAULT_ALPHA);
@@ -231,6 +249,7 @@ export function ChatWindow() {
       localStorage.setItem(STORAGE_KEYS.CHAT_SESSION_ID, newSid);
       
       setSessionId(newSid);
+      onSessionChange?.(newSid);
       setMessages([WELCOME_MESSAGE]);
       toast.success('대화가 초기화되었습니다.');
     } catch (err: unknown) {
@@ -283,7 +302,7 @@ export function ChatWindow() {
 
   return (
     <div 
-      className="flex flex-col w-full max-w-6xl mx-auto border border-slate-200 rounded-2xl shadow-sm bg-slate-50/50 overflow-hidden relative h-[calc(100vh-var(--chat-height-offset))]"
+      className="flex flex-col w-full border-none shadow-none bg-transparent overflow-hidden relative h-full"
     >
       <div className="bg-white/80 backdrop-blur-md border-b px-6 py-4 flex items-center justify-between shadow-sm z-10 sticky top-0">
         <div>

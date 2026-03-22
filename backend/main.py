@@ -4,28 +4,28 @@
 FastAPI 메인 서버
 """
 
-from fastapi import FastAPI, UploadFile, File, HTTPException  # type: ignore
-from fastapi.middleware.cors import CORSMiddleware  # type: ignore
-from pydantic import BaseModel  # type: ignore
+from fastapi import FastAPI, UploadFile, File, HTTPException  # type: ignore[import]
+from fastapi.middleware.cors import CORSMiddleware  # type: ignore[import]
+from pydantic import BaseModel  # type: ignore[import]
 import logging
 from datetime import datetime, timezone
 import uuid
 
 from contextlib import asynccontextmanager
-from backend.services.websocket_manager import manager  # type: ignore
-from backend.api.endpoints.websocket import router as websocket_router  # type: ignore
+from backend.services.websocket_manager import manager  # type: ignore[import]
+from backend.api.endpoints.websocket import router as websocket_router  # type: ignore[import]
 
 # 마이그레이션 모델 임포트
-from backend.models import HealthCheckResponse, FileMetadata  # type: ignore
+from backend.models import HealthCheckResponse, FileMetadata  # type: ignore[import]
 
-from backend.routes.conflict_routes import router as conflict_router  # type: ignore
-from backend.routes.classifier_routes import router as classifier_router  # type: ignore
-from backend.routes.onboarding_routes import router as onboarding_router  # type: ignore
-from backend.api.endpoints.sync import router as sync_router  # type: ignore
-from backend.api.endpoints.automation import router as automation_router  # type: ignore
-from backend.api.endpoints.graph import router as graph_router  # type: ignore
-from backend.api.endpoints.search import router as search_router  # type: ignore
-from backend.api.endpoints.chat import router as chat_router  # type: ignore
+from backend.routes.conflict_routes import router as conflict_router  # type: ignore[import]
+from backend.routes.classifier_routes import router as classifier_router  # type: ignore[import]
+from backend.routes.onboarding_routes import router as onboarding_router  # type: ignore[import]
+from backend.api.endpoints.sync import router as sync_router  # type: ignore[import]
+from backend.api.endpoints.automation import router as automation_router  # type: ignore[import]
+from backend.api.endpoints.graph import router as graph_router  # type: ignore[import]
+from backend.api.endpoints.search import router as search_router  # type: ignore[import]
+from backend.api.endpoints.chat import router as chat_router  # type: ignore[import]
 
 
 # 로깅 설정
@@ -101,11 +101,11 @@ app.add_middleware(
 # Exception Handlers (i18n support)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-from fastapi.exceptions import RequestValidationError  # type: ignore
-from fastapi import Request  # type: ignore
-from fastapi.responses import JSONResponse  # type: ignore
-from backend.api.exceptions import http_exception_handler, validation_exception_handler  # type: ignore
-from backend.services.chat_history_service import RedisUnavailableError  # type: ignore
+from fastapi.exceptions import RequestValidationError  # type: ignore[import]
+from fastapi import Request  # type: ignore[import]
+from fastapi.responses import JSONResponse  # type: ignore[import]
+from backend.api.exceptions import http_exception_handler, validation_exception_handler  # type: ignore[import]
+from backend.services.chat_history_service import RedisUnavailableError  # type: ignore[import]
 
 app.add_exception_handler(HTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
@@ -222,7 +222,7 @@ async def root():
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 if __name__ == "__main__":
-    import uvicorn  # type: ignore
+    import uvicorn  # type: ignore[import]
 
     logger.info("🚀 FlowNote API 시작...")
     logger.info("📍 http://localhost:8000")
