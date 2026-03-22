@@ -4,10 +4,10 @@ import hashlib
 import json
 import logging
 from json import JSONDecodeError
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, NoReturn, Optional
 from datetime import datetime, timezone
-from backend.services.redis_pubsub import redis_client
-from backend.api.models import ChatMessage
+from backend.services.redis_pubsub import redis_client  # type: ignore
+from backend.api.models import ChatMessage  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -39,18 +39,21 @@ def _now_utc() -> datetime:
 
 def _mask_id(value: str) -> str:
     """민감 ID를 SHA-256 앞 12자리로 마스킹하여 로그에 안전하게 기록."""
-    return hashlib.sha256(value.encode()).hexdigest()[:12]
+    return hashlib.sha256(value.encode()).hexdigest()[:12]  # type: ignore[index]
 
 
 def _log_and_reraise_generic(
     message: str,
     extra: Dict[str, Any],
     exc: Exception,
-) -> None:
+) -> NoReturn:
     """예외 종류에 따라 선별적으로 로깅하고 재전파한다.
 
     - RedisUnavailableError: _ensure_connected에서 이미 로깅됨. 중복 없이 재전파.
     - 그 외 예외: message와 extra로 logger.exception을 기록한 후 재전파.
+
+    반환하지 않음(NoReturn): 항상 예외를 raise하므로 호출 이후 코드는 도달 불가.
+    이를 통해 각 public 메서드의 더미 return 문이 불필요해진다.
     """
     if isinstance(exc, RedisUnavailableError):
         raise exc  # 중복 로깅 방지
@@ -133,6 +136,43 @@ class ChatHistoryService:
         except (JSONDecodeError, TypeError):
             return None
 
+    def _parse_session_meta_for_list(
+        self,
+        user_id: str,
+        session_id: str,
+        raw: Any,
+    ) -> Optional[Dict[str, Any]]:
+        """mget 결과 1개를 파싱하고 보안 필터를 거쳐 dict를 반환한다.
+
+        파싱 오류, 누락 키, 교차 유저 데이터 발견 시 None 반환.
+        list_sessions의 루프 내 중첩을 제거하기 위한 헬퍼.
+        """
+        if not raw:
+            return None
+        try:
+            meta = json.loads(raw)
+            if not isinstance(meta, dict):
+                raise ValueError("JSON is not a dict")
+        except (JSONDecodeError, ValueError) as parse_err:
+            logger.error(
+                "Malformed session meta during list_sessions, skipping.",
+                extra={"session_id_hash": _mask_id(session_id), "error": str(parse_err)},
+            )
+            return None
+
+        # 보안: ZSET 오염으로 인한 교차 유저 데이터 유출 차단
+        if meta.get("user_id") != user_id:
+            logger.warning(
+                "Cross-user session leakage detected and blocked.",
+                extra={
+                    "user_id_hash": _mask_id(user_id),
+                    "session_id_hash": _mask_id(session_id),
+                },
+            )
+            return None
+
+        return meta
+
     async def _get_session_meta(self, session_id: str) -> Optional[Dict[str, Any]]:
         """session_id에 해당하는 메타데이터 dict를 읽어 반환한다."""
         return await self._load_json_dict(
@@ -172,7 +212,7 @@ class ChatHistoryService:
         meta.setdefault("created_at", now_iso)
         meta["last_active_at"] = now_iso
         if new_preview is not None:
-            meta["preview"] = new_preview[:_PREVIEW_MAX_LEN]
+            meta["preview"] = new_preview[:_PREVIEW_MAX_LEN]  # type: ignore[index]
         if effective_user_id:
             meta["user_id"] = effective_user_id
 
@@ -292,34 +332,13 @@ class ChatHistoryService:
             # mget으로 N+1 → 2 Redis 라운드트립으로 최적화
             raws = await redis_client.redis.mget(*meta_keys)
 
-            sessions: List[Dict[str, Any]] = []
+            # _parse_session_meta_for_list가 파싱+보안 필터를 담당 (루프 평탄화)
+            results: List[Dict[str, Any]] = []
             for sid, raw in zip(sids, raws):
-                if not raw:
-                    continue
-                try:
-                    meta = json.loads(raw)
-                    if not isinstance(meta, dict):
-                        raise ValueError("JSON is not a dict")
-                except (JSONDecodeError, ValueError) as parse_err:
-                    logger.error(
-                        "Malformed session meta during list_sessions, skipping.",
-                        extra={"session_id_hash": _mask_id(sid), "error": str(parse_err)},
-                    )
-                    continue
-
-                # 보안: ZSET 오염으로 인한 교차 유저 데이터 유출 차단
-                if meta.get("user_id") != user_id:
-                    logger.warning(
-                        "Cross-user session leakage detected and blocked.",
-                        extra={
-                            "user_id_hash": _mask_id(user_id),
-                            "session_id_hash": _mask_id(sid),
-                        },
-                    )
-                    continue
-                sessions.append(meta)
-
-            return sessions
+                meta = self._parse_session_meta_for_list(user_id, sid, raw)
+                if meta is not None:
+                    results.append(meta)
+            return results
 
         except Exception as e:
             _log_and_reraise_generic(
@@ -327,7 +346,6 @@ class ChatHistoryService:
                 {"user_id_hash": _mask_id(user_id), "error": str(e)},
                 e,
             )
-            return []  # unreachable but satisfies type checker
 
     async def rename_session(self, session_id: str, name: str) -> bool:
         """세션 이름을 수정한다. 세션이 없으면 False 반환.
@@ -355,7 +373,6 @@ class ChatHistoryService:
                 {"session_id_hash": _mask_id(session_id), "error": str(e)},
                 e,
             )
-            return False  # unreachable but satisfies type checker
 
     async def add_message(self, session_id: str, role: str, content: str) -> None:
         """메시지를 Redis 리스트에 추가하고 세션 메타와 ZSET score를 갱신한다.
@@ -410,11 +427,11 @@ class ChatHistoryService:
             key = self._history_key(session_id)
             data = await redis_client.redis.lrange(key, -limit, -1)
             messages: List[ChatMessage] = []
-            parse_errors = 0
+            parse_errors: int = 0
             for item in data:
                 msg_dict = self._parse_message(item)
                 if msg_dict is None:
-                    parse_errors += 1
+                    parse_errors += 1  # type: ignore
                     continue
                 messages.append(ChatMessage(**msg_dict))
             if parse_errors:
@@ -434,7 +451,6 @@ class ChatHistoryService:
                 {"session_id_hash": _mask_id(session_id), "error": str(e)},
                 e,
             )
-            return []  # unreachable but satisfies type checker
 
     async def clear_history(self, session_id: str, user_id: Optional[str] = None) -> None:
         """특정 세션의 히스토리 + 메타 + ZSET 역색인을 완전 삭제한다.
