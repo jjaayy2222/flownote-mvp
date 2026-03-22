@@ -214,6 +214,32 @@ class ChatHistoryResponse(BaseModel):
     messages: List[ChatMessage] = Field(default_factory=list, description="대화 내역 리스트")
 
 
+class ChatSessionMeta(BaseModel):
+    """세션 메타데이터 모델"""
+
+    session_id: str = Field(..., description="세션 ID")
+    user_id: str = Field(..., description="사용자 ID")
+    name: Optional[str] = Field(None, description="세션 이름 (선택)")
+    created_at: str = Field(..., description="생성 시각 (ISO 형식)")
+    last_active_at: str = Field(..., description="마지막 활성 시각 (ISO 형식)")
+    preview: Optional[str] = Field(None, description="마지막 메시지 미리보기")
+
+
+class SessionListResponse(BaseModel):
+    """세션 목록 응답 모델"""
+
+    status: str = Field(..., description="응답 상태")
+    user_id: str = Field(..., description="사용자 ID")
+    sessions: List[ChatSessionMeta] = Field(default_factory=list, description="세션 목록")
+    count: int = Field(0, description="세션 수")
+
+
+class RenameSessionRequest(BaseModel):
+    """세션 이름 수정 요청 모델"""
+
+    name: str = Field(..., min_length=1, max_length=100, description="새 세션 이름")
+
+
 __all__ = [
     # Classification (Core)
     "ClassifyRequest",
@@ -253,4 +279,8 @@ __all__ = [
     "ChatQueryRequest",
     "ChatMessage",
     "ChatHistoryResponse",
+    # Session Management (Issue #776)
+    "ChatSessionMeta",
+    "SessionListResponse",
+    "RenameSessionRequest",
 ]
