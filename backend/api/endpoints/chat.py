@@ -5,6 +5,7 @@
 """
 
 import logging
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 
 from fastapi.responses import StreamingResponse
@@ -88,16 +89,18 @@ async def get_chat_history(
 @router.delete("/history/{session_id}", summary="대화 히스토리 초기화")
 async def clear_chat_history(
     session_id: str,
+    user_id: Optional[str] = None,
     chat_history_service: ChatHistoryService = Depends(get_chat_history_service),
 ):
     """
-    지정된 세션 ID의 대화 내역을 모두 삭제합니다.
+    지정된 세션 ID의 대화 내역과 세션 메타데이터를 완전 삭제합니다.
+    user_id를 함께 전달하면 세션 목록(ZSET)에서도 제거됩니다.
     """
     try:
-        await chat_history_service.clear_history(session_id)
+        await chat_history_service.clear_history(session_id, user_id=user_id)
         return {
             "status": "success",
-            "message": f"History for session {session_id} cleared.",
+            "message": f"Session {session_id} cleared.",
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
