@@ -6,18 +6,18 @@
 
 import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException  # type: ignore[import]
+from fastapi.responses import StreamingResponse  # type: ignore[import]
 
-from backend.api.models import (
+from backend.api.models import (  # type: ignore[import]
     ChatQueryRequest,
     ChatHistoryResponse,
     SessionListResponse,
     ChatSessionMeta,
     RenameSessionRequest,
 )
-from backend.services.chat_service import ChatService, get_chat_service
-from backend.services.chat_history_service import (
+from backend.services.chat_service import ChatService, get_chat_service  # type: ignore[import]
+from backend.services.chat_history_service import (  # type: ignore[import]
     ChatHistoryService,
     get_chat_history_service,
 )
