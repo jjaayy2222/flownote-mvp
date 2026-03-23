@@ -67,12 +67,14 @@ interface ChatWindowProps {
   externalSessionId?: string;
   externalUserId?: string;
   onSessionChange?: (sessionId: string) => void;
+  headerLeftSlot?: React.ReactNode;
 }
 
 export function ChatWindow({ 
   externalSessionId, 
   externalUserId,
-  onSessionChange 
+  onSessionChange,
+  headerLeftSlot
 }: ChatWindowProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -304,10 +306,13 @@ export function ChatWindow({
     <div 
       className="flex flex-col w-full border-none shadow-none bg-transparent overflow-hidden relative h-full"
     >
-      <div className="bg-white/80 backdrop-blur-md border-b px-6 py-4 flex items-center justify-between shadow-sm z-10 sticky top-0">
-        <div>
-          <h2 className="text-lg font-bold text-slate-800 tracking-tight">Flownote AI</h2>
-          <p className="text-xs text-slate-500 font-medium">사용자 데이터 기반 RAG 에이전트</p>
+      <div className="bg-white/80 backdrop-blur-md border-b px-4 md:px-6 py-3 md:py-4 flex items-center justify-between shadow-sm z-10 sticky top-0">
+        <div className="flex items-center gap-2 md:gap-4">
+          {headerLeftSlot}
+          <div>
+            <h2 className="text-base md:text-lg font-bold text-slate-800 tracking-tight leading-tight">Flownote AI</h2>
+            <p className="text-[10px] md:text-xs text-slate-500 font-medium hidden sm:block">사용자 데이터 기반 RAG 에이전트</p>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <div className="hidden md:flex flex-col items-end mr-2">

@@ -1,6 +1,16 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { Menu } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { 
+  Sheet, 
+  SheetContent, 
+  SheetTrigger, 
+  SheetTitle, 
+  SheetDescription, 
+  SheetHeader 
+} from '@/components/ui/sheet';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
 import { STORAGE_KEYS } from '@/lib/constants';
@@ -14,6 +24,7 @@ export default function ChatPage() {
   const [isMounting, setIsMounting] = useState(true);
   const [sessionId, setSessionId] = useState<string>('');
   const [userId, setUserId] = useState<string>('');
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
 
   useEffect(() => {
     const storedSid = localStorage.getItem(STORAGE_KEYS.CHAT_SESSION_ID);
@@ -38,11 +49,13 @@ export default function ChatPage() {
     const newSid = generateId('sess');
     localStorage.setItem(STORAGE_KEYS.CHAT_SESSION_ID, newSid);
     setSessionId(newSid);
+    setIsMobileOpen(false); // 모바일 서랍 닫기
   }, []);
 
   const handleSelectSession = useCallback((id: string) => {
     localStorage.setItem(STORAGE_KEYS.CHAT_SESSION_ID, id);
     setSessionId(id);
+    setIsMobileOpen(false); // 모바일 서랍 닫기
   }, []);
 
   // Hydration mismatch 방지
@@ -65,7 +78,7 @@ export default function ChatPage() {
         userId={userId}
         onSelectSession={handleSelectSession}
         onNewChat={handleNewChat}
-        className="shrink-0 h-full"
+        className="shrink-0 h-full hidden md:flex"
       />
       
       <div className="flex-1 h-full min-w-0 bg-slate-50/10 flex flex-col">
@@ -74,6 +87,29 @@ export default function ChatPage() {
             externalSessionId={sessionId}
             externalUserId={userId}
             onSessionChange={handleSelectSession}
+            headerLeftSlot={
+              <Sheet open={isMobileOpen} onOpenChange={setIsMobileOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="icon" className="md:hidden shrink-0 -ml-2 text-slate-500 hover:text-slate-800">
+                    <Menu className="w-5 h-5" />
+                    <span className="sr-only">메뉴 토글</span>
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="p-0 w-72 h-full flex flex-col border-none">
+                  <SheetHeader className="sr-only">
+                    <SheetTitle>메뉴</SheetTitle>
+                    <SheetDescription>대화 세션 목록</SheetDescription>
+                  </SheetHeader>
+                  <ChatSidebar 
+                    currentSessionId={sessionId}
+                    userId={userId}
+                    onSelectSession={handleSelectSession}
+                    onNewChat={handleNewChat}
+                    className="w-full h-full border-none"
+                  />
+                </SheetContent>
+              </Sheet>
+            }
           />
         </div>
       </div>
