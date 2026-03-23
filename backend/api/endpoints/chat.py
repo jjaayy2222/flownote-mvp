@@ -15,6 +15,8 @@ from backend.api.models import (  # type: ignore[import]
     SessionListResponse,
     ChatSessionMeta,
     RenameSessionRequest,
+    FeedbackRequest,
+    FeedbackResponse,
 )
 from backend.services.chat_service import ChatService, get_chat_service  # type: ignore[import]
 from backend.services.chat_history_service import (  # type: ignore[import]
@@ -186,3 +188,42 @@ async def rename_session(
         return {"status": "success", "session_id": session_id, "name": body.name}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ─────────────────────────────────────────────────────────────
+# Observability / Feedback endpoints (Issue #777)
+# ─────────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/feedback",
+    response_model=FeedbackResponse,
+    summary="AI 응답 피드백 수집",
+)
+async def submit_feedback(
+    body: FeedbackRequest,
+):
+    """
+    사용자의 AI 답변 평가(Thumbs up/down) 및 코멘트를 수집합니다.
+    (데이터베이스 연동 전 시범용 로깅)
+    """
+    # Observability 목적으로 정형화된 로그(Structured log) 기록
+    # 원본 텍스트는 개인정보(PII) 유출 위험이 있으므로 길이(length) 확보로 보안 규칙(Checklist) 준수
+    comment_length: int = len(body.feedback_text) if body.feedback_text else 0
+    
+    logger.info(
+        "[OBS] Feedback received",
+        extra={
+            "session_id": body.session_id,
+            "message_id": body.message_id,
+            "rating": body.rating,
+            "has_comment": bool(body.feedback_text),
+            "comment_length": comment_length,
+        },
+    )
+
+    return FeedbackResponse(
+        status="success",
+        message_id=body.message_id,
+        rating=body.rating,
+    )
