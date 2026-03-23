@@ -7,10 +7,11 @@ API Models Package
 from enum import Enum
 from functools import lru_cache
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field  # type: ignore[import]
 
 # Core Models - Classification
-from backend.models.classification import (
+from backend.models.classification import (  # type: ignore[import]
+
     ClassifyRequest,
     ClassifyResponse,
     FileMetadata,
@@ -22,7 +23,8 @@ from backend.models.classification import (
 )
 
 # Core Models - Conflict
-from backend.models.conflict import (
+from backend.models.conflict import (  # type: ignore[import]
+
     ConflictType,
     ResolutionMethod,
     ResolutionStatus,
@@ -95,7 +97,7 @@ class PARACategory(str, Enum):
 
 
 # 하위 호환용 문자열 리스트 (기존 코드 참조 시 사용)
-PARA_CATEGORIES: List[str] = [cat.value for cat in PARACategory]
+PARA_CATEGORIES: List[str] = [cat.value for cat in PARACategory]  # type: ignore
 
 
 class HybridSearchRequest(BaseModel):
@@ -240,6 +242,28 @@ class RenameSessionRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, description="새 세션 이름")
 
 
+# ---------------------------------------------------------
+# Feedback / Observability Models (Issue #777)
+# ---------------------------------------------------------
+
+
+class FeedbackRequest(BaseModel):
+    """AI 응답 피드백(Thumbs) 요청 모델"""
+
+    session_id: str = Field(..., description="현재 세션 ID")
+    message_id: str = Field(..., description="피드백 대상 메시지 ID")
+    rating: str = Field(..., description="평가 (예: 'up', 'down', 'none')")
+    feedback_text: Optional[str] = Field(None, description="추가 코멘트 (선택사항)")
+
+
+class FeedbackResponse(BaseModel):
+    """피드백 제출 응답 모델"""
+
+    status: str = Field(..., description="응답 상태")
+    message_id: str = Field(..., description="적용된 메시지 ID")
+    rating: str = Field(..., description="적용된 평가 값")
+
+
 __all__ = [
     # Classification (Core)
     "ClassifyRequest",
@@ -283,4 +307,7 @@ __all__ = [
     "ChatSessionMeta",
     "SessionListResponse",
     "RenameSessionRequest",
+    # Observability (Issue #777)
+    "FeedbackRequest",
+    "FeedbackResponse",
 ]
