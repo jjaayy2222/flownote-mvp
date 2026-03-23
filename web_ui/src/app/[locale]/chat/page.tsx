@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { 
@@ -58,13 +58,14 @@ export default function ChatPage() {
     setIsMobileOpen(false); // 모바일 서랍 닫기
   }, []);
 
-  // 공통 사이드바 Props: 데스크탑과 모바일 Sheet에서 동일하게 사용되는 속성을 하나로 묶어 중복(DRY 위반) 방지
-  const sidebarProps = useMemo(() => ({
+  // 공통 사이드바 Props: 데스크탑과 모바일 Sheet에서 동일하게 사용되는 속성을 묶어 중복(DRY 위반) 방지
+  // (ChatSidebar가 React.memo로 감싸져 있지 않으므로 useMemo는 불필요한 복잡도만 유발함)
+  const sidebarProps = {
     currentSessionId: sessionId,
     userId,
     onSelectSession: handleSelectSession,
     onNewChat: handleNewChat
-  }), [sessionId, userId, handleSelectSession, handleNewChat]);
+  };
 
   // Hydration mismatch 방지
   if (isMounting) {
