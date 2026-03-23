@@ -6,7 +6,7 @@ API Models Package
 
 from enum import Enum
 from functools import lru_cache
-from typing import List, Dict, Any, Optional, Literal
+from typing import cast, Iterable, List, Dict, Any, Optional, Literal
 from pydantic import BaseModel, Field  # type: ignore[import]
 
 # Core Models - Classification
@@ -97,7 +97,8 @@ class PARACategory(str, Enum):
 
 
 # 하위 호환용 문자열 리스트 (기존 코드 참조 시 사용)
-PARA_CATEGORIES: List[str] = [cat.value for cat in PARACategory]  # type: ignore
+# Pyre2가 Enum 서브클래스 자체를 반복 가능 객체로 인식하지 못하는 오류(False Positive)를 방지하기 위해 강제 캐스팅
+PARA_CATEGORIES: List[str] = [cast(str, cat.value) for cat in cast(Iterable[Any], PARACategory)]
 
 
 class HybridSearchRequest(BaseModel):
@@ -253,13 +254,17 @@ class FeedbackRequest(BaseModel):
     session_id: str = Field(..., description="현재 세션 ID")
     message_id: str = Field(..., description="피드백 대상 메시지 ID")
     rating: Literal["up", "down", "none"] = Field(..., description="평가 ('up', 'down', 'none')")
-    feedback_text: Optional[str] = Field(None, description="추가 코멘트 (선택사항)")
+    feedback_text: Optional[str] = Field(
+        None, 
+        max_length=1000, 
+        description="추가 코멘트 (선택사항, 최대 1000자)"
+    )
 
 
 class FeedbackResponse(BaseModel):
     """피드백 제출 응답 모델"""
 
-    status: str = Field(..., description="응답 상태")
+    status: Literal["success"] = Field(..., description="응답 상태")
     message_id: str = Field(..., description="적용된 메시지 ID")
     rating: Literal["up", "down", "none"] = Field(..., description="적용된 평가 값")
 
