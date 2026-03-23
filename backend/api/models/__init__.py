@@ -6,7 +6,7 @@ API Models Package
 
 from enum import Enum
 from functools import lru_cache
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Literal
 from pydantic import BaseModel, Field  # type: ignore[import]
 
 # Core Models - Classification
@@ -252,7 +252,7 @@ class FeedbackRequest(BaseModel):
 
     session_id: str = Field(..., description="현재 세션 ID")
     message_id: str = Field(..., description="피드백 대상 메시지 ID")
-    rating: str = Field(..., description="평가 (예: 'up', 'down', 'none')")
+    rating: Literal["up", "down", "none"] = Field(..., description="평가 ('up', 'down', 'none')")
     feedback_text: Optional[str] = Field(None, description="추가 코멘트 (선택사항)")
 
 
@@ -261,7 +261,7 @@ class FeedbackResponse(BaseModel):
 
     status: str = Field(..., description="응답 상태")
     message_id: str = Field(..., description="적용된 메시지 ID")
-    rating: str = Field(..., description="적용된 평가 값")
+    rating: Literal["up", "down", "none"] = Field(..., description="적용된 평가 값")
 
 
 __all__ = [
