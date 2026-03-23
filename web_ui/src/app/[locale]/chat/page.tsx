@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { 
@@ -58,6 +58,14 @@ export default function ChatPage() {
     setIsMobileOpen(false); // 모바일 서랍 닫기
   }, []);
 
+  // 공통 사이드바 Props: 데스크탑과 모바일 Sheet에서 동일하게 사용되는 속성을 하나로 묶어 중복(DRY 위반) 방지
+  const sidebarProps = useMemo(() => ({
+    currentSessionId: sessionId,
+    userId,
+    onSelectSession: handleSelectSession,
+    onNewChat: handleNewChat
+  }), [sessionId, userId, handleSelectSession, handleNewChat]);
+
   // Hydration mismatch 방지
   if (isMounting) {
     return (
@@ -74,10 +82,7 @@ export default function ChatPage() {
           - h-[calc(100vh-constant)]로 상단 nav/header 공간 제외한 전체 높이 확보.
       */}
       <ChatSidebar 
-        currentSessionId={sessionId}
-        userId={userId}
-        onSelectSession={handleSelectSession}
-        onNewChat={handleNewChat}
+        {...sidebarProps}
         className="shrink-0 h-full hidden md:flex"
       />
       
@@ -101,10 +106,7 @@ export default function ChatPage() {
                     <SheetDescription>대화 세션 목록</SheetDescription>
                   </SheetHeader>
                   <ChatSidebar 
-                    currentSessionId={sessionId}
-                    userId={userId}
-                    onSelectSession={handleSelectSession}
-                    onNewChat={handleNewChat}
+                    {...sidebarProps}
                     className="w-full h-full border-none"
                   />
                 </SheetContent>
