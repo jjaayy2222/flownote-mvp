@@ -40,6 +40,15 @@ from backend.models.conflict import (  # type: ignore[import]
 )
 
 # ---------------------------------------------------------
+# Common Types & Aliases
+# ---------------------------------------------------------
+
+ApiStatus = Literal["success", "error"]
+SuccessStatus = Literal["success"]  # API가 항상 성공 객체만 반환하는 명시적 응답 컨트랙트용
+FeedbackRating = Literal["up", "down", "none"]
+
+
+# ---------------------------------------------------------
 # API Layer Specific Response Models (Merged from models.py)
 # ---------------------------------------------------------
 
@@ -97,8 +106,11 @@ class PARACategory(str, Enum):
 
 
 # 하위 호환용 문자열 리스트 (기존 코드 참조 시 사용)
-# Pyre2가 Enum 서브클래스 자체를 반복 가능 객체로 인식하지 못하는 오류(False Positive) 방지용 명시적 캐스팅
-PARA_CATEGORIES: List[str] = [str(cat.value) for cat in cast(Iterable[PARACategory], PARACategory)]
+# [Pyre2 Workaround]: Enum 반복 시 cat.value가 속성(property)으로 잘못 추론되어 발생하는
+# `list[property] is not assignable to list[str]` Type Error (False Positive)를 우회하기 위한 조치.
+# (유사 이슈: https://github.com/facebook/pyre-check/issues/224). 
+# list(PARACategory)에 명시적인 Iterable 캐스팅을 적용합니다.
+PARA_CATEGORIES: List[str] = [str(cat.value) for cat in cast(Iterable[PARACategory], list(PARACategory))]
 
 
 class HybridSearchRequest(BaseModel):
@@ -246,9 +258,6 @@ class RenameSessionRequest(BaseModel):
 # ---------------------------------------------------------
 # Feedback / Observability Models (Issue #777)
 # ---------------------------------------------------------
-
-FeedbackRating = Literal["up", "down", "none"]
-SuccessStatus = Literal["success"]
 
 
 class FeedbackRequest(BaseModel):
