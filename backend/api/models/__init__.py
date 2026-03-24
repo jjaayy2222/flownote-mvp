@@ -47,6 +47,11 @@ ApiStatus = Literal["success", "error"]
 SuccessStatus = Literal["success"]  # API가 항상 성공 객체만 반환하는 명시적 응답 컨트랙트용
 FeedbackRating = Literal["up", "down", "none"]
 
+# OpenAPI/Swagger Field Descriptions
+API_STATUS_DESC = "API 응답 상태 ('success' 또는 'error')"
+SUCCESS_STATUS_DESC = "API 성공 응답 상태 ('success')"
+FEEDBACK_RATING_DESC = "피드백 평가 값 ('up', 'down', 'none')"
+
 
 # ---------------------------------------------------------
 # API Layer Specific Response Models (Merged from models.py)
@@ -56,8 +61,8 @@ FeedbackRating = Literal["up", "down", "none"]
 class BaseResponse(BaseModel):
     """기본 응답 모델 (다국어 메시지 포함)"""
 
-    status: str
-    message: str
+    status: ApiStatus = Field(..., description=API_STATUS_DESC)
+    message: str = Field(..., description="응답 메시지")
 
 
 class HealthCheckResponse(BaseResponse):
@@ -180,7 +185,7 @@ class SearchResultItem(BaseModel):
 class HybridSearchResponse(BaseModel):
     """하이브리드 검색 응답 스키마"""
 
-    status: str = Field(..., description="응답 상태 ('success' 또는 'error')")
+    status: ApiStatus = Field(..., description=API_STATUS_DESC)
     query: str = Field(..., description="원본 검색 질의")
     results: List[SearchResultItem] = Field(
         default_factory=list, description="RRF 점수 기준 정렬된 검색 결과"
@@ -224,7 +229,7 @@ class ChatMessage(BaseModel):
 class ChatHistoryResponse(BaseModel):
     """채팅 히스토리 응답 모델"""
 
-    status: str = Field(..., description="응답 상태")
+    status: ApiStatus = Field(..., description=API_STATUS_DESC)
     session_id: str = Field(..., description="세션 ID")
     messages: List[ChatMessage] = Field(default_factory=list, description="대화 내역 리스트")
 
@@ -243,7 +248,7 @@ class ChatSessionMeta(BaseModel):
 class SessionListResponse(BaseModel):
     """세션 목록 응답 모델"""
 
-    status: str = Field(..., description="응답 상태")
+    status: ApiStatus = Field(..., description=API_STATUS_DESC)
     user_id: str = Field(..., description="사용자 ID")
     sessions: List[ChatSessionMeta] = Field(default_factory=list, description="세션 목록")
     count: int = Field(0, description="세션 수")
@@ -265,7 +270,7 @@ class FeedbackRequest(BaseModel):
 
     session_id: str = Field(..., description="현재 세션 ID")
     message_id: str = Field(..., description="피드백 대상 메시지 ID")
-    rating: FeedbackRating = Field(..., description="평가 ('up', 'down', 'none')")
+    rating: FeedbackRating = Field(..., description=FEEDBACK_RATING_DESC)
     feedback_text: Optional[str] = Field(
         None, 
         max_length=1000, 
@@ -276,9 +281,9 @@ class FeedbackRequest(BaseModel):
 class FeedbackResponse(BaseModel):
     """피드백 제출 응답 모델"""
 
-    status: SuccessStatus = Field(..., description="응답 상태")
+    status: SuccessStatus = Field(..., description=SUCCESS_STATUS_DESC)
     message_id: str = Field(..., description="적용된 메시지 ID")
-    rating: FeedbackRating = Field(..., description="적용된 평가 값")
+    rating: FeedbackRating = Field(..., description=FEEDBACK_RATING_DESC)
 
 
 __all__ = [
@@ -305,6 +310,9 @@ __all__ = [
     "ConflictDetectResponse",
     "ConflictResolveResponse",
     # API Responses
+    "ApiStatus",
+    "SuccessStatus",
+    "FeedbackRating",
     "BaseResponse",
     "HealthCheckResponse",
     "FileProcessingResponse",
