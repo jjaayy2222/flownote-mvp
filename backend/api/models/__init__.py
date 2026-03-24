@@ -40,6 +40,14 @@ from backend.models.conflict import (  # type: ignore[import]
 )
 
 # ---------------------------------------------------------
+# Common Types & Aliases
+# ---------------------------------------------------------
+
+ApiStatus = Literal["success", "error"]
+FeedbackRating = Literal["up", "down", "none"]
+
+
+# ---------------------------------------------------------
 # API Layer Specific Response Models (Merged from models.py)
 # ---------------------------------------------------------
 
@@ -97,8 +105,10 @@ class PARACategory(str, Enum):
 
 
 # 하위 호환용 문자열 리스트 (기존 코드 참조 시 사용)
-# Pyre2가 Enum 서브클래스 자체를 반복 가능 객체로 인식하지 못하는 오류(False Positive) 방지용 명시적 캐스팅
-PARA_CATEGORIES: List[str] = [str(cat.value) for cat in cast(Iterable[PARACategory], PARACategory)]
+# [Pyre2 Workaround]: Enum 서브클래스 상속 구조에서 반복자(iterator) 타입을 올바르게 
+# 추론하지 못하는 문제 대응 (유사 이슈: https://github.com/facebook/pyre-check/issues/224). 
+# list(PARACategory)에 명시적인 Iterable 캐스팅을 적용합니다.
+PARA_CATEGORIES: List[str] = [str(cat.value) for cat in cast(Iterable[PARACategory], list(PARACategory))]
 
 
 class HybridSearchRequest(BaseModel):
@@ -247,9 +257,6 @@ class RenameSessionRequest(BaseModel):
 # Feedback / Observability Models (Issue #777)
 # ---------------------------------------------------------
 
-FeedbackRating = Literal["up", "down", "none"]
-SuccessStatus = Literal["success"]
-
 
 class FeedbackRequest(BaseModel):
     """AI 응답 피드백(Thumbs) 요청 모델"""
@@ -267,7 +274,7 @@ class FeedbackRequest(BaseModel):
 class FeedbackResponse(BaseModel):
     """피드백 제출 응답 모델"""
 
-    status: SuccessStatus = Field(..., description="응답 상태")
+    status: ApiStatus = Field(..., description="응답 상태")
     message_id: str = Field(..., description="적용된 메시지 ID")
     rating: FeedbackRating = Field(..., description="적용된 평가 값")
 
