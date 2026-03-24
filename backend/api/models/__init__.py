@@ -56,7 +56,7 @@ FeedbackRating = Literal["up", "down", "none"]
 class BaseResponse(BaseModel):
     """기본 응답 모델 (다국어 메시지 포함)"""
 
-    status: str
+    status: ApiStatus
     message: str
 
 
@@ -180,7 +180,7 @@ class SearchResultItem(BaseModel):
 class HybridSearchResponse(BaseModel):
     """하이브리드 검색 응답 스키마"""
 
-    status: str = Field(..., description="응답 상태 ('success' 또는 'error')")
+    status: ApiStatus = Field(..., description="응답 상태 ('success' 또는 'error')")
     query: str = Field(..., description="원본 검색 질의")
     results: List[SearchResultItem] = Field(
         default_factory=list, description="RRF 점수 기준 정렬된 검색 결과"
@@ -224,7 +224,7 @@ class ChatMessage(BaseModel):
 class ChatHistoryResponse(BaseModel):
     """채팅 히스토리 응답 모델"""
 
-    status: str = Field(..., description="응답 상태")
+    status: ApiStatus = Field(..., description="응답 상태")
     session_id: str = Field(..., description="세션 ID")
     messages: List[ChatMessage] = Field(default_factory=list, description="대화 내역 리스트")
 
@@ -243,7 +243,7 @@ class ChatSessionMeta(BaseModel):
 class SessionListResponse(BaseModel):
     """세션 목록 응답 모델"""
 
-    status: str = Field(..., description="응답 상태")
+    status: ApiStatus = Field(..., description="응답 상태")
     user_id: str = Field(..., description="사용자 ID")
     sessions: List[ChatSessionMeta] = Field(default_factory=list, description="세션 목록")
     count: int = Field(0, description="세션 수")
@@ -305,6 +305,9 @@ __all__ = [
     "ConflictDetectResponse",
     "ConflictResolveResponse",
     # API Responses
+    "ApiStatus",
+    "SuccessStatus",
+    "FeedbackRating",
     "BaseResponse",
     "HealthCheckResponse",
     "FileProcessingResponse",
