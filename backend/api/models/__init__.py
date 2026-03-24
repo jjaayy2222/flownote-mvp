@@ -6,8 +6,18 @@ API Models Package
 
 from enum import Enum
 from functools import lru_cache
-from typing import cast, Iterable, List, Dict, Any, Optional, Literal
+from typing import cast, Iterable, List, Dict, Any, Optional
 from pydantic import BaseModel, Field  # type: ignore[import]
+
+from backend.api.models.shared import (  # type: ignore[import]
+    ApiStatus,
+    SuccessStatus,
+    FeedbackRating,
+    API_STATUS_DESC,
+    SUCCESS_STATUS_DESC,
+    FEEDBACK_RATING_DESC,
+    API_MESSAGE_DESC,
+)
 
 # Core Models - Classification
 from backend.models.classification import (  # type: ignore[import]
@@ -40,20 +50,6 @@ from backend.models.conflict import (  # type: ignore[import]
 )
 
 # ---------------------------------------------------------
-# Common Types & Aliases
-# ---------------------------------------------------------
-
-ApiStatus = Literal["success", "error"]
-SuccessStatus = Literal["success"]  # API가 항상 성공 객체만 반환하는 명시적 응답 컨트랙트용
-FeedbackRating = Literal["up", "down", "none"]
-
-# OpenAPI/Swagger Field Descriptions
-API_STATUS_DESC = "API 응답 상태 ('success' 또는 'error')"
-SUCCESS_STATUS_DESC = "API 성공 응답 상태 ('success')"
-FEEDBACK_RATING_DESC = "피드백 평가 값 ('up', 'down', 'none')"
-
-
-# ---------------------------------------------------------
 # API Layer Specific Response Models (Merged from models.py)
 # ---------------------------------------------------------
 
@@ -62,7 +58,7 @@ class BaseResponse(BaseModel):
     """기본 응답 모델 (다국어 메시지 포함)"""
 
     status: ApiStatus = Field(..., description=API_STATUS_DESC)
-    message: str = Field(..., description="응답 메시지")
+    message: str = Field(..., description=API_MESSAGE_DESC)
 
 
 class HealthCheckResponse(BaseResponse):
