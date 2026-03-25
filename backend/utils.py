@@ -7,14 +7,32 @@ FlowNote MVP - 유틸리티 함수
 """
 
 import os
-import tiktoken
+import tiktoken  # type: ignore[import]
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Union
 from datetime import datetime
+import hashlib
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 💙 새로 추가하는 함수들
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def mask_pii_id(value: Optional[str], truncate_len: int = 12) -> str:
+    """
+    민감 문자열(user_id, session_id 등)을 SHA-256 해시화하여 
+    로그에 안전하게 기록하기 위한 중앙 유틸리티.
+    
+    Args:
+        value: 마스킹할 원본 문자열
+        truncate_len: 반환할 해시 문자열의 최대 길이 (기본 12, 0이면 전체 반환)
+    """
+    if not value or not isinstance(value, str):
+        return "invalid_id"
+    
+    hashed = str(hashlib.sha256(value.encode('utf-8')).hexdigest())
+    if truncate_len > 0:
+        return hashed[:truncate_len]  # type: ignore[index]
+    return hashed
 
 
 def check_metadata_match(
@@ -91,7 +109,7 @@ def format_file_size(size_bytes: int) -> str:
     for unit in ["B", "KB", "MB", "GB"]:
         if size_bytes < 1024.0:
             return f"{size_bytes:.1f} {unit}"
-        size_bytes /= 1024.0
+        size_bytes = int(size_bytes / 1024.0)
     return f"{size_bytes:.1f} TB"
 
 
@@ -125,7 +143,7 @@ def load_pdf(file) -> str:
         str: 추출된 텍스트
     """
     try:
-        import pypdf
+        import pypdf  # type: ignore[import]
 
         # PDF 리더 생성
         pdf_reader = pypdf.PdfReader(file)
