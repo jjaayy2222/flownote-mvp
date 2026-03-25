@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from backend.services.redis_pubsub import redis_client  # type: ignore[import]
 from backend.api.models import ChatMessage  # type: ignore[import]
 from backend.api.models.shared import FeedbackRating  # type: ignore[import]
+from backend.utils import mask_pii_id  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
 
@@ -37,17 +38,6 @@ class RedisUnavailableError(RuntimeError):
 def _now_utc() -> datetime:
     """항상 UTC timezone-aware datetime을 반환하는 중앙 헬퍼."""
     return datetime.now(timezone.utc)
-
-
-def _mask_id(value: str) -> str:
-    """민감 ID를 SHA-256 앞 12자리로 마스킹하여 로그에 안전하게 기록.
-    
-    Checklist (Security): hashlib.sha256 사용으로 개인정보 보호.
-    Checklist (Null Safety): value는 str 타입 힌트가 있으나 방어적으로 다룸.
-    """
-    if not value or not isinstance(value, str):
-        return "invalid_id"
-    return str(hashlib.sha256(value.encode()).hexdigest()[:12])  # type: ignore[index]
 
 
 def _log_and_reraise_generic(
@@ -167,7 +157,7 @@ class ChatHistoryService:
         except (JSONDecodeError, ValueError) as parse_err:
             logger.error(
                 "Malformed session meta during list_sessions, skipping.",
-                extra={"session_id_hash": _mask_id(session_id), "error": str(parse_err)},
+                extra={"session_id_hash": mask_pii_id(session_id), "error": str(parse_err)},
             )
             return None
 
@@ -176,8 +166,8 @@ class ChatHistoryService:
             logger.warning(
                 "Cross-user session leakage detected and blocked.",
                 extra={
-                    "user_id_hash": _mask_id(user_id),
-                    "session_id_hash": _mask_id(session_id),
+                    "user_id_hash": mask_pii_id(user_id),
+                    "session_id_hash": mask_pii_id(session_id),
                 },
             )
             return None
@@ -189,7 +179,7 @@ class ChatHistoryService:
         return await self._load_json_dict(
             self._session_meta_key(session_id),
             log_context="get_session_meta",
-            id_hash=_mask_id(session_id),
+            id_hash=mask_pii_id(session_id),
         )
 
     async def _save_session_meta(self, session_id: str, meta: Dict[str, Any]) -> None:
@@ -312,7 +302,7 @@ class ChatHistoryService:
         except Exception as e:
             _log_and_reraise_generic(
                 "Failed to register session",
-                {"session_id_hash": _mask_id(session_id), "error": str(e)},
+                {"session_id_hash": mask_pii_id(session_id), "error": str(e)},
                 e,
             )
 
@@ -355,7 +345,7 @@ class ChatHistoryService:
         except Exception as e:
             _log_and_reraise_generic(
                 "Failed to list sessions",
-                {"user_id_hash": _mask_id(user_id), "error": str(e)},
+                {"user_id_hash": mask_pii_id(user_id), "error": str(e)},
                 e,
             )
 
@@ -382,7 +372,7 @@ class ChatHistoryService:
         except Exception as e:
             _log_and_reraise_generic(
                 "Failed to rename session",
-                {"session_id_hash": _mask_id(session_id), "error": str(e)},
+                {"session_id_hash": mask_pii_id(session_id), "error": str(e)},
                 e,
             )
 
@@ -419,7 +409,7 @@ class ChatHistoryService:
         except Exception as e:
             _log_and_reraise_generic(
                 "Failed to add message to history",
-                {"session_id_hash": _mask_id(session_id), "error": str(e)},
+                {"session_id_hash": mask_pii_id(session_id), "error": str(e)},
                 e,
             )
 
@@ -453,7 +443,7 @@ class ChatHistoryService:
                 logger.error(
                     "Skipped malformed messages during get_history.",
                     extra={
-                        "session_id_hash": _mask_id(session_id),
+                        "session_id_hash": mask_pii_id(session_id),
                         "skipped_count": parse_errors,
                     },
                 )
@@ -462,7 +452,7 @@ class ChatHistoryService:
         except Exception as e:
             _log_and_reraise_generic(
                 "Failed to get history",
-                {"session_id_hash": _mask_id(session_id), "error": str(e)},
+                {"session_id_hash": mask_pii_id(session_id), "error": str(e)},
                 e,
             )
 
@@ -498,7 +488,7 @@ class ChatHistoryService:
         except Exception as e:
             _log_and_reraise_generic(
                 "Failed to clear history",
-                {"session_id_hash": _mask_id(session_id), "error": str(e)},
+                {"session_id_hash": mask_pii_id(session_id), "error": str(e)},
                 e,
             )
 
@@ -532,8 +522,8 @@ class ChatHistoryService:
             _log_and_reraise_generic(
                 "Failed to save feedback",
                 {
-                    "session_id_hash": _mask_id(session_id),
-                    "message_id_hash": _mask_id(message_id),
+                    "session_id_hash": mask_pii_id(session_id),
+                    "message_id_hash": mask_pii_id(message_id),
                     "error": str(e),
                 },
                 e,
