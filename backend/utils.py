@@ -17,6 +17,8 @@ import hashlib
 # 💙 새로 추가하는 함수들
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+INVALID_PII_SENTINEL = "invalid_id"
+
 def mask_pii_id(value: Optional[str], truncate_len: int = 12) -> str:
     """
     민감 문자열(user_id, session_id 등)을 SHA-256 해시화하여 
@@ -24,14 +26,20 @@ def mask_pii_id(value: Optional[str], truncate_len: int = 12) -> str:
     
     Args:
         value: 마스킹할 원본 문자열
-        truncate_len: 반환할 해시 문자열의 최대 길이 (기본 12, 0이면 전체 반환)
+        truncate_len: 반환할 해시 문자열의 최대 길이
+            - 기본값 12
+            - 0이면 전체 해시 문자열 반환
+            - 음수 전달 시 0으로 정규화(안전 폴백) 하여 전체를 반환함
     """
     if not value or not isinstance(value, str):
-        return "invalid_id"
+        return INVALID_PII_SENTINEL
+    
+    # [Security Validation] 음수 방어(Safe Wrapper)
+    safe_len = max(0, truncate_len)
     
     hashed = str(hashlib.sha256(value.encode('utf-8')).hexdigest())
-    if truncate_len > 0:
-        return hashed[:truncate_len]  # type: ignore[index]
+    if safe_len > 0:
+        return hashed[:safe_len]  # type: ignore[index]
     return hashed
 
 
@@ -106,11 +114,13 @@ def read_file_content(file_path: str) -> str:
 
 def format_file_size(size_bytes: int) -> str:
     """파일 크기를 읽기 쉬운 형식으로 변환"""
+    # [Validation] 음수 용량 예외 방어
+    current_size: float = max(0.0, float(size_bytes))
     for unit in ["B", "KB", "MB", "GB"]:
-        if size_bytes < 1024.0:
-            return f"{size_bytes:.1f} {unit}"
-        size_bytes = int(size_bytes / 1024.0)
-    return f"{size_bytes:.1f} TB"
+        if current_size < 1024.0:
+            return f"{current_size:.1f} {unit}"
+        current_size /= 1024.0
+    return f"{current_size:.1f} TB"
 
 
 def estimate_cost(tokens: int, cost_per_token: float) -> float:
