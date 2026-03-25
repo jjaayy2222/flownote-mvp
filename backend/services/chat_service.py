@@ -155,7 +155,7 @@ class ChatService:
             )
             raise
 
-    def _hash_string(self, text: str) -> str:
+    def _hash_string(self, text: Optional[str]) -> str:
         """민감 정보(user_id 등)를 로그용으로 해싱하는 헬퍼"""
         if not text:
             return ""
@@ -377,8 +377,8 @@ Standalone Question:"""
             return standalone_query.strip()
         except Exception as e:
             logger.warning(
-                "Query rephrasing failed",
-                extra={"query": self._mask_pii(query), "error": str(e)},
+                "[OBS] Query rephrasing failed (fallback to original)",
+                extra={"query_hash": self._hash_string(query), "error": str(e)},
             )
             return query
 
@@ -486,12 +486,15 @@ Standalone Question:"""
 
         except asyncio.CancelledError:
             is_cancelled = True
-            logger.info("Chat stream cancelled by user.")
+            logger.warning("[OBS] Chat stream locally cancelled by user disconnect.")
             raise
         except Exception as e:
             logger.exception(
-                "Error during streaming RAG chat",
-                extra={"user_id": user_id, "session_id": session_id},
+                "[OBS] Trace 500: Error during RAG chat streaming pipeline",
+                extra={
+                    "user_id_hash": self._hash_string(user_id),
+                    "session_id_hash": self._hash_string(session_id) if session_id else "none",
+                },
             )
             yield self._format_sse_event(
                 "error",

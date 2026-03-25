@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 _HISTORY_PREFIX = "chat:history:"
 _SESSION_META_PREFIX = "chat:session:meta:"
 _USER_SESSIONS_PREFIX = "chat:user:sessions:"
+_FEEDBACK_PREFIX = "chat:feedback:"
 
 # preview 최대 길이 (하드코딩 방지)
 _PREVIEW_MAX_LEN = 80
@@ -63,7 +64,7 @@ def _log_and_reraise_generic(
     """
     if isinstance(exc, RedisUnavailableError):
         raise exc  # 중복 로깅 방지
-    logger.exception(message, extra=extra)
+    logger.exception(f"[OBS] {message}", extra=extra)
     raise exc
 
 
@@ -86,6 +87,9 @@ class ChatHistoryService:
 
     def _user_sessions_key(self, user_id: str) -> str:
         return f"{_USER_SESSIONS_PREFIX}{user_id}"
+
+    def _feedback_key(self, session_id: str) -> str:
+        return f"{_FEEDBACK_PREFIX}{session_id}"
 
     # ── 저수준 내부 헬퍼 ───────────────────────────────────────
 
@@ -494,6 +498,43 @@ class ChatHistoryService:
             _log_and_reraise_generic(
                 "Failed to clear history",
                 {"session_id_hash": _mask_id(session_id), "error": str(e)},
+                e,
+            )
+
+    async def save_feedback(
+        self,
+        session_id: str,
+        message_id: str,
+        rating: str,
+        feedback_text: Optional[str] = None,
+    ) -> None:
+        """AI 응답 사용자 피드백을 Redis Hash형태로 저장.
+
+        Raises:
+            ValueError: 필수 입력 누락.
+            RedisUnavailableError: Redis 연결 불가.
+        """
+        if not session_id or not message_id or not rating:
+            raise ValueError("session_id, message_id, rating are required for feedback.")
+
+        try:
+            await self._ensure_connected("save_feedback")
+            key = self._feedback_key(session_id)
+            meta = {
+                "rating": rating,
+                "text": feedback_text,
+                "timestamp": _now_utc().isoformat(),
+            }
+            await redis_client.redis.hset(key, message_id, json.dumps(meta, ensure_ascii=False))
+            await redis_client.redis.expire(key, self.ttl)
+        except Exception as e:
+            _log_and_reraise_generic(
+                "Failed to save feedback",
+                {
+                    "session_id_hash": _mask_id(session_id),
+                    "message_id_hash": _mask_id(message_id),
+                    "error": str(e),
+                },
                 e,
             )
 
