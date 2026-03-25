@@ -30,6 +30,7 @@ from backend.services.chat_history_service import (  # type: ignore[import, impo
     get_chat_history_service,
 )
 from backend.api.models import ChatMessage  # type: ignore[import, import-untyped, reportMissingImports]
+from backend.utils import mask_pii_id  # type: ignore[import, import-untyped, reportMissingImports]
 
 logger = logging.getLogger(__name__)
 
@@ -154,12 +155,6 @@ class ChatService:
                 f"Detail: {e}. Raising exception to fail fast."
             )
             raise
-
-    def _hash_string(self, text: Optional[str]) -> str:
-        """민감 정보(user_id 등)를 로그용으로 해싱하는 헬퍼"""
-        if not text:
-            return ""
-        return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
     def _get_streaming_llm(self):
         """스트리밍용 ChatOpenAI 객체 생성"""
@@ -377,8 +372,8 @@ Standalone Question:"""
             return standalone_query.strip()
         except Exception as e:
             logger.warning(
-                "[OBS] Query rephrasing failed (fallback to original)",
-                extra={"query_hash": self._hash_string(query), "error": str(e)},
+                "[OBS] Event: Query rephrasing failed (fallback to original)",
+                extra={"query_hash": mask_pii_id(query), "error": str(e)},
             )
             return query
 
@@ -492,8 +487,8 @@ Standalone Question:"""
             logger.exception(
                 "[OBS] Trace 500: Error during RAG chat streaming pipeline",
                 extra={
-                    "user_id_hash": self._hash_string(user_id),
-                    "session_id_hash": self._hash_string(session_id) if session_id else "none",
+                    "user_id_hash": mask_pii_id(user_id),
+                    "session_id_hash": mask_pii_id(session_id) if session_id else "none",
                 },
             )
             yield self._format_sse_event(

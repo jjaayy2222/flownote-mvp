@@ -22,8 +22,8 @@ from backend.services.chat_service import ChatService, get_chat_service  # type:
 from backend.services.chat_history_service import (  # type: ignore[import]
     ChatHistoryService,
     get_chat_history_service,
-    _mask_id,
 )
+from backend.utils import mask_pii_id  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
 
@@ -215,8 +215,8 @@ async def submit_feedback(
     logger.info(
         "[OBS] Event: Feedback received",
         extra={
-            "session_id_hash": _mask_id(body.session_id),
-            "message_id_hash": _mask_id(body.message_id),
+            "session_id_hash": mask_pii_id(body.session_id),
+            "message_id_hash": mask_pii_id(body.message_id),
             "rating": body.rating,
             "has_comment": bool(body.feedback_text),
             "comment_length": comment_length,
@@ -236,8 +236,8 @@ async def submit_feedback(
         logger.error(
             f"[OBS] Error: Failed to save feedback to Redis: {e}",
             extra={
-                "session_id_hash": _mask_id(body.session_id),
-                "message_id_hash": _mask_id(body.message_id)
+                "session_id_hash": mask_pii_id(body.session_id),
+                "message_id_hash": mask_pii_id(body.message_id)
             }
         )
 
