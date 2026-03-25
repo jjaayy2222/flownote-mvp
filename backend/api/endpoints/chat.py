@@ -22,6 +22,7 @@ from backend.services.chat_service import ChatService, get_chat_service  # type:
 from backend.services.chat_history_service import (  # type: ignore[import]
     ChatHistoryService,
     get_chat_history_service,
+    _mask_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -208,18 +209,14 @@ async def submit_feedback(
     사용자의 AI 답변 평가(Thumbs up/down) 및 코멘트를 수집합니다.
     Redis Hash 구조를 통해 메시지 단위 식별 저장 및 실시간 조회 보장
     """
-    import hashlib
-    def _mask(val: str) -> str:
-        return str(hashlib.sha256(val.encode()).hexdigest())[:12] if val else "none"  # type: ignore[index]
-
     # 1. Observability 목적으로 정형화된 로그(Structured log) 기록
     comment_length: int = len(body.feedback_text) if body.feedback_text else 0
     
     logger.info(
         "[OBS] Event: Feedback received",
         extra={
-            "session_id_hash": _mask(body.session_id),
-            "message_id_hash": _mask(body.message_id),
+            "session_id_hash": _mask_id(body.session_id),
+            "message_id_hash": _mask_id(body.message_id),
             "rating": body.rating,
             "has_comment": bool(body.feedback_text),
             "comment_length": comment_length,
@@ -239,8 +236,8 @@ async def submit_feedback(
         logger.error(
             f"[OBS] Error: Failed to save feedback to Redis: {e}",
             extra={
-                "session_id_hash": _mask(body.session_id),
-                "message_id_hash": _mask(body.message_id)
+                "session_id_hash": _mask_id(body.session_id),
+                "message_id_hash": _mask_id(body.message_id)
             }
         )
 
