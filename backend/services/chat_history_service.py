@@ -8,6 +8,7 @@ from typing import Any, Dict, List, NoReturn, Optional
 from datetime import datetime, timezone
 from backend.services.redis_pubsub import redis_client  # type: ignore[import]
 from backend.api.models import ChatMessage  # type: ignore[import]
+from backend.api.models.shared import FeedbackRating  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
 
@@ -505,7 +506,7 @@ class ChatHistoryService:
         self,
         session_id: str,
         message_id: str,
-        rating: str,
+        rating: FeedbackRating,
         feedback_text: Optional[str] = None,
     ) -> None:
         """AI 응답 사용자 피드백을 Redis Hash형태로 저장.
