@@ -17,7 +17,7 @@ import hashlib
 # 💙 새로 추가하는 함수들
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-INVALID_PII_SENTINEL = "invalid_id"
+INVALID_PII_SENTINEL = "<INVALID_PII>"
 
 def mask_pii_id(value: Optional[str], truncate_len: int = 12) -> str:
     """
