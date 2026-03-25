@@ -202,25 +202,47 @@ async def rename_session(
 )
 async def submit_feedback(
     body: FeedbackRequest,
+    chat_history_service: ChatHistoryService = Depends(get_chat_history_service),
 ):
     """
     사용자의 AI 답변 평가(Thumbs up/down) 및 코멘트를 수집합니다.
-    (데이터베이스 연동 전 시범용 로깅)
+    Redis Hash 구조를 통해 메시지 단위 식별 저장 및 실시간 조회 보장
     """
-    # Observability 목적으로 정형화된 로그(Structured log) 기록
-    # 원본 텍스트는 개인정보(PII) 유출 위험이 있으므로 길이(length) 확보로 보안 규칙(Checklist) 준수
+    import hashlib
+    def _mask(val: str) -> str:
+        return str(hashlib.sha256(val.encode()).hexdigest())[:12] if val else "none"  # type: ignore[index]
+
+    # 1. Observability 목적으로 정형화된 로그(Structured log) 기록
     comment_length: int = len(body.feedback_text) if body.feedback_text else 0
     
     logger.info(
-        "[OBS] Feedback received",
+        "[OBS] Event: Feedback received",
         extra={
-            "session_id": body.session_id,
-            "message_id": body.message_id,
+            "session_id_hash": _mask(body.session_id),
+            "message_id_hash": _mask(body.message_id),
             "rating": body.rating,
             "has_comment": bool(body.feedback_text),
             "comment_length": comment_length,
         },
     )
+
+    # 2. Redis 피드백 저장 (DB 매핑 테이블 대신 O(1) Redis Hash 사용)
+    try:
+        await chat_history_service.save_feedback(
+            session_id=body.session_id,
+            message_id=body.message_id,
+            rating=body.rating,
+            feedback_text=body.feedback_text,
+        )
+    except Exception as e:
+        # 저장이 실패하더라도 로깅은 완료되었으므로 사용자측엔 200 반환 후 백그라운드 [OBS] 알림
+        logger.error(
+            f"[OBS] Error: Failed to save feedback to Redis: {e}",
+            extra={
+                "session_id_hash": _mask(body.session_id),
+                "message_id_hash": _mask(body.message_id)
+            }
+        )
 
     return FeedbackResponse(
         status="success",
