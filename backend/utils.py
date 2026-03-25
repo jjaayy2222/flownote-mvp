@@ -17,6 +17,8 @@ import hashlib
 # 💙 새로 추가하는 함수들
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+INVALID_PII_SENTINEL = "invalid_id"
+
 def mask_pii_id(value: Optional[str], truncate_len: int = 12) -> str:
     """
     민감 문자열(user_id, session_id 등)을 SHA-256 해시화하여 
@@ -27,17 +29,17 @@ def mask_pii_id(value: Optional[str], truncate_len: int = 12) -> str:
         truncate_len: 반환할 해시 문자열의 최대 길이
             - 기본값 12
             - 0이면 전체 해시 문자열 반환
-            - 음수는 허용되지 않으며 ValueError를 발생시킴
+            - 음수 전달 시 0으로 정규화(안전 폴백) 하여 전체를 반환함
     """
     if not value or not isinstance(value, str):
-        return "invalid_id"
+        return INVALID_PII_SENTINEL
     
-    if truncate_len < 0:
-        raise ValueError("truncate_len must be a non-negative integer")
+    # [Security Validation] 음수 방어(Safe Wrapper)
+    safe_len = max(0, truncate_len)
     
     hashed = str(hashlib.sha256(value.encode('utf-8')).hexdigest())
-    if truncate_len > 0:
-        return hashed[:truncate_len]  # type: ignore[index]
+    if safe_len > 0:
+        return hashed[:safe_len]  # type: ignore[index]
     return hashed
 
 
@@ -112,7 +114,8 @@ def read_file_content(file_path: str) -> str:
 
 def format_file_size(size_bytes: int) -> str:
     """파일 크기를 읽기 쉬운 형식으로 변환"""
-    current_size: float = float(size_bytes)
+    # [Validation] 음수 용량 예외 방어
+    current_size: float = max(0.0, float(size_bytes))
     for unit in ["B", "KB", "MB", "GB"]:
         if current_size < 1024.0:
             return f"{current_size:.1f} {unit}"
