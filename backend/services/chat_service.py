@@ -488,7 +488,7 @@ Standalone Question:"""
                 "[OBS] Trace 500: Error during RAG chat streaming pipeline",
                 extra={
                     "user_id_hash": mask_pii_id(user_id),
-                    "session_id_hash": mask_pii_id(session_id) if session_id else "none",
+                    "session_id_hash": mask_pii_id(session_id),
                 },
             )
             yield self._format_sse_event(
