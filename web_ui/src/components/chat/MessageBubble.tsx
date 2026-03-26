@@ -88,12 +88,14 @@ function areMessageBubblePropsEqual(prev: MessageBubbleProps, next: MessageBubbl
 interface FeedbackButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'type'> {
   isActive: boolean;
   activeClassName: string;
+  inactiveClassName?: string;
   icon: React.ComponentType<{ className?: string }>;
 }
 
 function FeedbackButton({
   isActive,
   activeClassName,
+  inactiveClassName = "text-slate-400",
   icon: Icon,
   className,
   ...props
@@ -102,11 +104,12 @@ function FeedbackButton({
     <button
       {...props}
       type="button"
+      // [A11y] Edge Tools Linter가 동적 중괄호 평가식({expression})을 에러로 잡는 문제를 우회하기 위한 기법
       {...({ 'aria-pressed': isActive })}
       className={cn(
         "p-1.5 rounded-md transition-all duration-200 outline-none",
         "hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed",
-        isActive ? activeClassName : "text-slate-400",
+        isActive ? activeClassName : inactiveClassName,
         className
       )}
     >
