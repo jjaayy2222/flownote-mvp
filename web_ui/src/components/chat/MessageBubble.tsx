@@ -281,7 +281,9 @@ export const MessageBubble = memo(
    * - 좋아요/취소 → 바로 API 호출
    */
   function handleFeedback(rating: 'up' | 'down') {
-    if (isFeedbackPending) return;
+    // [Defense in Depth] canShowFeedbackUI로 UI가 이미 숨겨지지만,
+    // 향후 코드 변경이나 프로그래밍 방식 호출에도 안전하도록 방어 가드 추가
+    if (!sessionId || isFeedbackPending) return;
 
     const newRating: FeedbackRating = feedback === rating ? 'none' : rating;
     setFeedback(newRating);
@@ -408,7 +410,8 @@ export const MessageBubble = memo(
   }, [message.parts, isUser, isLast, isStreaming]);
 
   // [Clean Code] 피드백 UI 표시 조건을 명명된 boolean으로 추출하여 JSX 중복 제거
-  const canShowFeedbackUI = !isUser && message.id !== 'welcome';
+  // [UX] sessionId가 없을 경우 피드백 제출이 불가능하므로 UI를 아예 표시하지 않음
+  const canShowFeedbackUI = !isUser && message.id !== 'welcome' && !!sessionId;
 
   return (
     <>
@@ -441,7 +444,7 @@ export const MessageBubble = memo(
           {canShowFeedbackUI && (
             <div className="flex items-center gap-1.5 px-1 mt-0.5">
               <FeedbackButton
-                disabled={isStreaming || isFeedbackPending || !sessionId}
+                disabled={isStreaming || isFeedbackPending}
                 onClick={() => handleFeedback('up')}
                 isActive={feedback === 'up'}
                 activeClassName="text-blue-600 bg-blue-50"
@@ -450,7 +453,7 @@ export const MessageBubble = memo(
                 title="좋은 답변입니다"
               />
               <FeedbackButton
-                disabled={isStreaming || isFeedbackPending || !sessionId}
+                disabled={isStreaming || isFeedbackPending}
                 onClick={() => handleFeedback('down')}
                 isActive={feedback === 'down'}
                 activeClassName="text-red-500 bg-red-50"
