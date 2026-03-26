@@ -82,6 +82,39 @@ function areMessageBubblePropsEqual(prev: MessageBubbleProps, next: MessageBubbl
   return true;
 }
 
+/**
+ * [Refactoring] 피드백 버튼 컴포넌트 분리 (중복 제거 및 ARIA 타입 캐스팅 해소)
+ */
+interface FeedbackButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  isActive: boolean;
+  activeClassName: string;
+  icon: React.ElementType;
+}
+
+function FeedbackButton({
+  isActive,
+  activeClassName,
+  icon: Icon,
+  className,
+  ...props
+}: FeedbackButtonProps) {
+  return (
+    <button
+      type="button"
+      {...({ 'aria-pressed': isActive } as React.ButtonHTMLAttributes<HTMLButtonElement>)}
+      className={cn(
+        "p-1.5 rounded-md transition-all duration-200 outline-none",
+        "hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed",
+        isActive ? activeClassName : "text-slate-400",
+        className
+      )}
+      {...props}
+    >
+      <Icon className={cn("w-4 h-4", isActive && "fill-current")} />
+    </button>
+  );
+}
+
 export const MessageBubble = memo(
   function MessageBubble({ message, isLast = false, isStreaming = false }: MessageBubbleProps) {
     const isUser = message.role === 'user';
@@ -232,36 +265,24 @@ export const MessageBubble = memo(
           {/* 피드백 액션바 (AI 메시지 전용) */}
           {!isUser && (
             <div className="flex items-center gap-1.5 px-1 mt-0.5">
-              <button
-                type="button"
+              <FeedbackButton
                 disabled={isStreaming}
                 onClick={() => handleFeedback('up')}
-                {...({ 'aria-pressed': feedback === 'up' } as React.HTMLAttributes<HTMLButtonElement>)}
+                isActive={feedback === 'up'}
+                activeClassName="text-blue-600 bg-blue-50"
+                icon={ThumbsUp}
                 aria-label="좋은 답변입니다"
                 title="좋은 답변입니다"
-                className={cn(
-                  "p-1.5 rounded-md transition-all duration-200 outline-none",
-                  "hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed",
-                  feedback === 'up' ? "text-blue-600 bg-blue-50" : "text-slate-400"
-                )}
-              >
-                <ThumbsUp className={cn("w-4 h-4", feedback === 'up' && "fill-current")} />
-              </button>
-              <button
-                type="button"
+              />
+              <FeedbackButton
                 disabled={isStreaming}
                 onClick={() => handleFeedback('down')}
-                {...({ 'aria-pressed': feedback === 'down' } as React.HTMLAttributes<HTMLButtonElement>)}
+                isActive={feedback === 'down'}
+                activeClassName="text-red-500 bg-red-50"
+                icon={ThumbsDown}
                 aria-label="아쉬운 답변입니다"
                 title="아쉬운 답변입니다"
-                className={cn(
-                  "p-1.5 rounded-md transition-all duration-200 outline-none",
-                  "hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed",
-                  feedback === 'down' ? "text-red-500 bg-red-50" : "text-slate-400"
-                )}
-              >
-                <ThumbsDown className={cn("w-4 h-4", feedback === 'down' && "fill-current")} />
-              </button>
+              />
             </div>
           )}
 
