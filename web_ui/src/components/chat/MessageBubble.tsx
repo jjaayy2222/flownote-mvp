@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, memo } from 'react';
+import React, { useState, useMemo, memo, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -22,10 +22,23 @@ import {
   areSourcesEqual
 } from '@/lib/chat-utils';
 
+/** 백엔드 FeedbackRating 타입과 동기화 */
+type FeedbackRating = 'up' | 'down' | 'none';
+
+/** 피드백 API 요청 바디 */
+interface FeedbackPayload {
+  session_id: string;
+  message_id: string;
+  rating: FeedbackRating;
+  feedback_text?: string;
+}
+
 interface MessageBubbleProps {
   message: UIMessage;
   isLast?: boolean;
   isStreaming?: boolean;
+  /** 피드백 API 호출에 필요한 세션 ID */
+  sessionId?: string;
 }
 
 // react-markdown v10 code 컴포넌트 타입
@@ -67,15 +80,17 @@ function areMessageBubblePropsEqual(prev: MessageBubbleProps, next: MessageBubbl
   // 1. 상태 전이 핵심 지표 (스트리밍 종료 시점에 꼭 리렌더링되어야 함)
   if (prev.isLast !== next.isLast) return false;
   if (prev.isStreaming !== next.isStreaming) return false;
+  // 2. sessionId 변경 시 재렌더링 필요 (피드백 API 연동 기준값)
+  if (prev.sessionId !== next.sessionId) return false;
 
-  // 2. 메시지 객체 참조 동일성 (가장 빠른 레퍼런스 체크)
+  // 3. 메시지 객체 참조 동일성 (가장 빠른 레퍼런스 체크)
   if (prev.message === next.message) return true;
 
-  // 3. 메시지 ID 또는 역할 동일성 (역할 변경 시 스타일이 바뀌어야 함)
+  // 4. 메시지 ID 또는 역할 동일성 (역할 변경 시 스타일이 바뀌어야 함)
   if (prev.message.id !== next.message.id) return false;
   if (prev.message.role !== next.message.role) return false;
   
-  // 4. 의미적 콘텐츠 동등성 (텍스트 파트 및 소스 리스트)
+  // 5. 의미적 콘텐츠 동등성 (텍스트 파트 및 소스 리스트)
   if (!areTextPartsEqual(prev.message.parts, next.message.parts)) return false;
   if (!areSourcesEqual(prev.message.metadata, next.message.metadata)) return false;
 
@@ -118,8 +133,86 @@ function FeedbackButton({
   );
 }
 
+/**
+ * [Issue #777] 싫어요 클릭 시 추가 의견을 입력받는 Dialog 컴포넌트
+ */
+interface FeedbackDialogProps {
+  isOpen: boolean;
+  onSubmit: (text: string) => void;
+  onDismiss: () => void;
+}
+
+function FeedbackDialog({ isOpen, onSubmit, onDismiss }: FeedbackDialogProps) {
+  const [text, setText] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Dialog가 열릴 때 textarea에 포커스
+  // [Note] text state는 isOpen=false 시 컴포넌트가 null을 반환하여 언마운트되므로,
+  // 재오픈 시 useState('') 초기값으로 자동 초기화됩니다. 별도 setText('')가 불필요합니다.
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = setTimeout(() => textareaRef.current?.focus(), 50);
+    return () => clearTimeout(timer);
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSubmit(text.trim());
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') onDismiss();
+  };
+
+  return (
+    // Backdrop
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="피드백 의견 입력"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm animate-in fade-in duration-150"
+      onClick={(e) => { if (e.target === e.currentTarget) onDismiss(); }}
+      onKeyDown={handleKeyDown}
+    >
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-5 animate-in zoom-in-90 duration-150">
+        <h3 className="text-sm font-bold text-slate-800 mb-1">아쉬운 점을 알려주세요</h3>
+        <p className="text-xs text-slate-500 mb-3">의견을 남겨주시면 AI 개선에 도움이 됩니다. (선택사항)</p>
+        <form onSubmit={handleSubmit}>
+          <textarea
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="예: 답변이 부정확해요, 더 자세히 설명해주세요..."
+            maxLength={1000}
+            rows={3}
+            className="w-full text-sm rounded-lg border border-slate-200 p-3 resize-none focus:outline-none focus:ring-2 focus:ring-red-300 placeholder:text-slate-400"
+          />
+          <p className="text-[10px] text-slate-400 text-right mb-3">{text.length}/1000</p>
+          <div className="flex gap-2 justify-end">
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="text-xs px-3 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
+            >
+              건너뛰기
+            </button>
+            <button
+              type="submit"
+              className="text-xs px-4 py-1.5 rounded-lg bg-red-500 text-white font-medium hover:bg-red-600 transition-colors"
+            >
+              전송
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export const MessageBubble = memo(
-  function MessageBubble({ message, isLast = false, isStreaming = false }: MessageBubbleProps) {
+  function MessageBubble({ message, isLast = false, isStreaming = false, sessionId }: MessageBubbleProps) {
     const isUser = message.role === 'user';
 
   // [Optimization] 소스 추출을 useMemo로 감싸고 헬퍼 함수 활용
@@ -130,13 +223,79 @@ export const MessageBubble = memo(
   const [isPanelOpen, setIsPanelOpen] = useState(false);
 
   // 피드백 상태 (좋아요/싫어요/클릭안함)
-  const [feedback, setFeedback] = useState<'none' | 'up' | 'down'>('none');
+  const [feedback, setFeedback] = useState<FeedbackRating>('none');
+  // API 호출 진행 중 여부 (이중 제출 방지 가드)
+  const [isFeedbackPending, setIsFeedbackPending] = useState(false);
+  // 싫어요 클릭 시 의견 입력 Dialog
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  const handleFeedback = (rating: 'up' | 'down') => {
-    // 동일한 평가를 다시 클릭하면 취소(none)
-    const newFeedback = feedback === rating ? 'none' : rating;
-    setFeedback(newFeedback);
-  };
+  /**
+   * [Issue #777] 피드백 API 호출
+   * - Optimistic UI: 호출 전에 이미 상태가 반영되어 있음
+   * - 실패 시: 롤백하지 않고 로그만 남김 (UX 단순화)
+   * - 이중 제출 방지: isFeedbackPending 가드로 처리
+   */
+  async function submitFeedbackApi(rating: FeedbackRating, feedbackText?: string) {
+    if (!sessionId || !message.id || message.id === 'welcome') return;
+
+    const payload: FeedbackPayload = {
+      session_id: sessionId,
+      message_id: message.id,
+      rating,
+      ...(feedbackText ? { feedback_text: feedbackText } : {}),
+    };
+
+    setIsFeedbackPending(true);
+    try {
+      const res = await fetch('/api/chat/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        // 오류 로깅만 수행 (Optimistic UI 값을 그대로 유지)
+        console.error('[Feedback] API error:', res.status);
+      }
+    } catch (err) {
+      console.error('[Feedback] Network error:', err);
+    } finally {
+      setIsFeedbackPending(false);
+    }
+  }
+
+  /**
+   * 피드백 버튼 클릭 핸들러
+   * - isFeedbackPending 가드: 이중 클릭 방지 (debounce 타이머 불필요)
+   * - Optimistic UI: 즉시 setFeedback 반영
+   * - 싫어요 → Dialog 오픈 후 Dialog에서 API 호출
+   * - 좋아요/취소 → 바로 API 호출
+   */
+  function handleFeedback(rating: 'up' | 'down') {
+    if (isFeedbackPending) return;
+
+    const newRating: FeedbackRating = feedback === rating ? 'none' : rating;
+    setFeedback(newRating);
+
+    if (newRating === 'down') {
+      setIsDialogOpen(true);
+      // API 호출은 Dialog submit/dismiss에서 처리
+      return;
+    }
+
+    void submitFeedbackApi(newRating);
+  }
+
+  /** 싫어요 Dialog에서 '전송' 클릭 */
+  function handleDialogSubmit(text: string) {
+    setIsDialogOpen(false);
+    void submitFeedbackApi('down', text.trim() || undefined);
+  }
+
+  /** 싫어요 Dialog에서 '건너뛰기' 클릭 - 싫어요 의사는 유지하고 텍스트 없이 제출 */
+  function handleDialogDismiss() {
+    setIsDialogOpen(false);
+    void submitFeedbackApi('down');
+  }
 
   const handleBadgeClick = (src: SourceItem) => {
     setSelectedSource(src);
@@ -265,11 +424,11 @@ export const MessageBubble = memo(
             </ReactMarkdown>
           </div>
 
-          {/* 피드백 액션바 (AI 메시지 전용) */}
-          {!isUser && (
+          {/* 피드백 액션바 (AI 메시지 전용, 환영 메시지 제외) */}
+          {!isUser && message.id !== 'welcome' && (
             <div className="flex items-center gap-1.5 px-1 mt-0.5">
               <FeedbackButton
-                disabled={isStreaming}
+                disabled={isStreaming || isFeedbackPending}
                 onClick={() => handleFeedback('up')}
                 isActive={feedback === 'up'}
                 activeClassName="text-blue-600 bg-blue-50"
@@ -278,7 +437,7 @@ export const MessageBubble = memo(
                 title="좋은 답변입니다"
               />
               <FeedbackButton
-                disabled={isStreaming}
+                disabled={isStreaming || isFeedbackPending}
                 onClick={() => handleFeedback('down')}
                 isActive={feedback === 'down'}
                 activeClassName="text-red-500 bg-red-50"
@@ -288,6 +447,13 @@ export const MessageBubble = memo(
               />
             </div>
           )}
+
+          {/* 싫어요 선택 시 의견 입력 Dialog */}
+          <FeedbackDialog
+            isOpen={isDialogOpen}
+            onSubmit={handleDialogSubmit}
+            onDismiss={handleDialogDismiss}
+          />
 
           {/* 소스 뱃지 영역 */}
           {!isUser && sources.length > 0 && (
