@@ -359,6 +359,7 @@ export function ChatWindow({
                 message={m} 
                 isLast={idx === messages.length - 1} 
                 isStreaming={status === 'streaming'}
+                sessionId={sessionId}
               />
             ))}
             {error && (
