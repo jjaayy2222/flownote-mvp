@@ -236,8 +236,11 @@ export const MessageBubble = memo(
    * - 이중 제출 방지: isFeedbackPending 가드로 처리
    */
   async function submitFeedbackApi(rating: FeedbackRating, feedbackText?: string) {
-    if (!sessionId || !message.id || message.id === 'welcome') {
-      // [Observability] sessionId 또는 message.id가 없으면 API 호출 불가 - 예상치 못한 상황 경고
+    // welcome 메시지는 의도적으로 피드백 대상에서 제외됩니다.
+    if (message.id === 'welcome') return;
+
+    // sessionId 또는 message.id가 없으면 예상치 못한 누락 상황 → 경고 로그
+    if (!sessionId || !message.id) {
       console.warn('[Feedback] Skipped: missing sessionId or message.id', {
         hasSessionId: Boolean(sessionId),
         messageId: message.id,
@@ -404,6 +407,9 @@ export const MessageBubble = memo(
     return ensureRenderableMarkdown(base, isLast && isStreaming);
   }, [message.parts, isUser, isLast, isStreaming]);
 
+  // [Clean Code] 피드백 UI 표시 조건을 명명된 boolean으로 추출하여 JSX 중복 제거
+  const canShowFeedbackUI = !isUser && message.id !== 'welcome';
+
   return (
     <>
       <div className={`flex gap-3 w-full ${isUser ? 'justify-end' : 'justify-start'} mb-5 animate-in fade-in slide-in-from-bottom-2 duration-300`}>
@@ -432,7 +438,7 @@ export const MessageBubble = memo(
           </div>
 
           {/* 피드백 액션바 (AI 메시지 전용, 환영 메시지 제외) */}
-          {!isUser && message.id !== 'welcome' && (
+          {canShowFeedbackUI && (
             <div className="flex items-center gap-1.5 px-1 mt-0.5">
               <FeedbackButton
                 disabled={isStreaming || isFeedbackPending || !sessionId}
@@ -456,7 +462,7 @@ export const MessageBubble = memo(
           )}
 
           {/* 싫어요 선택 시 의견 입력 Dialog (AI 메시지 전용, 환영 메시지 제외) */}
-          {!isUser && message.id !== 'welcome' && (
+          {canShowFeedbackUI && (
             <FeedbackDialog
               isOpen={isDialogOpen}
               onSubmit={handleDialogSubmit}

@@ -6,10 +6,10 @@
  * 프론트엔드에서 /api/chat/feedback으로 POST 요청을 수신하여
  * 파이썬 백엔드의 동일한 경로로 안전하게 중계합니다.
  *
- * [Robustness] 응답 유형에 따라 정확히 분기합니다:
- *   - 204/205: 바디 없이 status만 전달 (HTTP 명세 준수)
+ * [Robustness] 응답 유형에 따라 정확히 분기하며, 백엔드의 모든 헤더를 보존합니다:
+ *   - 204/205: 백엔드 헤더 복제 후 바디 없이 전달 (HTTP 명세 준수)
  *   - application/json: JSON 안전 파싱 후 NextResponse.json()
- *   - 그 외: 원본 바디 text + 원본 content-type 그대로 전달
+ *   - 그 외: 백엔드 헤더 전체 보존 + 원본 바디 그대로 전달
  */
 
 import { NextResponse } from 'next/server';
@@ -29,9 +29,12 @@ export async function POST(req: Request) {
     const contentType = backendRes.headers.get('content-type') ?? '';
 
     // 204/205 No Content: HTTP 명세상 바디가 없어야 합니다.
-    // NextResponse.json()은 content-type: application/json + null 바디를 강제하므로 사용 불가.
+    // 백엔드 헤더(캐시, CORS 등)는 그대로 복제하여 보존합니다.
     if (backendRes.status === 204 || backendRes.status === 205) {
-      return new NextResponse(null, { status: backendRes.status });
+      return new NextResponse(null, {
+        status: backendRes.status,
+        headers: new Headers(backendRes.headers),
+      });
     }
 
     // JSON 응답: 안전하게 파싱 후 그대로 전달
@@ -46,7 +49,8 @@ export async function POST(req: Request) {
       return NextResponse.json(data, { status: backendRes.status });
     }
 
-    // non-JSON 응답: 원본 바디와 content-type을 그대로 보존
+    // non-JSON 응답: 백엔드 헤더 전체를 복제하여 보존
+    // content-type이 없는 경우에만 text/plain으로 보완합니다.
     let text: string | null = null;
     try {
       text = await backendRes.text();
@@ -54,9 +58,14 @@ export async function POST(req: Request) {
       text = null;
     }
 
+    const headers = new Headers(backendRes.headers);
+    if (!contentType) {
+      headers.set('content-type', 'text/plain');
+    }
+
     return new NextResponse(text, {
       status: backendRes.status,
-      headers: { 'content-type': contentType || 'text/plain' },
+      headers,
     });
   } catch (error) {
     console.error('[Feedback Proxy Error]', error);
