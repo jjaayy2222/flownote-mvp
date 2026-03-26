@@ -85,10 +85,10 @@ function areMessageBubblePropsEqual(prev: MessageBubbleProps, next: MessageBubbl
 /**
  * [Refactoring] 피드백 버튼 컴포넌트 분리 (중복 제거 및 ARIA 타입 캐스팅 해소)
  */
-interface FeedbackButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+interface FeedbackButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'type'> {
   isActive: boolean;
   activeClassName: string;
-  icon: React.ElementType;
+  icon: React.ComponentType<{ className?: string }>;
 }
 
 function FeedbackButton({
@@ -100,15 +100,15 @@ function FeedbackButton({
 }: FeedbackButtonProps) {
   return (
     <button
+      {...props}
       type="button"
-      {...({ 'aria-pressed': isActive } as React.ButtonHTMLAttributes<HTMLButtonElement>)}
+      {...({ 'aria-pressed': isActive })}
       className={cn(
         "p-1.5 rounded-md transition-all duration-200 outline-none",
         "hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed",
         isActive ? activeClassName : "text-slate-400",
         className
       )}
-      {...props}
     >
       <Icon className={cn("w-4 h-4", isActive && "fill-current")} />
     </button>
