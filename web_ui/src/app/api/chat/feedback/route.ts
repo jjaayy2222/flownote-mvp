@@ -17,16 +17,25 @@ import { NextResponse } from 'next/server';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
 
 /**
- * [Helper] 백엔드 헤더를 복제하되, body 재구성 시 무효화되는 헤더를 제거합니다.
- *
- * `backendRes.text()`는 fetch가 내부적으로 압축 해제(decompress)를 수행합니다.
- * 원본 `content-encoding`(gzip 등)과 `content-length`는 해제된 body와 맞지 않으므로
- * 반드시 제거해야 클라이언트의 재해제 시도나 길이 불일치 오류를 방지할 수 있습니다.
+ * backendRes.text()가 호출되면 fetch가 내부적으로 body를 decode(압축 해제)합니다.
+ * 이로 인해 원본 body와 연관된 아래 헤더들이 무효화됩니다.
+ * 향후 헤더 추가/제거 시 이 배열만 수정하면 됩니다.
+ */
+const BODY_META_HEADERS_TO_STRIP = [
+  'content-encoding', // body가 이미 decode됨 (gzip 등 재해제 시도 방지)
+  'content-length',   // 재구성된 body의 바이트 길이와 다를 수 있음
+  'content-md5',      // body MD5 체크섬이 무효화됨
+  'content-range',    // partial content 범위 정보가 재구성 후 의미 없음
+] as const;
+
+/**
+ * [Helper] 백엔드 헤더를 복제하되, body 재구성 시 무효화되는 헤더를 일괄 제거합니다.
  */
 function cloneHeadersWithoutBodyMeta(source: Headers): Headers {
   const headers = new Headers(source);
-  headers.delete('content-encoding'); // body가 이미 decode됨
-  headers.delete('content-length');   // 재구성된 body의 길이와 다를 수 있음
+  for (const name of BODY_META_HEADERS_TO_STRIP) {
+    headers.delete(name);
+  }
   return headers;
 }
 
@@ -44,7 +53,7 @@ export async function POST(req: Request) {
 
     // 204/205 No Content: HTTP 명세상 바디가 없어야 합니다.
     // 백엔드 헤더(캐시, CORS 등)는 그대로 복제하여 보존합니다.
-    // body가 없으므로 content-encoding/content-length 제거도 불필요합니다.
+    // body가 없으므로 body-meta 헤더 제거도 불필요합니다.
     if (backendRes.status === 204 || backendRes.status === 205) {
       return new NextResponse(null, {
         status: backendRes.status,
@@ -65,7 +74,7 @@ export async function POST(req: Request) {
     }
 
     // non-JSON 응답: backendRes.text()로 body를 재구성하므로
-    // content-encoding/content-length는 더 이상 유효하지 않습니다. 반드시 제거합니다.
+    // BODY_META_HEADERS_TO_STRIP에 명시된 헤더는 더 이상 유효하지 않습니다.
     let text: string | null = null;
     try {
       text = await backendRes.text();

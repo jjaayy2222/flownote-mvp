@@ -281,7 +281,9 @@ export const MessageBubble = memo(
    * - 좋아요/취소 → 바로 API 호출
    */
   function handleFeedback(rating: 'up' | 'down') {
-    if (isFeedbackPending) return;
+    // [Defense in Depth] canShowFeedbackUI로 UI가 이미 숨겨지지만,
+    // 향후 코드 변경이나 프로그래밍 방식 호출에도 안전하도록 방어 가드 추가
+    if (!sessionId || isFeedbackPending) return;
 
     const newRating: FeedbackRating = feedback === rating ? 'none' : rating;
     setFeedback(newRating);
