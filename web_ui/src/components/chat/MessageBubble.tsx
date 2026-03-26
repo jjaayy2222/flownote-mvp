@@ -7,6 +7,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { ThumbsUp, ThumbsDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { UIMessage } from 'ai';
 import { SourcePanel } from './SourcePanel';
@@ -91,6 +92,15 @@ export const MessageBubble = memo(
   // Slide-over 상태
   const [selectedSource, setSelectedSource] = useState<SourceItem | null>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
+
+  // 피드백 상태 (좋아요/싫어요/클릭안함)
+  const [feedback, setFeedback] = useState<'none' | 'up' | 'down'>('none');
+
+  const handleFeedback = (rating: 'up' | 'down') => {
+    // 동일한 평가를 다시 클릭하면 취소(none)
+    const newFeedback = feedback === rating ? 'none' : rating;
+    setFeedback(newFeedback);
+  };
 
   const handleBadgeClick = (src: SourceItem) => {
     setSelectedSource(src);
@@ -218,6 +228,42 @@ export const MessageBubble = memo(
               {processedContent}
             </ReactMarkdown>
           </div>
+
+          {/* 피드백 액션바 (AI 메시지 전용) */}
+          {!isUser && (
+            <div className="flex items-center gap-1.5 px-1 mt-0.5">
+              <button
+                type="button"
+                disabled={isStreaming}
+                onClick={() => handleFeedback('up')}
+                {...({ 'aria-pressed': feedback === 'up' } as React.HTMLAttributes<HTMLButtonElement>)}
+                aria-label="좋은 답변입니다"
+                title="좋은 답변입니다"
+                className={cn(
+                  "p-1.5 rounded-md transition-all duration-200 outline-none",
+                  "hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed",
+                  feedback === 'up' ? "text-blue-600 bg-blue-50" : "text-slate-400"
+                )}
+              >
+                <ThumbsUp className={cn("w-4 h-4", feedback === 'up' && "fill-current")} />
+              </button>
+              <button
+                type="button"
+                disabled={isStreaming}
+                onClick={() => handleFeedback('down')}
+                {...({ 'aria-pressed': feedback === 'down' } as React.HTMLAttributes<HTMLButtonElement>)}
+                aria-label="아쉬운 답변입니다"
+                title="아쉬운 답변입니다"
+                className={cn(
+                  "p-1.5 rounded-md transition-all duration-200 outline-none",
+                  "hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed",
+                  feedback === 'down' ? "text-red-500 bg-red-50" : "text-slate-400"
+                )}
+              >
+                <ThumbsDown className={cn("w-4 h-4", feedback === 'down' && "fill-current")} />
+              </button>
+            </div>
+          )}
 
           {/* 소스 뱃지 영역 */}
           {!isUser && sources.length > 0 && (
