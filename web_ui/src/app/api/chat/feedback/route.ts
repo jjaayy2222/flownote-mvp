@@ -21,7 +21,29 @@ export async function POST(req: Request) {
       body: JSON.stringify(body),
     });
 
-    const data = await backendRes.json();
+    // [Robustness] Content-Type 검사 후 안전하게 파싱
+    // 204/205 No Content, 비JSON 응답 시 원본 status code를 그대로 보존합니다.
+    const contentType = backendRes.headers.get('content-type') ?? '';
+    let data: unknown = null;
+
+    if (backendRes.status === 204 || backendRes.status === 205) {
+      // No Content - 파싱 생략
+      data = null;
+    } else if (contentType.includes('application/json')) {
+      try {
+        data = await backendRes.json();
+      } catch {
+        // JSON 파싱 실패 시 null로 폴백 (원본 status 유지)
+        data = null;
+      }
+    } else {
+      try {
+        // non-JSON 응답은 텍스트로 보존
+        data = await backendRes.text();
+      } catch {
+        data = null;
+      }
+    }
 
     return NextResponse.json(data, { status: backendRes.status });
   } catch (error) {

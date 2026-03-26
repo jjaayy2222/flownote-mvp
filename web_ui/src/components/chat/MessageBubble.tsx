@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, memo, useRef, useCallback } from 'react';
+import React, { useState, useMemo, memo, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -147,13 +147,12 @@ function FeedbackDialog({ isOpen, onSubmit, onDismiss }: FeedbackDialogProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Dialog가 열릴 때 textarea에 포커스
-  React.useEffect(() => {
-    if (isOpen) {
-      setText('');
-      // 다음 렌더 사이클에 포커스 (애니메이션 완료 후)
-      const timer = setTimeout(() => textareaRef.current?.focus(), 50);
-      return () => clearTimeout(timer);
-    }
+  // [Note] text state는 isOpen=false 시 컴포넌트가 null을 반환하여 언마운트되므로,
+  // 재오픈 시 useState('') 초기값으로 자동 초기화됩니다. 별도 setText('')가 불필요합니다.
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = setTimeout(() => textareaRef.current?.focus(), 50);
+    return () => clearTimeout(timer);
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -225,23 +224,18 @@ export const MessageBubble = memo(
 
   // 피드백 상태 (좋아요/싫어요/클릭안함)
   const [feedback, setFeedback] = useState<FeedbackRating>('none');
-  // API 호출 중 상태 (Optimistic UI를 위해 별도 관리)
+  // API 호출 진행 중 여부 (이중 제출 방지 가드)
   const [isFeedbackPending, setIsFeedbackPending] = useState(false);
   // 싫어요 클릭 시 의견 입력 Dialog
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  // 디바운스용 타이머 ref (연속 클릭 방지)
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // 가장 최근 요청을 추적하기 위한 ref (경쟁 조건 방지)
-  const latestRatingRef = useRef<FeedbackRating>('none');
 
   /**
-   * [Issue #777] 피드백 API 호출 (Optimistic UI + 디바운스 + 에러 시 롤백)
+   * [Issue #777] 피드백 API 호출
+   * - Optimistic UI: 호출 전에 이미 상태가 반영되어 있음
+   * - 실패 시: 롤백하지 않고 로그만 남김 (UX 단순화)
+   * - 이중 제출 방지: isFeedbackPending 가드로 처리
    */
-  const submitFeedbackApi = useCallback(async (
-    rating: FeedbackRating,
-    feedbackText?: string
-  ) => {
-    // session_id, message_id 가드
+  async function submitFeedbackApi(rating: FeedbackRating, feedbackText?: string) {
     if (!sessionId || !message.id || message.id === 'welcome') return;
 
     const payload: FeedbackPayload = {
@@ -259,61 +253,49 @@ export const MessageBubble = memo(
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        // 서버 오류 시 Optimistic UI 롤백
+        // 오류 로깅만 수행 (Optimistic UI 값을 그대로 유지)
         console.error('[Feedback] API error:', res.status);
-        setFeedback((prev) => {
-          // 현재 상태가 요청에 의해 변경된 경우에만 롤백
-          return latestRatingRef.current === rating ? prev : prev;
-        });
       }
     } catch (err) {
-      // 네트워크 오류 시 롤백
       console.error('[Feedback] Network error:', err);
     } finally {
       setIsFeedbackPending(false);
     }
-  }, [sessionId, message.id]);
+  }
 
   /**
-   * 버튼 클릭 핸들러:
-   * 1. Optimistic UI: 즉시 상태 업데이트
-   * 2. 디바운스 500ms로 연속 클릭 방어
-   * 3. 싫어요 → Dialog 노출
+   * 피드백 버튼 클릭 핸들러
+   * - isFeedbackPending 가드: 이중 클릭 방지 (debounce 타이머 불필요)
+   * - Optimistic UI: 즉시 setFeedback 반영
+   * - 싫어요 → Dialog 오픈 후 Dialog에서 API 호출
+   * - 좋아요/취소 → 바로 API 호출
    */
-  const handleFeedback = useCallback((rating: 'up' | 'down') => {
-    // 동일한 평가를 다시 클릭하면 취소(none)으로 토글
+  function handleFeedback(rating: 'up' | 'down') {
+    if (isFeedbackPending) return;
+
     const newRating: FeedbackRating = feedback === rating ? 'none' : rating;
-
-    // [Optimistic UI] 즉시 화면 반영
     setFeedback(newRating);
-    latestRatingRef.current = newRating;
 
-    // 싫어요로 변경될 때 Dialog 오픈 (취소가 아닌 경우)
     if (newRating === 'down') {
       setIsDialogOpen(true);
-      // Dialog를 통해 API 호출하므로 여기서는 디바운스 제출 생략
+      // API 호출은 Dialog submit/dismiss에서 처리
       return;
     }
 
-    // [Debounce] 이전 예약 취소 후 500ms 뒤에 API 호출
-    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-    debounceTimerRef.current = setTimeout(() => {
-      submitFeedbackApi(newRating);
-    }, 500);
-  }, [feedback, submitFeedbackApi]);
+    void submitFeedbackApi(newRating);
+  }
 
   /** 싫어요 Dialog에서 '전송' 클릭 */
-  const handleDialogSubmit = useCallback((text: string) => {
+  function handleDialogSubmit(text: string) {
     setIsDialogOpen(false);
-    submitFeedbackApi('down', text || undefined);
-  }, [submitFeedbackApi]);
+    void submitFeedbackApi('down', text.trim() || undefined);
+  }
 
-  /** 싫어요 Dialog에서 '건너뛰기' 클릭 */
-  const handleDialogDismiss = useCallback(() => {
+  /** 싫어요 Dialog에서 '건너뛰기' 클릭 - 싫어요 의사는 유지하고 텍스트 없이 제출 */
+  function handleDialogDismiss() {
     setIsDialogOpen(false);
-    // 텍스트 없이 바로 API 호출
-    submitFeedbackApi('down');
-  }, [submitFeedbackApi]);
+    void submitFeedbackApi('down');
+  }
 
   const handleBadgeClick = (src: SourceItem) => {
     setSelectedSource(src);
