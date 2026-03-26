@@ -236,7 +236,14 @@ export const MessageBubble = memo(
    * - 이중 제출 방지: isFeedbackPending 가드로 처리
    */
   async function submitFeedbackApi(rating: FeedbackRating, feedbackText?: string) {
-    if (!sessionId || !message.id || message.id === 'welcome') return;
+    if (!sessionId || !message.id || message.id === 'welcome') {
+      // [Observability] sessionId 또는 message.id가 없으면 API 호출 불가 - 예상치 못한 상황 경고
+      console.warn('[Feedback] Skipped: missing sessionId or message.id', {
+        hasSessionId: Boolean(sessionId),
+        messageId: message.id,
+      });
+      return;
+    }
 
     const payload: FeedbackPayload = {
       session_id: sessionId,
@@ -428,7 +435,7 @@ export const MessageBubble = memo(
           {!isUser && message.id !== 'welcome' && (
             <div className="flex items-center gap-1.5 px-1 mt-0.5">
               <FeedbackButton
-                disabled={isStreaming || isFeedbackPending}
+                disabled={isStreaming || isFeedbackPending || !sessionId}
                 onClick={() => handleFeedback('up')}
                 isActive={feedback === 'up'}
                 activeClassName="text-blue-600 bg-blue-50"
@@ -437,7 +444,7 @@ export const MessageBubble = memo(
                 title="좋은 답변입니다"
               />
               <FeedbackButton
-                disabled={isStreaming || isFeedbackPending}
+                disabled={isStreaming || isFeedbackPending || !sessionId}
                 onClick={() => handleFeedback('down')}
                 isActive={feedback === 'down'}
                 activeClassName="text-red-500 bg-red-50"
@@ -448,12 +455,14 @@ export const MessageBubble = memo(
             </div>
           )}
 
-          {/* 싫어요 선택 시 의견 입력 Dialog */}
-          <FeedbackDialog
-            isOpen={isDialogOpen}
-            onSubmit={handleDialogSubmit}
-            onDismiss={handleDialogDismiss}
-          />
+          {/* 싫어요 선택 시 의견 입력 Dialog (AI 메시지 전용, 환영 메시지 제외) */}
+          {!isUser && message.id !== 'welcome' && (
+            <FeedbackDialog
+              isOpen={isDialogOpen}
+              onSubmit={handleDialogSubmit}
+              onDismiss={handleDialogDismiss}
+            />
+          )}
 
           {/* 소스 뱃지 영역 */}
           {!isUser && sources.length > 0 && (
