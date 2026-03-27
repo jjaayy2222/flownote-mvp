@@ -417,15 +417,17 @@ export const MessageBubble = memo(
 
   // [Clean Code] 피드백 UI 표시 조건을 명명된 boolean으로 추출하여 JSX 중복 제거
   //
-  // [Type Safety] `UIMessage.id`는 `string` (non-optional) 타입이므로
-  //               TypeScript 컴파일러가 null/undefined를 이미 대럽합니다.
-  //               런타임 null 체크가 불필요하므로 `=== 'welcome'` 한 곳만 사용합니다.
+  // [Type Safety] `message`는 Vercel AI SDK `useChat()` 훅이 생성하는 typed 내부 객체입니다.
+  //   경계 레이어(boundary) = AI SDK 자체. `UIMessage.id: string` (non-optional) 타입이므로
+  //   별도 런타임 null 체크 없이 TypeScript 타입 보장에 의존합니다.
   //
-  // [UX] `sessionId?: string` 타입 기준: undefined이면 피드백 불가 → UI 숨김
+  // [UX] `!!sessionId` — undefined AND 빈 문자열('')을 모두 차단
+  //   - `sessionId?: string` 이므로 undefined는 물론, 유효하지 않은 빈 문자열도 피드백 불가
+  //   - `sessionId !== undefined`를 쓰면 '' 통과 → 잘못된 세션에서 UI 노출되는 회귀 발생
   const canShowFeedbackUI =
     !isUser &&
     message.id !== 'welcome' &&
-    sessionId !== undefined;
+    !!sessionId;
 
   return (
     <>
