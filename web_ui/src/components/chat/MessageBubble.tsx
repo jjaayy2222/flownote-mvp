@@ -122,7 +122,7 @@ function FeedbackButton({
       // [A11y] Edge Tools Linter가 동적 중괄호 평가식({expression})을 에러로 잡는 문제를 우회하기 위한 기법
       {...({ 'aria-pressed': isActive })}
       className={cn(
-        "p-1.5 rounded-md transition-all duration-200 outline-none",
+        "p-2 w-8 h-8 sm:p-1.5 sm:w-auto sm:h-auto flex items-center justify-center rounded-md transition-all duration-200 outline-none",
         "hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed",
         isActive ? activeClassName : inactiveClassName,
         className
@@ -411,7 +411,8 @@ export const MessageBubble = memo(
 
   // [Clean Code] 피드백 UI 표시 조건을 명명된 boolean으로 추출하여 JSX 중복 제거
   // [UX] sessionId가 없을 경우 피드백 제출이 불가능하므로 UI를 아예 표시하지 않음
-  const canShowFeedbackUI = !isUser && message.id !== 'welcome' && !!sessionId;
+  // [Null Safety] 이전 구형 데이터에서 message_id가 누락되었을 수 있으므로 명시적 검사 추가
+  const canShowFeedbackUI = !isUser && !!message.id && message.id !== 'welcome' && !!sessionId;
 
   return (
     <>
