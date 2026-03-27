@@ -99,6 +99,11 @@ function areMessageBubblePropsEqual(prev: MessageBubbleProps, next: MessageBubbl
 
 /**
  * [Refactoring] 피드백 버튼 컴포넌트 분리 (중복 제거 및 ARIA 타입 캐스팅 해소)
+ *
+ * 기본 스타일은 WCAG 최소 터치 영역(min-w-[2rem] min-h-[2rem])을 보장합니다.
+ * 밀집 레이아웃에서 조정이 필요하다면 터치 타겟 크기를 줄이지 말고
+ * 패딩만 조정하는 방식을 권장합니다:
+ * (예: `<FeedbackButton className="p-1" ... />`  ← p-2 대신 패딩만 축소)
  */
 interface FeedbackButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'type'> {
   isActive: boolean;
@@ -411,9 +416,16 @@ export const MessageBubble = memo(
   }, [message.parts, isUser, isLast, isStreaming]);
 
   // [Clean Code] 피드백 UI 표시 조건을 명명된 boolean으로 추출하여 JSX 중복 제거
-  // [UX] sessionId가 없을 경우 피드백 제출이 불가능하므로 UI를 아예 표시하지 않음
-  // [Null Safety] `!=` loose inequality로 null & undefined만 걸러냄 (0, '' 등 falsy 값은 통과)
-  const canShowFeedbackUI = !isUser && message.id != null && message.id !== 'welcome' && !!sessionId;
+  //
+  // [Type Safety] `UIMessage.id`는 `string` (non-optional) 타입이므로
+  //               TypeScript 컴파일러가 null/undefined를 이미 대럽합니다.
+  //               런타임 null 체크가 불필요하므로 `=== 'welcome'` 한 곳만 사용합니다.
+  //
+  // [UX] `sessionId?: string` 타입 기준: undefined이면 피드백 불가 → UI 숨김
+  const canShowFeedbackUI =
+    !isUser &&
+    message.id !== 'welcome' &&
+    sessionId !== undefined;
 
   return (
     <>
