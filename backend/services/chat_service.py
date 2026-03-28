@@ -1,0 +1,522 @@
+# backend/services/chat_service.py
+
+import json
+import logging
+import asyncio
+import re
+import time
+import hashlib
+from functools import lru_cache
+from itertools import islice
+from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, TypedDict, cast
+
+from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun  # type: ignore[import, import-untyped, reportMissingImports]
+from langchain_core.documents import Document  # type: ignore[import, import-untyped, reportMissingImports]
+from langchain_core.output_parsers import StrOutputParser  # type: ignore[import, import-untyped, reportMissingImports]
+from langchain_core.prompts import (  # type: ignore[import, import-untyped, reportMissingImports]
+    ChatPromptTemplate,
+    SystemMessagePromptTemplate,
+    HumanMessagePromptTemplate,
+)
+from langchain_core.retrievers import BaseRetriever  # type: ignore[import, import-untyped, reportMissingImports]
+
+from backend.services.hybrid_search_service import (  # type: ignore[import, import-untyped, reportMissingImports]
+    HybridSearchService,
+    get_hybrid_search_service,
+)
+from backend.services.onboarding_service import OnboardingService  # type: ignore[import, import-untyped, reportMissingImports]
+from backend.services.chat_history_service import (  # type: ignore[import, import-untyped, reportMissingImports]
+    ChatHistoryService,
+    get_chat_history_service,
+)
+from backend.api.models import ChatMessage  # type: ignore[import, import-untyped, reportMissingImports]
+from backend.utils import mask_pii_id  # type: ignore[import, import-untyped, reportMissingImports]
+
+logger = logging.getLogger(__name__)
+
+# [Engineering Decision] SSE 페이로드 크기 및 성능 최적화를 위한 상수
+MAX_SOURCE_PAGE_CONTENT_LEN = 500
+
+# [Engineering Excellence] 메타데이터 폴백을 안전하게 식별하기 위한 내부 센티널 (리뷰 반영)
+_METADATA_SENTINEL = object()
+
+# [Contract] 질의 재구성(Query Rephrasing) 시 사용할 최근 대화 히스토리 윈도우 크기.
+# 이 값을 변경하면 test_rephrase_query_truncates_history 테스트가 실패합니다.
+# 테스트에서 이 상수를 직접 import하여 단일 진실 공급원(SSOT)으로 유지하세요.
+REPHRASE_HISTORY_WINDOW = 5
+
+
+class SourceDocumentPayload(TypedDict):
+    """SSE 'sources' 이벤트를 통해 클라이언트로 전송될 소스 문서의 구조"""
+
+    id: str
+    score: float
+    source: str
+    title: str
+    page_content: str
+
+
+class HybridSearchLangChainRetriever(BaseRetriever):
+    """HybridSearchService를 LangChain Retriever로 래핑"""
+
+    service: HybridSearchService
+    k: int = 5
+    alpha: float = 0.5
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    def _get_relevant_documents(
+        self, query: str, *, run_manager=None
+    ) -> List[Document]:
+        """비동기 호출(aget) 전용으로, 동기 호출은 지원하지 않습니다."""
+        raise NotImplementedError(
+            "This retriever only supports asynchronous execution (_aget_relevant_documents)."
+        )
+
+    async def _aget_relevant_documents(
+        self, query: str, *, run_manager=None
+    ) -> List[Document]:
+        """비동기 하이브리드 검색 실행하여 LangChain Document 객체로 변환"""
+        result = await self.service.search(query=query, k=self.k, alpha=self.alpha)
+        docs = []
+        for res in result.results:
+            content = res.get("content", "")
+            # 원본 검색 결과의 metadata 훼손을 방지하기 위해 얕은 복사 후 조작
+            metadata = dict(res.get("metadata", {}))
+            metadata["id"] = res.get("id", "")
+            metadata["score"] = res.get("score", 0.0)
+            docs.append(Document(page_content=content, metadata=metadata))
+        return docs
+
+    async def aget_relevant_documents(
+        self,
+        query: str,
+        *,
+        run_manager: Optional[CallbackManagerForRetrieverRun] = None,
+        **kwargs: Any,
+    ) -> List[Document]:
+        """Provides backward-compatibility for traditional BaseRetriever interface."""
+        if run_manager:
+            # 기존 제공된 config 딕셔너리를 무조건 덮어쓰지 않고 추출(Merge)
+            raw_config = kwargs.get("config") or {}
+            config: Dict[str, Any] = dict(raw_config)
+            # run_manager 콜백을 병합하면서, 다른 config 키(태그, 메타데이터 등)를 보존
+            config["callbacks"] = run_manager.get_child()
+            kwargs["config"] = config
+        return await self.ainvoke(query, **kwargs)
+
+
+class ChatService:
+    def __init__(
+        self,
+        hybrid_search_service: HybridSearchService,
+        onboarding_service: OnboardingService,
+        chat_history_service: ChatHistoryService,
+        llm: Optional[Any] = None,
+        streaming_llm: Optional[Any] = None,
+    ):
+        self.hybrid_search_service = hybrid_search_service
+        self.onboarding_service = onboarding_service
+        self.chat_history_service = chat_history_service
+        self._custom_llm = llm
+        self._custom_streaming_llm = streaming_llm
+
+        import os
+
+        # 런타임마다 읽지 않고 서비스 초기화 시점에 한 번만 읽고 검증(Fail Fast)
+        try:
+            raw_docs = os.getenv("RAG_MAX_DOCS", "10")
+            raw_chars = os.getenv("RAG_MAX_DOC_CHARS", "2000")
+            raw_total = os.getenv("RAG_MAX_TOTAL_CHARS", "16000")
+
+            self.rag_max_docs = int(raw_docs)
+            self.rag_max_doc_chars = int(raw_chars)
+            self.rag_max_total_chars = int(raw_total)
+
+            if any(
+                val < 0
+                for val in (
+                    self.rag_max_docs,
+                    self.rag_max_doc_chars,
+                    self.rag_max_total_chars,
+                )
+            ):
+                raise ValueError(
+                    f"RAG bounds must be non-negative. "
+                    f"Parsed values: docs={self.rag_max_docs}, chars={self.rag_max_doc_chars}, total={self.rag_max_total_chars}"
+                )
+        except ValueError as e:
+            # 설정 무결성을 위반했으므로 구체적인 값을 로그에 담아 명확히 에러 전파(Fail-Fast)
+            logger.error(
+                f"Invalid RAG configuration detected. "
+                f"Env values were -> RAG_MAX_DOCS='{raw_docs}', "
+                f"RAG_MAX_DOC_CHARS='{raw_chars}', "
+                f"RAG_MAX_TOTAL_CHARS='{raw_total}'. "
+                f"Detail: {e}. Raising exception to fail fast."
+            )
+            raise
+
+    def _get_streaming_llm(self):
+        """스트리밍용 ChatOpenAI 객체 생성"""
+        return self._get_llm(streaming=True)
+
+    def _get_llm(self, streaming: bool = False):
+        """ChatOpenAI 객체 생성 (기본값: non-streaming)"""
+        # [Optimization] 주입된 커스텀 LLM이 있는 경우 우선 사용 (명시적 의존성 주입 지원)
+        if streaming and self._custom_streaming_llm:
+            return self._custom_streaming_llm
+        if not streaming and self._custom_llm:
+            return self._custom_llm
+
+        from langchain_openai import ChatOpenAI  # type: ignore[import, import-untyped, reportMissingImports]
+        import os
+
+        # 기본 OPENAI_API_KEY가 없는 환경이므로 .env의 커스텀 환경변수를 명시적으로 주입
+        # GPT-4o-mini를 1순위로, GPT-4o 등 다른 모델을 fallback으로 사용
+        api_key = (
+            os.getenv("GPT4O_MINI_API_KEY")
+            or os.getenv("GPT4O_API_KEY")
+            or os.getenv("OPENAI_API_KEY")
+        )
+        if not api_key:
+            raise ValueError(
+                "OpenAI API key is missing. Please set GPT4O_MINI_API_KEY, GPT4O_API_KEY, or OPENAI_API_KEY in your environment variables."
+            )
+
+        base_url = (
+            os.getenv("GPT4O_MINI_BASE_URL")
+            or os.getenv("GPT4O_BASE_URL")
+            or os.getenv("OPENAI_BASE_URL")
+        )
+        model = (
+            os.getenv("GPT4O_MINI_MODEL") or os.getenv("GPT4O_MODEL") or "gpt-4o-mini"
+        )
+
+        return ChatOpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            streaming=streaming,
+            temperature=0.3,
+        )
+
+    def _get_user_context_prompt_text(self, user_id: str) -> str:
+        """온보딩 데이터를 기반으로 사용자 맞춤형 시스템 프롬프트 문구 생성"""
+        try:
+            status = self.onboarding_service.get_user_status(user_id)
+            if status.get("status") == "success" and status.get("is_completed"):
+                occupation = status.get("occupation", "알 수 없음")
+                areas = ", ".join(status.get("areas", []))
+                return (
+                    f"You are assisting a user who works as a '{occupation}' and is interested in the following areas: {areas}. "
+                    "Tailor your response to be suitable and helpful for someone with this background."
+                )
+        except Exception as e:
+            logger.warning(f"Failed to fetch onboarding status for user {user_id}: {e}")
+
+        return "You are a helpful and expert AI assistant."
+
+    def _mask_pii(self, text: Optional[str]) -> str:
+        """
+        개인정보(PII) 마스킹 가드레일 (이메일, 전화번호 등)
+
+        [Engineering Decision]
+        - 스트리밍 토큰 단위 마스킹은 문맥 단절로 리소스가 많이 들 수 있으므로,
+        - 소스 문서 내용(Full Text)과 최종 저장 시점(User/Assistant)에 적용하는 것을 1순위로 합니다.
+        """
+        if not text:
+            return ""
+
+        # 1. 이메일: abc@def.com -> a***@def.com
+        text = re.sub(
+            r"([a-zA-Z0-9_.+-]+)@([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)",
+            lambda m: m.group(1)[0] + "***@" + m.group(2),
+            text,
+        )
+        # 2. 전화번호 (KR): 010-1234-5678 -> 010-****-5678
+        text = re.sub(r"(\d{2,3})-(\d{3,4})-(\d{4})", r"\1-****-\3", text)
+
+        return text
+
+    # ------------------------------------------------------------------
+    # [Refinement] 검색 결과 처리 및 성능 로깅 헬퍼
+    # ------------------------------------------------------------------
+    def _dedupe_and_build_sources(
+        self, source_docs: List[Document]
+    ) -> tuple[List[Document], List[SourceDocumentPayload]]:
+        """
+        소스 중복 제거 및 SSE 전송용 페이로드 생성.
+
+        [Consistency] UI 노출 문서와 LLM 컨텍스트 문서를 100% 일치시킵니다.
+        """
+        seen_sources: set[str] = set()
+        deduped_docs: List[Document] = []
+        payload: List[SourceDocumentPayload] = []
+
+        for doc in source_docs:
+            # 1. 우선순위에 따른 메타데이터 추출 (source -> id -> sentinel 마커)
+            raw_source = (
+                doc.metadata.get("source")
+                or doc.metadata.get("id")
+                or _METADATA_SENTINEL
+            )
+
+            # 2. 타입 검증 및 문자열 변환 (리뷰 반영: 센티널 마커 사용으로 accidental suppression 방지)
+            if raw_source is _METADATA_SENTINEL:
+                source_path = "unknown"
+            else:
+                source_path = str(raw_source)
+                # 명시적으로 존재하나 문자열이 아닌 경우에만 추적을 위해 경고 로깅
+                if not isinstance(raw_source, str):
+                    # [Security] 로그 비대화 방지 및 보안을 위해 출력 값 제한
+                    safe_val = source_path[:100]  # type: ignore[index]
+                    if len(source_path) > 100:
+                        safe_val += "..."
+
+                    logger.warning(
+                        f"Unexpected metadata type detected for source/id: {type(raw_source)}. "
+                        f"Doc ID: {doc.metadata.get('id', 'N/A')}. "
+                        f"Coercing to string. Value(truncated): {safe_val}"
+                    )
+            if source_path in seen_sources:
+                continue
+
+            seen_sources.add(source_path)
+            deduped_docs.append(doc)
+
+            payload.append(
+                {
+                    "id": doc.metadata.get("id", ""),
+                    "score": doc.metadata.get("score", 0.0),
+                    "source": source_path,
+                    "title": (
+                        source_path.split("/")[-1]
+                        if "/" in source_path
+                        else source_path
+                    ),
+                    "page_content": self._mask_pii(doc.page_content)[:MAX_SOURCE_PAGE_CONTENT_LEN],  # type: ignore[index]
+                }
+            )
+
+        return deduped_docs, payload
+
+    def _log_ttft_once(
+        self,
+        *,
+        start_time: float,
+        rephrase_duration: float,
+        user_id: str,
+    ) -> float:
+        """
+        첫 번째 토큰 발생 시 성능 지표 기록.
+
+        [Ops Decision] 로그 분석 레이어에서의 수치 분석(Aggregation)을 용이하게 하기 위해
+        포맷팅된 문자열 대신 원시 float 값을 저장합니다. (리뷰 반영)
+        """
+        ttft = time.perf_counter() - start_time
+        logger.info(
+            f"[Performance] TTFT recorded for user {user_id}",
+            extra={
+                "ttft": ttft,
+                "rephrase_duration": rephrase_duration,
+                "user_id": user_id,
+            },
+        )
+        return ttft
+
+    async def _invoke_rephrase_chain(self, context_history: str, query: str) -> str:
+        """
+        재구성 체인(prompt | llm | StrOutputParser)을 빌드하고 실행합니다.
+
+        [Engineering Decision - Testability]
+        LangChain 체인 빌드 및 실행 로직을 별도 메서드로 추출하여 테스트 시
+        LangChain 내부 경로(RunnableSequence 등)에 의존하지 않고
+        `chat_service._invoke_rephrase_chain`을 직접 패치할 수 있도록 합니다.
+        이는 LangChain 버전 업그레이드에 대한 취약성을 제거합니다.
+        """
+        rephrase_template = """Given the following conversation history and a follow-up question, rephrase the follow-up question to be a standalone question that can be understood without the conversation history.
+If the follow-up question is already standalone, return it exactly as is.
+
+Chat History:
+{history}
+
+Follow-up Question: {query}
+Standalone Question:"""
+
+        rephrase_prompt = ChatPromptTemplate.from_template(rephrase_template)
+        llm = self._get_llm(streaming=False)
+        chain = rephrase_prompt | llm | StrOutputParser()
+        return await chain.ainvoke({"history": context_history, "query": query})
+
+    async def _rephrase_query(self, query: str, history: List[ChatMessage]) -> str:
+        """이전 대화 맥락을 기반으로 질의 재구성 (Query Rewriting)"""
+        if not history:
+            return query
+
+        # [Contract] 모듈 상수 REPHRASE_HISTORY_WINDOW를 사용하여 히스토리 잘라내기.
+        # 테스트(test_rephrase_query_truncates_history)가 이 상수를 import하여 동기화됩니다.
+        truncated_history = history[-REPHRASE_HISTORY_WINDOW:]  # type: ignore[index]
+        context_history = "\n".join(
+            f"{m.role}: {m.content}" for m in truncated_history
+        )
+
+        try:
+            standalone_query = await self._invoke_rephrase_chain(context_history, query)
+            logger.info(
+                "Rephrased query",
+                extra={
+                    "original": self._mask_pii(query),
+                    "rephrased": self._mask_pii(standalone_query),
+                },
+            )
+            return standalone_query.strip()
+        except Exception as e:
+            logger.warning(
+                "[OBS] Event: Query rephrasing failed (fallback to original)",
+                extra={"query_hash": mask_pii_id(query), "error": str(e)},
+            )
+            return query
+
+    @staticmethod
+    def _format_sse_event(event_type: str, **kwargs) -> str:
+        """SSE 규격에 맞게 이벤트를 포맷팅하는 헬퍼 함수"""
+        if event_type == "done":
+            return "data: [DONE]\n\n"
+
+        payload = {"type": event_type}
+        payload.update(kwargs)
+        # JSON 직렬화 불가 객체(UUID, datetime 등) 방어를 위해 default=str 파라미터 적용
+        return f"data: {json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
+
+    async def stream_chat(
+        self,
+        query: str,
+        user_id: str,
+        session_id: Optional[str] = None,
+        k: int = 5,
+        alpha: Optional[float] = None,
+    ) -> AsyncGenerator[str, None]:
+        """질의를 받아 RAG 체인을 실행하고 SSE 규격에 맞게 결과 청크를 반환하는 비동기 제너레이터"""
+        start_time = time.perf_counter()
+        logger.info(f"Stream chat started for user {user_id}")
+
+        # 0. 히스토리 로드 및 질의 재구성
+        history: List[ChatMessage] = []
+        effective_query = query
+        rephrase_duration = 0.0
+
+        if session_id:
+            history = await self.chat_history_service.get_history(session_id)
+            if history:
+                rephrase_start = time.perf_counter()
+                effective_query = await self._rephrase_query(query, history)
+                rephrase_duration = time.perf_counter() - rephrase_start
+
+        # 1. 메시지 컨텍스트 및 초기 State 구성
+        from langchain_core.messages import HumanMessage, AIMessage, BaseMessage  # type: ignore[import, import-untyped, reportMissingImports]
+        langchain_history: List[BaseMessage] = []
+        for msg in history:
+            if msg.role == "user":
+                langchain_history.append(HumanMessage(content=msg.content))
+            else:
+                langchain_history.append(AIMessage(content=msg.content))
+
+        langchain_history.append(HumanMessage(content=effective_query))
+
+        initial_state = {
+            "messages": langchain_history,
+            "user_id": user_id,
+            "session_id": session_id,
+        }
+
+        # 2. workflow 컴파일 및 의존성 주입
+        from backend.agent.chat.graph import create_chat_workflow  # type: ignore[import, import-untyped, reportMissingImports]
+        agent_graph = create_chat_workflow(checkpointer=None)
+
+        # 3. Streaming 실행 (astream_events v2 사용)
+        is_cancelled = False
+        full_content_list: List[str] = []
+        ttft_recorded = False
+
+        try:
+            async for event in agent_graph.astream_events(initial_state, version="v2"):
+                kind = event["event"]
+                name = event.get("name")
+
+                # Planner 노드 완료 시 검색된 source payload 추출하여 SSE 전송
+                if name == "planner" and kind == "on_chain_end":
+                    planner_output = event["data"].get("output", {})
+                    source_docs_raw = planner_output.get("source_documents", [])
+                    
+                    if source_docs_raw:
+                        source_docs = []
+                        for doc_dict in source_docs_raw:
+                            content = doc_dict.get("content", "")
+                            metadata = dict(doc_dict.get("metadata", {}))
+                            metadata["id"] = doc_dict.get("id", "")
+                            metadata["score"] = doc_dict.get("score", 0.0)
+                            source_docs.append(Document(page_content=content, metadata=metadata))
+                        
+                        deduplicated_source_docs, sources_payload = self._dedupe_and_build_sources(source_docs)
+                        if sources_payload:
+                            yield self._format_sse_event("sources", data=sources_payload)
+
+                # LLM 스트리밍 토큰 청크 추출하여 SSE 전송 (Responder 동작 시 발생)
+                elif kind == "on_chat_model_stream":
+                    chunk = event["data"].get("chunk")
+                    if chunk and getattr(chunk, "content", None):
+                        # TTFT(Time To First Token) 기록 및 성능 로깅 (헬퍼 사용)
+                        if not ttft_recorded:
+                            _ = self._log_ttft_once(
+                                start_time=start_time,
+                                rephrase_duration=rephrase_duration,
+                                user_id=user_id,
+                            )
+                            ttft_recorded = True
+
+                        content_chunk = str(chunk.content)
+                        full_content_list.append(content_chunk)
+                        # 스트리밍 토큰은 실시간성을 위해 마스킹 없이 우선 전송
+                        yield self._format_sse_event("token", data=content_chunk)
+
+        except asyncio.CancelledError:
+            is_cancelled = True
+            logger.warning("[OBS] Chat stream locally cancelled by user disconnect.")
+            raise
+        except Exception as e:
+            logger.exception(
+                "[OBS] Trace 500: Error during RAG chat streaming pipeline",
+                extra={
+                    "user_id_hash": mask_pii_id(user_id),
+                    "session_id_hash": mask_pii_id(session_id),
+                },
+            )
+            yield self._format_sse_event(
+                "error",
+                message="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+            )
+
+        if not is_cancelled:
+            full_content = "".join(full_content_list)
+            if session_id and full_content:
+                # 저장 시 최종 결과물(질의 및 답변)에 대해 PII 마스킹 적용
+                masked_query = self._mask_pii(query)
+                masked_content = self._mask_pii(full_content)
+
+                await self.chat_history_service.add_message(
+                    session_id, "user", masked_query
+                )
+                await self.chat_history_service.add_message(
+                    session_id, "assistant", masked_content
+                )
+
+            yield self._format_sse_event("done")
+
+
+@lru_cache(maxsize=None)
+def get_chat_service() -> ChatService:
+    return ChatService(
+        hybrid_search_service=get_hybrid_search_service(),
+        onboarding_service=OnboardingService(),
+        chat_history_service=get_chat_history_service(),
+    )

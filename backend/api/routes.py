@@ -22,3 +22,4 @@ async def health_check(locale: str = Depends(get_locale)) -> HealthCheckResponse
 router.include_router(endpoints.classify_router)
 router.include_router(endpoints.search_router)
 router.include_router(endpoints.metadata_router)
+router.include_router(endpoints.chat_router)

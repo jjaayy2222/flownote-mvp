@@ -1,4 +1,4 @@
-# 📖 FlowNote User Guide
+# 📖 FlowNote User Guide (v7.0)
 
 <p align="center">
   <a href="./USER_GUIDE.md">한국어</a> | <a href="./USER_GUIDE_EN.md"><strong>English</strong></a>
@@ -15,11 +15,13 @@
 3. [Onboarding Process](#3-onboarding-process)
 4. [Classifying Files](#4-classifying-files)
 5. [Using Search](#5-using-search)
-6. [Dashboard Features](#6-dashboard-features)
-7. [Automation Settings](#7-automation-settings)
-8. [Obsidian Integration](#8-obsidian-integration)
-9. [Language Settings](#9-language-settings)
-10. [Troubleshooting](#10-troubleshooting)
+6. [Hybrid RAG Search](#6-hybrid-rag-search)
+7. [AI Assistant Chat](#7-ai-assistant-chat)
+8. [Dashboard Features](#8-dashboard-features)
+9. [Automation Settings](#9-automation-settings)
+10. [Obsidian Integration](#10-obsidian-integration)
+11. [Language Settings](#11-language-settings)
+12. [Troubleshooting](#12-troubleshooting)
 
 ---
 
@@ -259,13 +261,114 @@ If AI classification is inaccurate:
 
 - **Exact phrase search**: Use quotes `"REST API"`
 - **Category filter**: Search specific PARA categories
-- **Date range**: Search files within specific period
+- **Date range**: Search files within a specific period
+
+> 💡 **Hybrid RAG Search** is available for more accurate results. See [Chapter 6](#6-hybrid-rag-search) for details.
 
 ---
 
-## 6. Dashboard Features
+## 6. Hybrid RAG Search
 
-### 6.1 Dashboard Overview
+The **Hybrid RAG Search** introduced in FlowNote combines semantic (Dense) and keyword (Sparse) search to deliver significantly more accurate results.
+
+### 6.1 Search Engine Architecture
+
+```
+Search Query Input
+    ↓
+┌─────────────────────────────────┐
+│  FAISS (Dense Vector Search)    │  ← Semantic/context-based search
+│  BM25  (Sparse Keyword Search)  │  ← Exact keyword matching
+└─────────────────────────────────┘
+    ↓
+  RRF (Reciprocal Rank Fusion)     ← Combines results at optimal ratio
+    ↓
+  Final Search Results
+```
+
+### 6.2 First Time: Building the Initial Index
+
+Before using hybrid search, you need to index your Obsidian Vault.
+
+```bash
+# Run from the project root in the terminal
+# ✅ First run (no existing index)
+python scripts/bootstrap_index.py --vault /path/to/your/vault
+
+# ⚠️  Full rebuild (deletes existing index and rebuilds - irreversible)
+python scripts/bootstrap_index.py --vault /path/to/your/vault --clear
+```
+
+> 📂 The index is stored in the `data/indices/` directory and is automatically loaded on server restart.
+
+### 6.3 Using Hybrid Search
+
+1. Click **🔍 Hybrid Search** in the dashboard sidebar (`/search` page)
+2. Enter your search query in the search bar
+3. Configure search parameters:
+
+| Parameter | Description | Recommended |
+|-----------|-------------|-------------|
+| **alpha** | Dense(FAISS)/Sparse(BM25) weight ratio<br>`1.0` = FAISS only, `0.0` = BM25 only | `0.5` (equal) |
+| **k** | Maximum number of results to return | `5` ~ `10` |
+| **Category** | Filter results to a specific PARA category | Optional |
+
+### 6.4 Interpreting Search Results
+
+```
+🔍 Hybrid Search Results (5 items) | Latency: 120ms
+
+1. Project_Plan_2025.md
+   Category: Projects     Score: 0.87
+   ──────────────────────────────────
+   Preview: "...Q1 2025 milestone roadmap..."
+
+2. API_Design_Guide.pdf
+   Category: Resources    Score: 0.82
+   ...
+```
+
+- **Score**: Final relevance score (0~1) merged by the RRF algorithm
+- **Latency**: ≤10ms on Redis cache hit, 100~500ms for first-time search
+
+### 6.5 Performance Optimization Tips
+
+- **Cache utilization**: Identical queries are Redis-cached for 1 hour → instant response on repeat searches
+- **alpha tuning**:
+  - Technical terms / acronyms → `alpha=0.3` (boost BM25)
+  - Concept / semantic search → `alpha=0.7` (boost FAISS)
+  - General search → `alpha=0.5` (default)
+- **Category filter**: Use when you know the document type to improve precision
+
+---
+
+## 7. AI Assistant Chat
+
+Directly consult with the **AI Assistant**, a core FlowNote feature, to extract insights and answers from your stored knowledge.
+
+### 7.1 Starting a Chat
+
+1. Click the **💬 AI Chat** button at the bottom or in the sidebar of the dashboard to open the chat window.
+2. Type your question in the input field at the bottom and press Enter.
+
+### 7.2 Key Features and Characteristics
+
+- **Real-time Streaming (SSE)**: Text is rendered in real-time as it's being generated, minimizing wait times.
+- **Intelligent Inline Citations**: Source numbers like `[1]` and `[2]` are displayed within the answer.
+  - **Clicking Numbers**: Clicking a citation number opens the `Source Panel` on the right, allowing you to instantly view the original document snippet.
+- **Security Guardrails (PII Masking)**: Sensitive personal information (emails, phone numbers) is automatically masked (e.g., `+1-***-***-1234` or `user@****.com`) when detected in answers or sources.
+- **Persistent Session Management**: Manages a unique `user_id` via browser `localStorage`, ensuring chat history persists even after closing the browser.
+
+### 7.3 Effective Chatting Tips
+
+- **Be Specific**: Instead of asking "How do I write a project proposal?", try "Summarize the key objectives and milestones of 'Project A' in my Projects category."
+- **Verify Sources**: If an answer seems questionable, click the inline citation numbers to verify exactly where in your documents the information came from.
+
+---
+
+## 8. Dashboard Features
+
+### 8.1 Dashboard Overview
 
 The dashboard consists of 3 main sections:
 
@@ -284,7 +387,7 @@ The dashboard consists of 3 main sections:
 - **MCP Server Status**: Connection status
 - **Last Sync**: Last synchronization time
 
-### 6.2 Real-time Updates (v6.0)
+### 8.2 Real-time Updates
 
 WebSocket-based real-time updates:
 - Instant reflection when file classification completes
@@ -293,9 +396,9 @@ WebSocket-based real-time updates:
 
 ---
 
-## 7. Automation Settings
+## 9. Automation Settings
 
-### 7.1 Auto Reclassification
+### 9.1 Auto Reclassification
 
 **Configuration location**: `backend/celery_app/config.py`
 
@@ -312,7 +415,7 @@ WebSocket-based real-time updates:
 2. Reclassifies with latest AI model
 3. Records results in logs
 
-### 7.2 Smart Archiving
+### 9.2 Smart Archiving
 
 ```python
 # Archive old projects every Sunday at midnight
@@ -327,7 +430,7 @@ WebSocket-based real-time updates:
 2. Suggests moving to Archives
 3. Moves after user approval
 
-### 7.3 Monitor with Flower
+### 9.3 Monitor with Flower
 
 Check at `http://localhost:5555`:
 - Running tasks
@@ -336,9 +439,9 @@ Check at `http://localhost:5555`:
 
 ---
 
-## 8. Obsidian Integration
+## 10. Obsidian Integration
 
-### 8.1 MCP Server Configuration
+### 10.1 MCP Server Configuration
 
 **Claude Desktop config file** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
 
@@ -354,7 +457,7 @@ Check at `http://localhost:5555`:
 }
 ```
 
-### 8.2 Obsidian Vault Integration
+### 10.2 Obsidian Vault Integration
 
 1. **Modify configuration file** (`.env`):
 ```env
@@ -367,7 +470,7 @@ OBSIDIAN_AUTO_SYNC=true
 SYNC_INTERVAL=300  # Every 5 minutes
 ```
 
-### 8.3 Conflict Resolution (v6.0)
+### 10.3 Conflict Resolution
 
 When file conflicts occur:
 
@@ -378,7 +481,7 @@ When file conflicts occur:
    - **Keep Remote**: Keep Obsidian version
    - **Keep Both**: Keep both versions (timestamp added to filename)
 
-**Diff Viewer features (v6.0):**
+**Diff Viewer features:**
 - Monaco Editor-based Side-by-Side comparison
 - Syntax Highlighting
 - Markdown Preview
@@ -386,9 +489,9 @@ When file conflicts occur:
 
 ---
 
-## 9. Language Settings
+## 11. Language Settings
 
-### 9.1 Web UI Language Switching (v6.0)
+### 11.1 Web UI Language Switching
 
 1. Click **language switcher** in top-right corner
 2. Select **한국어** or **English**
@@ -399,7 +502,7 @@ When file conflicts occur:
 - Korean (ko)
 - English (en)
 
-### 9.2 API Response Language
+### 11.2 API Response Language
 
 Set `Accept-Language` header in HTTP requests:
 
@@ -410,9 +513,9 @@ curl -H "Accept-Language: en" http://localhost:8000/api/classify
 
 ---
 
-## 10. Troubleshooting
+## 12. Troubleshooting
 
-### 10.1 Common Issues
+### 12.1 Common Issues
 
 #### ❌ Redis Connection Error
 ```
@@ -452,7 +555,7 @@ lsof -i :8000
 kill -9 <PID>
 ```
 
-#### ❌ WebSocket Connection Failed (v6.0)
+#### ❌ WebSocket Connection Failed
 ```
 WebSocket connection failed
 ```
@@ -462,7 +565,7 @@ WebSocket connection failed
 2. Check error messages in browser console
 3. Check firewall settings
 
-### 10.2 Check Logs
+### 12.2 Check Logs
 
 **Backend logs:**
 ```bash
@@ -480,7 +583,7 @@ cd web_ui
 npm run dev
 ```
 
-### 10.3 Database Reset
+### 12.3 Database Reset
 
 **Warning: All data will be deleted!**
 
@@ -495,7 +598,55 @@ rm -rf data/uploads/*
 python -m uvicorn backend.main:app --reload
 ```
 
-### 10.4 Get Support
+### 12.4 Hybrid Search Troubleshooting
+
+#### ❌ No results or irrelevant results
+**Cause**: Index not built or outdated index
+
+**Solution**:
+```bash
+# Rebuild index (delete existing index and rebuild)
+python scripts/bootstrap_index.py --vault /path/to/your/vault --clear
+```
+
+#### ❌ Slow search response
+**Cause**: Redis not running → cache inactive, or large Vault
+
+**Solution**:
+```bash
+# Check if Redis is running
+redis-cli ping  # PONG means it's working
+
+# Restart Redis
+brew services restart redis
+```
+
+#### ❌ Index loading error (on server start)
+```
+OSError: [Errno 2] No such file or directory: 'data/indices/...'
+```
+**Solution**: Run `bootstrap_index.py` to build the initial index, then restart the server
+
+#### ❌ OpenAI API error (during indexing)
+```
+openai.RateLimitError: Rate limit exceeded
+```
+**Solution**: Reduce concurrent requests with `--concurrency`
+```bash
+python scripts/bootstrap_index.py --vault /path/to/your/vault --concurrency 2
+```
+
+### 12.5 AI Assistant Chat Troubleshooting
+
+#### ❌ Citation numbers [n] appear but clicking them does nothing
+**Cause**: Source data loading failure or regex parsing error.
+**Solution**: Refresh the page (F5) and try asking again. If the issue persists, check the `web_ui` logs.
+
+#### ❌ Question submitted but no answer is returned
+**Cause**: Backend API server not running or OpenAI API quota exceeded.
+**Solution**: Check the server logs in `Terminal 1` for any error messages.
+
+### 12.6 Get Support
 
 - **GitHub Issues**: [github.com/jjaayy2222/flownote-mvp/issues](https://github.com/jjaayy2222/flownote-mvp/issues)
 - **Email**: qkfkadmlEkf@gmail.com
@@ -510,6 +661,9 @@ python -m uvicorn backend.main:app --reload
   - [v6.0 Phase 1: WebSocket](docs/P/v6.0_phase1_websocket/)
   - [v6.0 Phase 2: Diff Viewer](docs/P/v6.0_phase2_diff_viewer/)
   - [v6.0 Phase 3: i18n](docs/P/v6.0_phase3_i18n/)
+  - [v7.0 Planning: Hybrid RAG](docs/P/v7.0_planning/)
+- **Performance Measurement**: `tests/performance/benchmark_rag.py`
+- **Search Quality Measurement**: `tests/e2e/test_rag_search_quality.py`
 
 ---
 

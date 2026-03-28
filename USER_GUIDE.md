@@ -1,4 +1,4 @@
-# 📖 FlowNote 사용자 가이드 (v6.0)
+# 📖 FlowNote 사용자 가이드 (v7.0)
 
 <p align="center">
   <a href="./USER_GUIDE.md"><strong>한국어</strong></a> | <a href="./USER_GUIDE_EN.md">English</a>
@@ -15,11 +15,13 @@
 3. [온보딩 과정](#3-온보딩-과정)
 4. [파일 분류하기](#4-파일-분류하기)
 5. [검색 기능 사용하기](#5-검색-기능-사용하기)
-6. [대시보드 활용하기](#6-대시보드-활용하기)
-7. [자동화 기능 설정](#7-자동화-기능-설정)
-8. [Obsidian 연동](#8-obsidian-연동)
-9. [언어 설정 변경](#9-언어-설정-변경)
-10. [문제 해결](#10-문제-해결)
+6. [하이브리드 RAG 검색](#6-하이브리드-rag-검색)
+7. [AI 어시스턴트 채팅](#7-ai-어시스턴트-채팅)
+8. [대시보드 활용하기](#8-대시보드-활용하기)
+9. [자동화 기능 설정](#9-자동화-기능-설정)
+10. [Obsidian 연동](#10-obsidian-연동)
+11. [언어 설정 변경](#11-언어-설정-변경)
+12. [문제 해결](#12-문제-해결)
 
 ---
 
@@ -228,7 +230,7 @@ AI 분류가 부정확한 경우:
 
 ## 5. 검색 기능 사용하기
 
-### 5.1 키워드 검색
+### 5.1 기본 키워드 검색
 
 1. **검색 탭** 이동
 2. 검색어 입력 (예: "API 문서")
@@ -261,11 +263,113 @@ AI 분류가 부정확한 경우:
 - **카테고리 필터**: 특정 PARA 카테고리만 검색
 - **날짜 범위**: 특정 기간 내 파일만 검색
 
+> 💡 **하이브리드 RAG 검색** 도입을 통해 더욱 정확한 검색 결과를 제공합니다. 자세한 사용법은 [6장](#6-하이브리드-rag-검색)을 참고하세요.
+
 ---
 
-## 6. 대시보드 활용하기
+## 6. 하이브리드 RAG 검색
 
-### 6.1 대시보드 개요
+FlowNote에 도입된 **하이브리드 RAG 검색**은 의미 기반(Dense) 검색과 키워드 기반(Sparse) 검색을 결합하여 훨씬 정확한 결과를 제공합니다.
+
+### 6.1 검색 엔진 구조
+
+```
+검색어 입력
+    ↓
+┌─────────────────────────────────────┐
+│  FAISS (Dense Vector Search)    │  ← 의미/맥락 기반 검색
+│  BM25  (Sparse Keyword Search)  │  ← 정확한 키워드 매칭
+└─────────────────────────────────────┘
+    ↓
+  RRF (Reciprocal Rank Fusion)     ← 두 결과를 최적 비율로 통합
+    ↓
+  최종 검색 결과 반환
+```
+
+### 6.2 최초 1회: 인덱스 초기 구축
+
+하이브리드 검색을 사용하기 전, Obsidian Vault를 인덱싱해야 합니다.
+
+```bash
+# 프로젝트 루트에서 아래 명령 실행
+# ✅ 최초 실행 (인덱스 없을 때)
+python scripts/bootstrap_index.py --vault /path/to/your/vault
+
+# ⚠️  전체 재구축 (기존 인덱스 삭제 후 새로 구축 - 복구 불가)
+python scripts/bootstrap_index.py --vault /path/to/your/vault --clear
+```
+
+> 📂 인덱스는 `data/indices/` 디렉토리에 저장됩니다. 서버 재시작 시 자동으로 로드됩니다.
+
+### 6.3 하이브리드 검색 사용하기
+
+1. 대시보드 사이드바에서 **🔍 하이브리드 검색** 클릭 (`/search` 페이지)
+2. 상단 검색창에 검색어 입력
+3. 검색 파라미터 설정:
+
+| 파라미터 | 설명 | 권장값 |
+|---------|------|-------|
+| **alpha** | Dense(FAISS)/Sparse(BM25) 가중치 비율<br>`1.0` = FAISS만 사용, `0.0` = BM25만 사용 | `0.5` (균등) |
+| **k** | 반환할 최대 결과 수 | `5` ~ `10` |
+| **카테고리** | 특정 PARA 카테고리로 결과 필터링 | 선택사항 |
+
+### 6.4 검색 결과 해석
+
+```
+🔍 하이브리드 검색 결과 (5건) | 응답시간: 120ms
+
+1. 프로젝트 기획서_2025.md
+   카테고리: Projects     Score: 0.87
+   ──────────────────────────────────
+   내용 미리보기: "...2025년 Q1 마일스톤 계획..."
+
+2. API 설계 가이드.pdf
+   카테고리: Resources    Score: 0.82
+   ...
+```
+
+- **Score**: RRF 알고리즘으로 통합된 최종 관련도 점수 (0~1)
+- **응답시간**: Redis 캐시 히트 시 ≤10ms, 최초 검색 시 100~500ms
+
+### 6.5 검색 성능 최적화 팁
+
+- **캐시 활용**: 동일 쿼리는 Redis에 1시간 캐싱 → 반복 검색 시 즉시 응답
+- **alpha 튜닝**:
+  - 전문 용어·약어 검색 → `alpha=0.3` (BM25 강화)
+  - 개념·의미 기반 검색 → `alpha=0.7` (FAISS 강화)
+  - 일반 검색 → `alpha=0.5` (기본값)
+- **카테고리 필터**: 찾는 문서 유형을 알고 있다면 필터 사용 시 정확도 향상
+
+---
+
+## 7. AI 어시스턴트 채팅
+
+FlowNote의 핵심 기능인 **AI 어시스턴트**와 직접 대화하며 보관된 지식으로부터 해답을 얻을 수 있습니다.
+
+### 7.1 채팅 시작하기
+
+1. 대시보드 하단 또는 사이드바의 **💬 AI 채팅** 버튼을 클릭하여 채팅창을 엽니다.
+2. 하단 입력창에 질문을 입력하고 Enter를 누릅니다.
+
+### 7.2 주요 기능 및 특징
+
+- **실시간 스트리밍 (SSE)**: 답변이 생성되는 동안 실시간으로 텍스트가 노출되어 대기 시간을 최소화합니다.
+- **인라인 인용 (Inline Citations)**: 답변 중간에 `[1]`, `[2]`와 같이 출처 번호가 표시됩니다.
+  - **번호 클릭**: 해당 번호를 클릭하면 우측 `Source Panel`이 열리며 인용된 원문 조각을 즉시 확인할 수 있습니다.
+- **보안 가드레일 (PII Masking)**: 이메일, 전화번호 등 민감한 개인정보가 답변이나 소스에 포함될 경우 자동으로 마스킹(`010-****-1234`) 처리됩니다.
+- **지속적 세션 관리**: 브라우저의 `localStorage`를 통해 고유 `user_id`를 관리하며, 브라우저를 닫았다가 다시 열어도 대화 내역이 유지됩니다.
+
+### 7.3 효과적인 대화 팁
+
+- **구체적인 질문**: "프로젝트 제안서 작성법 알려줘"보다는 "Projects 카테고리에 있는 'A 프로젝트' 제안서의 핵심 요약과 마일스톤을 정리해줘"라고 질문하면 더 정확한 답변을 얻을 수 있습니다.
+- **출처 확인**: AI의 답변이 의심될 때는 인라인 인용 번호를 클릭하여 실제 저장된 문서의 어느 부분에서 해당 내용이 나왔는지 직접 확인하세요.
+
+---
+
+## 8. 대시보드 활용하기
+
+### 8.1 대시보드 개요
+
 
 대시보드는 3개의 주요 섹션으로 구성됩니다:
 
@@ -284,7 +388,7 @@ AI 분류가 부정확한 경우:
 - **MCP 서버 상태**: 연결 여부 확인
 - **최근 동기화**: 마지막 동기화 시간
 
-### 6.2 실시간 업데이트 (v6.0)
+### 8.2 실시간 업데이트
 
 WebSocket 기반 실시간 업데이트:
 - 파일 분류 완료 시 즉시 반영
@@ -295,9 +399,9 @@ WebSocket 기반 실시간 업데이트:
 - 우측 하단 미니맵으로 전체 구조 파악
 - 현재 뷰포트 위치 확인
 
-## 7. 자동화 기능 설정
+## 9. 자동화 기능 설정
 
-### 7.1 자동 재분류
+### 9.1 자동 재분류
 
 **설정 위치**: `backend/celery_app/config.py`
 
@@ -314,7 +418,7 @@ WebSocket 기반 실시간 업데이트:
 2. 최신 AI 모델로 재분류
 3. 결과를 로그에 기록
 
-### 7.2 스마트 아카이빙
+### 9.2 스마트 아카이빙
 
 ```python
 # 매주 일요일 자정에 오래된 프로젝트 아카이빙
@@ -329,7 +433,7 @@ WebSocket 기반 실시간 업데이트:
 2. Archives로 이동 제안
 3. 사용자 승인 후 이동
 
-### 7.3 Flower로 모니터링
+### 9.3 Flower로 모니터링
 
 `http://localhost:5555`에서 확인:
 - 실행 중인 작업
@@ -338,9 +442,9 @@ WebSocket 기반 실시간 업데이트:
 
 ---
 
-## 8. Obsidian 연동
+## 10. Obsidian 연동
 
-### 8.1 MCP 서버 설정
+### 10.1 MCP 서버 설정
 
 **Claude Desktop 설정 파일** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
 
@@ -356,7 +460,7 @@ WebSocket 기반 실시간 업데이트:
 }
 ```
 
-### 8.2 Obsidian Vault 연동
+### 10.2 Obsidian Vault 연동
 
 1. **설정 파일 수정** (`.env`):
 ```env
@@ -369,7 +473,7 @@ OBSIDIAN_AUTO_SYNC=true
 SYNC_INTERVAL=300  # 5분마다
 ```
 
-### 8.3 충돌 해결 (v6.0)
+### 10.3 충돌 해결
 
 파일 충돌 발생 시:
 
@@ -380,7 +484,7 @@ SYNC_INTERVAL=300  # 5분마다
    - **Keep Remote**: Obsidian 버전 유지
    - **Keep Both**: 두 버전 모두 보관 (파일명에 타임스탬프 추가)
 
-**Diff Viewer 기능 (v6.0):**
+**Diff Viewer 기능:**
 - Monaco Editor 기반 Side-by-Side 비교
 - Syntax Highlighting
 - Markdown 프리뷰
@@ -388,9 +492,9 @@ SYNC_INTERVAL=300  # 5분마다
 
 ---
 
-## 9. 언어 설정 변경
+## 11. 언어 설정 변경
 
-### 9.1 웹 UI 언어 전환 (v6.0)
+### 11.1 웹 UI 언어 전환
 
 1. **우측 상단** 언어 스위처 클릭
 2. **한국어** 또는 **English** 선택
@@ -401,7 +505,7 @@ SYNC_INTERVAL=300  # 5분마다
 - 한국어 (ko)
 - English (en)
 
-### 9.2 API 응답 언어 설정
+### 11.2 API 응답 언어 설정
 
 HTTP 요청 시 `Accept-Language` 헤더 설정:
 
@@ -412,9 +516,9 @@ curl -H "Accept-Language: en" http://localhost:8000/api/classify
 
 ---
 
-## 10. 문제 해결
+## 12. 문제 해결
 
-### 10.1 자주 발생하는 문제
+### 12.1 자주 발생하는 문제
 
 #### ❌ Redis 연결 오류
 ```
@@ -454,7 +558,7 @@ lsof -i :8000
 kill -9 <PID>
 ```
 
-#### ❌ WebSocket 연결 실패 (v6.0)
+#### ❌ WebSocket 연결 실패
 ```
 WebSocket connection failed
 ```
@@ -464,7 +568,7 @@ WebSocket connection failed
 2. 브라우저 콘솔에서 오류 메시지 확인
 3. 방화벽 설정 확인
 
-### 10.2 로그 확인
+### 12.2 로그 확인
 
 **Backend 로그:**
 ```bash
@@ -482,7 +586,7 @@ cd web_ui
 npm run dev
 ```
 
-### 10.3 데이터베이스 초기화
+### 12.3 데이터베이스 초기화
 
 **주의: 모든 데이터가 삭제됩니다!**
 
@@ -497,7 +601,55 @@ rm -rf data/uploads/*
 python -m uvicorn backend.main:app --reload
 ```
 
-### 10.4 지원 받기
+### 12.4 하이브리드 검색 관련 문제 해결
+
+#### ❌ 검색 결과가 없거나 관련 없는 결과만 나올 때
+**원인**: 인덱스가 구축되지 않았거나 오래된 인덱스
+
+**해결 방법**:
+```bash
+# 인덱스 재구축 (기존 인덱스 삭제 후 새로 구축)
+python scripts/bootstrap_index.py --vault /path/to/your/vault --clear
+```
+
+#### ❌ 검색 응답이 느릴 때
+**원인**: Redis 미실행 → 캐시 미작동, 또는 대용량 Vault
+
+**해결 방법**:
+```bash
+# Redis 실행 여부 확인
+redis-cli ping  # PONG이 응답되면 정상
+
+# Redis 재시작
+brew services restart redis
+```
+
+#### ❌ 인덱스 로딩 오류 (서버 시작 시)
+```
+OSError: [Errno 2] No such file or directory: 'data/indices/...'
+```
+**해결 방법**: `bootstrap_index.py`로 인덱스 초기 구축 후 서버 재시작
+
+#### ❌ OpenAI API 오류 (인덱싱 중)
+```
+openai.RateLimitError: Rate limit exceeded
+```
+**해결 방법**: `--concurrency` 옵션으로 동시 요청 수 줄이기
+```bash
+python scripts/bootstrap_index.py --vault /path/to/your/vault --concurrency 2
+```
+
+### 12.5 AI 어시스턴트 채팅 문제 해결
+
+#### ❌ 답변 중간에 [n] 번호가 나오지만 클릭해도 아무 반응이 없을 때
+**원인**: 소스 데이터 로딩 실패 또는 정규식 파싱 오류
+**해결 방법**: 페이지를 새로고침(F5)한 후 다시 질문해 보세요. 문제가 지속되면 `web_ui` 로그를 확인해야 합니다.
+
+#### ❌ 질문을 입력해도 답변이 시작되지 않을 때
+**원인**: 백엔드 API 서버 미실행 또는 OpenAI API 할당량 초과
+**해결 방법**: `Terminal 1`에서 서버 로그를 확인하고 에러 메시지가 있는지 점검하세요.
+
+### 12.6 지원 받기
 
 - **GitHub Issues**: [github.com/jjaayy2222/flownote-mvp/issues](https://github.com/jjaayy2222/flownote-mvp/issues)
 - **이메일**: qkfkadmlEkf@gmail.com
@@ -512,6 +664,9 @@ python -m uvicorn backend.main:app --reload
   - [v6.0 Phase 1: WebSocket](docs/P/v6.0_phase1_websocket/)
   - [v6.0 Phase 2: Diff Viewer](docs/P/v6.0_phase2_diff_viewer/)
   - [v6.0 Phase 3: i18n](docs/P/v6.0_phase3_i18n/)
+  - [v7.0 Planning: Hybrid RAG](docs/P/v7.0_planning/)
+- **성능 측정**: `tests/performance/benchmark_rag.py`
+- **검색 품질 측정**: `tests/e2e/test_rag_search_quality.py`
 
 ---
 

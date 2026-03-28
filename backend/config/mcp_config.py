@@ -6,12 +6,14 @@ MCP (Model Context Protocol) 관련 설정
 """
 
 import os
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from pathlib import Path
 
 
 class ObsidianConfig(BaseModel):
     """Obsidian 연결 설정"""
+
+    model_config = ConfigDict(extra="ignore")
 
     vault_path: str = Field(
         default_factory=lambda: os.getenv("OBSIDIAN_VAULT_PATH", "")
@@ -35,6 +37,8 @@ class ObsidianConfig(BaseModel):
 class NotionConfig(BaseModel):
     """Notion 연결 설정 (Phase 5 예정)"""
 
+    model_config = ConfigDict(extra="ignore")
+
     api_key: str = Field(default_factory=lambda: os.getenv("NOTION_API_KEY", ""))
     database_id: str = Field(
         default_factory=lambda: os.getenv("NOTION_DATABASE_ID", "")
@@ -44,6 +48,8 @@ class NotionConfig(BaseModel):
 
 class MCPConfig(BaseModel):
     """통합 MCP 설정"""
+
+    model_config = ConfigDict(extra="ignore")
 
     obsidian: ObsidianConfig = Field(default_factory=ObsidianConfig)
     notion: NotionConfig = Field(default_factory=NotionConfig)

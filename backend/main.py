@@ -4,26 +4,28 @@
 FastAPI 메인 서버
 """
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi import FastAPI, UploadFile, File, HTTPException  # type: ignore[import]
+from fastapi.middleware.cors import CORSMiddleware  # type: ignore[import]
+from pydantic import BaseModel  # type: ignore[import]
 import logging
 from datetime import datetime, timezone
 import uuid
 
 from contextlib import asynccontextmanager
-from backend.services.websocket_manager import manager
-from backend.api.endpoints.websocket import router as websocket_router
+from backend.services.websocket_manager import manager  # type: ignore[import]
+from backend.api.endpoints.websocket import router as websocket_router  # type: ignore[import]
 
 # 마이그레이션 모델 임포트
-from backend.models import HealthCheckResponse, FileMetadata
+from backend.models import HealthCheckResponse, FileMetadata  # type: ignore[import]
 
-from backend.routes.conflict_routes import router as conflict_router
-from backend.routes.classifier_routes import router as classifier_router
-from backend.routes.onboarding_routes import router as onboarding_router
-from backend.api.endpoints.sync import router as sync_router
-from backend.api.endpoints.automation import router as automation_router
-from backend.api.endpoints.graph import router as graph_router
+from backend.routes.conflict_routes import router as conflict_router  # type: ignore[import]
+from backend.routes.classifier_routes import router as classifier_router  # type: ignore[import]
+from backend.routes.onboarding_routes import router as onboarding_router  # type: ignore[import]
+from backend.api.endpoints.sync import router as sync_router  # type: ignore[import]
+from backend.api.endpoints.automation import router as automation_router  # type: ignore[import]
+from backend.api.endpoints.graph import router as graph_router  # type: ignore[import]
+from backend.api.endpoints.search import router as search_router  # type: ignore[import]
+from backend.api.endpoints.chat import router as chat_router  # type: ignore[import]
 
 
 # 로깅 설정
@@ -61,6 +63,7 @@ app = FastAPI(
     * `/classifier` - 파일 및 텍스트 분류
     * `/onboarding` - 사용자 온보딩
     * `/conflict` - 충돌 해결
+    * `/search/hybrid` - FAISS+BM25 하이브리드 RAG 검색 (PARA 카테고리 필터 지원)
     * `/health` - 서버 상태 확인
     
     ### 테스트 커버리지
@@ -98,12 +101,35 @@ app.add_middleware(
 # Exception Handlers (i18n support)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-from fastapi.exceptions import RequestValidationError
-from backend.api.exceptions import http_exception_handler, validation_exception_handler
+from fastapi.exceptions import RequestValidationError  # type: ignore[import]
+from fastapi import Request  # type: ignore[import]
+from fastapi.responses import JSONResponse  # type: ignore[import]
+from backend.api.exceptions import http_exception_handler, validation_exception_handler  # type: ignore[import]
+from backend.services.chat_history_service import RedisUnavailableError  # type: ignore[import]
 
 app.add_exception_handler(HTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
-logger.info("✅ 전역 예외 처리기 등록 완료 (i18n 지원)")
+
+
+@app.exception_handler(RedisUnavailableError)
+async def redis_unavailable_handler(request: Request, exc: RedisUnavailableError) -> JSONResponse:
+    """Redis 연결 불가 시 전역 503 응답 반환.
+
+    chat_history_service의 모든 엔드포인트에서 각자 RedisUnavailableError를
+    처리하지 않아도 이 핸들러가 자동으로 503으로 변환한다.
+    """
+    logger.warning(
+        "Redis unavailable: %s",
+        str(exc),
+        extra={"path": request.url.path},
+    )
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Redis unavailable. Please try again later."},
+    )
+
+
+logger.info("✅ 전역 예외 처리기 등록 완료 (i18n 지원 + Redis 503)")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -132,6 +158,10 @@ app.include_router(sync_router)
 app.include_router(websocket_router)
 logger.info("✅ sync_router 등록 완료 (MCP Sync & Conflict Resolution)")
 
+# search_router (Phase 2-②: RAG API Integration)
+app.include_router(search_router)
+logger.info("✅ search_router 등록 완료 (Hybrid RAG Search)")
+
 # automation_router (Phase 4: Celery Automation)
 
 
@@ -140,6 +170,10 @@ logger.info("✅ automation_router 등록 완료 (Celery Automation)")
 
 app.include_router(graph_router, prefix="/api")
 logger.info("✅ graph_router 등록 완료 (Visualization)")
+
+# chat_router (Issue #614: RAG 스트리밍 채팅)
+app.include_router(chat_router, prefix="/api")
+logger.info("✅ chat_router 등록 완료 (RAG Streaming Chat)")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -188,7 +222,7 @@ async def root():
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 if __name__ == "__main__":
-    import uvicorn
+    import uvicorn  # type: ignore[import]
 
     logger.info("🚀 FlowNote API 시작...")
     logger.info("📍 http://localhost:8000")
