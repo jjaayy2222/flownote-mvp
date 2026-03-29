@@ -1,4 +1,6 @@
 // web_ui/src/app/[locale]/(admin)/admin/analytics/page.tsx
+'use client';
+
 import { useTranslations } from 'next-intl';
 
 export default function AnalyticsDashboardPage() {
