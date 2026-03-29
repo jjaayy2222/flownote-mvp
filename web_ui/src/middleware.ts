@@ -10,6 +10,6 @@ export default createMiddleware({
 });
 
 export const config = {
-  // API, admin, static files, Next.js internal paths 제외
-  matcher: ['/((?!api|admin|_next|_vercel|.*\\..*).*)']
+  // API, static files, Next.js internal paths 제외
+  matcher: ['/((?!api|_next|_vercel|.*\\..*).*)']
 };

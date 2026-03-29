@@ -1,11 +1,7 @@
-// web_ui/src/app/[locale]/layout.tsx
-
 import { NextIntlClientProvider } from 'next-intl';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { locales, isValidLocale } from '@/i18n/config';
-import { Sidebar } from "@/components/layout/sidebar";
-import { MobileNav } from "@/components/layout/mobile-nav";
 import { Toaster } from "@/components/ui/sonner";
 import { Geist, Geist_Mono } from "next/font/google";
 import "../globals.css";
@@ -39,7 +35,7 @@ export async function generateMetadata({ params }: { params: Promise<{ locale: s
   };
 }
 
-export default async function LocaleLayout({
+export default async function RootLayout({
   children,
   params
 }: {
@@ -63,13 +59,7 @@ export default async function LocaleLayout({
     <html lang={locale}>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-slate-50`}>
         <NextIntlClientProvider locale={locale} messages={messages}>
-          <Sidebar className="hidden md:flex" />
-          <div className="flex flex-col min-h-screen md:pl-64 transition-all duration-300 ease-in-out">
-            <MobileNav />
-            <main className="flex-1 p-4 md:p-8 pt-6">
-              {children}
-            </main>
-          </div>
+          {children}
           <Toaster />
         </NextIntlClientProvider>
       </body>
