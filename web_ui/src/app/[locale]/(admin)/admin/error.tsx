@@ -2,6 +2,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useTranslations } from 'next-intl';
 
 export default function AdminError({
   error,
@@ -10,19 +11,21 @@ export default function AdminError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const t = useTranslations('admin.error');
+
   useEffect(() => {
     console.error('Admin Dashboard Error:', error);
   }, [error]);
 
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col items-center justify-center space-y-4">
-      <h2 className="text-2xl font-bold">Something went wrong!</h2>
-      <p className="text-muted-foreground">{error.message || 'An unexpected error occurred in the admin panel.'}</p>
+      <h2 className="text-2xl font-bold">{t('title')}</h2>
+      <p className="text-muted-foreground">{error.message || t('message')}</p>
       <button
         onClick={() => reset()}
         className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
       >
-        Try again
+        {t('retry')}
       </button>
     </div>
   );
