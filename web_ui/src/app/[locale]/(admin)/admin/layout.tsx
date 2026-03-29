@@ -2,9 +2,14 @@ import type React from 'react';
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 
-// Note: In Next.js 14, `params` are synchronous, but `getTranslations` requires async/await.
-// Therefore, the function remains `async` while `params` are NOT awaited.
-export async function generateMetadata({ params }: { params: { locale: string } }): Promise<Metadata> {
+type Props = {
+  params: { locale: string };
+};
+
+// Note: While route parameters are accessed synchronously in this context,
+// fetching translations via `getTranslations` is inherently an asynchronous operation.
+// Therefore, this function correctly retains its `async` signature.
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { locale } = params;
   const t = await getTranslations({ locale, namespace: 'admin.metadata' });
   return {
