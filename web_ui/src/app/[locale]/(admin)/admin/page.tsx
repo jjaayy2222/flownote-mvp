@@ -1,4 +1,6 @@
 // web_ui/src/app/[locale]/(admin)/admin/page.tsx
+'use client';
+
 import { useTranslations } from 'next-intl';
 
 export default function AdminDashboardPage() {
