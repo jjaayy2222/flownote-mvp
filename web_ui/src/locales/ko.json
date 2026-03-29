@@ -123,5 +123,30 @@
       "expand": "더 보기",
       "collapse": "접기"
     }
+  },
+  "admin": {
+    "metadata": {
+      "title": "플로우노트 관리자",
+      "description": "FlowNote MVP 관리자 대시보드"
+    },
+    "dashboard": {
+      "title": "관리자 대시보드",
+      "subtitle": "FlowNote MVP 관리자 인터페이스에 오신 것을 환영합니다."
+    },
+    "analytics": {
+      "title": "통계 및 보고서",
+      "subtitle": "피드백 통계 및 시스템 메트릭을 확인합니다."
+    },
+    "error": {
+      "title": "오류가 발생했습니다!",
+      "message": "관리자 패널에서 예기치 않은 오류가 발생했습니다.",
+      "retry": "다시 시도"
+    },
+    "not_found": {
+      "title": "404",
+      "message": "관리자 페이지를 찾을 수 없습니다.",
+      "return": "대시보드로 돌아가기"
+    }
   }
 }
+

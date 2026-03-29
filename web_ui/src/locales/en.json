@@ -123,5 +123,30 @@
       "expand": "Expand",
       "collapse": "Collapse"
     }
+  },
+  "admin": {
+    "metadata": {
+      "title": "Flownote Admin",
+      "description": "Admin Dashboard for Flownote MVP"
+    },
+    "dashboard": {
+      "title": "Admin Dashboard",
+      "subtitle": "Welcome to the Flownote MVP admin interface."
+    },
+    "analytics": {
+      "title": "Analytics & Reports",
+      "subtitle": "View feedback statistics and system metrics."
+    },
+    "error": {
+      "title": "Something went wrong!",
+      "message": "An unexpected error occurred in the admin panel.",
+      "retry": "Try again"
+    },
+    "not_found": {
+      "title": "404",
+      "message": "Admin page not found.",
+      "return": "Return to Dashboard"
+    }
   }
 }
+
