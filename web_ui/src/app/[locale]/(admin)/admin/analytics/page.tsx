@@ -1,5 +1,4 @@
-// web_ui/src/app/admin/analytics/page.tsx
-
+// web_ui/src/app/[locale]/(admin)/admin/analytics/page.tsx
 export default function AnalyticsDashboardPage() {
   return (
     <div className="space-y-6">

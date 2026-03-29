@@ -1,5 +1,4 @@
-// web_ui/src/app/admin/error.tsx
-
+// web_ui/src/app/[locale]/(admin)/admin/error.tsx
 'use client';
 
 import { useEffect } from 'react';

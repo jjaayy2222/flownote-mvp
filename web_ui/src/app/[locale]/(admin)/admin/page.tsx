@@ -1,4 +1,4 @@
-// web_ui/src/app/admin/page.tsx
+// web_ui/src/app/[locale]/(admin)/admin/page.tsx
 
 export default function AdminDashboardPage() {
   return (
