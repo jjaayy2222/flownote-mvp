@@ -2,14 +2,13 @@ import type React from 'react';
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 
-type Props = {
+type AdminLayoutMetadataProps = {
   params: { locale: string };
 };
 
-// Note: While route parameters are accessed synchronously in this context,
-// fetching translations via `getTranslations` is inherently an asynchronous operation.
-// Therefore, this function correctly retains its `async` signature.
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+// Note: This function is async because `getTranslations` is an asynchronous operation,
+// even though route parameters are accessed synchronously.
+export async function generateMetadata({ params }: AdminLayoutMetadataProps): Promise<Metadata> {
   const { locale } = params;
   const t = await getTranslations({ locale, namespace: 'admin.metadata' });
   return {
