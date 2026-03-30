@@ -12,6 +12,13 @@ export const isAdmin = (role: string | null | undefined): boolean => {
   return role === AUTH_CONFIG.ADMIN_ROLE;
 };
 
+// 모듈 로드 시점에 환경변수에서 허용된 이메일 목록을 한 번만 정규화하여 Set으로 캐싱 (O(1) 성능 최적화 및 고유성 강제)
+const cachedAdminEmails = new Set(
+  (process.env.ADMIN_EMAILS || '').split(',')
+    .map(e => e.trim().toLowerCase())
+    .filter(Boolean)
+);
+
 /**
  * 이메일 기반 관리자 판별 함수 (서버 사이드 환경변수 기준)
  * 
@@ -23,14 +30,9 @@ export const isAdmin = (role: string | null | undefined): boolean => {
 export const isEmailAdmin = (email: string | null | undefined): boolean => {
   if (!email) return false;
   
-  // 서버 환경변수에서 허용된 이메일 목록을 가져옴 (콤마로 구분된 형태 가정)
-  // 대소문자 및 공백 제거 등의 정규화를 거쳐 비교
+  // 입력된 이메일 정규화 후 캐싱된 Set에서 O(1) 시간 복잡도로 비교
   const normalizedInputEmail = email.trim().toLowerCase();
-  const allowedEmails = (process.env.ADMIN_EMAILS || '').split(',')
-    .map(e => e.trim().toLowerCase())
-    .filter(Boolean);
-    
-  return allowedEmails.includes(normalizedInputEmail);
+  return cachedAdminEmails.has(normalizedInputEmail);
 };
 
 /**
@@ -63,9 +65,13 @@ export const getAuthFromCookie = (name: string): string | null => {
 
     try {
       return decodeURIComponent(raw);
-    } catch {
-      // If the cookie value is not a valid URI component, return it as-is
-      return raw;
+    } catch (error) {
+      // 디코딩 실패 시 호출자가 기대하는 예측 가능한 동작(null 반환) 보장 
+      // 및 프로덕션 환경 로그 스팸 방지를 위해 개발 환경에서만 오류 추적 로깅
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(`[getAuthFromCookie] URI decoding failed for cookie '${name}':`, error);
+      }
+      return null;
     }
   }
   
