@@ -24,8 +24,13 @@ export const isEmailAdmin = (email: string | null | undefined): boolean => {
   if (!email) return false;
   
   // 서버 환경변수에서 허용된 이메일 목록을 가져옴 (콤마로 구분된 형태 가정)
-  const allowedEmails = process.env.ADMIN_EMAILS?.split(',') || [];
-  return allowedEmails.includes(email);
+  // 대소문자 및 공백 제거 등의 정규화를 거쳐 비교
+  const normalizedInputEmail = email.trim().toLowerCase();
+  const allowedEmails = (process.env.ADMIN_EMAILS || '').split(',')
+    .map(e => e.trim().toLowerCase())
+    .filter(Boolean);
+    
+  return allowedEmails.includes(normalizedInputEmail);
 };
 
 /**
@@ -52,6 +57,17 @@ export const getAuthFromCookie = (name: string): string | null => {
   
   const value = `; ${document.cookie}`;
   const parts = value.split(`; ${name}=`);
-  if (parts.length === 2) return parts.pop()?.split(';').shift() || null;
+  if (parts.length === 2) {
+    const raw = parts.pop()?.split(';').shift();
+    if (!raw) return null;
+
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      // If the cookie value is not a valid URI component, return it as-is
+      return raw;
+    }
+  }
+  
   return null;
 };
