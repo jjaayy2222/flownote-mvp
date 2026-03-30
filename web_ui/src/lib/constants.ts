@@ -4,6 +4,17 @@
 export const STORAGE_KEYS = {
   CHAT_SESSION_ID: 'flownote_chat_session_id',
   USER_ID: 'flownote_user_id',
+  AUTH_ROLE: 'flownote_auth_role',
+  AUTH_EMAIL: 'flownote_auth_email',
+} as const;
+
+/**
+ * Auth 관련 기본 설정값
+ */
+export const AUTH_CONFIG = {
+  ADMIN_ROLE: 'admin',
+  USER_ROLE: 'user',
+  // 관리자 계정 식별(이메일 등)은 클라이언트 번들에 포함되지 않도록 서버(Middleware 등) 환경변수에서 관리합니다.
 } as const;
 
 /**
