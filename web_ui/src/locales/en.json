@@ -146,7 +146,24 @@
       "title": "404",
       "message": "Admin page not found.",
       "return": "Return to Dashboard"
+    },
+    "layout": {
+      "navbar": {
+        "title": "Admin Console",
+        "profile": "Admin Profile",
+        "logout": "Logout",
+        "role": "Admin",
+        "toggle_menu": "Toggle Menu"
+      },
+      "sidebar": {
+        "dashboard": "Dashboard",
+        "analytics": "Feedback Analytics",
+        "settings": "System Settings",
+        "notifications": "Alerts",
+        "close": "Close sidebar"
+      }
     }
   }
 }
+
 
