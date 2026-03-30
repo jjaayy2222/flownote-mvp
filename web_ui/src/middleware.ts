@@ -29,7 +29,12 @@ export default function middleware(request: NextRequest) {
 
     // 관리자 권한이 없을 경우
     if (!isAdminUser) {
-      const currentLocale = pathname.split('/')[1] || defaultLocale;
+      let currentLocale = pathname.split('/')[1];
+      // 올바른 로케일인지 검증, 아닐 경우 defaultLocale로 폴백
+      if (!(locales as readonly string[]).includes(currentLocale)) {
+        currentLocale = defaultLocale;
+      }
+      
       const redirectUrl = request.nextUrl.clone();
       
       // 3. 메인(/) 페이지로 강제 리다이렉트 (전용 안내 팝업을 위해 쿼리 파라미터 등을 실어서 보낼 수도 있음)
