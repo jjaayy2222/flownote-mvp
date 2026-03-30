@@ -146,6 +146,22 @@
       "title": "404",
       "message": "관리자 페이지를 찾을 수 없습니다.",
       "return": "대시보드로 돌아가기"
+    },
+    "layout": {
+      "navbar": {
+        "title": "관리자 콘솔",
+        "profile": "관리자 프로필",
+        "logout": "로그아웃",
+        "role": "관리자",
+        "toggle_menu": "메뉴 토글"
+      },
+      "sidebar": {
+        "dashboard": "대시보드",
+        "analytics": "피드백 통계",
+        "settings": "시스템 설정",
+        "notifications": "시스템 알림",
+        "close": "사이드바 닫기"
+      }
     }
   }
 }
