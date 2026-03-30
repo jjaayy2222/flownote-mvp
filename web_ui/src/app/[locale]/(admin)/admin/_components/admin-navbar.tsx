@@ -18,7 +18,7 @@ export function AdminNavbar({ onMenuClick }: AdminNavbarProps) {
         <button
           onClick={onMenuClick}
           className="inline-flex h-10 w-10 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900 md:hidden"
-          aria-label="Toggle Menu"
+          aria-label={t('toggle_menu')}
         >
           <Menu className="h-6 w-6" />
         </button>
@@ -30,7 +30,7 @@ export function AdminNavbar({ onMenuClick }: AdminNavbarProps) {
 
       <div className="flex items-center gap-4">
         <div className="hidden sm:flex flex-col items-end mr-4">
-          <span className="text-sm font-medium">관리자 (Admin)</span>
+          <span className="text-sm font-medium">{t('role')}</span>
           <span className="text-xs text-slate-500">{t('profile')}</span>
         </div>
         <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors hover:bg-slate-100 hover:text-slate-900 h-10 px-4 py-2 text-slate-600">

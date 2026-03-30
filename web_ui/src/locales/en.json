@@ -151,13 +151,16 @@
       "navbar": {
         "title": "Admin Console",
         "profile": "Admin Profile",
-        "logout": "Logout"
+        "logout": "Logout",
+        "role": "Admin",
+        "toggle_menu": "Toggle Menu"
       },
       "sidebar": {
         "dashboard": "Dashboard",
         "analytics": "Feedback Analytics",
         "settings": "System Settings",
-        "notifications": "Alerts"
+        "notifications": "Alerts",
+        "close": "Close sidebar"
       }
     }
   }

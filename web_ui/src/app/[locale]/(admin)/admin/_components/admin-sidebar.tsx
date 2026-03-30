@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useTranslations, useLocale } from 'next-intl';
 import { LayoutDashboard, BarChart3, Settings, Bell, X, ShieldAlert } from 'lucide-react';
 import clsx from 'clsx';
+import { useMemo } from 'react';
 
 interface AdminSidebarProps {
   isOpen: boolean;
@@ -17,12 +18,12 @@ export function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
   const t = useTranslations('admin.layout.sidebar');
   const navTitle = useTranslations('admin.layout.navbar');
 
-  const navigation = [
-    { name: t('dashboard'), href: `/${locale}/admin`, icon: LayoutDashboard },
-    { name: t('analytics'), href: `/${locale}/admin/analytics`, icon: BarChart3 },
-    { name: t('notifications'), href: `/${locale}/admin/notifications`, icon: Bell },
-    { name: t('settings'), href: `/${locale}/admin/settings`, icon: Settings },
-  ];
+  const navigation = useMemo(() => [
+    { id: 'dashboard', name: t('dashboard'), href: `/${locale}/admin`, icon: LayoutDashboard },
+    { id: 'analytics', name: t('analytics'), href: `/${locale}/admin/analytics`, icon: BarChart3 },
+    { id: 'notifications', name: t('notifications'), href: `/${locale}/admin/notifications`, icon: Bell },
+    { id: 'settings', name: t('settings'), href: `/${locale}/admin/settings`, icon: Settings },
+  ], [t, locale]);
 
   return (
     <>
@@ -51,7 +52,7 @@ export function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
             className="md:hidden p-2 -mr-2 text-slate-400 hover:text-slate-500 rounded-md hover:bg-slate-100"
             onClick={onClose}
           >
-            <span className="sr-only">Close sidebar</span>
+            <span className="sr-only">{t('close')}</span>
             <X className="h-6 w-6" aria-hidden="true" />
           </button>
         </div>
@@ -63,7 +64,7 @@ export function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
               
               return (
                 <Link
-                  key={item.name}
+                  key={item.id}
                   href={item.href}
                   className={clsx(
                     "group flex items-center rounded-md px-3 py-2.5 text-sm font-medium transition-all duration-200",
