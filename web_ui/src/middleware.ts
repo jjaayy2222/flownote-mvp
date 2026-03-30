@@ -30,8 +30,12 @@ export default function middleware(request: NextRequest) {
     // 관리자 권한이 없을 경우
     if (!isAdminUser) {
       let currentLocale = pathname.split('/')[1];
-      // 올바른 로케일인지 검증, 아닐 경우 defaultLocale로 폴백
-      if (!(locales as readonly string[]).includes(currentLocale)) {
+      
+      // 올바른 로케일인지 1차적으로 존재 여부 및 빈 문자열을 명시적으로 검증
+      if (!currentLocale || currentLocale.trim() === '') {
+        currentLocale = defaultLocale;
+      } else if (!(locales as readonly string[]).includes(currentLocale)) {
+        // 2차적으로 공식 지원 로케일 목록에 포함되는지 검증
         currentLocale = defaultLocale;
       }
       

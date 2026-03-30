@@ -26,9 +26,9 @@ export const isEmailAdmin = (email: string | null | undefined): boolean => {
   // 서버 환경변수에서 허용된 이메일 목록을 가져옴 (콤마로 구분된 형태 가정)
   // 대소문자 및 공백 제거 등의 정규화를 거쳐 비교
   const normalizedInputEmail = email.trim().toLowerCase();
-  const allowedEmails = process.env.ADMIN_EMAILS?.split(',')
+  const allowedEmails = (process.env.ADMIN_EMAILS || '').split(',')
     .map(e => e.trim().toLowerCase())
-    .filter(Boolean) || [];
+    .filter(Boolean);
     
   return allowedEmails.includes(normalizedInputEmail);
 };
