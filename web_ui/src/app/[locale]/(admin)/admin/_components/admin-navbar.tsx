@@ -16,6 +16,7 @@ export function AdminNavbar({ onMenuClick }: AdminNavbarProps) {
     <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b bg-white px-4 shadow-sm sm:px-6">
       <div className="flex items-center gap-4">
         <button
+          type="button"
           onClick={onMenuClick}
           className="inline-flex h-10 w-10 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900 md:hidden"
           aria-label={t('toggle_menu')}
@@ -33,7 +34,7 @@ export function AdminNavbar({ onMenuClick }: AdminNavbarProps) {
           <span className="text-sm font-medium">{t('role')}</span>
           <span className="text-xs text-slate-500">{t('profile')}</span>
         </div>
-        <button className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors hover:bg-slate-100 hover:text-slate-900 h-10 px-4 py-2 text-slate-600">
+        <button type="button" className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors hover:bg-slate-100 hover:text-slate-900 h-10 px-4 py-2 text-slate-600">
           <LogOut className="mr-2 h-4 w-4" />
           <span>{t('logout')}</span>
         </button>
