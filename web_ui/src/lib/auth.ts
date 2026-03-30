@@ -13,14 +13,19 @@ export const isAdmin = (role: string | null | undefined): boolean => {
 };
 
 /**
- * 이메일 기반 관리자 판별 함수 (보조 수단)
+ * 이메일 기반 관리자 판별 함수 (서버 사이드 환경변수 기준)
+ * 
+ * NEXT_PUBLIC_ 접두어가 붙지 않은 환경변수는 클라이언트 번들에 노출되지 않으므로 보안이 유지됩니다.
  * 
  * @param email - 사용자 이메일
  * @returns 관리자 여부
  */
 export const isEmailAdmin = (email: string | null | undefined): boolean => {
   if (!email) return false;
-  return (AUTH_CONFIG.ADMIN_EMAILS as readonly string[]).includes(email);
+  
+  // 서버 환경변수에서 허용된 이메일 목록을 가져옴 (콤마로 구분된 형태 가정)
+  const allowedEmails = process.env.ADMIN_EMAILS?.split(',') || [];
+  return allowedEmails.includes(email);
 };
 
 /**

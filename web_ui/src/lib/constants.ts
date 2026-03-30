@@ -14,8 +14,7 @@ export const STORAGE_KEYS = {
 export const AUTH_CONFIG = {
   ADMIN_ROLE: 'admin',
   USER_ROLE: 'user',
-  // 임시 관리자 계정 리스트 (실제 운영 시 DB 또는 환경변수에서 관리 권장)
-  ADMIN_EMAILS: ['jay@gmail.com', 'admin@flownote.com'],
+  // 관리자 계정 식별(이메일 등)은 클라이언트 번들에 포함되지 않도록 서버(Middleware 등) 환경변수에서 관리합니다.
 } as const;
 
 /**

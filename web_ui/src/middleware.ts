@@ -1,7 +1,8 @@
 import createMiddleware from 'next-intl/middleware';
 import { locales, defaultLocale } from './i18n/config';
 import { NextResponse, type NextRequest } from 'next/server';
-import { STORAGE_KEYS, AUTH_CONFIG } from './lib/constants';
+import { STORAGE_KEYS } from './lib/constants';
+import { hasAdminAccess } from './lib/auth';
 
 const intlMiddleware = createMiddleware({
   locales,
@@ -19,12 +20,12 @@ export default function middleware(request: NextRequest) {
   );
 
   if (isAdminPath) {
-    // 2. 권한 확인 (Request Cookies에서 인증 정보를 읽어옴)
+    // 2. 권한 확인 (lib/auth.ts 내의 공유 헬퍼 사용)
+    // Cookie에서 역할(Role)과 이메일 정보를 읽어와 중앙 집중식 로직으로 검증
     const role = request.cookies.get(STORAGE_KEYS.AUTH_ROLE)?.value;
     const email = request.cookies.get(STORAGE_KEYS.AUTH_EMAIL)?.value;
     
-    const isAdminUser = role === AUTH_CONFIG.ADMIN_ROLE || 
-                        (email && (AUTH_CONFIG.ADMIN_EMAILS as readonly string[]).includes(email));
+    const isAdminUser = hasAdminAccess(role, email);
 
     // 관리자 권한이 없을 경우
     if (!isAdminUser) {
