@@ -1,6 +1,7 @@
 // web_ui/src/lib/auth.ts
 
 import { AUTH_CONFIG } from './constants';
+import { assertNever } from './utils';
 
 /**
  * 전역 관리자 판별 함수 (Role 기반)
@@ -61,12 +62,7 @@ export type CookieAuth =
   | { kind: 'not_found' }
   | { kind: 'server_side' };
 
-/**
- * 컴파일 타임 보호 및 런타임 누락 분기(Fallthrough)를 막기 위한 엄격한 완전(Exhaustive) 검사 헬퍼
- */
-const assertNever = (x: never, context?: string): never => {
-  throw new Error(`[CookieAuth] Unhandled variant${context ? ` in ${context}` : ''}`);
-};
+
 
 // --- 중앙집중화된 판별 헬퍼 (Internal Checkers) ---
 // CookieAuth 타입과 긴밀하게 결합된 도메인 로직이므로 선언부와 같은 위치에 선언.

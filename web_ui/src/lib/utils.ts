@@ -4,3 +4,14 @@ import { twMerge } from "tailwind-merge"
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
+
+/**
+ * 컴파일 타임 보호 및 런타임 누락 분기(Fallthrough)를 막기 위한 엄격한 완전(Exhaustive) 검사 헬퍼.
+ * 애플리케이션 전반의 판별 가능한 유니언(Discriminated Union) 보호 로직에 공용으로 재사용됩니다.
+ */
+export const assertNever = (x: never, context?: string): never => {
+  // PII(개인정보)나 민감한 토큰 데이터 유출을 막기 위해 전체 구조체(stringify) 대신 `kind` 식별자만 추출
+  const kind = (x as { kind?: unknown })?.kind;
+  const detail = kind ? ` (kind: ${kind})` : '';
+  throw new Error(`[ExhaustiveCheck] Unhandled variant${context ? ` in ${context}` : ''}${detail}`);
+};
