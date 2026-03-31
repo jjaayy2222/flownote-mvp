@@ -282,6 +282,34 @@ class FeedbackResponse(BaseModel):
     rating: FeedbackRating = Field(..., description=FEEDBACK_RATING_DESC)
 
 
+class FeedbackTrend(BaseModel):
+    """일자별 긍정/부정 피드백 추이"""
+    
+    date: str = Field(..., description="날짜 (YYYY-MM-DD)")
+    up: int = Field(0, description="해당 일자의 긍정(Up) 개수")
+    down: int = Field(0, description="해당 일자의 부정(Down) 개수")
+
+
+class FeedbackDetail(BaseModel):
+    """상세 피드백 텍스트를 포함하는 피드 아이템"""
+    
+    session_id: str = Field(..., description="세션 ID")
+    message_id: str = Field(..., description="메시지 ID")
+    rating: FeedbackRating = Field(..., description=FEEDBACK_RATING_DESC)
+    text: Optional[str] = Field(None, description="사용자가 남긴 상세 코멘트")
+    timestamp: str = Field(..., description="피드백 남긴 일시 (ISO 8601)")
+
+
+class FeedbackStatsResponse(BaseModel):
+    """어드민 대시보드용 AI 피드백 통계 응답"""
+    
+    status: ApiStatus = Field(..., description=API_STATUS_DESC)
+    total_up: int = Field(0, description="누적 긍정(Up) 개수 총합")
+    total_down: int = Field(0, description="누적 부정(Down) 개수 총합")
+    trends: List[FeedbackTrend] = Field(default_factory=list, description="일자별 트렌드 데이터 리스트")
+    recent_feedbacks: List[FeedbackDetail] = Field(default_factory=list, description="가장 최근의 텍스트가 포함된 피드백 리스트")
+
+
 __all__ = [
     # Classification (Core)
     "ClassifyRequest",
@@ -331,4 +359,7 @@ __all__ = [
     # Observability (Issue #777)
     "FeedbackRequest",
     "FeedbackResponse",
+    "FeedbackTrend",
+    "FeedbackDetail",
+    "FeedbackStatsResponse",
 ]
