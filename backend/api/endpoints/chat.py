@@ -24,10 +24,18 @@ from backend.services.chat_service import ChatService, get_chat_service  # type:
 from backend.services.chat_history_service import (  # type: ignore[import]
     ChatHistoryService,
     get_chat_history_service,
+    MAX_FEEDBACK_STATS_LIMIT,
 )
 from backend.utils import mask_pii_id  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
+
+# 모듈 로드 시점에 한 번만 환경변수 읽기 (Fail-Fast at Startup)
+_ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY")
+if not _ADMIN_API_KEY:
+    logger.critical(
+        "[OBS] ADMIN_API_KEY is not set. /feedback/stats endpoint will reject all requests."
+    )
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -256,7 +264,7 @@ async def submit_feedback(
     summary="AI 피드백 통계 및 트렌드 데이터 조회 (Admin)",
 )
 async def get_feedback_stats_endpoint(
-    limit: int = Query(50, ge=1, le=500, description="최근 피드백 반환 최대 개수 (상한 500)"),
+    limit: int = Query(50, ge=1, le=MAX_FEEDBACK_STATS_LIMIT, description=f"최근 피드백 반환 최대 개수 (상한 {MAX_FEEDBACK_STATS_LIMIT})"),
     x_admin_key: Optional[str] = Header(None, description="Next.js 프록시 내부 인증 키"),
     chat_history_service: ChatHistoryService = Depends(get_chat_history_service),
 ):
@@ -268,13 +276,12 @@ async def get_feedback_stats_endpoint(
     - 최신 사용자 피드백 텍스트 리스트(최대 limit개) 추출
     """
     
-    # 백엔드 API 직접 호출 방지 (서버 간 인증) 및 하드코딩 제거 (Fail Closed 원칙)
-    expected_key = os.environ.get("ADMIN_API_KEY")
-    if not expected_key:
+    # 모듈 로드 시점에 검증된 키를 사용: 설정 누락 시 Fail-Closed 보다 안전하게 처리
+    if not _ADMIN_API_KEY:
         logger.error("[OBS] ADMIN_API_KEY is not configured in environment.")
         raise HTTPException(status_code=500, detail="Server Configuration Error: Missing Secret")
         
-    if not x_admin_key or x_admin_key != expected_key:
+    if not x_admin_key or x_admin_key != _ADMIN_API_KEY:
         logger.warning("[OBS] Unauthorized attempt to access admin stats endpoint.")
         raise HTTPException(status_code=403, detail="Forbidden: Invalid Admin Key")
     
