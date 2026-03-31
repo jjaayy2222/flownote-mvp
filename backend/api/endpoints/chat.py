@@ -268,8 +268,12 @@ async def get_feedback_stats_endpoint(
     - 최신 사용자 피드백 텍스트 리스트(최대 limit개) 추출
     """
     
-    # 백엔드 API 직접 호출 방지 (서버 간 인증)
-    expected_key = os.environ.get("ADMIN_API_KEY", "dev_secret")
+    # 백엔드 API 직접 호출 방지 (서버 간 인증) 및 하드코딩 제거 (Fail Closed 원칙)
+    expected_key = os.environ.get("ADMIN_API_KEY")
+    if not expected_key:
+        logger.error("[OBS] ADMIN_API_KEY is not configured in environment.")
+        raise HTTPException(status_code=500, detail="Server Configuration Error: Missing Secret")
+        
     if not x_admin_key or x_admin_key != expected_key:
         logger.warning("[OBS] Unauthorized attempt to access admin stats endpoint.")
         raise HTTPException(status_code=403, detail="Forbidden: Invalid Admin Key")

@@ -71,8 +71,7 @@ def _process_feedback_entry(
     msg_id_raw: Any,
     meta_raw: Any,
     trends: Dict[str, Dict[str, int]],
-    recent_items: List[Dict[str, Any]],
-) -> tuple[int, int]:
+) -> tuple[int, int, Optional[Dict[str, Any]]]:
     """단일 피드백 항목 파싱 및 가공을 담당하는 헬퍼"""
     msg_id = _decode_str(msg_id_raw)
     meta_str = _decode_str(meta_raw)
@@ -80,9 +79,12 @@ def _process_feedback_entry(
     try:
         meta = json.loads(meta_str)
     except (JSONDecodeError, ValueError, TypeError):
-        return 0, 0
+        return 0, 0, None
 
-    rating = meta.get("rating")
+    raw_rating = meta.get("rating")
+    # Frontend FeedbackRating Union 타입('up' | 'down' | 'none')과 일치시키기 위한 강제 캐스팅
+    rating = raw_rating if raw_rating in ("up", "down") else "none"
+    
     ts = meta.get("timestamp", "")
 
     up_delta = 1 if rating == "up" else 0
@@ -93,19 +95,18 @@ def _process_feedback_entry(
         day = trends.setdefault(date_str, {"up": 0, "down": 0})
         day[rating] += 1
 
+    item = None
     text_content = meta.get("text")
     if text_content and (txt := str(text_content).strip()) and ts:
-        recent_items.append(
-            {
-                "session_id": session_id,
-                "message_id": msg_id,
-                "rating": rating,
-                "text": txt,
-                "timestamp": ts,
-            }
-        )
+        item = {
+            "session_id": session_id,
+            "message_id": msg_id,
+            "rating": rating,
+            "text": txt,
+            "timestamp": ts,
+        }
 
-    return up_delta, down_delta
+    return up_delta, down_delta, item
 
 
 class ChatHistoryService:
@@ -584,11 +585,17 @@ class ChatHistoryService:
         Redis의 `scan`을 사용하여 모든 `chat:feedback:*` 키를 차단(Blocking) 없이 순회하고,
         일자별(Up/Down) 트렌드 및 최근 상세 피드백 내역(텍스트 포함)을 묶어서 반환한다.
         """
+        import heapq
+        
+        # 내부 오작동 방지를 위한 상/하한선 (Service Layer clamping)
+        limit_recent = max(1, min(limit_recent, 500))
+        
         try:
             await self._ensure_connected("get_feedback_stats")
             
             cursor = 0
-            recent_items: List[Dict[str, Any]] = []
+            recent_heap: List[Any] = []
+            tiebreaker = 0
             up_count = down_count = 0
             trends: Dict[str, Dict[str, int]] = {}
 
@@ -603,11 +610,18 @@ class ChatHistoryService:
                     
                     feedback_hash = await redis_client.redis.hgetall(key_str)
                     for msg_id_raw, meta_raw in feedback_hash.items():
-                        up_delta, down_delta = _process_feedback_entry(
-                            session_id, msg_id_raw, meta_raw, trends, recent_items
+                        up_delta, down_delta, item = _process_feedback_entry(
+                            session_id, msg_id_raw, meta_raw, trends
                         )
                         up_count += up_delta
                         down_count += down_delta
+                        
+                        if item:
+                            tiebreaker += 1
+                            # Min-Heap 활용하여 O(1) 메모리 유지: timestamp가 가장 작은(오래된) 항목을 자동 pop
+                            heapq.heappush(recent_heap, (item["timestamp"], tiebreaker, item))
+                            if len(recent_heap) > limit_recent:
+                                heapq.heappop(recent_heap)
                             
                 # 안전하게 int로 캐스팅하여 종료 조건 체크
                 if int(cursor) == 0:
@@ -619,12 +633,12 @@ class ChatHistoryService:
                 for d in sorted(trends.keys())
             ]
             
-            # 4. 단순 리스트 정렬 후 자르기 (설계 단순화)
+            # 4. Heap에서 아이템 추출 후 최신순 역렬
             recent_feedbacks = sorted(
-                recent_items,
+                [val for _, _, val in recent_heap],
                 key=lambda x: x.get("timestamp", ""),
                 reverse=True,
-            )[:limit_recent]
+            )
             
             return {
                 "total_up": up_count,

@@ -59,11 +59,17 @@ export async function fetchFeedbackStats(limit: number = 50): Promise<FeedbackSt
       return fallbackResponse;
     }
 
+    const adminKey = process.env.ADMIN_API_KEY;
+    if (!adminKey) {
+      console.error("[OBS] ADMIN_API_KEY is missing from environment variables.");
+      return fallbackResponse;
+    }
+
     const res = await fetch(`${BACKEND_URL}/api/chat/feedback/stats?limit=${limit}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'X-Admin-Key': process.env.ADMIN_API_KEY || 'dev_secret',
+        'X-Admin-Key': adminKey,
       },
       // 통계는 실시간 성격이 강하므로 브라우저/루터 캐시 무효화 적용
       cache: 'no-store',
