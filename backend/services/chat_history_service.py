@@ -89,11 +89,12 @@ def _process_feedback_entry(
     rating = raw_rating if raw_rating in ("up", "down") else "none"
     
     # timestamp가 int(epoch)이거나 str(ISO)일 수 있으므로 타입을 명시적으로 검증하여 정규화
+    # 주의: bool은 int의 서브클래스이므로 명시적으로 제외 (True/False가 0/1 epoch으로 처리되는 것을 방지)
     raw_ts = meta.get("timestamp")
-    if isinstance(raw_ts, (int, float, str)):
+    if isinstance(raw_ts, (int, float, str)) and not isinstance(raw_ts, bool):
         ts = str(raw_ts).strip()
     else:
-        # 비-스칼라 값(Dict/List) 또는 None의 경우 빈 문자열로 처리하여 예기치 못한 객체 문자화 방지
+        # bool·비-스칼라 값(Dict/List) 또는 None인 경우 빈 문자열로 처리하여 예기치 못한 객체 문자화 방지
         ts = ""
 
     up_delta = 1 if rating == "up" else 0
