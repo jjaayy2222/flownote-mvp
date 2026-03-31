@@ -62,10 +62,10 @@ export type CookieAuth =
   | { kind: 'server_side' };
 
 /**
- * 컴파일 타입 보호 및 런타임 누락 분기(Fallthrough)를 막기 위한 엄격한 완전(Exhaustive) 검사 헬퍼
+ * 컴파일 타임 보호 및 런타임 누락 분기(Fallthrough)를 막기 위한 엄격한 완전(Exhaustive) 검사 헬퍼
  */
-const assertNever = (x: never): never => {
-  throw new Error(`[CookieAuth] Unhandled enum variant at runtime: ${JSON.stringify(x)}`);
+const assertNever = (x: never, context?: string): never => {
+  throw new Error(`[CookieAuth] Unhandled variant${context ? ` in ${context}` : ''}`);
 };
 
 // --- 중앙집중화된 판별 헬퍼 (Internal Checkers) ---
@@ -80,7 +80,7 @@ const isServerSideAuth = (auth: CookieAuth): boolean => {
     case 'not_found':
       return false;
     default:
-      return assertNever(auth);
+      return assertNever(auth, 'isServerSideAuth');
   }
 };
 
@@ -93,7 +93,7 @@ const getDecodedValue = (auth: CookieAuth): string | null => {
     case 'not_found':
       return null;
     default:
-      return assertNever(auth);
+      return assertNever(auth, 'getDecodedValue');
   }
 };
 
