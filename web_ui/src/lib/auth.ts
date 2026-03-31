@@ -88,6 +88,37 @@ export const getAuthFromCookie = (
   return { kind: 'not_found' };
 };
 
+// --- 중앙집중화된 판별 헬퍼 (Internal Checkers) ---
+// 외부 모듈에서 퍼블릭 API로 오용되는 것을 막기 위해 export 하지 않음
+const isServerSideAuth = (auth: CookieAuth): boolean => {
+  switch (auth.kind) {
+    case 'server_side':
+      return true;
+    case 'ok':
+    case 'decode_error':
+    case 'not_found':
+      return false;
+    default:
+      // 향후 CookieAuth 유니언에 새로운 타입이 추가될 때 컴파일 에러를 유발하는 완전(Exhaustive) 검사
+      const _exhaustiveCheck: never = auth;
+      return _exhaustiveCheck;
+  }
+};
+
+const getDecodedValue = (auth: CookieAuth): string | null => {
+  switch (auth.kind) {
+    case 'ok':
+      return auth.decoded;
+    case 'server_side':
+    case 'decode_error':
+    case 'not_found':
+      return null;
+    default:
+      const _exhaustiveCheck: never = auth;
+      return _exhaustiveCheck;
+  }
+};
+
 /**
  * 복잡한 switch/if 체인 없이, 순수하게 디코딩된 쿠키 값만 필요한 호출측(Consumer) 컴포넌트를 위한 단일 헬퍼 함수
  * 
@@ -100,10 +131,10 @@ export const getDecodedCookieOrNull = (
   options?: { throwOnSSR?: boolean }
 ): string | null => {
   const auth = getAuthFromCookie(name);
-  if (options?.throwOnSSR && auth.kind === 'server_side') {
+  if (options?.throwOnSSR && isServerSideAuth(auth)) {
     throw new Error(`[CookieAuth] Attempted to read browser cookie '${name}' in Server environment (SSR).`);
   }
-  return auth.kind === 'ok' ? auth.decoded : null;
+  return getDecodedValue(auth);
 };
 
 /**
@@ -117,7 +148,7 @@ export const getDecodedCookieState = (
 ): { value: string | null; isSSR: boolean } => {
   const auth = getAuthFromCookie(name);
   return {
-    value: auth.kind === 'ok' ? auth.decoded : null,
-    isSSR: auth.kind === 'server_side',
+    value: getDecodedValue(auth),
+    isSSR: isServerSideAuth(auth),
   };
 };
