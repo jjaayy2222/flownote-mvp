@@ -535,61 +535,71 @@ class ChatHistoryService:
         Redis의 `scan`을 사용하여 모든 `chat:feedback:*` 키를 차단(Blocking) 없이 순회하고,
         일자별(Up/Down) 트렌드 및 최근 상세 피드백 내역(텍스트 포함)을 묶어서 반환한다.
         """
+        import heapq
+        
         try:
             await self._ensure_connected("get_feedback_stats")
             
             up_count = 0
             down_count = 0
             trends: Dict[str, Dict[str, int]] = {}
-            recent_feedbacks: List[Dict[str, Any]] = []
+            # 메모리 최적화를 위한 Bounded Min-Heap (크기를 limit_recent로 유지)
+            recent_heap: List[Any] = []
+            tiebreaker = 0
 
-            # 1. 키 목록 수집 (scan 이용)
             cursor = 0
-            keys: List[Any] = []
+            # 1. 키 목록 수집 & 배치 단위 실시간 처리 (Streaming Aggregation 차용)
             while True:
                 cursor, partial_keys = await redis_client.redis.scan(cursor, match=f"{_FEEDBACK_PREFIX}*", count=100)
-                keys.extend(partial_keys)
-                if cursor == 0 or str(cursor) == "0" or str(cursor) == "b'0'":
-                    break
-
-            # 2. 각 세션 피드백 구조(Hash)를 일괄 순회
-            for raw_key in keys:
-                key_str = raw_key.decode('utf-8') if isinstance(raw_key, bytes) else str(raw_key)
-                session_id = key_str.replace(_FEEDBACK_PREFIX, "")
                 
-                feedback_hash = await redis_client.redis.hgetall(key_str)
-                for msg_id_raw, meta_raw in feedback_hash.items():
-                    msg_id = msg_id_raw.decode('utf-8') if isinstance(msg_id_raw, bytes) else str(msg_id_raw)
-                    meta_str = meta_raw.decode('utf-8') if isinstance(meta_raw, bytes) else str(meta_raw)
+                # 2. 배치별로 즉시 처리하여 전체 키 목록을 메모리에 적재하는 것을 방지
+                for raw_key in partial_keys:
+                    key_str = raw_key.decode('utf-8') if isinstance(raw_key, bytes) else str(raw_key)
+                    session_id = key_str.replace(_FEEDBACK_PREFIX, "")
                     
-                    try:
-                        meta = json.loads(meta_str)
-                        rating = meta.get("rating")
+                    feedback_hash = await redis_client.redis.hgetall(key_str)
+                    for msg_id_raw, meta_raw in feedback_hash.items():
+                        msg_id = msg_id_raw.decode('utf-8') if isinstance(msg_id_raw, bytes) else str(msg_id_raw)
+                        meta_str = meta_raw.decode('utf-8') if isinstance(meta_raw, bytes) else str(meta_raw)
                         
-                        if rating == "up":
-                            up_count += 1
-                        elif rating == "down":
-                            down_count += 1
+                        try:
+                            meta = json.loads(meta_str)
+                            rating = meta.get("rating")
                             
-                        ts = meta.get("timestamp", "")
-                        if ts:
-                            date_str = ts[:10]  # YYYY-MM-DD
-                            if date_str not in trends:
-                                trends[date_str] = {"up": 0, "down": 0}
-                            if rating in ["up", "down"]:
-                                trends[date_str][rating] += 1
-                        
-                        text_content = meta.get("text")
-                        if text_content and str(text_content).strip():
-                            recent_feedbacks.append({
-                                "session_id": session_id,
-                                "message_id": msg_id,
-                                "rating": rating,
-                                "text": str(text_content).strip(),
-                                "timestamp": ts
-                            })
-                    except (JSONDecodeError, ValueError, TypeError):
-                        continue
+                            if rating == "up":
+                                up_count += 1
+                            elif rating == "down":
+                                down_count += 1
+                                
+                            ts = meta.get("timestamp", "")
+                            if ts:
+                                date_str = ts[:10]  # YYYY-MM-DD
+                                if date_str not in trends:
+                                    trends[date_str] = {"up": 0, "down": 0}
+                                if rating in ["up", "down"]:
+                                    trends[date_str][rating] += 1
+                            
+                            text_content = meta.get("text")
+                            if text_content and str(text_content).strip() and ts:
+                                tiebreaker += 1
+                                item = {
+                                    "session_id": session_id,
+                                    "message_id": msg_id,
+                                    "rating": rating,
+                                    "text": str(text_content).strip(),
+                                    "timestamp": ts
+                                }
+                                # 힙에 (timestamp, tiebreaker, item) 형태로 푸시 (Min-Heap 기준)
+                                heapq.heappush(recent_heap, (ts, tiebreaker, item))
+                                # 제한 크기를 초과하면 가장 과거(작은 ts) 항목을 pop
+                                if len(recent_heap) > limit_recent:
+                                    heapq.heappop(recent_heap)
+                        except (JSONDecodeError, ValueError, TypeError):
+                            continue
+                            
+                # 안전하고 통일된 안전 조건: redis-py 커서 포맷 변경에 영향받지 않게 int 캐스팅
+                if int(cursor) == 0:
+                    break
 
             # 3. YYYY-MM-DD 정렬
             sorted_trends = [
@@ -597,14 +607,15 @@ class ChatHistoryService:
                 for d in sorted(trends.keys())
             ]
             
-            # 4. 최근 작성 순 정렬 후 limit 커팅
+            # 4. 힙에서 아이템 추출 후 최신순(역순) 정렬
+            recent_feedbacks = [item for _, _, item in recent_heap]
             recent_feedbacks.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
             
             return {
                 "total_up": up_count,
                 "total_down": down_count,
                 "trends": sorted_trends,
-                "recent_feedbacks": recent_feedbacks[:limit_recent]
+                "recent_feedbacks": recent_feedbacks
             }
 
         except Exception as e:
