@@ -529,6 +529,92 @@ class ChatHistoryService:
                 e,
             )
 
+    async def get_feedback_stats(self, limit_recent: int = 50) -> Dict[str, Any]:
+        """AI 피드백 전체 통계를 집계하여 반환한다.
+        
+        Redis의 `scan`을 사용하여 모든 `chat:feedback:*` 키를 차단(Blocking) 없이 순회하고,
+        일자별(Up/Down) 트렌드 및 최근 상세 피드백 내역(텍스트 포함)을 묶어서 반환한다.
+        """
+        try:
+            await self._ensure_connected("get_feedback_stats")
+            
+            up_count = 0
+            down_count = 0
+            trends: Dict[str, Dict[str, int]] = {}
+            recent_feedbacks: List[Dict[str, Any]] = []
+
+            # 1. 키 목록 수집 (scan 이용)
+            cursor = 0
+            keys: List[Any] = []
+            while True:
+                cursor, partial_keys = await redis_client.redis.scan(cursor, match=f"{_FEEDBACK_PREFIX}*", count=100)
+                keys.extend(partial_keys)
+                if cursor == 0 or str(cursor) == "0" or str(cursor) == "b'0'":
+                    break
+
+            # 2. 각 세션 피드백 구조(Hash)를 일괄 순회
+            for raw_key in keys:
+                key_str = raw_key.decode('utf-8') if isinstance(raw_key, bytes) else str(raw_key)
+                session_id = key_str.replace(_FEEDBACK_PREFIX, "")
+                
+                feedback_hash = await redis_client.redis.hgetall(key_str)
+                for msg_id_raw, meta_raw in feedback_hash.items():
+                    msg_id = msg_id_raw.decode('utf-8') if isinstance(msg_id_raw, bytes) else str(msg_id_raw)
+                    meta_str = meta_raw.decode('utf-8') if isinstance(meta_raw, bytes) else str(meta_raw)
+                    
+                    try:
+                        meta = json.loads(meta_str)
+                        rating = meta.get("rating")
+                        
+                        if rating == "up":
+                            up_count += 1
+                        elif rating == "down":
+                            down_count += 1
+                            
+                        ts = meta.get("timestamp", "")
+                        if ts:
+                            date_str = ts[:10]  # YYYY-MM-DD
+                            if date_str not in trends:
+                                trends[date_str] = {"up": 0, "down": 0}
+                            if rating in ["up", "down"]:
+                                trends[date_str][rating] += 1
+                        
+                        text_content = meta.get("text")
+                        if text_content and str(text_content).strip():
+                            recent_feedbacks.append({
+                                "session_id": session_id,
+                                "message_id": msg_id,
+                                "rating": rating,
+                                "text": str(text_content).strip(),
+                                "timestamp": ts
+                            })
+                    except (JSONDecodeError, ValueError, TypeError):
+                        continue
+
+            # 3. YYYY-MM-DD 정렬
+            sorted_trends = [
+                {"date": d, "up": trends[d]["up"], "down": trends[d]["down"]}
+                for d in sorted(trends.keys())
+            ]
+            
+            # 4. 최근 작성 순 정렬 후 limit 커팅
+            recent_feedbacks.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+            
+            return {
+                "total_up": up_count,
+                "total_down": down_count,
+                "trends": sorted_trends,
+                "recent_feedbacks": recent_feedbacks[:limit_recent]
+            }
+
+        except Exception as e:
+            _log_and_reraise_generic(
+                "Failed to get feedback stats",
+                {"error": str(e)},
+                e,
+            )
+
+
 
 def get_chat_history_service() -> ChatHistoryService:
     return ChatHistoryService()

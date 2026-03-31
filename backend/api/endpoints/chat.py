@@ -17,6 +17,7 @@ from backend.api.models import (  # type: ignore[import]
     RenameSessionRequest,
     FeedbackRequest,
     FeedbackResponse,
+    FeedbackStatsResponse,
 )
 from backend.services.chat_service import ChatService, get_chat_service  # type: ignore[import]
 from backend.services.chat_history_service import (  # type: ignore[import]
@@ -246,3 +247,33 @@ async def submit_feedback(
         message_id=body.message_id,
         rating=body.rating,
     )
+
+
+@router.get(
+    "/feedback/stats",
+    response_model=FeedbackStatsResponse,
+    summary="AI 피드백 통계 및 트렌드 데이터 조회 (Admin)",
+)
+async def get_feedback_stats_endpoint(
+    limit: int = 50,
+    chat_history_service: ChatHistoryService = Depends(get_chat_history_service),
+):
+    """
+    어드민 대시보드 시각화를 위한 피드백 통계를 반환합니다.
+    
+    - O(N) SCAN 기반 전체 피드백 Hash 순회
+    - 일자별 긍정/부정 트렌드 차트 데이터를 위해 집계
+    - 최신 사용자 피드백 텍스트 리스트(최대 limit개) 추출
+    """
+    try:
+        stats = await chat_history_service.get_feedback_stats(limit_recent=limit)
+        return FeedbackStatsResponse(
+            status="success",
+            total_up=stats["total_up"],
+            total_down=stats["total_down"],
+            trends=stats["trends"],
+            recent_feedbacks=stats["recent_feedbacks"],
+        )
+    except Exception as e:
+        logger.error(f"[OBS] Error fetching feedback stats: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
