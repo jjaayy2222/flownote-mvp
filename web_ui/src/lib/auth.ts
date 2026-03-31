@@ -55,7 +55,9 @@ export const hasAdminAccess = (
  * 
  * 브라우저 환경에서 cookie를 파싱하여 역할이나 이메일을 반환합니다.
  */
-export const getAuthFromCookie = (name: string): string | null => {
+export const getAuthFromCookie = (
+  name: string
+): { raw: string; decoded: string | null; error: boolean } | null => {
   if (typeof document === 'undefined') return null;
   
   const value = `; ${document.cookie}`;
@@ -65,15 +67,15 @@ export const getAuthFromCookie = (name: string): string | null => {
     if (!raw) return null;
 
     try {
-      return decodeURIComponent(raw);
+      const decoded = decodeURIComponent(raw);
+      return { raw, decoded, error: false };
     } catch (error) {
-      // 디코딩 실패 시 개발 환경에서 오류 추적을 위한 로깅 (프로덕션 로그 스팸 방지)
+      // 디코딩 실패 시 명확한 구분을 위해 구조화된 상태(error: true) 반환
       if (process.env.NODE_ENV === 'development') {
         console.warn(`[getAuthFromCookie] URI decoding failed for cookie '${name}':`, error);
       }
       
-      // 기존 API Contract(계약) 유지를 위해 에러 시 null 대신 디코딩되지 않은 원본(raw) 유지
-      return raw;
+      return { raw, decoded: null, error: true };
     }
   }
   

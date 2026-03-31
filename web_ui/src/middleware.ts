@@ -30,11 +30,11 @@ export default function middleware(request: NextRequest) {
     // 관리자 권한이 없을 경우
     if (!isAdminUser) {
       const rawLocale = pathname.split('/')[1];
-      const trimmedLocale = rawLocale?.trim();
+      const normalizedLocale = rawLocale?.trim().toLowerCase();
       
       // 유효한 로케일인지 명확히 검증, 불일치 시 defaultLocale로 폴백
-      const currentLocale = (trimmedLocale && (locales as readonly string[]).includes(trimmedLocale))
-        ? trimmedLocale 
+      const currentLocale = (normalizedLocale && (locales as readonly string[]).includes(normalizedLocale))
+        ? normalizedLocale 
         : defaultLocale;
       
       const redirectUrl = request.nextUrl.clone();
