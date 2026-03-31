@@ -12,7 +12,8 @@ export const isAdmin = (role: string | null | undefined): boolean => {
   return role === AUTH_CONFIG.ADMIN_ROLE;
 };
 
-// 모듈 로드 시점에 환경변수에서 허용된 이메일 목록을 한 번만 정규화하여 Set으로 캐싱 (O(1) 성능 최적화 및 고유성 강제)
+// 모듈 로드(서버/엣지 실행) 시점에 환경변수에서 허용된 이메일 목록을 정규화하여 Set으로 캐싱.
+// NOTE: 이 캐시 목록은 정적(static)으로 유지되며, 런타임에 동적으로 변경해야 할 경우 서버/앱 재배포(또는 재실행)가 필요합니다.
 const cachedAdminEmails = new Set(
   (process.env.ADMIN_EMAILS || '').split(',')
     .map(e => e.trim().toLowerCase())
@@ -66,12 +67,13 @@ export const getAuthFromCookie = (name: string): string | null => {
     try {
       return decodeURIComponent(raw);
     } catch (error) {
-      // 디코딩 실패 시 호출자가 기대하는 예측 가능한 동작(null 반환) 보장 
-      // 및 프로덕션 환경 로그 스팸 방지를 위해 개발 환경에서만 오류 추적 로깅
+      // 디코딩 실패 시 개발 환경에서 오류 추적을 위한 로깅 (프로덕션 로그 스팸 방지)
       if (process.env.NODE_ENV === 'development') {
         console.warn(`[getAuthFromCookie] URI decoding failed for cookie '${name}':`, error);
       }
-      return null;
+      
+      // 기존 API Contract(계약) 유지를 위해 에러 시 null 대신 디코딩되지 않은 원본(raw) 유지
+      return raw;
     }
   }
   
