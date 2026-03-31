@@ -26,16 +26,10 @@ from backend.services.chat_history_service import (  # type: ignore[import]
     get_chat_history_service,
     MAX_FEEDBACK_STATS_LIMIT,
 )
+from backend.config import AdminConfig
 from backend.utils import mask_pii_id  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
-
-# 모듈 로드 시점에 한 번만 환경변수 읽기 (Fail-Fast at Startup)
-_ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY")
-if not _ADMIN_API_KEY:
-    logger.critical(
-        "[OBS] ADMIN_API_KEY is not set. /feedback/stats endpoint will reject all requests."
-    )
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -276,12 +270,14 @@ async def get_feedback_stats_endpoint(
     - 최신 사용자 피드백 텍스트 리스트(최대 limit개) 추출
     """
     
-    # 모듈 로드 시점에 검증된 키를 사용: 설정 누락 시 Fail-Closed 보다 안전하게 처리
-    if not _ADMIN_API_KEY:
-        logger.error("[OBS] ADMIN_API_KEY is not configured in environment.")
+    # 설정 관리자를 통해 인증 키 조회 (핫 리로드 및 테스트 유연성 보장)
+    admin_key = AdminConfig.get_admin_key()
+    
+    if not admin_key:
+        logger.error("[OBS] ADMIN_API_KEY is not configured in environment. Rejecting access.")
         raise HTTPException(status_code=500, detail="Server Configuration Error: Missing Secret")
         
-    if not x_admin_key or x_admin_key != _ADMIN_API_KEY:
+    if not x_admin_key or x_admin_key != admin_key:
         logger.warning("[OBS] Unauthorized attempt to access admin stats endpoint.")
         raise HTTPException(status_code=403, detail="Forbidden: Invalid Admin Key")
     
