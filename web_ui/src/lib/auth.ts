@@ -55,29 +55,34 @@ export const hasAdminAccess = (
  * 
  * 브라우저 환경에서 cookie를 파싱하여 역할이나 이메일을 반환합니다.
  */
+export type CookieAuth =
+  | { kind: 'ok'; raw: string; decoded: string }
+  | { kind: 'decode_error'; raw: string; decoded: null }
+  | { kind: 'not_found' };
+
 export const getAuthFromCookie = (
   name: string
-): { raw: string; decoded: string | null; error: boolean } | null => {
-  if (typeof document === 'undefined') return null;
+): CookieAuth => {
+  if (typeof document === 'undefined') return { kind: 'not_found' };
   
   const value = `; ${document.cookie}`;
   const parts = value.split(`; ${name}=`);
   if (parts.length === 2) {
     const raw = parts.pop()?.split(';').shift();
-    if (!raw) return null;
+    if (!raw) return { kind: 'not_found' };
 
     try {
       const decoded = decodeURIComponent(raw);
-      return { raw, decoded, error: false };
+      return { kind: 'ok', raw, decoded };
     } catch (error) {
-      // 디코딩 실패 시 명확한 구분을 위해 구조화된 상태(error: true) 반환
+      // 디코딩 실패 시 명확한 구분을 위해 판별 가능한 유니온 상태 반환
       if (process.env.NODE_ENV === 'development') {
         console.warn(`[getAuthFromCookie] URI decoding failed for cookie '${name}':`, error);
       }
       
-      return { raw, decoded: null, error: true };
+      return { kind: 'decode_error', raw, decoded: null };
     }
   }
   
-  return null;
+  return { kind: 'not_found' };
 };
