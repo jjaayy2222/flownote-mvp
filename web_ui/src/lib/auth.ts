@@ -89,8 +89,35 @@ export const getAuthFromCookie = (
 };
 
 // --- 중앙집중화된 판별 헬퍼 (Internal Checkers) ---
-export const isServerSideAuth = (auth: CookieAuth): boolean => auth.kind === 'server_side';
-export const getDecodedValue = (auth: CookieAuth): string | null => auth.kind === 'ok' ? auth.decoded : null;
+// 외부 모듈에서 퍼블릭 API로 오용되는 것을 막기 위해 export 하지 않음
+const isServerSideAuth = (auth: CookieAuth): boolean => {
+  switch (auth.kind) {
+    case 'server_side':
+      return true;
+    case 'ok':
+    case 'decode_error':
+    case 'not_found':
+      return false;
+    default:
+      // 향후 CookieAuth 유니언에 새로운 타입이 추가될 때 컴파일 에러를 유발하는 완전(Exhaustive) 검사
+      const _exhaustiveCheck: never = auth;
+      return _exhaustiveCheck;
+  }
+};
+
+const getDecodedValue = (auth: CookieAuth): string | null => {
+  switch (auth.kind) {
+    case 'ok':
+      return auth.decoded;
+    case 'server_side':
+    case 'decode_error':
+    case 'not_found':
+      return null;
+    default:
+      const _exhaustiveCheck: never = auth;
+      return _exhaustiveCheck;
+  }
+};
 
 /**
  * 복잡한 switch/if 체인 없이, 순수하게 디코딩된 쿠키 값만 필요한 호출측(Consumer) 컴포넌트를 위한 단일 헬퍼 함수
