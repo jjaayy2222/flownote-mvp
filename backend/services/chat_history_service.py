@@ -24,6 +24,9 @@ _FEEDBACK_PREFIX = "chat:feedback:"
 # preview 최대 길이 (하드코딩 방지)
 _PREVIEW_MAX_LEN = 80
 
+# 피드백 통계 최대 반환 건수 (DRY: 엔드포인트와 서비스 계층 단일 진실 공급원)
+MAX_FEEDBACK_STATS_LIMIT = 500
+
 
 # ─────────────────────────────────────────────────────────────
 # 커스텀 예외
@@ -85,7 +88,9 @@ def _process_feedback_entry(
     # Frontend FeedbackRating Union 타입('up' | 'down' | 'none')과 일치시키기 위한 강제 캐스팅
     rating = raw_rating if raw_rating in ("up", "down") else "none"
     
-    ts = meta.get("timestamp", "")
+    # timestamp가 int이거나 None일 수 있으므로 문자열로 정규화 (TypeError 방어)
+    raw_ts = meta.get("timestamp")
+    ts = str(raw_ts).strip() if raw_ts is not None else ""
 
     up_delta = 1 if rating == "up" else 0
     down_delta = 1 if rating == "down" else 0
@@ -588,7 +593,7 @@ class ChatHistoryService:
         import heapq
         
         # 내부 오작동 방지를 위한 상/하한선 (Service Layer clamping)
-        limit_recent = max(1, min(limit_recent, 500))
+        limit_recent = max(1, min(limit_recent, MAX_FEEDBACK_STATS_LIMIT))
         
         try:
             await self._ensure_connected("get_feedback_stats")
