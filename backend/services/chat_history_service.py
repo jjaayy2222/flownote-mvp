@@ -88,9 +88,13 @@ def _process_feedback_entry(
     # Frontend FeedbackRating Union 타입('up' | 'down' | 'none')과 일치시키기 위한 강제 캐스팅
     rating = raw_rating if raw_rating in ("up", "down") else "none"
     
-    # timestamp가 int이거나 None일 수 있으므로 문자열로 정규화 (TypeError 방어)
+    # timestamp가 int(epoch)이거나 str(ISO)일 수 있으므로 타입을 명시적으로 검증하여 정규화
     raw_ts = meta.get("timestamp")
-    ts = str(raw_ts).strip() if raw_ts is not None else ""
+    if isinstance(raw_ts, (int, float, str)):
+        ts = str(raw_ts).strip()
+    else:
+        # 비-스칼라 값(Dict/List) 또는 None의 경우 빈 문자열로 처리하여 예기치 못한 객체 문자화 방지
+        ts = ""
 
     up_delta = 1 if rating == "up" else 0
     down_delta = 1 if rating == "down" else 0
