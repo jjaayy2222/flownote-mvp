@@ -6,15 +6,24 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export class ExhaustiveCheckError extends Error {
-  // 에러 발생 위치(context)와 유발 인자(kind)를 추상화된 메시지 파싱 없이 하위/상위 컴포넌트에서 직접 접근할 수 있도록 메타데이터 노출
+  // 에러 발생 위치(context)와 유발 인자(kind)를 개별적으로 노출 (기존 하위 호환성 및 다이렉트 접근용)
   public readonly context?: string;
   public readonly kind?: unknown;
 
-  constructor(message: string, kind?: unknown, context?: string) {
-    super(message);
+  constructor(context?: string, kind?: unknown) {
+    const detail = kind !== undefined ? ` (kind: ${String(kind)})` : '';
+    const message = `[ExhaustiveCheck] Unhandled variant${context ? ` in ${context}` : ''}${detail}`;
+
+    const hasMetadata = kind !== undefined || context !== undefined;
+    const cause = hasMetadata ? { kind, context } : undefined;
+
+    // 표준 ErrorOptions.cause를 통해 메타데이터를 노출하여 기존 error.cause 기반 도구/코드와의 호환성을 극대화
+    super(message, cause ? { cause } : undefined);
+
     this.name = 'ExhaustiveCheckError';
-    this.kind = kind;
     this.context = context;
+    this.kind = kind;
+    
     // TypeScript 내장 Error 클래스를 상속할 때 프로토타입 체인 유실을 방지하기 위한 보정
     Object.setPrototypeOf(this, ExhaustiveCheckError.prototype);
   }
@@ -27,12 +36,6 @@ export class ExhaustiveCheckError extends Error {
 export const assertNever = (x: never, context?: string): never => {
   // PII(개인정보)나 민감한 토큰 데이터 유출을 막기 위해 전체 구조체(stringify) 대신 `kind` 식별자만 참조
   const kind = (x as { kind?: unknown })?.kind;
-  // 비원시(non-primitive) 값이 들어오더라도 [object Object]가 아니라 실제 값을 알아볼 수 있도록 명시적 String 변환
-  const detail = kind !== undefined ? ` (kind: ${String(kind)})` : '';
   
-  throw new ExhaustiveCheckError(
-    `Unhandled variant${context ? ` in ${context}` : ''}${detail}`,
-    kind,
-    context
-  );
+  throw new ExhaustiveCheckError(context, kind);
 };
