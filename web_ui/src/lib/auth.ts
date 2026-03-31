@@ -58,12 +58,13 @@ export const hasAdminAccess = (
 export type CookieAuth =
   | { kind: 'ok'; raw: string; decoded: string }
   | { kind: 'decode_error'; raw: string; decoded: null }
-  | { kind: 'not_found' };
+  | { kind: 'not_found' }
+  | { kind: 'server_side' };
 
 export const getAuthFromCookie = (
   name: string
 ): CookieAuth => {
-  if (typeof document === 'undefined') return { kind: 'not_found' };
+  if (typeof document === 'undefined') return { kind: 'server_side' };
   
   const value = `; ${document.cookie}`;
   const parts = value.split(`; ${name}=`);
@@ -85,4 +86,15 @@ export const getAuthFromCookie = (
   }
   
   return { kind: 'not_found' };
+};
+
+/**
+ * 복잡한 switch/if 체인 없이, 순수하게 디코딩된 쿠키 값만 필요한 호출측(Consumer) 컴포넌트를 위한 헬퍼 함수
+ * 
+ * @param name - 가져올 쿠키의 이름
+ * @returns 디코딩 성공 시 원본 문자열, 그 외(서버사이드, 디코드 실패, 없음 등) null 반환
+ */
+export const getDecodedCookieOrNull = (name: string): string | null => {
+  const auth = getAuthFromCookie(name);
+  return auth.kind === 'ok' ? auth.decoded : null;
 };
