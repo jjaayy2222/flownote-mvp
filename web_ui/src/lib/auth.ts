@@ -57,18 +57,19 @@ export const hasAdminAccess = (
  */
 export type CookieAuth =
   | { kind: 'ok'; raw: string; decoded: string }
-  | { kind: 'decode_error'; raw: string; decoded: null; error: true };
+  | { kind: 'decode_error'; raw: string; decoded: null }
+  | { kind: 'not_found' };
 
 export const getAuthFromCookie = (
   name: string
-): CookieAuth | null => {
-  if (typeof document === 'undefined') return null;
+): CookieAuth => {
+  if (typeof document === 'undefined') return { kind: 'not_found' };
   
   const value = `; ${document.cookie}`;
   const parts = value.split(`; ${name}=`);
   if (parts.length === 2) {
     const raw = parts.pop()?.split(';').shift();
-    if (!raw) return null;
+    if (!raw) return { kind: 'not_found' };
 
     try {
       const decoded = decodeURIComponent(raw);
@@ -79,9 +80,9 @@ export const getAuthFromCookie = (
         console.warn(`[getAuthFromCookie] URI decoding failed for cookie '${name}':`, error);
       }
       
-      return { kind: 'decode_error', raw, decoded: null, error: true };
+      return { kind: 'decode_error', raw, decoded: null };
     }
   }
   
-  return null;
+  return { kind: 'not_found' };
 };
