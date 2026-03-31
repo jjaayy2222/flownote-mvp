@@ -12,10 +12,12 @@ export interface FeedbackTrend {
   down: number;
 }
 
+export type FeedbackRating = 'up' | 'down' | 'none';
+
 export interface FeedbackDetail {
   session_id: string;
   message_id: string;
-  rating: string;
+  rating: FeedbackRating;
   text: string | null;
   timestamp: string;
 }
@@ -61,6 +63,7 @@ export async function fetchFeedbackStats(limit: number = 50): Promise<FeedbackSt
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
+        'X-Admin-Key': process.env.ADMIN_API_KEY || 'dev_secret',
       },
       // 통계는 실시간 성격이 강하므로 브라우저/루터 캐시 무효화 적용
       cache: 'no-store',

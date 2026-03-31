@@ -59,6 +59,55 @@ def _log_and_reraise_generic(
     raise exc
 
 
+def _decode_str(value: Any) -> str:
+    """바이트일 경우 디코드하고, 그 외에는 문자열로 캐스팅하는 헬퍼"""
+    if isinstance(value, bytes):
+        return value.decode("utf-8")
+    return str(value)
+
+
+def _process_feedback_entry(
+    session_id: str,
+    msg_id_raw: Any,
+    meta_raw: Any,
+    trends: Dict[str, Dict[str, int]],
+    recent_items: List[Dict[str, Any]],
+) -> tuple[int, int]:
+    """단일 피드백 항목 파싱 및 가공을 담당하는 헬퍼"""
+    msg_id = _decode_str(msg_id_raw)
+    meta_str = _decode_str(meta_raw)
+
+    try:
+        meta = json.loads(meta_str)
+    except (JSONDecodeError, ValueError, TypeError):
+        return 0, 0
+
+    rating = meta.get("rating")
+    ts = meta.get("timestamp", "")
+
+    up_delta = 1 if rating == "up" else 0
+    down_delta = 1 if rating == "down" else 0
+
+    if ts and rating in ("up", "down"):
+        date_str = ts[:10]
+        day = trends.setdefault(date_str, {"up": 0, "down": 0})
+        day[rating] += 1
+
+    text_content = meta.get("text")
+    if text_content and (txt := str(text_content).strip()) and ts:
+        recent_items.append(
+            {
+                "session_id": session_id,
+                "message_id": msg_id,
+                "rating": rating,
+                "text": txt,
+                "timestamp": ts,
+            }
+        )
+
+    return up_delta, down_delta
+
+
 class ChatHistoryService:
     """Redis 기반 채팅 히스토리 및 세션 관리 서비스.
 
@@ -535,69 +584,32 @@ class ChatHistoryService:
         Redis의 `scan`을 사용하여 모든 `chat:feedback:*` 키를 차단(Blocking) 없이 순회하고,
         일자별(Up/Down) 트렌드 및 최근 상세 피드백 내역(텍스트 포함)을 묶어서 반환한다.
         """
-        import heapq
-        
         try:
             await self._ensure_connected("get_feedback_stats")
             
-            up_count = 0
-            down_count = 0
-            trends: Dict[str, Dict[str, int]] = {}
-            # 메모리 최적화를 위한 Bounded Min-Heap (크기를 limit_recent로 유지)
-            recent_heap: List[Any] = []
-            tiebreaker = 0
-
             cursor = 0
+            recent_items: List[Dict[str, Any]] = []
+            up_count = down_count = 0
+            trends: Dict[str, Dict[str, int]] = {}
+
             # 1. 키 목록 수집 & 배치 단위 실시간 처리 (Streaming Aggregation 차용)
             while True:
                 cursor, partial_keys = await redis_client.redis.scan(cursor, match=f"{_FEEDBACK_PREFIX}*", count=100)
                 
-                # 2. 배치별로 즉시 처리하여 전체 키 목록을 메모리에 적재하는 것을 방지
+                # 2. 배치별 즉시 처리
                 for raw_key in partial_keys:
-                    key_str = raw_key.decode('utf-8') if isinstance(raw_key, bytes) else str(raw_key)
+                    key_str = _decode_str(raw_key)
                     session_id = key_str.replace(_FEEDBACK_PREFIX, "")
                     
                     feedback_hash = await redis_client.redis.hgetall(key_str)
                     for msg_id_raw, meta_raw in feedback_hash.items():
-                        msg_id = msg_id_raw.decode('utf-8') if isinstance(msg_id_raw, bytes) else str(msg_id_raw)
-                        meta_str = meta_raw.decode('utf-8') if isinstance(meta_raw, bytes) else str(meta_raw)
-                        
-                        try:
-                            meta = json.loads(meta_str)
-                            rating = meta.get("rating")
+                        up_delta, down_delta = _process_feedback_entry(
+                            session_id, msg_id_raw, meta_raw, trends, recent_items
+                        )
+                        up_count += up_delta
+                        down_count += down_delta
                             
-                            if rating == "up":
-                                up_count += 1
-                            elif rating == "down":
-                                down_count += 1
-                                
-                            ts = meta.get("timestamp", "")
-                            if ts:
-                                date_str = ts[:10]  # YYYY-MM-DD
-                                if date_str not in trends:
-                                    trends[date_str] = {"up": 0, "down": 0}
-                                if rating in ["up", "down"]:
-                                    trends[date_str][rating] += 1
-                            
-                            text_content = meta.get("text")
-                            if text_content and str(text_content).strip() and ts:
-                                tiebreaker += 1
-                                item = {
-                                    "session_id": session_id,
-                                    "message_id": msg_id,
-                                    "rating": rating,
-                                    "text": str(text_content).strip(),
-                                    "timestamp": ts
-                                }
-                                # 힙에 (timestamp, tiebreaker, item) 형태로 푸시 (Min-Heap 기준)
-                                heapq.heappush(recent_heap, (ts, tiebreaker, item))
-                                # 제한 크기를 초과하면 가장 과거(작은 ts) 항목을 pop
-                                if len(recent_heap) > limit_recent:
-                                    heapq.heappop(recent_heap)
-                        except (JSONDecodeError, ValueError, TypeError):
-                            continue
-                            
-                # 안전하고 통일된 안전 조건: redis-py 커서 포맷 변경에 영향받지 않게 int 캐스팅
+                # 안전하게 int로 캐스팅하여 종료 조건 체크
                 if int(cursor) == 0:
                     break
 
@@ -607,9 +619,12 @@ class ChatHistoryService:
                 for d in sorted(trends.keys())
             ]
             
-            # 4. 힙에서 아이템 추출 후 최신순(역순) 정렬
-            recent_feedbacks = [item for _, _, item in recent_heap]
-            recent_feedbacks.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+            # 4. 단순 리스트 정렬 후 자르기 (설계 단순화)
+            recent_feedbacks = sorted(
+                recent_items,
+                key=lambda x: x.get("timestamp", ""),
+                reverse=True,
+            )[:limit_recent]
             
             return {
                 "total_up": up_count,
