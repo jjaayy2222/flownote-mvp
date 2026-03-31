@@ -325,6 +325,7 @@ class PathConfig:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
+
 class AppConfig:
     """애플리케이션 설정"""
 
@@ -343,6 +344,23 @@ class AppConfig:
 
     # 자동화 설정
     ARCHIVE_DAYS_THRESHOLD = 30  # 아카이브 기준일 (미접근 기간)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 어드민 설정
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+class AdminConfig:
+    """관리자 권한 및 인증 설정"""
+
+    @staticmethod
+    def get_admin_key() -> Optional[str]:
+        """
+        ADMIN_API_KEY를 환경 변수에서 조회한다.
+        모듈 로드 시점이 아닌 호출 시점에 조회하여 핫 리로드 및 테스트 유연성 확보.
+        """
+        return os.getenv("ADMIN_API_KEY")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
