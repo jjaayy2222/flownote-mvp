@@ -89,12 +89,35 @@ export const getAuthFromCookie = (
 };
 
 /**
- * 복잡한 switch/if 체인 없이, 순수하게 디코딩된 쿠키 값만 필요한 호출측(Consumer) 컴포넌트를 위한 헬퍼 함수
+ * 복잡한 switch/if 체인 없이, 순수하게 디코딩된 쿠키 값만 필요한 호출측(Consumer) 컴포넌트를 위한 단일 헬퍼 함수
  * 
  * @param name - 가져올 쿠키의 이름
- * @returns 디코딩 성공 시 원본 문자열, 그 외(서버사이드, 디코드 실패, 없음 등) null 반환
+ * @param options.throwOnSSR - 서버 환경에서 호출할 경우 명시적으로 에러를 발생시켜 조용히 null 처리되는 것을 방지
+ * @returns 디코딩 성공 시 원본 문자열, 그 외 null 반환 (옵션에 따라 SSR 환경에서는 throw 발생 가능)
  */
-export const getDecodedCookieOrNull = (name: string): string | null => {
+export const getDecodedCookieOrNull = (
+  name: string,
+  options?: { throwOnSSR?: boolean }
+): string | null => {
   const auth = getAuthFromCookie(name);
+  if (options?.throwOnSSR && auth.kind === 'server_side') {
+    throw new Error(`[CookieAuth] Attempted to read browser cookie '${name}' in Server environment (SSR).`);
+  }
   return auth.kind === 'ok' ? auth.decoded : null;
+};
+
+/**
+ * SSR 환경(브라우저 외부)과 실제 미인증 상태(쿠키 부재)를 명확히 구분하여 처리해야 하는 특수 렌더링 컨텍스트용 헬퍼
+ * 
+ * @param name - 가져올 쿠키의 이름
+ * @returns 디코딩된 값(value)과 SSR 렌더링 환경 여부(isSSR)를 명시적으로 분리 반환
+ */
+export const getDecodedCookieState = (
+  name: string
+): { value: string | null; isSSR: boolean } => {
+  const auth = getAuthFromCookie(name);
+  return {
+    value: auth.kind === 'ok' ? auth.decoded : null,
+    isSSR: auth.kind === 'server_side',
+  };
 };
