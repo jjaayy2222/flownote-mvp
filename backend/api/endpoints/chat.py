@@ -5,8 +5,9 @@
 """
 
 import logging
+import os
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException  # type: ignore[import]
+from fastapi import APIRouter, Depends, HTTPException, Query, Header  # type: ignore[import]
 from fastapi.responses import StreamingResponse  # type: ignore[import]
 
 from backend.api.models import (  # type: ignore[import]
@@ -255,7 +256,8 @@ async def submit_feedback(
     summary="AI 피드백 통계 및 트렌드 데이터 조회 (Admin)",
 )
 async def get_feedback_stats_endpoint(
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=500, description="최근 피드백 반환 최대 개수 (상한 500)"),
+    x_admin_key: Optional[str] = Header(None, description="Next.js 프록시 내부 인증 키"),
     chat_history_service: ChatHistoryService = Depends(get_chat_history_service),
 ):
     """
@@ -265,6 +267,17 @@ async def get_feedback_stats_endpoint(
     - 일자별 긍정/부정 트렌드 차트 데이터를 위해 집계
     - 최신 사용자 피드백 텍스트 리스트(최대 limit개) 추출
     """
+    
+    # 백엔드 API 직접 호출 방지 (서버 간 인증) 및 하드코딩 제거 (Fail Closed 원칙)
+    expected_key = os.environ.get("ADMIN_API_KEY")
+    if not expected_key:
+        logger.error("[OBS] ADMIN_API_KEY is not configured in environment.")
+        raise HTTPException(status_code=500, detail="Server Configuration Error: Missing Secret")
+        
+    if not x_admin_key or x_admin_key != expected_key:
+        logger.warning("[OBS] Unauthorized attempt to access admin stats endpoint.")
+        raise HTTPException(status_code=403, detail="Forbidden: Invalid Admin Key")
+    
     try:
         stats = await chat_history_service.get_feedback_stats(limit_recent=limit)
         return FeedbackStatsResponse(
