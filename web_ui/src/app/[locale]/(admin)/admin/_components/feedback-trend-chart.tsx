@@ -109,13 +109,25 @@ export function FeedbackTrendChart({ data }: FeedbackTrendChartProps) {
             labelStyle={{ color: 'var(--color-muted-foreground)', marginBottom: '4px' }}
             itemStyle={{ color: 'var(--color-card-foreground)' }}
             formatter={(value: number | undefined, name: string | undefined) => {
-              const label = name === 'up' ? t('up') : t('down');
+              const labelMap: Record<string, string> = {
+                up: t('up'),
+                down: t('down'),
+              };
+
+              const label = (name && labelMap[name]) ?? name ?? '';
               return [value ?? 0, label];
             }}
           />
 
           <Legend
-            formatter={(value: string) => (value === 'up' ? t('up') : t('down'))}
+            formatter={(value: string) => {
+              const labelMap: Record<string, string> = {
+                up: t('up'),
+                down: t('down'),
+              };
+
+              return labelMap[value] ?? value;
+            }}
             wrapperStyle={{ fontSize: '0.875rem', paddingTop: '12px' }}
           />
 
