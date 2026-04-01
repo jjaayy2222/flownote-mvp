@@ -12,6 +12,19 @@ interface FeedbackListPanelProps {
 
 const ITEMS_PER_PAGE = 10;
 
+/**
+ * 피드백 항목의 고유 React 키를 생성하는 헬퍼 함수
+ * message_id가 누락되더라도 데이터 충돌(Collision)이 발생하지 않도록 안정적인 필드들을 해시 결합 방식으로 반환합니다.
+ */
+export function getFeedbackKey(fb: FeedbackDetail): string {
+  if (fb.message_id) return fb.message_id;
+
+  const fallbackParts = [fb.session_id, fb.timestamp, fb.rating];
+  if (fb.text) fallbackParts.push(fb.text.slice(0, 20));
+
+  return fallbackParts.filter(Boolean).join('-');
+}
+
 export function FeedbackListPanel({ feedbacks }: FeedbackListPanelProps) {
   const t = useTranslations('admin.analytics.feed_list');
   const format = useFormatter();
@@ -41,15 +54,10 @@ export function FeedbackListPanel({ feedbacks }: FeedbackListPanelProps) {
           // Rating Badge 스타일 결정
           const isUp = fb.rating === 'up';
           const isDown = fb.rating === 'down';
-
-          // 키는 가능한 한 안정적인 필드들의 조합을 사용해 생성합니다.
-          const feedbackKey =
-            fb.message_id ??
-            [fb.session_id, fb.timestamp, fb.rating].filter(Boolean).join('-');
           
           return (
             <li
-              key={feedbackKey}
+              key={getFeedbackKey(fb)}
               className="flex flex-col gap-2 rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-slate-50/50 dark:hover:bg-slate-800/10"
             >
               <div className="flex items-start justify-between">
