@@ -1,15 +1,35 @@
 // web_ui/src/app/[locale]/(admin)/admin/analytics/page.tsx
-'use client';
+import { Suspense } from 'react';
+import { fetchFeedbackStats } from './actions';
+import { AnalyticsDashboardView } from '../_components/analytics-dashboard-view';
 
-import { useTranslations } from 'next-intl';
+/**
+ * [Server Component] AI 피드백 분석 대시보드 페이지.
+ * - 서버 사이드에서 fetchFeedbackStats 호출 → 클라이언트 번들로 누출되지 않음
+ * - 데이터 계산(비율) 담당 후 Client Component(AnalyticsDashboardView)에 props 전달
+ * - Suspense fallback은 analytics/loading.tsx가 처리
+ */
+async function AnalyticsContent() {
+  const stats = await fetchFeedbackStats(50);
 
-export default function AnalyticsDashboardPage() {
-  const t = useTranslations('admin.analytics');
+  const total = stats.total_up + stats.total_down;
+  const upRatio = total > 0 ? Math.round((stats.total_up / total) * 100) : 0;
+  const downRatio = total > 0 ? 100 - upRatio : 0;
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-3xl font-bold tracking-tight">{t('title')}</h1>
-      <p className="text-muted-foreground">{t('subtitle')}</p>
-    </div>
+    <AnalyticsDashboardView
+      stats={stats}
+      total={total}
+      upRatio={upRatio}
+      downRatio={downRatio}
+    />
+  );
+}
+
+export default function AnalyticsDashboardPage() {
+  return (
+    <Suspense>
+      <AnalyticsContent />
+    </Suspense>
   );
 }

@@ -135,7 +135,18 @@
     },
     "analytics": {
       "title": "Analytics & Reports",
-      "subtitle": "View feedback statistics and system metrics."
+      "subtitle": "View feedback statistics and system metrics.",
+      "summary": {
+        "total": "Total Feedbacks",
+        "up": "Positive (Up)",
+        "down": "Negative (Down)"
+      },
+      "trend_chart": {
+        "title": "Feedback Trend by Date",
+        "up": "Positive",
+        "down": "Negative",
+        "empty": "No trend data available yet."
+      }
     },
     "error": {
       "title": "Something went wrong!",
