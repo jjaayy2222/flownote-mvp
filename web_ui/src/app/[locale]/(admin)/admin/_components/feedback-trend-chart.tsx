@@ -20,7 +20,7 @@ interface FeedbackTrendChartProps {
 /**
  * [Client Component] 날짜별 AI 피드백 Up/Down 트렌드를 Area Chart로 시각화한다.
  * - recharts ResponsiveContainer로 반응형 적용
- * - CSS 변수(--chart-1, --chart-2)를 통해 다크모드 색상 토큰과 자동 동기화
+ * - CSS 변수(--color-chart-2, --color-chart-5)를 통해 다크모드 색상 토큰과 자동 동기화
  * - 데이터가 없을 경우 안내 메시지를 렌더링하는 Empty State 처리
  */
 export function FeedbackTrendChart({ data }: FeedbackTrendChartProps) {
