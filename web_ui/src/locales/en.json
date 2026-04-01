@@ -155,7 +155,10 @@
         "rating_none": "No Rating",
         "meta_session": "Session ID",
         "meta_message": "Message ID",
-        "no_text": "(No text feedback provided)"
+        "no_text": "(No text feedback provided)",
+        "prev_page": "Previous Page",
+        "next_page": "Next Page",
+        "unknown": "Unknown"
       }
     },
     "error": {
