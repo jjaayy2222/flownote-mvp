@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { FeedbackTrendChart } from './feedback-trend-chart';
+import { FeedbackListPanel } from './feedback-list-panel';
 import type { FeedbackStatsResponse } from '../analytics/actions';
 
 interface AnalyticsViewProps {
@@ -46,13 +47,22 @@ export function AnalyticsDashboardView({ stats, total, upRatio, downRatio }: Ana
         />
       </div>
 
-      {/* 트렌드 차트 섹션 */}
-      <section className="rounded-xl border bg-card p-6 shadow-sm">
-        <h2 className="mb-4 text-base font-semibold">
-          {t('trend_chart.title')}
-        </h2>
-        <FeedbackTrendChart data={stats.trends} />
-      </section>
+      {/* 트렌드 차트 및 피드 리스트 섹션 */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <section className="rounded-xl border bg-card p-6 shadow-sm">
+          <h2 className="mb-4 text-base font-semibold">
+            {t('trend_chart.title')}
+          </h2>
+          <FeedbackTrendChart data={stats.trends} />
+        </section>
+
+        <section className="rounded-xl border bg-card p-6 shadow-sm">
+          <h2 className="mb-4 text-base font-semibold">
+            {t('feed_list.title')}
+          </h2>
+          <FeedbackListPanel feedbacks={stats.recent_feedbacks} />
+        </section>
+      </div>
     </div>
   );
 }
