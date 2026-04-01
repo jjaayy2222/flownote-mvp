@@ -19,7 +19,8 @@ export function FeedbackListPanel({ feedbacks }: FeedbackListPanelProps) {
 
   // feedbacks 배열 변경에 따른 페이지 강제 보정 로직 (useEffect 대신 파생 상태 활용)
   const totalPages = Math.ceil((feedbacks?.length || 0) / ITEMS_PER_PAGE) || 1;
-  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+  const clampPage = (p: number) => Math.min(Math.max(1, p), totalPages);
+  const safeCurrentPage = clampPage(currentPage);
 
   if (!feedbacks || feedbacks.length === 0) {
     return (
@@ -43,7 +44,7 @@ export function FeedbackListPanel({ feedbacks }: FeedbackListPanelProps) {
           
           return (
             <li
-              key={`${fb.message_id ?? 'fb'}-${idx}`}
+              key={fb.message_id ?? `fb-${idx}`}
               className="flex flex-col gap-2 rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-slate-50/50 dark:hover:bg-slate-800/10"
             >
               <div className="flex items-start justify-between">
@@ -102,10 +103,7 @@ export function FeedbackListPanel({ feedbacks }: FeedbackListPanelProps) {
         <div className="mt-4 flex items-center justify-center gap-2">
           <button
             type="button"
-            onClick={() => setCurrentPage((p) => {
-              const clamped = Math.min(Math.max(1, p), totalPages);
-              return Math.max(1, clamped - 1);
-            })}
+            onClick={() => setCurrentPage((p) => Math.max(1, clampPage(p) - 1))}
             disabled={safeCurrentPage === 1}
             className="flex h-8 w-8 items-center justify-center rounded-md border text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800"
             aria-label={t('prev_page')}
@@ -117,10 +115,7 @@ export function FeedbackListPanel({ feedbacks }: FeedbackListPanelProps) {
           </span>
           <button
             type="button"
-            onClick={() => setCurrentPage((p) => {
-              const clamped = Math.min(Math.max(1, p), totalPages);
-              return Math.min(totalPages, clamped + 1);
-            })}
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, clampPage(p) + 1))}
             disabled={safeCurrentPage === totalPages}
             className="flex h-8 w-8 items-center justify-center rounded-md border text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800"
             aria-label={t('next_page')}
