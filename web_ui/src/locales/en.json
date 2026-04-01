@@ -146,6 +146,16 @@
         "up": "Positive",
         "down": "Negative",
         "empty": "No trend data available yet."
+      },
+      "feed_list": {
+        "title": "Recent User Feedbacks",
+        "empty": "No text feedbacks available.",
+        "rating_up": "Helpful",
+        "rating_down": "Needs Improvement",
+        "rating_none": "No Rating",
+        "meta_session": "Session ID",
+        "meta_message": "Message ID",
+        "no_text": "(No text feedback provided)"
       }
     },
     "error": {

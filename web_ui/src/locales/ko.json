@@ -146,6 +146,16 @@
         "up": "긍정",
         "down": "부정",
         "empty": "아직 표시할 트렌드 데이터가 없습니다."
+      },
+      "feed_list": {
+        "title": "최근 사용자 피드백",
+        "empty": "아직 작성된 텍스트 피드백이 없습니다.",
+        "rating_up": "유용함",
+        "rating_down": "개선 필요",
+        "rating_none": "응답 없음",
+        "meta_session": "세션 ID",
+        "meta_message": "메시지 ID",
+        "no_text": "(텍스트 피드백 없음)"
       }
     },
     "error": {
