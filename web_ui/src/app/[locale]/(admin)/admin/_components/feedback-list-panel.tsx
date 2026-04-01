@@ -35,15 +35,15 @@ export function FeedbackListPanel({ feedbacks }: FeedbackListPanelProps) {
 
   return (
     <div className="flex flex-col space-y-4">
-      <div className="space-y-3">
-        {currentFeedbacks.map((fb, idx) => {
+      <ul className="space-y-3">
+        {currentFeedbacks.map((fb) => {
           // Rating Badge 스타일 결정
           const isUp = fb.rating === 'up';
           const isDown = fb.rating === 'down';
           
           return (
-            <div
-              key={`${fb.message_id}-${idx}`}
+            <li
+              key={fb.message_id}
               className="flex flex-col gap-2 rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-slate-50/50 dark:hover:bg-slate-800/10"
             >
               <div className="flex items-start justify-between">
@@ -92,16 +92,17 @@ export function FeedbackListPanel({ feedbacks }: FeedbackListPanelProps) {
                   <span className="font-mono text-[10px]">{fb.message_id ? `${fb.message_id.split('-')[0]}...` : t('unknown')}</span>
                 </div>
               </div>
-            </div>
+            </li>
           );
         })}
-      </div>
+      </ul>
 
       {/* Pagination Controls */}
       {totalPages > 1 && (
         <div className="mt-4 flex items-center justify-center gap-2">
           <button
-            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            type="button"
+            onClick={() => setCurrentPage(Math.max(1, safeCurrentPage - 1))}
             disabled={safeCurrentPage === 1}
             className="flex h-8 w-8 items-center justify-center rounded-md border text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800"
             aria-label={t('prev_page')}
@@ -112,7 +113,8 @@ export function FeedbackListPanel({ feedbacks }: FeedbackListPanelProps) {
             {safeCurrentPage} / {totalPages}
           </span>
           <button
-            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            type="button"
+            onClick={() => setCurrentPage(Math.min(totalPages, safeCurrentPage + 1))}
             disabled={safeCurrentPage === totalPages}
             className="flex h-8 w-8 items-center justify-center rounded-md border text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800"
             aria-label={t('next_page')}
