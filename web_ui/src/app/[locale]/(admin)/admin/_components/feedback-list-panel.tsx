@@ -36,14 +36,14 @@ export function FeedbackListPanel({ feedbacks }: FeedbackListPanelProps) {
   return (
     <div className="flex flex-col space-y-4">
       <ul className="space-y-3">
-        {currentFeedbacks.map((fb) => {
+        {currentFeedbacks.map((fb, idx) => {
           // Rating Badge 스타일 결정
           const isUp = fb.rating === 'up';
           const isDown = fb.rating === 'down';
           
           return (
             <li
-              key={fb.message_id}
+              key={`${fb.message_id ?? 'fb'}-${idx}`}
               className="flex flex-col gap-2 rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-slate-50/50 dark:hover:bg-slate-800/10"
             >
               <div className="flex items-start justify-between">
@@ -102,7 +102,10 @@ export function FeedbackListPanel({ feedbacks }: FeedbackListPanelProps) {
         <div className="mt-4 flex items-center justify-center gap-2">
           <button
             type="button"
-            onClick={() => setCurrentPage(Math.max(1, safeCurrentPage - 1))}
+            onClick={() => setCurrentPage((p) => {
+              const clamped = Math.min(Math.max(1, p), totalPages);
+              return Math.max(1, clamped - 1);
+            })}
             disabled={safeCurrentPage === 1}
             className="flex h-8 w-8 items-center justify-center rounded-md border text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800"
             aria-label={t('prev_page')}
@@ -114,7 +117,10 @@ export function FeedbackListPanel({ feedbacks }: FeedbackListPanelProps) {
           </span>
           <button
             type="button"
-            onClick={() => setCurrentPage(Math.min(totalPages, safeCurrentPage + 1))}
+            onClick={() => setCurrentPage((p) => {
+              const clamped = Math.min(Math.max(1, p), totalPages);
+              return Math.min(totalPages, clamped + 1);
+            })}
             disabled={safeCurrentPage === totalPages}
             className="flex h-8 w-8 items-center justify-center rounded-md border text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800"
             aria-label={t('next_page')}
