@@ -6,8 +6,10 @@
 
 import logging
 import os
-from typing import Optional
+import time
+from typing import Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query, Header, Request  # type: ignore[import]
+
 from fastapi.responses import StreamingResponse  # type: ignore[import]
 
 from backend.api.models import (  # type: ignore[import]
@@ -252,8 +254,8 @@ async def submit_feedback(
     )
 
 
-# 인메모리 테스트 알림 Rate Limiting 상태
-_test_alert_last_called = 0.0
+# 인메모리 테스트 알림 Rate Limiting 상태 (IP 기반 추적)
+_test_alert_history: Dict[str, float] = {}
 _TEST_ALERT_THROTTLE_SECONDS = 30.0
 
 @router.post(
@@ -267,25 +269,25 @@ async def test_alert_endpoint(
     """
     강제로 [OBS] 로그를 발생시켜 Discord 알림 파이프라인이 작동하는지 테스트합니다.
     """
-    global _test_alert_last_called
     admin_key = AdminConfig.get_admin_key()
     
     if not admin_key or x_admin_key != admin_key:
         logger.warning("[OBS] Unauthorized attempt to trigger alert test.")
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    import time
     current_time = time.time()
     client_ip = request.client.host if request.client else "unknown"
 
-    # [Fix] 테스트 엔드포인트 무단 남용(Abuse) 방지를 위한 Rate Limiting
-    if current_time - _test_alert_last_called < _TEST_ALERT_THROTTLE_SECONDS:
+    # [Fix] 개별 클라이언트 IP 기반 Rate Limiting (Abuse 방어)
+    last_called = _test_alert_history.get(client_ip, 0.0)
+    if current_time - last_called < _TEST_ALERT_THROTTLE_SECONDS:
         logger.warning(f"[OBS] Rate limited: Test alert requested too frequently by IP: {client_ip}")
         raise HTTPException(status_code=429, detail="Too Many Requests. Please wait before testing again.")
 
-    _test_alert_last_called = current_time
+    _test_alert_history[client_ip] = current_time
 
     # 強제 [OBS] Warning 발생 -> DiscordAlertHandler가 가로챔 (호출자 IP 메타데이터 포함)
+
     logger.warning(f"[OBS] 🔔 Test Alert: 관리자 페이지에서 테스트 알림이 요청되었습니다. (IP: {client_ip})")
     
     return {"status": "success", "message": "Test alert triggered."}

@@ -115,6 +115,7 @@ class DiscordAlertHandler(logging.Handler):
     def close(self):
         """로깅 시스템 종료 시 ThreadPoolExecutor의 자원을 안전하게 회수(Shutdown Hook)합니다."""
         if hasattr(self, "_executor"):
-            self._executor.shutdown(wait=False)
+            # 최대한 생성된 알림 전송 태스크가 완료되도록 대기 (Best-effort delivery)
+            self._executor.shutdown(wait=True)
         super().close()
 
