@@ -42,6 +42,12 @@ class DiscordAlertHandler(logging.Handler):
 
         # [Fix] 동시 접속(Concurrent logging) 시 last_alerts 딕셔너리 Race Condition 방어
         with self._lock:
+            # [Fix] 메모리 누수 방지(Eviction Strategy): 저장된 키가 1000개를 초과하면 만료된 데이터 정리
+            if len(self.last_alerts) > 1000:
+                stale_keys = [k for k, v in self.last_alerts.items() if current_time - v >= self.throttle_seconds]
+                for k in stale_keys:
+                    del self.last_alerts[k]
+
             if alert_key in self.last_alerts:
                 if current_time - self.last_alerts[alert_key] < self.throttle_seconds:
                     return
@@ -105,3 +111,11 @@ class DiscordAlertHandler(logging.Handler):
         except Exception as e:
             # 로그 핸들러 내부에서 발생한 에러이므로 재로깅하지 않고 표준 출력만
             print(f"Error in DiscordAlertHandler: {e}")
+
+    def close(self):
+        """로깅 시스템 종료 시 ThreadPoolExecutor의 자원을 안전하게 회수(Shutdown Hook)합니다."""
+        if hasattr(self, "_executor"):
+            # 최대한 생성된 알림 전송 태스크가 완료되도록 대기 (Best-effort delivery)
+            self._executor.shutdown(wait=True)
+        super().close()
+
