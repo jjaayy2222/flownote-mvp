@@ -298,7 +298,8 @@ def get_client_ip(request: Request) -> str:
     if client_ip in _TRUSTED_PROXIES:
         forwarded = request.headers.get("X-Forwarded-For")
         if forwarded:
-            # X-Forwarded-For의 가장 첫 번째 값(가장 좌측)은 최초 발신지(Original Client) IP입니다.
+            # X-Forwarded-For의 가장 첫 번째 값(가장 좌측)은 최초 발신지(Original Client) IP이며,
+            # 이는 신뢰할 수 있는 프록시(_TRUSTED_PROXIES)를 거친 경우에만 위조되지 않은 것으로 간주하여 신뢰합니다.
             return forwarded.split(",")[0].strip()
         real_ip = request.headers.get("X-Real-IP")
         if real_ip:
