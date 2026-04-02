@@ -240,6 +240,26 @@ class RedisConfig:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 알림(Alerting) 설정
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+class AlertConfig:
+    """Discord 및 시스템 알림 설정"""
+
+    DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+    
+    # 동일 에러 재발송 방지 시간 (초)
+    DEFAULT_THROTTLE_SECONDS = 300 # 5분
+    
+    # 심각도별 색상 (Discord Embed용)
+    COLOR_CRITICAL = 0xFF0000 # Red
+    COLOR_WARNING = 0xFFAA00  # Orange
+    COLOR_INFO = 0x00AAFF     # Blue
+
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
 # WebSocket 설정
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
