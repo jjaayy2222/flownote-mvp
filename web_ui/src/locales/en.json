@@ -148,17 +148,25 @@
         "empty": "No trend data available yet."
       },
       "feed_list": {
-        "title": "Recent User Feedbacks",
-        "empty": "No text feedbacks available.",
-        "rating_up": "Helpful",
-        "rating_down": "Needs Improvement",
-        "rating_none": "No Rating",
-        "meta_session": "Session ID",
-        "meta_message": "Message ID",
-        "no_text": "(No text feedback provided)",
+        "title": "Recent Feedback Items",
+        "empty": "No feedback collected yet.",
+        "rating_up": "Useful",
+        "rating_down": "Poor",
+        "rating_none": "Neutral",
+        "no_text": "No specific comment provided.",
+        "meta_session": "Session",
+        "meta_message": "Msg",
+        "unknown": "N/A",
         "prev_page": "Previous Page",
-        "next_page": "Next Page",
-        "unknown": "Unknown"
+        "next_page": "Next Page"
+      },
+      "health": {
+        "title": "System Observability",
+        "status_active": "Monitoring Active (Discord)",
+        "status_inactive": "Monitoring Disabled",
+        "test_btn": "Trigger Test Alert",
+        "test_success": "Diagnostic alert sent!",
+        "test_error": "Failed to trigger alert"
       }
     },
     "error": {
