@@ -38,7 +38,7 @@ class DiscordAlertHandler(logging.Handler):
         # 2. 알림 임계값(Throttling) 체크 (포맷이 적용된 최종 메시지 기준)
         # record.msg 대신 getMessage()를 사용하여 파라미터가 포맷팅된 실제 내용을 기준으로 필터링
         alert_key = f"{record.levelno}:{record.getMessage()}"
-        current_time = time.time()
+        current_time = time.monotonic()
 
         # [Fix] 동시 접속(Concurrent logging) 시 last_alerts 딕셔너리 Race Condition 방어
         with self._lock:

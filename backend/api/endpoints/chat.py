@@ -7,6 +7,8 @@
 import logging
 import os
 import time
+import threading
+from collections import OrderedDict
 from typing import Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query, Header, Request  # type: ignore[import]
 
@@ -255,8 +257,49 @@ async def submit_feedback(
 
 
 # 인메모리 테스트 알림 Rate Limiting 상태 (IP 기반 추적)
-_test_alert_history: Dict[str, float] = {}
+# 인메모리 테스트 알림 Rate Limiting 상태 (IP 기반 추적)
+# key: IP, value: timestamp (monotonic)
+_test_alert_history: OrderedDict[str, float] = OrderedDict()
 _TEST_ALERT_THROTTLE_SECONDS = 30.0
+_TEST_ALERT_MAX_ENTRIES = 1000
+
+# 동시성 환경 레이스 컨디션 방지를 위한 모듈 레벨 락
+_test_alert_lock = threading.Lock()
+
+# 신뢰할 수 있는 프록시 IP 목록 (실제 환경에서는 환경변수나 설정값으로 분리)
+_TRUSTED_PROXIES = {"127.0.0.1", "::1", "localhost"}
+
+def _cleanup_test_alert_history(now: float) -> None:
+    """오래된 엔트리를 제거하고 최대 크기를 넘기면 가장 오래된 항목부터 삭제하여 메모리 릭을 방지합니다. (OrderedDict 기반 O(1) LRU)"""
+    global _test_alert_history
+    cutoff = now - _TEST_ALERT_THROTTLE_SECONDS
+    
+    # 1) 만료된 항목 O(1) 삭제 (삽입 순서가 보장되므로, 오래된 것부터 순차 검사)
+    while _test_alert_history:
+        ip, ts = next(iter(_test_alert_history.items()))
+        if ts < cutoff:
+            _test_alert_history.pop(ip)
+        else:
+            break
+            
+    # 2) 허용된 최대 튜플 크기를 초과할 경우, 가장 오래된 항목 삭제
+    while len(_test_alert_history) > _TEST_ALERT_MAX_ENTRIES:
+        _test_alert_history.popitem(last=False)
+
+def get_client_ip(request: Request) -> str:
+    """신뢰할 수 있는 프록시에 한하여 X-Forwarded-For 헤더를 사용함으로써 IP 스푸핑을 방지합니다."""
+    client_ip = request.client.host if request.client else "unknown"
+
+    if client_ip in _TRUSTED_PROXIES:
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            # 첫 번째 구획 추출 (마지막 비신뢰 구간 클라이언트 IP)
+            return forwarded.split(",")[0].strip()
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip.strip()
+
+    return client_ip
 
 @router.post(
     "/alert/test",
@@ -275,19 +318,24 @@ async def test_alert_endpoint(
         logger.warning("[OBS] Unauthorized attempt to trigger alert test.")
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    current_time = time.time()
-    client_ip = request.client.host if request.client else "unknown"
+    current_time = time.monotonic()
+    client_ip = get_client_ip(request)
 
-    # [Fix] 개별 클라이언트 IP 기반 Rate Limiting (Abuse 방어)
-    last_called = _test_alert_history.get(client_ip, 0.0)
-    if current_time - last_called < _TEST_ALERT_THROTTLE_SECONDS:
-        logger.warning(f"[OBS] Rate limited: Test alert requested too frequently by IP: {client_ip}")
-        raise HTTPException(status_code=429, detail="Too Many Requests. Please wait before testing again.")
+    # [Fix] 락을 통한 동시성 레이스 컨디션 완벽 방어 처리
+    with _test_alert_lock:
+        # [Fix] 메모리 릭 방지를 위한 Eviction 적용 (시간복잡도 해결 O(1))
+        _cleanup_test_alert_history(current_time)
+        
+        # [Fix] 개별 클라이언트 IP 기반 Rate Limiting 
+        last_called = _test_alert_history.get(client_ip, 0.0)
+        if current_time - last_called < _TEST_ALERT_THROTTLE_SECONDS:
+            logger.warning(f"[OBS] Rate limited: Test alert requested too frequently by IP: {client_ip}")
+            raise HTTPException(status_code=429, detail="Too Many Requests. Please wait before testing again.")
 
-    _test_alert_history[client_ip] = current_time
+        _test_alert_history[client_ip] = current_time
+        _test_alert_history.move_to_end(client_ip)  # 최근 접속한 항목을 뒤로 보내 LRU 체계를 확립
 
     # 強제 [OBS] Warning 발생 -> DiscordAlertHandler가 가로챔 (호출자 IP 메타데이터 포함)
-
     logger.warning(f"[OBS] 🔔 Test Alert: 관리자 페이지에서 테스트 알림이 요청되었습니다. (IP: {client_ip})")
     
     return {"status": "success", "message": "Test alert triggered."}
