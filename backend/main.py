@@ -32,6 +32,11 @@ from backend.api.endpoints.chat import router as chat_router  # type: ignore[imp
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Discord 알림 핸들러 활성화
+from backend.utils.observability import DiscordAlertHandler
+logging.getLogger().addHandler(DiscordAlertHandler())
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # FastAPI 앱 설정
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

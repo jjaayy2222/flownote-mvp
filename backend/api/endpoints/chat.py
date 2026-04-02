@@ -26,7 +26,7 @@ from backend.services.chat_history_service import (  # type: ignore[import]
     get_chat_history_service,
     MAX_FEEDBACK_STATS_LIMIT,
 )
-from backend.config import AdminConfig
+from backend.config import AdminConfig, AlertConfig
 from backend.utils import mask_pii_id  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
@@ -252,6 +252,28 @@ async def submit_feedback(
     )
 
 
+@router.post(
+    "/alert/test",
+    summary="Discord 알림 테스트 발송 (Admin)",
+)
+async def test_alert_endpoint(
+    x_admin_key: Optional[str] = Header(None, description="Next.js 프록시 내부 인증 키"),
+):
+    """
+    강제로 [OBS] 로그를 발생시켜 Discord 알림 파이프라인이 작동하는지 테스트합니다.
+    """
+    admin_key = AdminConfig.get_admin_key()
+    
+    if not admin_key or x_admin_key != admin_key:
+        logger.warning("[OBS] Unauthorized attempt to trigger alert test.")
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    # 강제 [OBS] Warning 발생 -> DiscordAlertHandler가 가로챔
+    logger.warning("[OBS] 🔔 Test Alert: 관리자 페이지에서 테스트 알림이 요청되었습니다.")
+    
+    return {"status": "success", "message": "Test alert triggered."}
+
+
 @router.get(
     "/feedback/stats",
     response_model=FeedbackStatsResponse,
@@ -289,7 +311,9 @@ async def get_feedback_stats_endpoint(
             total_down=stats["total_down"],
             trends=stats["trends"],
             recent_feedbacks=stats["recent_feedbacks"],
+            is_monitoring_active=bool(AlertConfig.DISCORD_WEBHOOK_URL),
         )
+
     except Exception as e:
         logger.error(f"[OBS] Error fetching feedback stats: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
