@@ -308,6 +308,8 @@ class FeedbackStatsResponse(BaseModel):
     total_down: int = Field(0, description="누적 부정(Down) 개수 총합")
     trends: List[FeedbackTrend] = Field(default_factory=list, description="일자별 트렌드 데이터 리스트")
     recent_feedbacks: List[FeedbackDetail] = Field(default_factory=list, description="가장 최근의 텍스트가 포함된 피드백 리스트")
+    is_monitoring_active: bool = Field(False, description="Discord 알림 파이프라인 활성화 여부")
+
 
 
 __all__ = [
