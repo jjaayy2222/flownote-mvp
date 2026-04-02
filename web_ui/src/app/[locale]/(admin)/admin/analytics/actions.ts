@@ -28,7 +28,9 @@ export interface FeedbackStatsResponse {
   total_down: number;
   trends: FeedbackTrend[];
   recent_feedbacks: FeedbackDetail[];
+  is_monitoring_active: boolean;
 }
+
 
 /**
  * [Server Action] AI 피드백 통계 차트 데이터를 백엔드로부터 가져온다.
@@ -41,7 +43,9 @@ export async function fetchFeedbackStats(limit: number = 50): Promise<FeedbackSt
     total_down: 0,
     trends: [],
     recent_feedbacks: [],
+    is_monitoring_active: false,
   };
+
 
   try {
     const cookieStore = await cookies();
@@ -87,5 +91,38 @@ export async function fetchFeedbackStats(limit: number = 50): Promise<FeedbackSt
       console.error("[OBS] Server Action `fetchFeedbackStats` failed:", error);
     }
     return fallbackResponse;
+  }
+}
+
+/**
+ * [Server Action] Discord 알림 시스템이 정상 작동하는지 테스트 로그를 발생시킨다.
+ */
+export async function triggerTestAlert(): Promise<{ success: boolean; message: string }> {
+  try {
+    const cookieStore = await cookies();
+    const role = cookieStore.get(STORAGE_KEYS.AUTH_ROLE)?.value ? decodeURIComponent(cookieStore.get(STORAGE_KEYS.AUTH_ROLE)!.value) : null;
+    const email = cookieStore.get(STORAGE_KEYS.AUTH_EMAIL)?.value ? decodeURIComponent(cookieStore.get(STORAGE_KEYS.AUTH_EMAIL)!.value) : null;
+
+    if (!hasAdminAccess(role, email)) {
+      return { success: false, message: 'Unauthorized' };
+    }
+
+    const adminKey = process.env.ADMIN_API_KEY;
+    if (!adminKey) return { success: false, message: 'Server Config Error' };
+
+    const res = await fetch(`${BACKEND_URL}/api/chat/alert/test`, {
+      method: 'POST',
+      headers: {
+        'X-Admin-Key': adminKey,
+      },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) throw new Error('Failed to trigger');
+
+    return { success: true, message: 'Test alert sent to Discord!' };
+  } catch (error) {
+    console.error("[OBS] triggerTestAlert failed:", error);
+    return { success: false, message: 'Error triggering alert' };
   }
 }
