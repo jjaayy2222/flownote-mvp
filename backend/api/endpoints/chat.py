@@ -255,8 +255,38 @@ async def submit_feedback(
 
 
 # 인메모리 테스트 알림 Rate Limiting 상태 (IP 기반 추적)
+# key: IP, value: timestamp (monotonic)
 _test_alert_history: Dict[str, float] = {}
 _TEST_ALERT_THROTTLE_SECONDS = 30.0
+_TEST_ALERT_MAX_ENTRIES = 1000
+
+def _cleanup_test_alert_history(now: float) -> None:
+    """오래된 엔트리를 제거하고 최대 크기를 넘기면 가장 오래된 항목부터 삭제하여 메모리 릭을 방지합니다."""
+    global _test_alert_history
+    cutoff = now - _TEST_ALERT_THROTTLE_SECONDS
+    if _test_alert_history:
+        _test_alert_history = {ip: ts for ip, ts in _test_alert_history.items() if ts >= cutoff}
+    
+    size = len(_test_alert_history)
+    if size <= _TEST_ALERT_MAX_ENTRIES:
+        return
+    
+    excess = size - _TEST_ALERT_MAX_ENTRIES
+    sorted_items = sorted(_test_alert_history.items(), key=lambda item: item[1])
+    for ip, _ in sorted_items[:excess]:
+        _test_alert_history.pop(ip, None)
+
+def get_client_ip(request: Request) -> str:
+    """프록시/로드밸런서 환경을 고려하여 실제 클라이언트 IP를 안전하게 추출합니다."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
 
 @router.post(
     "/alert/test",
@@ -275,10 +305,13 @@ async def test_alert_endpoint(
         logger.warning("[OBS] Unauthorized attempt to trigger alert test.")
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    current_time = time.time()
-    client_ip = request.client.host if request.client else "unknown"
+    current_time = time.monotonic()
+    client_ip = get_client_ip(request)
 
-    # [Fix] 개별 클라이언트 IP 기반 Rate Limiting (Abuse 방어)
+    # [Fix] 메모리 릭 방지를 위한 Eviction 적용
+    _cleanup_test_alert_history(current_time)
+
+    # [Fix] 개별 클라이언트 IP 기반 Rate Limiting (Abuse 방어 및 프록시 환경 지원)
     last_called = _test_alert_history.get(client_ip, 0.0)
     if current_time - last_called < _TEST_ALERT_THROTTLE_SECONDS:
         logger.warning(f"[OBS] Rate limited: Test alert requested too frequently by IP: {client_ip}")
@@ -287,7 +320,6 @@ async def test_alert_endpoint(
     _test_alert_history[client_ip] = current_time
 
     # 強제 [OBS] Warning 발생 -> DiscordAlertHandler가 가로챔 (호출자 IP 메타데이터 포함)
-
     logger.warning(f"[OBS] 🔔 Test Alert: 관리자 페이지에서 테스트 알림이 요청되었습니다. (IP: {client_ip})")
     
     return {"status": "success", "message": "Test alert triggered."}
