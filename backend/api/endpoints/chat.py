@@ -270,11 +270,16 @@ _test_alert_lock = threading.Lock()
 _TRUSTED_PROXIES = {"127.0.0.1", "::1", "localhost"}
 
 def _cleanup_test_alert_history(now: float) -> None:
-    """오래된 엔트리를 제거하고 최대 크기를 넘기면 가장 오래된 항목부터 삭제하여 메모리 릭을 방지합니다. (OrderedDict 기반 O(1) LRU)"""
+    """오래된 엔트리를 제거하고 최대 크기를 넘기면 가장 오래된 항목부터 삭제하여 메모리 릭을 방지합니다.
+
+    OrderedDict 기반 LRU로, 개별 삭제 연산은 O(1)이지만 한 번의 호출에서
+    만료된 항목 또는 초과된 항목 수만큼 최대 O(N)까지 스캔/삭제가 발생할 수 있습니다.
+    따라서 전체적으로는 항목 수에 대해 상한이 있는, 분할 상환(Amortized) O(1) 복잡도를 갖습니다.
+    """
     global _test_alert_history
     cutoff = now - _TEST_ALERT_THROTTLE_SECONDS
     
-    # 1) 만료된 항목 O(1) 삭제 (삽입 순서가 보장되므로, 오래된 것부터 순차 검사)
+    # 1) 만료된 항목 삭제 (분할 상환 O(1))
     while _test_alert_history:
         ip, ts = next(iter(_test_alert_history.items()))
         if ts < cutoff:
@@ -282,7 +287,7 @@ def _cleanup_test_alert_history(now: float) -> None:
         else:
             break
             
-    # 2) 허용된 최대 튜플 크기를 초과할 경우, 가장 오래된 항목 삭제
+    # 2) 허용된 최대 튜플 크기를 초과할 경우, 가장 오래된 항목 삭제 (개별 연산 O(1))
     while len(_test_alert_history) > _TEST_ALERT_MAX_ENTRIES:
         _test_alert_history.popitem(last=False)
 
@@ -293,7 +298,8 @@ def get_client_ip(request: Request) -> str:
     if client_ip in _TRUSTED_PROXIES:
         forwarded = request.headers.get("X-Forwarded-For")
         if forwarded:
-            # 첫 번째 구획 추출 (마지막 비신뢰 구간 클라이언트 IP)
+            # X-Forwarded-For의 가장 첫 번째 값(가장 좌측)은 최초 발신지(Original Client) IP이며,
+            # 이는 신뢰할 수 있는 프록시(_TRUSTED_PROXIES)를 거친 경우에만 위조되지 않은 것으로 간주하여 신뢰합니다.
             return forwarded.split(",")[0].strip()
         real_ip = request.headers.get("X-Real-IP")
         if real_ip:
@@ -323,7 +329,7 @@ async def test_alert_endpoint(
 
     # [Fix] 락을 통한 동시성 레이스 컨디션 완벽 방어 처리
     with _test_alert_lock:
-        # [Fix] 메모리 릭 방지를 위한 Eviction 적용 (시간복잡도 해결 O(1))
+        # [Fix] 메모리 릭 방지를 위한 Eviction 적용 (분할 상환 O(1))
         _cleanup_test_alert_history(current_time)
         
         # [Fix] 개별 클라이언트 IP 기반 Rate Limiting 
