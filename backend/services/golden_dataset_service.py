@@ -12,6 +12,7 @@
 
 import json
 import logging
+import numbers
 from dataclasses import dataclass
 from json import JSONDecodeError
 from typing import Any, Optional
@@ -136,7 +137,8 @@ async def filter_positive_feedbacks(
 
     Args:
         batch_size: Redis SCAN이 한 번에 가져올 키 수 힌트.
-                    허용 범위: [{min_batch}, {max_batch}] (기본값: {default_batch})
+                    허용 범위: [_MIN_SCAN_BATCH_SIZE, _MAX_SCAN_BATCH_SIZE]
+                    (기본값: _DEFAULT_SCAN_BATCH_SIZE = 100, 허용: 1 ~ 10,000)
                     실제 반환 수는 Redis 내부 정책에 따라 다를 수 있음.
 
     Returns:
@@ -149,7 +151,9 @@ async def filter_positive_feedbacks(
         redis.exceptions.RedisError: 그 외 Redis 명령 실패 시.
     """
     # batch_size 유효성 검증: 잘못된 값으로 인한 Redis 성능 저하 방지
-    if not isinstance(batch_size, int) or isinstance(batch_size, bool):
+    # numbers.Integral 사용: int뿐 아니라 numpy.int64 등 정수형 호환 타입도 허용.
+    # bool은 int의 서브클래스이며 numbers.Integral에도 포함되므로 명시적으로 제외합니다.
+    if not isinstance(batch_size, numbers.Integral) or isinstance(batch_size, bool):
         raise ValueError(
             f"batch_size must be an integer, got {type(batch_size).__name__!r}."
         )
@@ -169,9 +173,10 @@ async def filter_positive_feedbacks(
 
         cursor = 0
         total_scanned_keys = 0
-        total_skipped_parse = 0
-        total_skipped_quality = 0
-        total_skipped_dedup = 0
+        total_skipped_parse = 0    # JSON 디코딩 오류 또는 timestamp 유효성 실패
+        total_skipped_rating = 0   # rating != "up" (부정/없음 평가)
+        total_skipped_quality = 0  # session_id/message_id 비어있음
+        total_skipped_dedup = 0    # (session_id, message_id) 중복
 
         while True:
             cursor, partial_keys = await redis_client.redis.scan(
@@ -181,7 +186,8 @@ async def filter_positive_feedbacks(
             )
 
             for raw_key in partial_keys:
-                key_str = _decode_str(raw_key)
+                # _decode_str 인라인: 함수가 제거되었으므로 직접 디코딩
+                key_str = raw_key.decode("utf-8") if isinstance(raw_key, bytes) else str(raw_key)
                 session_id = key_str.removeprefix(FEEDBACK_KEY_PREFIX)
                 total_scanned_keys += 1
 
@@ -198,8 +204,19 @@ async def filter_positive_feedbacks(
                 feedback_hash = await redis_client.redis.hgetall(key_str)
 
                 for msg_id_raw, meta_raw in feedback_hash.items():
-                    # 파싱 + rating 체크를 헬퍼에 위임.
-                    # None 반환 = 파싱 실패 OR rating != "up"
+                    # 파싱 + rating("up") 필터를 헬퍼에 위임.
+                    # None 반환 = JSON 파싱 실패 OR timestamp 오류 OR rating != "up".
+                    # 카운터를 분리하기 위해, rating 필터는 헬퍼 외부에서 사전 체크합니다.
+                    try:
+                        meta_str = meta_raw.decode("utf-8") if isinstance(meta_raw, bytes) else str(meta_raw)
+                        meta_rating = json.loads(meta_str).get("rating")
+                    except (JSONDecodeError, ValueError, TypeError, AttributeError):
+                        meta_rating = None
+
+                    if meta_rating != "up":
+                        total_skipped_rating += 1
+                        continue
+
                     parsed = _parse_feedback_meta(msg_id_raw, meta_raw)
                     if parsed is None:
                         total_skipped_parse += 1
@@ -248,7 +265,8 @@ async def filter_positive_feedbacks(
             extra={
                 "total_collected": len(results),
                 "total_scanned_keys": total_scanned_keys,
-                "skipped_parse_error": total_skipped_parse,
+                "skipped_parse_error": total_skipped_parse,    # 실제 파싱/타입 오류만 집계
+                "skipped_rating_gate": total_skipped_rating,   # rating != "up" 필터 수
                 "skipped_quality_gate": total_skipped_quality,
                 "skipped_dedup": total_skipped_dedup,
             },
