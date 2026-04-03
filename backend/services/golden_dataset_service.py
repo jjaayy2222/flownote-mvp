@@ -65,36 +65,27 @@ class FeedbackDataPoint:
 
 
 def _parse_feedback_meta(
-    msg_id_raw: Any,
-    meta_raw: Any,
+    msg_id: str,
+    meta: dict[str, Any],
 ) -> Optional[tuple[str, Optional[str], str]]:
     """
-    Redis Hash의 단일 필드 (message_id, JSON 메타) 쌍을 파싱합니다.
+    이미 파싱된 피드백 메타데이터 dict에서 필드를 검증하고 추출합니다.
 
-    rating 체크를 헬퍼 내부에 통합하여, 호출 측 메인 루프가
-    이미 긍정("up") 평가가 확인된 엔트리만 다룰 수 있도록 설계되었습니다.
+    **책임 범위**: 이 함수는 이미 정규화된(디코딩/파싱 완료된) 타입만 입력받습니다.
+    - msg_id: 호출부에서 bytes 디코딩을 완료한 str.
+    - meta: 호출부에서 json.loads()를 완료한 dict.
+    - rating 게이트("up" 필터링) 책임은 전적으로 호출부 루프에 있습니다.
+
+    Args:
+        msg_id: 디코딩이 완료된 message_id (str).
+        meta:   json.loads()로 파싱된 피드백 메타데이터 dict.
 
     반환 형식:
-        (message_id, feedback_text, timestamp) 또는 파싱 실패/비긍정 평가 시 None
+        (message_id, feedback_text, timestamp) 또는 검증 실패 시 None
 
     None 반환 조건:
-        - JSON 디코딩 오류
-        - rating != "up" (부정/없음 포함)
         - timestamp가 유효하지 않은 타입이거나 빈 문자열
     """
-    # _decode_str 인라인: 별도 함수 호출 없이 직접 처리하여 호출 오버헤드 제거
-    msg_id = msg_id_raw.decode("utf-8") if isinstance(msg_id_raw, bytes) else str(msg_id_raw)
-    meta_str = meta_raw.decode("utf-8") if isinstance(meta_raw, bytes) else str(meta_raw)
-
-    try:
-        meta = json.loads(meta_str)
-    except (JSONDecodeError, ValueError, TypeError):
-        return None
-
-    # 긍정 피드백("up")이 아닌 모든 항목은 여기서 필터링됩니다.
-    # 호출 측 메인 루프는 rating 정규화("none" 등)에 대해 알 필요가 없습니다.
-    if meta.get("rating") != "up":
-        return None
 
     # timestamp: 유효한 스칼라 타입 + 비어있지 않아야 함
     # 주의: bool은 int의 서브클래스이므로 명시적으로 제외합니다.
@@ -130,8 +121,8 @@ async def filter_positive_feedbacks(
     품질 기준을 통과한 '좋아요(Thumbs Up)' 피드백 항목을 수집합니다.
 
     품질 게이트 (Quality Gates):
-        1. rating == "up" 인 항목만 포함 (부정/없음 제외, _parse_feedback_meta 내부에서 처리)
-        2. timestamp가 유효한 스칼라 타입이고 비어있지 않아야 함
+        1. rating == "up" 인 항목만 포함 (부정/없음 제외) — 호출부 루프에서 단일 처리
+        2. timestamp가 유효한 스칼라 타입이고 비어있지 않아야 함 — _parse_feedback_meta에서 검증
         3. session_id와 message_id 모두 비어있지 않아야 함
         4. (session_id, message_id) 복합 키 기준으로 중복 제거
 
@@ -204,20 +195,27 @@ async def filter_positive_feedbacks(
                 feedback_hash = await redis_client.redis.hgetall(key_str)
 
                 for msg_id_raw, meta_raw in feedback_hash.items():
-                    # 파싱 + rating("up") 필터를 헬퍼에 위임.
-                    # None 반환 = JSON 파싱 실패 OR timestamp 오류 OR rating != "up".
-                    # 카운터를 분리하기 위해, rating 필터는 헬퍼 외부에서 사전 체크합니다.
+                    # [Step 1] meta_raw와 msg_id_raw를 이 지점에서 한 번만 디코딩/파싱합니다.
+                    # 헬퍼(_parse_feedback_meta)은 이미 정규화된(str/dict) 타입만 입력받습니다.
+                    msg_id = msg_id_raw.decode("utf-8") if isinstance(msg_id_raw, bytes) else str(msg_id_raw)
                     try:
                         meta_str = meta_raw.decode("utf-8") if isinstance(meta_raw, bytes) else str(meta_raw)
-                        meta_rating = json.loads(meta_str).get("rating")
-                    except (JSONDecodeError, ValueError, TypeError, AttributeError):
-                        meta_rating = None
+                        meta = json.loads(meta_str)
+                    except (JSONDecodeError, ValueError):
+                        # json.loads는 meta_str이 str임이 보장되는 시점에 호출되므로
+                        # TypeError는 발생할 수 없습니다. JSONDecodeError/ValueError만 대응.
+                        total_skipped_parse += 1
+                        continue
 
-                    if meta_rating != "up":
+                    # [Step 2] rating 게이트: 이 루프가 유일한 rating 필터 레이어입니다.
+                    # _parse_feedback_meta는 rating에 관여하지 않습니다.
+                    if meta.get("rating") != "up":
                         total_skipped_rating += 1
                         continue
 
-                    parsed = _parse_feedback_meta(msg_id_raw, meta_raw)
+                    # [Step 3] 나머지 필드(timestamp, feedback_text) 검증은 헬퍼에 위임.
+                    # 이미 정규화된 msg_id(str)와 meta(dict)를 전달.
+                    parsed = _parse_feedback_meta(msg_id, meta)
                     if parsed is None:
                         total_skipped_parse += 1
                         continue
