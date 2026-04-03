@@ -65,19 +65,20 @@ class FeedbackDataPoint:
 
 
 def _parse_feedback_meta(
-    msg_id_raw: Any,
+    msg_id: str,
     meta: dict[str, Any],
 ) -> Optional[tuple[str, Optional[str], str]]:
     """
     이미 파싱된 피드백 메타데이터 dict에서 필드를 검증하고 추출합니다.
 
-    **책임 범위**: 이 함수는 순수하게 필드 존재 여부, 타입 유효성, 형식 검증만 담당합니다.
-    - rating 게이트(\"up\" 필터링) 책임은 전적으로 호출부 메인 루프에 있습니다.
-    - JSON 디코딩/파싱은 호출부에서 1회만 수행하여 이 함수에 dict로 전달합니다.
+    **책임 범위**: 이 함수는 이미 정규화된(디코딩/파싱 완료된) 타입만 입력받습니다.
+    - msg_id: 호출부에서 bytes 디코딩을 완료한 str.
+    - meta: 호출부에서 json.loads()를 완료한 dict.
+    - rating 게이트("up" 필터링) 책임은 전적으로 호출부 루프에 있습니다.
 
     Args:
-        msg_id_raw: Redis Hash field (message_id), bytes 또는 str.
-        meta:       이미 json.loads()로 파싱된 피드백 메타데이터 dict.
+        msg_id: 디코딩이 완료된 message_id (str).
+        meta:   json.loads()로 파싱된 피드백 메타데이터 dict.
 
     반환 형식:
         (message_id, feedback_text, timestamp) 또는 검증 실패 시 None
@@ -85,8 +86,6 @@ def _parse_feedback_meta(
     None 반환 조건:
         - timestamp가 유효하지 않은 타입이거나 빈 문자열
     """
-    # message_id 디코딩 (인라인)
-    msg_id = msg_id_raw.decode("utf-8") if isinstance(msg_id_raw, bytes) else str(msg_id_raw)
 
     # timestamp: 유효한 스칼라 타입 + 비어있지 않아야 함
     # 주의: bool은 int의 서브클래스이므로 명시적으로 제외합니다.
@@ -196,12 +195,15 @@ async def filter_positive_feedbacks(
                 feedback_hash = await redis_client.redis.hgetall(key_str)
 
                 for msg_id_raw, meta_raw in feedback_hash.items():
-                    # [Step 1] JSON을 이 지점에서 한 번만 파싱합니다.
-                    # 파싱된 dict를 헬퍼에 전달하여 이중 파싱을 방지합니다.
+                    # [Step 1] meta_raw와 msg_id_raw를 이 지점에서 한 번만 디코딩/파싱합니다.
+                    # 헬퍼(_parse_feedback_meta)은 이미 정규화된(str/dict) 타입만 입력받습니다.
+                    msg_id = msg_id_raw.decode("utf-8") if isinstance(msg_id_raw, bytes) else str(msg_id_raw)
                     try:
                         meta_str = meta_raw.decode("utf-8") if isinstance(meta_raw, bytes) else str(meta_raw)
                         meta = json.loads(meta_str)
-                    except (JSONDecodeError, ValueError, TypeError):
+                    except (JSONDecodeError, ValueError):
+                        # json.loads는 meta_str이 str임이 보장되는 시점에 호출되므로
+                        # TypeError는 발생할 수 없습니다. JSONDecodeError/ValueError만 대응.
                         total_skipped_parse += 1
                         continue
 
@@ -212,8 +214,8 @@ async def filter_positive_feedbacks(
                         continue
 
                     # [Step 3] 나머지 필드(timestamp, feedback_text) 검증은 헬퍼에 위임.
-                    # 이미 파싱된 dict를 전달하므로 JSON 재파싱 없음.
-                    parsed = _parse_feedback_meta(msg_id_raw, meta)
+                    # 이미 정규화된 msg_id(str)와 meta(dict)를 전달.
+                    parsed = _parse_feedback_meta(msg_id, meta)
                     if parsed is None:
                         total_skipped_parse += 1
                         continue
