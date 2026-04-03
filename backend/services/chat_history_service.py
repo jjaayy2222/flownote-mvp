@@ -21,6 +21,10 @@ _SESSION_META_PREFIX = "chat:session:meta:"
 _USER_SESSIONS_PREFIX = "chat:user:sessions:"
 _FEEDBACK_PREFIX = "chat:feedback:"
 
+# 외부 서비스(예: golden_dataset_service)에서 임포트 가능한 공개 상수.
+# 단일 진실 공급원(SSOT): 피드백 키 프리픽스는 이 값에서만 변경하세요.
+FEEDBACK_KEY_PREFIX: str = _FEEDBACK_PREFIX
+
 # preview 최대 길이 (하드코딩 방지)
 _PREVIEW_MAX_LEN = 80
 

@@ -16,16 +16,16 @@ from dataclasses import dataclass
 from json import JSONDecodeError
 from typing import Any, Optional
 
+import redis.exceptions
+
+from backend.services.chat_history_service import FEEDBACK_KEY_PREFIX  # type: ignore[import]
 from backend.services.redis_pubsub import redis_client  # type: ignore[import]
 from backend.utils import mask_pii_id  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
 
-# ─────────────────────────────────────────────────────────────
-# Redis 키 프리픽스 상수
-# chat_history_service.py의 _FEEDBACK_PREFIX와 반드시 동일하게 유지해야 합니다.
-# ─────────────────────────────────────────────────────────────
-_FEEDBACK_PREFIX = "chat:feedback:"
+# _FEEDBACK_PREFIX 대신 chat_history_service의 FEEDBACK_KEY_PREFIX를 단일 진실 공급원으로 사용합니다.
+# 중복 정의를 제거하여 드리프트(값 불일치) 위험을 원천 차단합니다.
 
 # SCAN 기본 배치 크기 (Redis 권장: 한 번에 너무 많은 키를 가져오지 않도록 제한)
 _DEFAULT_SCAN_BATCH_SIZE = 100
@@ -171,20 +171,21 @@ async def filter_positive_feedbacks(
         while True:
             cursor, partial_keys = await redis_client.redis.scan(
                 cursor,
-                match=f"{_FEEDBACK_PREFIX}*",
+                match=f"{FEEDBACK_KEY_PREFIX}*",
                 count=batch_size,
             )
 
             for raw_key in partial_keys:
                 key_str = _decode_str(raw_key)
-                session_id = key_str.removeprefix(_FEEDBACK_PREFIX)
+                session_id = key_str.removeprefix(FEEDBACK_KEY_PREFIX)
                 total_scanned_keys += 1
 
                 # 품질 게이트 1: session_id 비어있지 않아야 함
                 if not session_id:
+                    # [Security] key_str에 session_id가 포함되므로 로그에 원본값을 남기지 않습니다.
+                    # session_id가 비어있다는 사실 자체가 충분한 디버깅 정보입니다.
                     logger.warning(
-                        "[OBS] Empty session_id found during golden dataset scan, skipping key.",
-                        extra={"key": key_str},
+                        "[OBS] A Redis key matching the feedback prefix had an empty session_id suffix and was skipped.",
                     )
                     total_skipped_quality += 1
                     continue
@@ -253,9 +254,19 @@ async def filter_positive_feedbacks(
         )
         return results
 
-    except Exception as e:
-        logger.exception(
-            "[OBS] Error: Failed to filter positive feedbacks from Redis during golden dataset collection.",
+    except redis.exceptions.ConnectionError as e:
+        # Redis 서버 연결 실패 (서버 다운, 네트워크 오류 등)
+        logger.error(
+            "[OBS] Redis connection error during golden dataset collection. Check Redis server availability.",
             extra={"error": str(e)},
         )
         raise
+    except redis.exceptions.RedisError as e:
+        # 연결은 됐지만 Redis 명령 실패 (권한 오류, 잘못된 명령 등)
+        logger.error(
+            "[OBS] Redis command error during golden dataset collection.",
+            extra={"error": str(e)},
+        )
+        raise
+    # 그 외 프로그래밍 오류(AttributeError, TypeError 등)는 의도적으로 catch하지 않아
+    # 자동으로 bubble up되어 디버깅 가시성을 확보합니다.
