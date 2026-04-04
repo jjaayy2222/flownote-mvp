@@ -56,7 +56,8 @@ def _mask_nested_pii(data: Any, pii_fields: set[str]) -> Any:
                 result[k] = v
         return result
     elif isinstance(data, (list, tuple, set)):
-        container_type = type(data)
+        # JSON 직렬화 시 구조를 유지하기 위해 set은 list로 정규화
+        container_type = list if isinstance(data, set) else type(data)
         return container_type(_mask_nested_pii(item, pii_fields) for item in data)
     else:
         return data
@@ -85,12 +86,12 @@ def serialize_to_jsonl(
     try:
         pii_fields_set = set(pii_fields) if pii_fields else set()
         
+        fallback_counts: Dict[str, int] = {}
+        
         # Dataclass, datetime 등 비-직렬화 객체 발생으로 인한 런타임 에러 방지용 안전 장치
         def _json_fallback(obj: Any) -> str:
-            logger.warning(
-                "[OBS] Non-serializable type encountered in JSONL serialization; falling back to string conversion.",
-                extra={"type": type(obj).__name__}
-            )
+            obj_type = type(obj).__name__
+            fallback_counts[obj_type] = fallback_counts.get(obj_type, 0) + 1
             return str(obj)
         
         with open(absolute_path, "w", encoding="utf-8") as f:
@@ -103,12 +104,19 @@ def serialize_to_jsonl(
                 json_line = json.dumps(masked_item, ensure_ascii=False, default=_json_fallback)
                 f.write(json_line + "\n")
 
+        if fallback_counts:
+            logger.debug(
+                "[OBS] Non-serializable types encountered during JSONL serialization (fallback applied).",
+                extra={"fallback_counts": fallback_counts}
+            )
+
         logger.info(
             "Successfully serialized dataset to JSONL",
             extra={
                 "filepath": absolute_path,
                 "total_items": len(dataset),
                 "masked_fields": list(pii_fields_set) if pii_fields_set else None,
+                "fallback_occurrences": fallback_counts if fallback_counts else None,
             },
         )
         return absolute_path
