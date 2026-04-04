@@ -56,7 +56,10 @@ def _mask_nested_pii(data: Any, pii_fields: set[str]) -> Any:
                 result[k] = v
         return result
     elif isinstance(data, (list, tuple, set)):
-        # JSON 직렬화 시 구조를 유지하기 위해 set은 list로 정규화
+        # 참고: JSON 명세는 set(집합)을 네이티브 배열 타입으로 지원하지 않습니다. 
+        # 이를 무방비로 직렬화하면 단순 문자열 "{x, y}" 형태로 데이터 구조가 오염될 수 있습니다.
+        # 향후 학습 파이프라인에서 예측 가능하고 일관된 JSON 배열([]) 형태로 
+        # 구조를 보존하기 위해, 여기서 의도적으로 set을 list로 정규화합니다.
         container_type = list if isinstance(data, set) else type(data)
         return container_type(_mask_nested_pii(item, pii_fields) for item in data)
     else:
@@ -67,6 +70,7 @@ def serialize_to_jsonl(
     dataset: List[Dict[str, Any]],
     output_filepath: str,
     pii_fields: Optional[List[str]] = None,
+    strict_alert: bool = False,
 ) -> str:
     """
     데이터셋을 .jsonl 파일로 직렬화하며, 필요한 경우 지정된 PII 필드들을 안전하게 마스킹 처리합니다.
@@ -76,6 +80,8 @@ def serialize_to_jsonl(
         output_filepath: 저장할 jsonl 파일의 대상 경로
         pii_fields: 값에 마스킹을 적용할 딕셔너리 필드 목록 (예: ["session_id", "user_id"])
                     (중첩된 구조 내부의 필드 깊이와 관계없이 재귀적으로 찾아 마스킹함)
+        strict_alert: True일 경우 직렬화 폴백 발생 시 [OBS] 태그 기반 Warning을 통해 적극적인 운영 알람을 발생시킵니다.
+                      False(기본값)일 경우 일반 Info 레벨로 로깅하여 저위험 환경의 경고 피로(Alert Fatigue)를 방지합니다.
 
     Returns:
         성공적으로 저장된 파일의 절대 경로
@@ -89,6 +95,8 @@ def serialize_to_jsonl(
         fallback_counts: Dict[str, int] = {}
         
         # Dataclass, datetime 등 비-직렬화 객체 발생으로 인한 런타임 에러 방지용 안전 장치
+        # (주의: 대규모 데이터셋 처리 시 I/O 부하와 로그 스팸을 방지하기 위해 
+        # 여기서 개별 건마다 직접 로깅하지 않고, 타입별 발생 횟수만 집계하여 최종 요약합니다.)
         def _json_fallback(obj: Any) -> str:
             obj_type = type(obj).__name__
             fallback_counts[obj_type] = fallback_counts.get(obj_type, 0) + 1
@@ -105,10 +113,24 @@ def serialize_to_jsonl(
                 f.write(json_line + "\n")
 
         if fallback_counts:
-            logger.debug(
-                "[OBS] Non-serializable types encountered during JSONL serialization (fallback applied).",
-                extra={"fallback_counts": fallback_counts}
-            )
+            # 개별 객체 단위의 시끄러운 로그 대신, 단일 요약본으로 운영상의 가시성과 성능을 동시 확보
+            # 운영자 디버깅 향상을 위한 추가 컨텍스트(filepath, total_items 등) 포함
+            extra_payload = {
+                "fallback_counts": fallback_counts,
+                "filepath": absolute_path,
+                "total_items": len(dataset)
+            }
+            
+            if strict_alert:
+                logger.warning(
+                    "[OBS] Non-serializable types encountered during JSONL serialization (fallback applied).",
+                    extra=extra_payload
+                )
+            else:
+                logger.info(
+                    "Non-serializable types encountered during JSONL serialization (fallback applied).",
+                    extra=extra_payload
+                )
 
         logger.info(
             "Successfully serialized dataset to JSONL",
