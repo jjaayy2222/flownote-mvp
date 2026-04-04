@@ -38,6 +38,21 @@ def format_finetune_message(
     }
 
 
+def _mask_nested_pii(data: Any, pii_fields: set[str]) -> Any:
+    """
+    딕셔너리와 리스트를 재귀적으로 탐색하여 pii_fields에 지정된 키를 찾아 안전하게 마스킹합니다.
+    """
+    if isinstance(data, dict):
+        return {
+            k: (mask_pii_id(str(v)) if v is not None else v) if k in pii_fields else _mask_nested_pii(v, pii_fields)
+            for k, v in data.items()
+        }
+    elif isinstance(data, list):
+        return [_mask_nested_pii(item, pii_fields) for item in data]
+    else:
+        return data
+
+
 def serialize_to_jsonl(
     dataset: List[Dict[str, Any]],
     output_filepath: str,
@@ -50,6 +65,7 @@ def serialize_to_jsonl(
         dataset: 변환된 OpenAI Fine-tuning 포맷 데이터셋 리스트
         output_filepath: 저장할 jsonl 파일의 대상 경로
         pii_fields: 값에 마스킹을 적용할 딕셔너리 필드 목록 (예: ["session_id", "user_id"])
+                    (중첩된 구조 내부의 필드 깊이와 관계없이 재귀적으로 찾아 마스킹함)
 
     Returns:
         성공적으로 저장된 파일의 절대 경로
@@ -58,21 +74,16 @@ def serialize_to_jsonl(
     os.makedirs(os.path.dirname(absolute_path), exist_ok=True)
 
     try:
+        pii_fields_set = set(pii_fields) if pii_fields else set()
+        
         with open(absolute_path, "w", encoding="utf-8") as f:
             for item in dataset:
-                # 불변성 유지를 위해 얕은 복사 수행
-                item_copy = item.copy()
-
-                # PII 필드 대상 마스킹 적용 (backend.utils.mask_pii_id 재사용)
-                if pii_fields:
-                    for field in pii_fields:
-                        if field in item_copy:
-                            # 문자열인 경우에만 해시 마스킹 (숫자나 객체는 별도 처리 필요)
-                            val = item_copy[field]
-                            item_copy[field] = mask_pii_id(str(val)) if val else val
+                # PII 필드 대상 재귀적 깊은 마스킹 적용 (backend.utils.mask_pii_id 재사용)
+                # _mask_nested_pii 함수를 통해 원본을 훼손하지 않는 새 딕셔너리 반환 보장
+                masked_item = _mask_nested_pii(item, pii_fields_set)
 
                 # JSON 직렬화 (유니코드 문자 보존)
-                json_line = json.dumps(item_copy, ensure_ascii=False)
+                json_line = json.dumps(masked_item, ensure_ascii=False)
                 f.write(json_line + "\n")
 
         logger.info(
@@ -80,7 +91,7 @@ def serialize_to_jsonl(
             extra={
                 "filepath": absolute_path,
                 "total_items": len(dataset),
-                "masked_fields": pii_fields,
+                "masked_fields": list(pii_fields_set) if pii_fields_set else None,
             },
         )
         return absolute_path
