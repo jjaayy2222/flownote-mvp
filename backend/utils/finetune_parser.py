@@ -40,14 +40,14 @@ def format_finetune_message(
 
 def _mask_nested_pii(data: Any, pii_fields: set[str]) -> Any:
     """
-    딕셔너리와 리스트를 재귀적으로 탐색하여 pii_fields에 지정된 키를 찾아 안전하게 마스킹합니다.
+    딕셔너리와 컨테이너를 재귀적으로 탐색하여 pii_fields에 지정된 키를 찾아 안전하게 마스킹합니다.
     (스칼라 값만 마스킹 처리하여 딕셔너리/리스트 등 중첩 구조 파괴를 방지합니다.)
     """
     if isinstance(data, dict):
         result = {}
         for k, v in data.items():
-            # 값이 딕셔너리나 리스트 등 내부 구조를 가지면 강제 문자열 변환 없이 재귀 진입
-            if isinstance(v, (dict, list)):
+            # 값이 딕셔너리, 리스트, 튜플, 세트 등 내부 구조를 가지면 강제 문자열 변환 없이 재귀 진입
+            if isinstance(v, (dict, list, tuple, set)):
                 result[k] = _mask_nested_pii(v, pii_fields)
             # pii_fields에 해당하고 값이 스칼라(None 제외)일 때만 마스킹
             elif k in pii_fields and v is not None:
@@ -55,8 +55,9 @@ def _mask_nested_pii(data: Any, pii_fields: set[str]) -> Any:
             else:
                 result[k] = v
         return result
-    elif isinstance(data, list):
-        return [_mask_nested_pii(item, pii_fields) for item in data]
+    elif isinstance(data, (list, tuple, set)):
+        container_type = type(data)
+        return container_type(_mask_nested_pii(item, pii_fields) for item in data)
     else:
         return data
 
@@ -86,6 +87,10 @@ def serialize_to_jsonl(
         
         # Dataclass, datetime 등 비-직렬화 객체 발생으로 인한 런타임 에러 방지용 안전 장치
         def _json_fallback(obj: Any) -> str:
+            logger.warning(
+                "[OBS] Non-serializable type encountered in JSONL serialization; falling back to string conversion.",
+                extra={"type": type(obj).__name__}
+            )
             return str(obj)
         
         with open(absolute_path, "w", encoding="utf-8") as f:
