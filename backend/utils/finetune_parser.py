@@ -41,12 +41,20 @@ def format_finetune_message(
 def _mask_nested_pii(data: Any, pii_fields: set[str]) -> Any:
     """
     딕셔너리와 리스트를 재귀적으로 탐색하여 pii_fields에 지정된 키를 찾아 안전하게 마스킹합니다.
+    (스칼라 값만 마스킹 처리하여 딕셔너리/리스트 등 중첩 구조 파괴를 방지합니다.)
     """
     if isinstance(data, dict):
-        return {
-            k: (mask_pii_id(str(v)) if v is not None else v) if k in pii_fields else _mask_nested_pii(v, pii_fields)
-            for k, v in data.items()
-        }
+        result = {}
+        for k, v in data.items():
+            # 값이 딕셔너리나 리스트 등 내부 구조를 가지면 강제 문자열 변환 없이 재귀 진입
+            if isinstance(v, (dict, list)):
+                result[k] = _mask_nested_pii(v, pii_fields)
+            # pii_fields에 해당하고 값이 스칼라(None 제외)일 때만 마스킹
+            elif k in pii_fields and v is not None:
+                result[k] = mask_pii_id(str(v))
+            else:
+                result[k] = v
+        return result
     elif isinstance(data, list):
         return [_mask_nested_pii(item, pii_fields) for item in data]
     else:
@@ -76,14 +84,18 @@ def serialize_to_jsonl(
     try:
         pii_fields_set = set(pii_fields) if pii_fields else set()
         
+        # Dataclass, datetime 등 비-직렬화 객체 발생으로 인한 런타임 에러 방지용 안전 장치
+        def _json_fallback(obj: Any) -> str:
+            return str(obj)
+        
         with open(absolute_path, "w", encoding="utf-8") as f:
             for item in dataset:
                 # PII 필드 대상 재귀적 깊은 마스킹 적용 (backend.utils.mask_pii_id 재사용)
                 # _mask_nested_pii 함수를 통해 원본을 훼손하지 않는 새 딕셔너리 반환 보장
                 masked_item = _mask_nested_pii(item, pii_fields_set)
 
-                # JSON 직렬화 (유니코드 문자 보존)
-                json_line = json.dumps(masked_item, ensure_ascii=False)
+                # JSON 직렬화 (유니코드 문자 보존 및 비-직렬화 객체 문자열 변환 처리)
+                json_line = json.dumps(masked_item, ensure_ascii=False, default=_json_fallback)
                 f.write(json_line + "\n")
 
         logger.info(
