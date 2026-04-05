@@ -602,17 +602,20 @@ async def run_negative_feedback_eval_pipeline(
                     # RAG context(chat:rag_context)가 존재하면 message_id로 정확히 매칭되지만,
                     # 없는 경우에도 최대한 정확한 assistant 메시지를 찾아야 합니다.
 
-                    # [Memory Guard] LRU 단위 제거: 상한 초과 시 가장 오래된 세션 1개만 퇴출
-                    # 전체 clear() 방식과 달리, 최근 hot 세션을 보존하여 cache thrashing을 방지합니다.
-                    if len(session_history_cache) >= _MAX_SESSION_HISTORY_CACHE_SIZE:
-                        evicted_session_id, _ = session_history_cache.popitem(last=False)
-                        logger.debug(
-                            "[OBS] session_history_cache LRU eviction: removed oldest session "
-                            "(cache_size=%s).",
-                            _MAX_SESSION_HISTORY_CACHE_SIZE,
-                        )
-
                     if session_id not in session_history_cache:
+                        # [Bug Fix] LRU 퇴출을 신규 삽입 시에만 실행 (캐시 히트 시에는 퇴출하지 않음)
+                        # 기존: eviction이 cache 조회 전에 실행되어, 히트 임에도 불필요한 퇴출 발생
+                        # 수정: not-in 체크 후 신규 삽입이 확정된 경우에만 퇴출 실행
+                        if len(session_history_cache) >= _MAX_SESSION_HISTORY_CACHE_SIZE:
+                            evicted_session_id, _ = session_history_cache.popitem(last=False)
+                            logger.debug(
+                                "[OBS] session_history_cache LRU eviction: removed oldest session "
+                                "(evicted=%s, current_size=%s, max_size=%s).",
+                                mask_pii_id(evicted_session_id),   # PII 안전 익명화
+                                len(session_history_cache),        # 퇴출 후 실제 캐시 크기
+                                _MAX_SESSION_HISTORY_CACHE_SIZE,   # 설정된 최대 한도
+                            )
+
                         history_key = f"{_HISTORY_PREFIX}{session_id}"
                         # lrange 범위 제한: 최근 N개만 조회하여 메모리·속도 절약
                         history_raw = await redis_client.redis.lrange(
