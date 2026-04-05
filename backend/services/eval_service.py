@@ -16,6 +16,7 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import lru_cache
 from json import JSONDecodeError
 from typing import Any, Literal, Optional
 
@@ -47,6 +48,11 @@ _DEFAULT_TTL = 86400 * 7
 
 # 분류 판별에 사용할 LLM 모델 (환경 변수로 오버라이드 가능)
 _DEFAULT_EVAL_MODEL = "gpt-4o-mini"
+
+# 평가 프롬프트에 포함할 retrieved_docs 상한 (환경변수 오버라이드 가능)
+# 기본값 10개 / 2000자는 gpt-4o-mini 128k 컨텍스트 기준으로 안전한 상한입니다.
+_DEFAULT_MAX_EVAL_DOCS = 10
+_DEFAULT_MAX_EVAL_DOC_CHARS = 2000
 
 # EvalLabel: 분류 결과 리터럴 타입
 EvalLabel = Literal["hallucination", "rag_retrieval_failure", "uncertain"]
@@ -96,6 +102,47 @@ def _now_utc_iso() -> str:
 def _get_eval_model() -> str:
     """환경 변수에서 평가 모델을 읽어 반환. 미설정 시 기본값 사용."""
     return os.environ.get("EVAL_LLM_MODEL", _DEFAULT_EVAL_MODEL).strip() or _DEFAULT_EVAL_MODEL
+
+
+def _get_max_eval_docs() -> int:
+    """프롬프트에 포함할 최대 문서 개수를 환경 변수에서 읽어 반환."""
+    try:
+        val = int(os.environ.get("EVAL_MAX_RETRIEVED_DOCS", str(_DEFAULT_MAX_EVAL_DOCS)))
+        return val if val > 0 else _DEFAULT_MAX_EVAL_DOCS
+    except ValueError:
+        return _DEFAULT_MAX_EVAL_DOCS
+
+
+def _get_max_eval_doc_chars() -> int:
+    """프롬프트에 포함할 문서 1개의 최대 문자 수를 환경 변수에서 읽어 반환."""
+    try:
+        val = int(os.environ.get("EVAL_MAX_RETRIEVED_DOC_CHARS", str(_DEFAULT_MAX_EVAL_DOC_CHARS)))
+        return val if val > 0 else _DEFAULT_MAX_EVAL_DOC_CHARS
+    except ValueError:
+        return _DEFAULT_MAX_EVAL_DOC_CHARS
+
+
+@lru_cache(maxsize=4)
+def _get_eval_llm(model: str, api_key: str, base_url: Optional[str]):
+    """
+    ChatOpenAI 평가 클라이언트를 (model, api_key, base_url) 조합 기준으로 캐싱합니다.
+
+    [Engineering Decision - Performance]
+    배치 파이프라인에서 수백~수천 건을 분류할 때 매 호출마다 새 인스턴스를 생성하면
+    소켓 설정·키 검증 오버헤드가 선형으로 증가합니다.
+    lru_cache(maxsize=4)로 환경 변수 조합별 클라이언트를 재사용하여 오버헤드를 제거합니다.
+
+    Note: api_key를 캐시 키로 사용하지만 로그에는 절대 출력하지 않습니다 (PII/Secret 보호).
+    """
+    from langchain_openai import ChatOpenAI  # type: ignore[import]
+
+    return ChatOpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+        streaming=False,
+        temperature=0.0,  # 분류 작업: 결정론적 응답이 최적
+    )
 
 
 def _build_eval_prompt(query: str, retrieved_docs: list[str], ai_response: str) -> str:
@@ -297,8 +344,17 @@ async def classify_negative_feedback(
                 ctx = json.loads(ctx_str)
                 query = ctx.get("query", query)
                 raw_docs = ctx.get("retrieved_docs", [])
+
                 # 안전한 타입 보장: 각 문서는 str로 캐스팅
-                retrieved_docs = [str(d) for d in raw_docs if d is not None]
+                docs_as_str = [str(d) for d in raw_docs if d is not None]
+
+                # 프롬프트 크기 제어: 개수 및 문자 수 상한 적용 (환경변수로 조정 가능)
+                # 과도한 토큰으로 인한 API 오류 및 응답 지연을 사전에 방지합니다.
+                max_docs = _get_max_eval_docs()
+                max_chars = _get_max_eval_doc_chars()
+                retrieved_docs = [
+                    doc[:max_chars] for doc in docs_as_str[:max_docs]
+                ]
             except (JSONDecodeError, ValueError, AttributeError) as e:
                 logger.warning(
                     "[OBS] Failed to parse RAG context from Redis; proceeding with empty docs.",
@@ -321,8 +377,7 @@ async def classify_negative_feedback(
         eval_model = _get_eval_model()
         prompt_text = _build_eval_prompt(query, retrieved_docs, ai_response)
 
-        from langchain_openai import ChatOpenAI  # type: ignore[import]
-
+        # [Performance] 캐시된 LLM 클라이언트 사용 (매 호출마다 인스턴스 생성 방지)
         api_key = (
             os.getenv("GPT4O_MINI_API_KEY")
             or os.getenv("GPT4O_API_KEY")
@@ -339,13 +394,7 @@ async def classify_negative_feedback(
             or os.getenv("OPENAI_BASE_URL")
         )
 
-        eval_llm = ChatOpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            model=eval_model,
-            streaming=False,
-            temperature=0.0,  # 분류 작업: 결정론적 응답이 최적
-        )
+        eval_llm = _get_eval_llm(eval_model, api_key, base_url)
 
         from langchain_core.messages import HumanMessage  # type: ignore[import]
 
@@ -475,16 +524,20 @@ async def run_negative_feedback_eval_pipeline(
                         continue
 
                     # chat:history에서 AI 응답 텍스트 조회
+                    # [Bug Fix] 역순 탐색으로 message_id에 가장 가까운(최신) assistant 메시지를 우선 사용.
+                    # RAG context(chat:rag_context)가 존재하면 이미 message_id로 정확히 매칭되므로,
+                    # 여기서는 RAG context가 없는 경우의 최선 근사값을 찾습니다.
                     history_key = f"{_HISTORY_PREFIX}{session_id}"
                     history_raw = await redis_client.redis.lrange(history_key, 0, -1)
                     ai_response: Optional[str] = None
-                    for item in history_raw:
+                    for item in reversed(history_raw):  # 역순으로 최신 assistant 메시지를 먼저 탐색
                         try:
                             msg_dict = json.loads(item.decode("utf-8") if isinstance(item, bytes) else str(item))
-                            # message_id 기반 직접 매칭이 어려우므로, 마지막 assistant 메시지를 사용
-                            # (실제 구현에서는 message_id를 history에 저장하는 방식으로 개선 가능)
                             if msg_dict.get("role") == "assistant":
-                                ai_response = msg_dict.get("content", "")
+                                content = msg_dict.get("content", "")
+                                if content and content.strip():
+                                    ai_response = content
+                                    break  # 첫 번째(가장 최신) assistant 메시지를 찾으면 즉시 종료
                         except (JSONDecodeError, ValueError, AttributeError):
                             continue
 
