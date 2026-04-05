@@ -186,12 +186,12 @@ class _SessionHistoryCache:
     동일 세션의 여러 피드백에 대해 Redis lrange를 1회만 수행하도록
     세션별 히스토리를 인메모리에 캐싱합니다.
 
-    케시 크기가 max_size를 초과할 때 가장 오래된(가장 뗨 사용된) 세션을 자동으로
-    퇴줄합니다 (LRU Eviction Policy).
+    캐시 크기가 max_size를 초과할 때 가장 오래된(가장 덜 사용된) 세션을 자동으로
+    퇴출합니다 (LRU Eviction Policy).
 
     [Design Decision]
     - 인라인으로 펼치는 대신 클래스로 분리하여 로직 커플링 방지
-    - 비지니스 로직(Redis 조회)을 담당하는 파이프라인 함수는 캐시 구조를 모르면 됨
+    - 비즈니스 로직(Redis 조회)을 담당하는 파이프라인 함수는 캐시 구조를 모르면 됨
     - get()/put() API로 캐시 상호작용을 명확히 표현
     """
 
@@ -215,12 +215,21 @@ class _SessionHistoryCache:
         """
         세션 히스토리를 캐시에 저장합니다.
 
-        상한(및 max_size) 초과 시 LRU 세션을 퇴준하고 퇴준된 session_id를 반환합니다.
-        퇴준이 없으면 None을 반환합니다.
+        이미 존재하는 session_id인 경우 덮어쓰고 LRU 순위만 갱신합니다.
+        (퇴출 없음 - 기존 세션 업데이트는 캐시 크기를 변경하지 않으므로)
+
+        신규 session_id인 경우 max_size 초과 시 LRU 세션을 퇴출하고
+        퇴출된 session_id를 반환합니다. 퇴출이 없으면 None을 반환합니다.
 
         [Atomicity]
-        퇴준과 삽입을 단일 메서드에서 처리하여, 호출자는 캐시 내부 동작을 신경 쓰지 않아도 됩니다.
+        퇴출과 삽입을 단일 메서드에서 처리하여, 호출자는 캐시 내부 동작을 신경 쓰지 않아도 됩니다.
         """
+        # [Bug Fix] 이미 존재하는 세션이면 덮어쓰고 LRU 순위만 갱신 (불필요한 퇴출 방지)
+        if session_id in self._cache:
+            self._cache[session_id] = history
+            self._cache.move_to_end(session_id)
+            return None
+
         evicted: Optional[str] = None
         if len(self._cache) >= self._max_size:
             evicted_id, _ = self._cache.popitem(last=False)
@@ -613,7 +622,7 @@ async def run_negative_feedback_eval_pipeline(
             await redis_client.connect()
 
         # [Performance] 세션별 history LRU 캐시: 동일 session의 여러 피드백에 대해 lrange를 1회만 수행
-        # _SessionHistoryCache로 켜플링되어 파이프라인 함수는 캐시 내부 구조를 신경 쓰지 않아도 된다.
+        # _SessionHistoryCache로 커플링되어 파이프라인 함수는 캐시 내부 구조를 신경 쓰지 않아도 된다.
         history_cache = _SessionHistoryCache(max_size=_MAX_SESSION_HISTORY_CACHE_SIZE)
         history_scan_limit = _get_eval_history_scan_limit()
 
