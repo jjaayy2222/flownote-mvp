@@ -174,6 +174,64 @@ def _get_eval_history_scan_limit() -> int:
     return limit
 
 
+# ─────────────────────────────────────────────────────────────
+# LRU 세션 히스토리 캐시
+# ─────────────────────────────────────────────────────────────
+
+
+class _SessionHistoryCache:
+    """
+    배치 평가 파이프라인용 LRU 기반 세션 히스토리 캐시.
+
+    동일 세션의 여러 피드백에 대해 Redis lrange를 1회만 수행하도록
+    세션별 히스토리를 인메모리에 캐싱합니다.
+
+    케시 크기가 max_size를 초과할 때 가장 오래된(가장 뗨 사용된) 세션을 자동으로
+    퇴줄합니다 (LRU Eviction Policy).
+
+    [Design Decision]
+    - 인라인으로 펼치는 대신 클래스로 분리하여 로직 커플링 방지
+    - 비지니스 로직(Redis 조회)을 담당하는 파이프라인 함수는 캐시 구조를 모르면 됨
+    - get()/put() API로 캐시 상호작용을 명확히 표현
+    """
+
+    def __init__(self, max_size: int) -> None:
+        self._cache: OrderedDict[str, list[dict]] = OrderedDict()
+        self._max_size = max_size
+
+    def get(self, session_id: str) -> Optional[list[dict]]:
+        """
+        세션 히스토리를 조회합니다.
+
+        캐시에 존재하면 LRU 순위를 갱신(move_to_end)하고 히스토리를 반환합니다.
+        존재하지 않으면 None을 반환합니다.
+        """
+        if session_id not in self._cache:
+            return None
+        self._cache.move_to_end(session_id)
+        return self._cache[session_id]
+
+    def put(self, session_id: str, history: list[dict]) -> Optional[str]:
+        """
+        세션 히스토리를 캐시에 저장합니다.
+
+        상한(및 max_size) 초과 시 LRU 세션을 퇴준하고 퇴준된 session_id를 반환합니다.
+        퇴준이 없으면 None을 반환합니다.
+
+        [Atomicity]
+        퇴준과 삽입을 단일 메서드에서 처리하여, 호출자는 캐시 내부 동작을 신경 쓰지 않아도 됩니다.
+        """
+        evicted: Optional[str] = None
+        if len(self._cache) >= self._max_size:
+            evicted_id, _ = self._cache.popitem(last=False)
+            evicted = evicted_id
+        self._cache[session_id] = history
+        return evicted
+
+    def __len__(self) -> int:
+        return len(self._cache)
+
+
 def _get_api_key_from_env() -> str:
     """
     OpenAI 계열 모델 호출에 사용할 API 키를 환경 변수에서 조회합니다.
@@ -555,12 +613,8 @@ async def run_negative_feedback_eval_pipeline(
             await redis_client.connect()
 
         # [Performance] 세션별 history LRU 캐시: 동일 session의 여러 피드백에 대해 lrange를 1회만 수행
-        # [Engineering Decision]
-        # - OrderedDict + LRU 단위 제거로 캐시 Thrashing 방지
-        #   (dict.clear() 방식은 상한 도달 시 유효 캐시를 전부 날려 Redis 재조회 폭탄 유발)
-        # - 상한(_MAX_SESSION_HISTORY_CACHE_SIZE) 초과 시 가장 오래된 세션 1개만 제거하여
-        #   "최근 hot 세션은 보존, 메모리 상한 준수" 두 목표를 동시에 달성합니다.
-        session_history_cache: OrderedDict[str, list[dict]] = OrderedDict()
+        # _SessionHistoryCache로 켜플링되어 파이프라인 함수는 캐시 내부 구조를 신경 쓰지 않아도 된다.
+        history_cache = _SessionHistoryCache(max_size=_MAX_SESSION_HISTORY_CACHE_SIZE)
         history_scan_limit = _get_eval_history_scan_limit()
 
         cursor = 0
@@ -598,24 +652,11 @@ async def run_negative_feedback_eval_pipeline(
                         summary["skipped_already_evaluated"] += 1
                         continue
 
-                    # ── chat:history 조회 (세션별 LRU 캐싱으로 N×M Redis 호출 원천 차단) ──
+                    # ── chat:history 조회 (_SessionHistoryCache LRU로 N×M Redis 호출 원천 차단) ──
                     # RAG context(chat:rag_context)가 존재하면 message_id로 정확히 매칭되지만,
                     # 없는 경우에도 최대한 정확한 assistant 메시지를 찾아야 합니다.
-
-                    if session_id not in session_history_cache:
-                        # [Bug Fix] LRU 퇴출을 신규 삽입 시에만 실행 (캐시 히트 시에는 퇴출하지 않음)
-                        # 기존: eviction이 cache 조회 전에 실행되어, 히트 임에도 불필요한 퇴출 발생
-                        # 수정: not-in 체크 후 신규 삽입이 확정된 경우에만 퇴출 실행
-                        if len(session_history_cache) >= _MAX_SESSION_HISTORY_CACHE_SIZE:
-                            evicted_session_id, _ = session_history_cache.popitem(last=False)
-                            logger.debug(
-                                "[OBS] session_history_cache LRU eviction: removed oldest session "
-                                "(evicted=%s, current_size=%s, max_size=%s).",
-                                mask_pii_id(evicted_session_id),   # PII 안전 익명화
-                                len(session_history_cache),        # 퇴출 후 실제 캐시 크기
-                                _MAX_SESSION_HISTORY_CACHE_SIZE,   # 설정된 최대 한도
-                            )
-
+                    cached_history = history_cache.get(session_id)
+                    if cached_history is None:
                         history_key = f"{_HISTORY_PREFIX}{session_id}"
                         # lrange 범위 제한: 최근 N개만 조회하여 메모리·속도 절약
                         history_raw = await redis_client.redis.lrange(
@@ -631,13 +672,20 @@ async def run_negative_feedback_eval_pipeline(
                                     parsed.append(msg_dict)
                             except (JSONDecodeError, ValueError, AttributeError):
                                 continue
-                        # 역순 저장: 최신 메시지부터 탐색할 수 있도록 준비
-                        session_history_cache[session_id] = list(reversed(parsed))
-                    else:
-                        # 캐시 히트: 해당 세션을 OrderedDict의 끝(최신)으로 이동하여 LRU 순위 갱신
-                        session_history_cache.move_to_end(session_id)
 
-                    cached_history = session_history_cache[session_id]
+                        history = list(reversed(parsed))  # 역순: 최신 메시지부터 탐색
+                        evicted = history_cache.put(session_id, history)
+                        if evicted:
+                            # 로그: 퇴출 + 삽입이 모두 완료된 후의 실제 캐시 크기를 기록
+                            logger.debug(
+                                "[OBS] session_history_cache LRU eviction: removed oldest session "
+                                "(evicted=%s, cache_size_after_insert=%s, max_size=%s).",
+                                mask_pii_id(evicted),       # PII 안전 익명화
+                                len(history_cache),         # 퇴출 + 삽입 후 실제 크기
+                                _MAX_SESSION_HISTORY_CACHE_SIZE,
+                            )
+                        cached_history = history
+
 
                     # ── AI 응답 이중 매칭 전략 ────────────────────────────────
                     # 1순위: history 항목에 message_id 필드가 있다면 피드백 msg_id와 정확히 매칭
