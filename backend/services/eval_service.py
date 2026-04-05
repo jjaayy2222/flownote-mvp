@@ -14,6 +14,7 @@
 import json
 import logging
 import os
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -553,9 +554,13 @@ async def run_negative_feedback_eval_pipeline(
         if not redis_client.is_connected():
             await redis_client.connect()
 
-        # [Performance] 세션별 history 캐시: 동일 session의 여러 피드백에 대해 lrange를 1회만 수행
-        # 키: session_id, 값: 역순 정렬된 파싱 완료 메시지 dict 리스트
-        session_history_cache: dict[str, list[dict]] = {}
+        # [Performance] 세션별 history LRU 캐시: 동일 session의 여러 피드백에 대해 lrange를 1회만 수행
+        # [Engineering Decision]
+        # - OrderedDict + LRU 단위 제거로 캐시 Thrashing 방지
+        #   (dict.clear() 방식은 상한 도달 시 유효 캐시를 전부 날려 Redis 재조회 폭탄 유발)
+        # - 상한(_MAX_SESSION_HISTORY_CACHE_SIZE) 초과 시 가장 오래된 세션 1개만 제거하여
+        #   "최근 hot 세션은 보존, 메모리 상한 준수" 두 목표를 동시에 달성합니다.
+        session_history_cache: OrderedDict[str, list[dict]] = OrderedDict()
         history_scan_limit = _get_eval_history_scan_limit()
 
         cursor = 0
@@ -593,19 +598,19 @@ async def run_negative_feedback_eval_pipeline(
                         summary["skipped_already_evaluated"] += 1
                         continue
 
-                    # ── chat:history 조회 (세션별 1회 캐싱으로 N×M Redis 호출 원천 차단) ──
+                    # ── chat:history 조회 (세션별 LRU 캐싱으로 N×M Redis 호출 원천 차단) ──
                     # RAG context(chat:rag_context)가 존재하면 message_id로 정확히 매칭되지만,
                     # 없는 경우에도 최대한 정확한 assistant 메시지를 찾아야 합니다.
 
-                    # [Memory Guard] 캐시 크기 상한 초과 시 캐시 전체 제거
-                    # 장기 실행 프로세스에서 세션 수가 무한히 증가하는 메모리 스파이크를 방지합니다.
+                    # [Memory Guard] LRU 단위 제거: 상한 초과 시 가장 오래된 세션 1개만 퇴출
+                    # 전체 clear() 방식과 달리, 최근 hot 세션을 보존하여 cache thrashing을 방지합니다.
                     if len(session_history_cache) >= _MAX_SESSION_HISTORY_CACHE_SIZE:
-                        logger.warning(
-                            "[OBS] session_history_cache reached max size (%s); clearing cache "
-                            "to prevent memory spike.",
+                        evicted_session_id, _ = session_history_cache.popitem(last=False)
+                        logger.debug(
+                            "[OBS] session_history_cache LRU eviction: removed oldest session "
+                            "(cache_size=%s).",
                             _MAX_SESSION_HISTORY_CACHE_SIZE,
                         )
-                        session_history_cache.clear()
 
                     if session_id not in session_history_cache:
                         history_key = f"{_HISTORY_PREFIX}{session_id}"
@@ -625,6 +630,9 @@ async def run_negative_feedback_eval_pipeline(
                                 continue
                         # 역순 저장: 최신 메시지부터 탐색할 수 있도록 준비
                         session_history_cache[session_id] = list(reversed(parsed))
+                    else:
+                        # 캐시 히트: 해당 세션을 OrderedDict의 끝(최신)으로 이동하여 LRU 순위 갱신
+                        session_history_cache.move_to_end(session_id)
 
                     cached_history = session_history_cache[session_id]
 
@@ -653,7 +661,11 @@ async def run_negative_feedback_eval_pipeline(
 
                     # 정확 매칭 실패 시 최신 assistant 응답으로 fallback
                     if not ai_response and latest_assistant_response:
-                        logger.info(
+                        logger.debug(
+                            # [Log Level: DEBUG]
+                            # 배치 실행 중 message_id가 없는 기존 히스토리(배포 이전 저장분)에서
+                            # 대량으로 발생할 수 있으므로, INFO 대신 DEBUG로 유지하여 로그 노이즈를 방지합니다.
+                            # 운영 중 매칭 실패 추세를 모니터링하려면 배치 완료 요약 로그를 활용하세요.
                             "[OBS] message_id exact match failed; using latest assistant response as fallback.",
                             extra={
                                 "session_id_hash": mask_pii_id(session_id),
