@@ -9,7 +9,7 @@ from pathlib import Path
 import os
 import logging
 from dataclasses import dataclass
-from typing import TypeVar, Union, Generic
+from typing import TypeVar, Union, Generic, Optional
 from dotenv import load_dotenv
 
 # 1️⃣ 프로젝트 루트 추가
