@@ -1,0 +1,581 @@
+# backend/services/eval_service.py
+
+"""
+[v8.0] Phase 5 - Step 2: '싫어요(Thumbs Down)' 원인 분석 프레임워크
+
+'싫어요' 피드백을 받은 AI 응답의 실패 원인을 자동으로 분류합니다.
+- RAG Retrieval Failure: 검색된 단락 자체가 질문과 무관한 경우
+- Hallucination: 검색 단락에 없는 내용을 LLM이 생성한 경우
+
+관련 이슈: #934
+브랜치: feature/issue-934-eval-framework
+"""
+
+import json
+import logging
+import os
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from functools import lru_cache
+from json import JSONDecodeError
+from typing import Any, Literal, Optional
+
+import redis.exceptions
+
+from backend.services.chat_history_service import (  # type: ignore[import]
+    FEEDBACK_KEY_PREFIX,
+    _HISTORY_PREFIX,
+)
+from backend.services.redis_pubsub import redis_client  # type: ignore[import]
+from backend.utils import mask_pii_id  # type: ignore[import]
+
+logger = logging.getLogger(__name__)
+
+# ─────────────────────────────────────────────────────────────
+# Redis 키 상수
+# ─────────────────────────────────────────────────────────────
+
+# RAG 컨텍스트 저장 키: chat:rag_context:{session_id} (Hash)
+# field: message_id, value: JSON {"retrieved_docs": [...], "query": "...", "timestamp": "..."}
+_RAG_CONTEXT_PREFIX = "chat:rag_context:"
+
+# 평가 결과 저장 키: chat:eval:{session_id} (Hash)
+# field: message_id, value: JSON EvalResult 직렬화
+_EVAL_RESULT_PREFIX = "chat:eval:"
+
+# Redis TTL: 7일 (chat_history_service와 동일하게 맞춤)
+_DEFAULT_TTL = 86400 * 7
+
+# 분류 판별에 사용할 LLM 모델 (환경 변수로 오버라이드 가능)
+_DEFAULT_EVAL_MODEL = "gpt-4o-mini"
+
+# 평가 프롬프트에 포함할 retrieved_docs 상한 (환경변수 오버라이드 가능)
+# 기본값 10개 / 2000자는 gpt-4o-mini 128k 컨텍스트 기준으로 안전한 상한입니다.
+_DEFAULT_MAX_EVAL_DOCS = 10
+_DEFAULT_MAX_EVAL_DOC_CHARS = 2000
+
+# EvalLabel: 분류 결과 리터럴 타입
+EvalLabel = Literal["hallucination", "rag_retrieval_failure", "uncertain"]
+
+
+# ─────────────────────────────────────────────────────────────
+# 데이터 구조체
+# ─────────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class EvalResult:
+    """
+    단일 AI 응답에 대한 원인 분석 결과.
+
+    frozen=True: 불변(Immutable) 보장. set/dict key 안전 사용 가능.
+
+    Attributes:
+        session_id:   세션 식별자 (원본 보존; 외부 노출 시 mask_pii_id 필수)
+        message_id:   해당 AI 응답의 메시지 식별자
+        label:        분류 결과 - 'hallucination' | 'rag_retrieval_failure' | 'uncertain'
+        reason:       LLM이 생성한 분류 근거 설명 (한국어)
+        eval_model:   분류에 사용된 LLM 모델명
+        rag_query:    RAG 검색 시 사용된 원본 질의 (없을 경우 None)
+        timestamp:    평가 수행 시각 (ISO 8601 UTC)
+    """
+
+    session_id: str
+    message_id: str
+    label: EvalLabel
+    reason: str
+    eval_model: str
+    rag_query: Optional[str]
+    timestamp: str
+
+
+# ─────────────────────────────────────────────────────────────
+# 모듈 레벨 순수 헬퍼 함수
+# ─────────────────────────────────────────────────────────────
+
+
+def _now_utc_iso() -> str:
+    """현재 UTC 시각을 ISO 8601 형식 문자열로 반환하는 중앙 헬퍼."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _get_eval_model() -> str:
+    """환경 변수에서 평가 모델을 읽어 반환. 미설정 시 기본값 사용."""
+    return os.environ.get("EVAL_LLM_MODEL", _DEFAULT_EVAL_MODEL).strip() or _DEFAULT_EVAL_MODEL
+
+
+def _get_max_eval_docs() -> int:
+    """프롬프트에 포함할 최대 문서 개수를 환경 변수에서 읽어 반환."""
+    try:
+        val = int(os.environ.get("EVAL_MAX_RETRIEVED_DOCS", str(_DEFAULT_MAX_EVAL_DOCS)))
+        return val if val > 0 else _DEFAULT_MAX_EVAL_DOCS
+    except ValueError:
+        return _DEFAULT_MAX_EVAL_DOCS
+
+
+def _get_max_eval_doc_chars() -> int:
+    """프롬프트에 포함할 문서 1개의 최대 문자 수를 환경 변수에서 읽어 반환."""
+    try:
+        val = int(os.environ.get("EVAL_MAX_RETRIEVED_DOC_CHARS", str(_DEFAULT_MAX_EVAL_DOC_CHARS)))
+        return val if val > 0 else _DEFAULT_MAX_EVAL_DOC_CHARS
+    except ValueError:
+        return _DEFAULT_MAX_EVAL_DOC_CHARS
+
+
+@lru_cache(maxsize=4)
+def _get_eval_llm(model: str, api_key: str, base_url: Optional[str]):
+    """
+    ChatOpenAI 평가 클라이언트를 (model, api_key, base_url) 조합 기준으로 캐싱합니다.
+
+    [Engineering Decision - Performance]
+    배치 파이프라인에서 수백~수천 건을 분류할 때 매 호출마다 새 인스턴스를 생성하면
+    소켓 설정·키 검증 오버헤드가 선형으로 증가합니다.
+    lru_cache(maxsize=4)로 환경 변수 조합별 클라이언트를 재사용하여 오버헤드를 제거합니다.
+
+    Note: api_key를 캐시 키로 사용하지만 로그에는 절대 출력하지 않습니다 (PII/Secret 보호).
+    """
+    from langchain_openai import ChatOpenAI  # type: ignore[import]
+
+    return ChatOpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+        streaming=False,
+        temperature=0.0,  # 분류 작업: 결정론적 응답이 최적
+    )
+
+
+def _build_eval_prompt(query: str, retrieved_docs: list[str], ai_response: str) -> str:
+    """
+    RAG vs Hallucination 판별을 위한 평가 프롬프트 생성.
+
+    프롬프트는 명확한 구조(3섹션)로 구성하여 LLM 응답 정확도를 최대화합니다.
+    한국어 응답을 요청하여 관리자 보고서 가독성을 높입니다.
+    """
+    docs_text = "\n\n".join(
+        f"[문서 {i+1}]\n{doc}" for i, doc in enumerate(retrieved_docs)
+    ) if retrieved_docs else "(검색된 문서 없음)"
+
+    return f"""당신은 AI 응답의 품질을 평가하는 전문 평가자입니다.
+아래의 세 가지 정보를 분석하여, AI 응답 실패의 근본 원인을 분류해주세요.
+
+---
+[사용자 질문]
+{query}
+
+---
+[RAG 검색으로 가져온 참고 문서]
+{docs_text}
+
+---
+[AI가 최종 생성한 응답]
+{ai_response}
+
+---
+[분류 지침]
+1. **hallucination**: AI 응답에 참고 문서에 없는 내용이 포함된 경우 (AI가 사실을 지어냄)
+2. **rag_retrieval_failure**: 참고 문서 자체가 사용자 질문과 무관하여 답변에 도움이 안 된 경우
+3. **uncertain**: 위 두 경우를 명확히 구분하기 어려운 경우
+
+반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 절대 포함하지 마세요:
+{{
+  "label": "hallucination" | "rag_retrieval_failure" | "uncertain",
+  "reason": "분류 근거를 한국어 1~2문장으로 설명"
+}}"""
+
+
+def _parse_eval_response(response_text: str) -> tuple[EvalLabel, str]:
+    """
+    LLM 평가 응답 텍스트를 파싱하여 (label, reason) 튜플로 반환.
+
+    파싱 실패 시 'uncertain'으로 폴백하여 파이프라인이 중단되지 않도록 합니다.
+    """
+    valid_labels: set[str] = {"hallucination", "rag_retrieval_failure", "uncertain"}
+
+    try:
+        # JSON 응답에서 코드 블록 마커(```json ... ```) 제거
+        cleaned = response_text.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("```")[1]
+            if cleaned.startswith("json"):
+                cleaned = cleaned[4:]
+        cleaned = cleaned.strip()
+
+        parsed = json.loads(cleaned)
+        label = str(parsed.get("label", "uncertain")).strip()
+        reason = str(parsed.get("reason", "분류 근거를 파악할 수 없습니다.")).strip()
+
+        if label not in valid_labels:
+            logger.warning(
+                "[OBS] Eval LLM returned an unrecognized label; falling back to 'uncertain'.",
+                extra={"received_label": label[:50]},
+            )
+            label = "uncertain"
+
+        return label, reason  # type: ignore[return-value]
+
+    except (JSONDecodeError, ValueError, AttributeError) as e:
+        logger.warning(
+            "[OBS] Failed to parse eval LLM response JSON; falling back to 'uncertain'.",
+            extra={"error": str(e), "response_preview": response_text[:200]},
+        )
+        return "uncertain", "LLM 응답 파싱에 실패하여 자동으로 'uncertain'으로 분류되었습니다."
+
+
+# ─────────────────────────────────────────────────────────────
+# RAG 컨텍스트 저장 함수 (chat_service 연동용)
+# ─────────────────────────────────────────────────────────────
+
+
+async def save_rag_context(
+    session_id: str,
+    message_id: str,
+    query: str,
+    retrieved_docs: list[str],
+    *,
+    ttl: int = _DEFAULT_TTL,
+) -> None:
+    """
+    RAG 검색 결과(retrieved_docs)와 질의를 Redis에 저장합니다.
+    chat_service의 stream_chat 완료 시점에 호출되어,
+    Step 2의 평가 파이프라인이 검색 문서를 참조할 수 있게 합니다.
+
+    Redis 키 구조:
+        chat:rag_context:{session_id}  (Hash)
+        field: message_id
+        value: JSON {"query": "...", "retrieved_docs": [...], "timestamp": "..."}
+
+    Args:
+        session_id:    세션 식별자
+        message_id:    message_id (chat_history의 assistant 메시지 ID와 연계)
+        query:         RAG 검색에 사용된 사용자 질의
+        retrieved_docs: 검색된 문서 내용 리스트 (page_content 기준)
+        ttl:           Redis 키 만료 시간 (초, 기본값: 7일)
+    """
+    if not session_id or not message_id:
+        logger.warning(
+            "[OBS] save_rag_context called with empty session_id or message_id; skipping.",
+        )
+        return
+
+    try:
+        if not redis_client.is_connected():
+            await redis_client.connect()
+
+        key = f"{_RAG_CONTEXT_PREFIX}{session_id}"
+        payload = {
+            "query": query,
+            "retrieved_docs": retrieved_docs,
+            "timestamp": _now_utc_iso(),
+        }
+        await redis_client.redis.hset(key, message_id, json.dumps(payload, ensure_ascii=False))
+        await redis_client.redis.expire(key, ttl)
+
+        logger.debug(
+            "RAG context saved.",
+            extra={
+                "session_id_hash": mask_pii_id(session_id),
+                "message_id_hash": mask_pii_id(message_id),
+                "doc_count": len(retrieved_docs),
+            },
+        )
+
+    except redis.exceptions.RedisError as e:
+        # RAG 컨텍스트 저장 실패는 비치명적 오류: 로깅 후 조용히 무시
+        # (메인 채팅 스트리밍 흐름을 방해하지 않습니다)
+        logger.error(
+            "[OBS] Failed to save RAG context to Redis; evaluation pipeline may be impacted.",
+            extra={
+                "session_id_hash": mask_pii_id(session_id),
+                "error": str(e),
+            },
+        )
+
+
+# ─────────────────────────────────────────────────────────────
+# 핵심 평가 서비스 함수
+# ─────────────────────────────────────────────────────────────
+
+
+async def classify_negative_feedback(
+    session_id: str,
+    message_id: str,
+    ai_response: str,
+) -> Optional[EvalResult]:
+    """
+    단일 '싫어요' 응답에 대해 실패 원인을 LLM으로 분류하고
+    EvalResult를 반환합니다.
+
+    동작 흐름:
+        1. Redis에서 해당 message_id의 RAG 컨텍스트(query + retrieved_docs)를 조회
+        2. 평가 프롬프트 구성 (query + retrieved_docs + ai_response)
+        3. LLM 호출 및 응답 파싱 (hallucination / rag_retrieval_failure / uncertain)
+        4. EvalResult를 Redis에 저장하고 반환
+
+    Args:
+        session_id:   세션 식별자
+        message_id:   '싫어요' 피드백이 달린 AI 응답의 message_id
+        ai_response:  Redis chat:history에서 조회한 AI 응답 텍스트
+
+    Returns:
+        EvalResult 또는 처리 불가 시 None
+    """
+    if not session_id or not message_id or not ai_response.strip():
+        logger.warning(
+            "[OBS] classify_negative_feedback called with missing arguments; skipping.",
+            extra={"session_id_hash": mask_pii_id(session_id)},
+        )
+        return None
+
+    try:
+        if not redis_client.is_connected():
+            await redis_client.connect()
+
+        # ── Step 1: RAG 컨텍스트 조회 ───────────────────────────────
+        rag_key = f"{_RAG_CONTEXT_PREFIX}{session_id}"
+        raw_context = await redis_client.redis.hget(rag_key, message_id)
+
+        query = "(질의 정보 없음)"
+        retrieved_docs: list[str] = []
+
+        if raw_context:
+            try:
+                ctx_str = raw_context.decode("utf-8") if isinstance(raw_context, bytes) else str(raw_context)
+                ctx = json.loads(ctx_str)
+                query = ctx.get("query", query)
+                raw_docs = ctx.get("retrieved_docs", [])
+
+                # 안전한 타입 보장: 각 문서는 str로 캐스팅
+                docs_as_str = [str(d) for d in raw_docs if d is not None]
+
+                # 프롬프트 크기 제어: 개수 및 문자 수 상한 적용 (환경변수로 조정 가능)
+                # 과도한 토큰으로 인한 API 오류 및 응답 지연을 사전에 방지합니다.
+                max_docs = _get_max_eval_docs()
+                max_chars = _get_max_eval_doc_chars()
+                retrieved_docs = [
+                    doc[:max_chars] for doc in docs_as_str[:max_docs]
+                ]
+            except (JSONDecodeError, ValueError, AttributeError) as e:
+                logger.warning(
+                    "[OBS] Failed to parse RAG context from Redis; proceeding with empty docs.",
+                    extra={
+                        "session_id_hash": mask_pii_id(session_id),
+                        "message_id_hash": mask_pii_id(message_id),
+                        "error": str(e),
+                    },
+                )
+        else:
+            logger.info(
+                "[OBS] No RAG context found for this message; evaluation will proceed with empty retrieved_docs.",
+                extra={
+                    "session_id_hash": mask_pii_id(session_id),
+                    "message_id_hash": mask_pii_id(message_id),
+                },
+            )
+
+        # ── Step 2: 평가 프롬프트 구성 및 LLM 호출 ─────────────────
+        eval_model = _get_eval_model()
+        prompt_text = _build_eval_prompt(query, retrieved_docs, ai_response)
+
+        # [Performance] 캐시된 LLM 클라이언트 사용 (매 호출마다 인스턴스 생성 방지)
+        api_key = (
+            os.getenv("GPT4O_MINI_API_KEY")
+            or os.getenv("GPT4O_API_KEY")
+            or os.getenv("OPENAI_API_KEY")
+        )
+        if not api_key:
+            raise ValueError(
+                "OpenAI API key is missing. Please set GPT4O_MINI_API_KEY or OPENAI_API_KEY."
+            )
+
+        base_url = (
+            os.getenv("GPT4O_MINI_BASE_URL")
+            or os.getenv("GPT4O_BASE_URL")
+            or os.getenv("OPENAI_BASE_URL")
+        )
+
+        eval_llm = _get_eval_llm(eval_model, api_key, base_url)
+
+        from langchain_core.messages import HumanMessage  # type: ignore[import]
+
+        llm_response = await eval_llm.ainvoke([HumanMessage(content=prompt_text)])
+        response_text = str(llm_response.content).strip()
+
+        # ── Step 3: LLM 응답 파싱 ───────────────────────────────────
+        label, reason = _parse_eval_response(response_text)
+
+        eval_result = EvalResult(
+            session_id=session_id,
+            message_id=message_id,
+            label=label,
+            reason=reason,
+            eval_model=eval_model,
+            rag_query=query if query != "(질의 정보 없음)" else None,
+            timestamp=_now_utc_iso(),
+        )
+
+        # ── Step 4: 평가 결과 Redis 저장 ────────────────────────────
+        eval_key = f"{_EVAL_RESULT_PREFIX}{session_id}"
+        eval_payload = {
+            "label": eval_result.label,
+            "reason": eval_result.reason,
+            "eval_model": eval_result.eval_model,
+            "rag_query": eval_result.rag_query,
+            "timestamp": eval_result.timestamp,
+        }
+        await redis_client.redis.hset(
+            eval_key, message_id, json.dumps(eval_payload, ensure_ascii=False)
+        )
+        await redis_client.redis.expire(eval_key, _DEFAULT_TTL)
+
+        logger.info(
+            "[OBS] Eval classification complete.",
+            extra={
+                "session_id_hash": mask_pii_id(session_id),
+                "message_id_hash": mask_pii_id(message_id),
+                "label": label,
+                "eval_model": eval_model,
+                "retrieved_doc_count": len(retrieved_docs),
+            },
+        )
+
+        return eval_result
+
+    except redis.exceptions.RedisError as e:
+        logger.error(
+            "[OBS] Redis error during eval classification.",
+            extra={"session_id_hash": mask_pii_id(session_id), "error": str(e)},
+        )
+        raise
+    except ValueError as e:
+        # API 키 누락 등 설정 오류: 상위 레이어로 전파
+        logger.error(
+            "[OBS] Configuration error during eval classification.",
+            extra={"error": str(e)},
+        )
+        raise
+
+
+async def run_negative_feedback_eval_pipeline(
+    *,
+    batch_size: int = 100,
+) -> dict[str, Any]:
+    """
+    Redis의 모든 '싫어요' 피드백을 대상으로 분류 파이프라인을 실행합니다.
+    이미 평가된 항목(chat:eval:* 키 존재)은 건너뛰어 중복 LLM 호출을 방지합니다.
+
+    Returns:
+        실행 요약 dict:
+            {
+                "total_negative": int,
+                "classified": int,
+                "skipped_already_evaluated": int,
+                "skipped_no_response": int,
+                "errors": int,
+                "label_counts": {"hallucination": int, "rag_retrieval_failure": int, "uncertain": int}
+            }
+    """
+    summary: dict[str, Any] = {
+        "total_negative": 0,
+        "classified": 0,
+        "skipped_already_evaluated": 0,
+        "skipped_no_response": 0,
+        "errors": 0,
+        "label_counts": {"hallucination": 0, "rag_retrieval_failure": 0, "uncertain": 0},
+    }
+
+    try:
+        if not redis_client.is_connected():
+            await redis_client.connect()
+
+        cursor = 0
+        while True:
+            cursor, partial_keys = await redis_client.redis.scan(
+                cursor, match=f"{FEEDBACK_KEY_PREFIX}*", count=batch_size
+            )
+
+            for raw_key in partial_keys:
+                key_str = raw_key.decode("utf-8") if isinstance(raw_key, bytes) else str(raw_key)
+                session_id = key_str.removeprefix(FEEDBACK_KEY_PREFIX)
+                if not session_id:
+                    continue
+
+                feedback_hash = await redis_client.redis.hgetall(key_str)
+                for msg_id_raw, meta_raw in feedback_hash.items():
+                    msg_id = msg_id_raw.decode("utf-8") if isinstance(msg_id_raw, bytes) else str(msg_id_raw)
+
+                    # rating 파싱 및 'down' 필터링
+                    try:
+                        meta_str = meta_raw.decode("utf-8") if isinstance(meta_raw, bytes) else str(meta_raw)
+                        meta = json.loads(meta_str)
+                    except (JSONDecodeError, ValueError):
+                        continue
+
+                    if meta.get("rating") != "down":
+                        continue
+
+                    summary["total_negative"] += 1
+
+                    # 중복 평가 방지: 이미 결과가 있으면 건너뜀
+                    eval_key = f"{_EVAL_RESULT_PREFIX}{session_id}"
+                    existing = await redis_client.redis.hget(eval_key, msg_id)
+                    if existing:
+                        summary["skipped_already_evaluated"] += 1
+                        continue
+
+                    # chat:history에서 AI 응답 텍스트 조회
+                    # [Bug Fix] 역순 탐색으로 message_id에 가장 가까운(최신) assistant 메시지를 우선 사용.
+                    # RAG context(chat:rag_context)가 존재하면 이미 message_id로 정확히 매칭되므로,
+                    # 여기서는 RAG context가 없는 경우의 최선 근사값을 찾습니다.
+                    history_key = f"{_HISTORY_PREFIX}{session_id}"
+                    history_raw = await redis_client.redis.lrange(history_key, 0, -1)
+                    ai_response: Optional[str] = None
+                    for item in reversed(history_raw):  # 역순으로 최신 assistant 메시지를 먼저 탐색
+                        try:
+                            msg_dict = json.loads(item.decode("utf-8") if isinstance(item, bytes) else str(item))
+                            if msg_dict.get("role") == "assistant":
+                                content = msg_dict.get("content", "")
+                                if content and content.strip():
+                                    ai_response = content
+                                    break  # 첫 번째(가장 최신) assistant 메시지를 찾으면 즉시 종료
+                        except (JSONDecodeError, ValueError, AttributeError):
+                            continue
+
+                    if not ai_response:
+                        summary["skipped_no_response"] += 1
+                        continue
+
+                    # 분류 실행
+                    try:
+                        result = await classify_negative_feedback(session_id, msg_id, ai_response)
+                        if result:
+                            summary["classified"] += 1
+                            label_key = result.label
+                            if label_key in summary["label_counts"]:
+                                summary["label_counts"][label_key] += 1
+                    except Exception as e:
+                        summary["errors"] += 1
+                        logger.error(
+                            "[OBS] Error during individual eval classification; skipping item.",
+                            extra={
+                                "session_id_hash": mask_pii_id(session_id),
+                                "message_id_hash": mask_pii_id(msg_id),
+                                "error": str(e),
+                            },
+                        )
+
+            if int(cursor) == 0:
+                break
+
+        logger.info(
+            "[OBS] Negative feedback eval pipeline complete.",
+            extra=summary,
+        )
+        return summary
+
+    except redis.exceptions.RedisError as e:
+        logger.error(
+            "[OBS] Redis error during eval pipeline execution.",
+            extra={"error": str(e)},
+        )
+        raise
