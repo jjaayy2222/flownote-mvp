@@ -3,6 +3,7 @@
 import logging
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -62,14 +63,14 @@ async def extract_and_serialize_golden_dataset():
         now_dt = datetime.now(timezone.utc)
         date_str = now_dt.strftime("%Y-%m-%d")
 
-        # 프로젝트 최상단 디렉토리 기준 data/golden_dataset
-        # (만약 backend/ 내부에 저장하려면 경로 수정 필요)
-        project_root = os.path.dirname(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        )
-        output_filepath = os.path.join(
-            project_root, "data", "golden_dataset", f"{date_str}.jsonl"
-        )
+        # 프로젝트 최상단 디렉토리 구조 파악 (pathlib 활용)
+        project_root = Path(__file__).resolve().parent.parent.parent
+        output_dir = project_root / "data" / "golden_dataset"
+        
+        # 디렉토리가 존재하지 않을 경우 안전하게 생성 (parents=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        output_filepath = str(output_dir / f"{date_str}.jsonl")
 
         # 4. JSONL 파일로 직렬화 (finetune_parser 모듈 활용)
         # strict_alert=True를 주어 변환 중 실패 타입이 생기면 운영 알람을 보내도록 함
@@ -102,10 +103,14 @@ def start_scheduler():
     APScheduler를 시작하고 예약된 작업들을 등록합니다.
     (FastAPI lifespan 이벤트 등에서 1회 호출)
     """
-    # 일 1회 실행: 매일 새벽 3시 정각에 실행 (UTC 기준)
+    # 환경 변수에서 실행 시간 및 타임존을 불러와 유연성 확보 (기본값: UTC 03:00)
+    cron_hour = int(os.environ.get("GOLDEN_DATASET_CRON_HOUR", "3"))
+    cron_minute = int(os.environ.get("GOLDEN_DATASET_CRON_MINUTE", "0"))
+    cron_timezone = os.environ.get("GOLDEN_DATASET_CRON_TIMEZONE", "UTC")
+
     scheduler.add_job(
         extract_and_serialize_golden_dataset,
-        CronTrigger(hour=3, minute=0, timezone="UTC"),
+        CronTrigger(hour=cron_hour, minute=cron_minute, timezone=cron_timezone),
         id="daily_golden_dataset_extractor",
         replace_existing=True,
     )
