@@ -99,6 +99,21 @@ async def extract_and_serialize_golden_dataset():
         )
 
 
+def _log_env_fallback(key: str, reason: str, default_val: int, raw_val: str = None):
+    """환경 변수 검증 실패 시 호출되는 로깅 헬퍼. 민감 정보는 마스킹 처리하여 안전하게 로깅합니다."""
+    safe_val = raw_val
+    if raw_val is not None:
+        sensitive_keywords = ["SECRET", "PASSWORD", "KEY", "TOKEN"]
+        if any(sec in key.upper() for sec in sensitive_keywords):
+            safe_val = "***REDACTED***"
+            
+    val_msg = f" (provided: '{safe_val}')" if safe_val is not None else ""
+    logger.warning(
+        "[OBS] Environment variable '%s' %s%s. Falling back to default %d.", 
+        key, reason, val_msg, default_val
+    )
+
+
 def parse_env_int(key: str, default: int, min_val: int, max_val: int) -> int:
     """환경 변수에서 정수값을 안전하게 추출하고, 실패 시 기본값으로 폴백합니다."""
     val = os.environ.get(key)
@@ -109,22 +124,17 @@ def parse_env_int(key: str, default: int, min_val: int, max_val: int) -> int:
         
     # 빈 문자열 등 공백만 있는 경우, 설정 실수이므로 경고 로깅
     if not val.strip():
-        logger.warning("[OBS] %s is set to an empty string. Falling back to default %d.", key, default)
+        _log_env_fallback(key, "is an empty string", default)
         return default
 
     try:
         parsed = int(val)
         if min_val <= parsed <= max_val:
             return parsed
-        logger.warning(
-            "[OBS] %s value '%s' is out of range (%d-%d). Falling back to default %d.", 
-            key, val, min_val, max_val, default
-        )
+        _log_env_fallback(key, f"is out of range ({min_val}-{max_val})", default, raw_val=val)
     except ValueError:
-        logger.warning(
-            "[OBS] %s value '%s' is invalid. Falling back to default %d.", 
-            key, val, default
-        )
+        _log_env_fallback(key, "is invalid", default, raw_val=val)
+        
     return default
 
 
