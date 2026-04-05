@@ -42,14 +42,22 @@ logging.getLogger().addHandler(DiscordAlertHandler())
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
+from backend.services.scheduler_service import start_scheduler, shutdown_scheduler
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting up: Initializing WebSocket Manager & Redis...")
     await manager.initialize()
+    
+    # 스케줄러(Golden Dataset 수집 등) 시작
+    start_scheduler()
+    
     yield
+    
     # Shutdown
     logger.info("Shutting down: Cleaning up resources...")
+    shutdown_scheduler()
     await manager.shutdown()
 
 

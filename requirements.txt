@@ -1,3 +1,4 @@
+APScheduler==3.11.2
 aiofiles==25.1.0
 altair==5.5.0
 amqp==5.3.1
