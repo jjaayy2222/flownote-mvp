@@ -100,7 +100,7 @@ async def extract_and_serialize_golden_dataset():
         )
 
 
-SENSITIVE_ENV_KEYWORDS = {"SECRET", "PASSWORD", "KEY", "TOKEN"}
+SENSITIVE_ENV_KEYWORDS = ("SECRET", "PASSWORD", "KEY", "TOKEN")
 
 
 def _log_env_fallback(key: str, reason: str, default_val: Any, raw_val: str = None):
@@ -113,7 +113,7 @@ def _log_env_fallback(key: str, reason: str, default_val: Any, raw_val: str = No
     val_msg = f" (provided: '{safe_val}')" if safe_val is not None else ""
     logger.warning(
         "[OBS] Environment variable '%s' %s%s. Falling back to default %s.", 
-        key, reason, val_msg, default_val
+        key, reason, val_msg, str(default_val)
     )
 
 
