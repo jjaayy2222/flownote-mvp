@@ -57,6 +57,13 @@ _DEFAULT_MAX_EVAL_DOC_CHARS = 2000
 # 세션별 history 스캔 상한: 가장 최신 N개 메시지만 조회하여 lrange 비용 통제
 # 기본값 200: assistant/user 교대 기준으로 최대 100회 도리(람에) 추적 가능
 _DEFAULT_EVAL_HISTORY_SCAN_LIMIT = 200
+# 안전 상한(Hard Cap): 설정 오류로 인한 과도한 Redis LRANGE 방지
+# 환경변수 값이 이 값을 초과하면 경고 로그 후 이 값으로 클램프
+_MAX_EVAL_HISTORY_SCAN_LIMIT = 4000
+
+# 배치 파이프라인 내 session_history_cache 최대 세션 수
+# 이 크기를 초과하면 캐시를 비워 메모리 스파이크를 방지합니다.
+_MAX_SESSION_HISTORY_CACHE_SIZE = 500
 
 # OpenAI API 키 조회 우선순위 (단일 진실 공급원 SSOT)
 # 이 공통 상수를 수정하면 조회 로직에러 메시지가 자동으로 동기화됩니다.
@@ -142,12 +149,28 @@ def _get_max_eval_doc_chars() -> int:
 
 
 def _get_eval_history_scan_limit() -> int:
-    """세션별 history를 조회할 최대 메시지 수를 환경 변수에서 읽어 반환."""
+    """
+    세션별 history를 조회할 최대 메시지 수를 환경 변수에서 읽어 반환.
+
+    _MAX_EVAL_HISTORY_SCAN_LIMIT로 클램프하여 설정 오류 시에도
+    과도한 Redis LRANGE 호출이 발생하지 않도록 보호합니다.
+    """
     try:
         val = int(os.environ.get("EVAL_HISTORY_SCAN_LIMIT", str(_DEFAULT_EVAL_HISTORY_SCAN_LIMIT)))
-        return val if val > 0 else _DEFAULT_EVAL_HISTORY_SCAN_LIMIT
+        limit = val if val > 0 else _DEFAULT_EVAL_HISTORY_SCAN_LIMIT
     except ValueError:
         return _DEFAULT_EVAL_HISTORY_SCAN_LIMIT
+
+    # 안전 상한 클램프: 비정상적으로 큰 값으로 인한 Redis OOM 방지
+    if limit > _MAX_EVAL_HISTORY_SCAN_LIMIT:
+        logger.warning(
+            "[OBS] EVAL_HISTORY_SCAN_LIMIT=%s exceeds max=%s; clamping to max. "
+            "Check your environment configuration.",
+            limit,
+            _MAX_EVAL_HISTORY_SCAN_LIMIT,
+        )
+        limit = _MAX_EVAL_HISTORY_SCAN_LIMIT
+    return limit
 
 
 def _get_api_key_from_env() -> str:
@@ -573,6 +596,17 @@ async def run_negative_feedback_eval_pipeline(
                     # ── chat:history 조회 (세션별 1회 캐싱으로 N×M Redis 호출 원천 차단) ──
                     # RAG context(chat:rag_context)가 존재하면 message_id로 정확히 매칭되지만,
                     # 없는 경우에도 최대한 정확한 assistant 메시지를 찾아야 합니다.
+
+                    # [Memory Guard] 캐시 크기 상한 초과 시 캐시 전체 제거
+                    # 장기 실행 프로세스에서 세션 수가 무한히 증가하는 메모리 스파이크를 방지합니다.
+                    if len(session_history_cache) >= _MAX_SESSION_HISTORY_CACHE_SIZE:
+                        logger.warning(
+                            "[OBS] session_history_cache reached max size (%s); clearing cache "
+                            "to prevent memory spike.",
+                            _MAX_SESSION_HISTORY_CACHE_SIZE,
+                        )
+                        session_history_cache.clear()
+
                     if session_id not in session_history_cache:
                         history_key = f"{_HISTORY_PREFIX}{session_id}"
                         # lrange 범위 제한: 최근 N개만 조회하여 메모리·속도 절약

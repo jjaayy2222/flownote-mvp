@@ -470,8 +470,9 @@ class ChatHistoryService:
                 "content": content,
                 "timestamp": now.isoformat(),
             }
-            # message_id가 제공된 경우에만 포함 (eval_service의 정확한 매칭에 사용됨)
-            if message_id is not None:
+            # message_id가 유효한 비공백 문자열인 경우에만 포함 (eval_service의 정확한 매칭에 사용됨)
+            # 빈 문자열("")이나 공백만 있는 값도 저장하지 않아 eval 파이프라인의 오매칭을 방지합니다.
+            if message_id and message_id.strip():
                 message["message_id"] = message_id
 
             await redis_client.redis.rpush(key, json.dumps(message))
