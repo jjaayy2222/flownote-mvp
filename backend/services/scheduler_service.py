@@ -4,7 +4,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -99,23 +99,26 @@ async def extract_and_serialize_golden_dataset():
         )
 
 
+def parse_env_int(key: str, default: int, min_val: int, max_val: int) -> int:
+    """환경 변수에서 정수값을 안전하게 추출하고, 실패 시 기본값으로 폴백합니다."""
+    val = os.environ.get(key)
+    if not val:
+        return default
+    try:
+        parsed = int(val)
+        if min_val <= parsed <= max_val:
+            return parsed
+        logger.warning("[OBS] %s is out of range (%d-%d). Falling back to default %d.", key, min_val, max_val, default)
+    except ValueError:
+        logger.warning("[OBS] %s is invalid. Falling back to default %d.", key, default)
+    return default
+
+
 def start_scheduler():
     """
     APScheduler를 시작하고 예약된 작업들을 등록합니다.
     (FastAPI lifespan 이벤트 등에서 1회 호출)
     """
-    def parse_env_int(key: str, default: int, min_val: int, max_val: int) -> int:
-        val = os.environ.get(key)
-        if not val:
-            return default
-        try:
-            parsed = int(val)
-            if min_val <= parsed <= max_val:
-                return parsed
-            logger.warning("[OBS] %s is out of range (%d-%d). Falling back to default %d.", key, min_val, max_val, default)
-        except ValueError:
-            logger.warning("[OBS] %s is invalid. Falling back to default %d.", key, default)
-        return default
 
     # 환경 변수에서 실행 시간 및 타임존을 불러와 유연성 확보 (기본값: UTC 03:00)
     cron_hour = parse_env_int("GOLDEN_DATASET_CRON_HOUR", 3, 0, 23)
@@ -125,7 +128,7 @@ def start_scheduler():
     # 타임존 문자열을 검증/정규화하고, 실패 시 기본값(UTC)으로 폴백
     try:
         cron_timezone = ZoneInfo(cron_timezone_name)
-    except Exception:
+    except ZoneInfoNotFoundError:
         logger.warning("[OBS] Timezone '%s' is invalid. Falling back to UTC.", cron_timezone_name)
         cron_timezone = ZoneInfo("UTC")
 
