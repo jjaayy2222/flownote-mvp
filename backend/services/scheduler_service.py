@@ -102,15 +102,29 @@ async def extract_and_serialize_golden_dataset():
 def parse_env_int(key: str, default: int, min_val: int, max_val: int) -> int:
     """환경 변수에서 정수값을 안전하게 추출하고, 실패 시 기본값으로 폴백합니다."""
     val = os.environ.get(key)
-    if not val:
+    
+    # 환경 변수가 아예 설정되지 않은 경우는 조용히 기본값 사용
+    if val is None:
         return default
+        
+    # 빈 문자열 등 공백만 있는 경우, 설정 실수이므로 경고 로깅
+    if not val.strip():
+        logger.warning("[OBS] %s is set to an empty string. Falling back to default %d.", key, default)
+        return default
+
     try:
         parsed = int(val)
         if min_val <= parsed <= max_val:
             return parsed
-        logger.warning("[OBS] %s is out of range (%d-%d). Falling back to default %d.", key, min_val, max_val, default)
+        logger.warning(
+            "[OBS] %s value '%s' is out of range (%d-%d). Falling back to default %d.", 
+            key, val, min_val, max_val, default
+        )
     except ValueError:
-        logger.warning("[OBS] %s is invalid. Falling back to default %d.", key, default)
+        logger.warning(
+            "[OBS] %s value '%s' is invalid. Falling back to default %d.", 
+            key, val, default
+        )
     return default
 
 
