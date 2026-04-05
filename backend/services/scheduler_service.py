@@ -4,6 +4,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -99,18 +100,20 @@ async def extract_and_serialize_golden_dataset():
         )
 
 
-def _log_env_fallback(key: str, reason: str, default_val: int, raw_val: str = None):
+SENSITIVE_ENV_KEYWORDS = ("SECRET", "PASSWORD", "KEY", "TOKEN")
+
+
+def _log_env_fallback(key: str, reason: str, default_val: Any, raw_val: str = None):
     """환경 변수 검증 실패 시 호출되는 로깅 헬퍼. 민감 정보는 마스킹 처리하여 안전하게 로깅합니다."""
     safe_val = raw_val
     if raw_val is not None:
-        sensitive_keywords = ["SECRET", "PASSWORD", "KEY", "TOKEN"]
-        if any(sec in key.upper() for sec in sensitive_keywords):
+        if any(sec in key.upper() for sec in SENSITIVE_ENV_KEYWORDS):
             safe_val = "***REDACTED***"
             
     val_msg = f" (provided: '{safe_val}')" if safe_val is not None else ""
     logger.warning(
-        "[OBS] Environment variable '%s' %s%s. Falling back to default %d.", 
-        key, reason, val_msg, default_val
+        "[OBS] Environment variable '%s' %s%s. Falling back to default %s.", 
+        key, reason, val_msg, str(default_val)
     )
 
 
