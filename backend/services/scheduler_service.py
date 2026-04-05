@@ -40,16 +40,22 @@ async def extract_and_serialize_golden_dataset():
             # TODO: 차후에 session_id와 message_id를 통해 실제 ChatHistory와 조인하여
             # 정확한 Question(Q)과 Answer(A) 컨텍스트를 구성해야 합니다.
             # 지금은 아키텍처 관점에서 스케줄러와 직렬화 파이프라인의 연결을 최우선으로 합니다.
-            q_text = (
-                f"[Session: {fb.session_id}] Feedback: {fb.feedback_text or 'No text'}"
-            )
-            a_text = f"Positive AI response associated with MsgID: {fb.message_id}"
+            
+            # PII 마스킹 시스템이 정상 작동하도록 민감한 식별자들을 자유 형식 텍스트(q_text, a_text)에
+            # 하드코딩하지 않고, 별도의 구조화된 필드로 분리합니다.
+            q_text = f"Feedback: {fb.feedback_text or 'No text'}"
+            a_text = "Positive AI response"
 
             message_format = format_finetune_message(
                 question=q_text,
                 answer=a_text,
                 system_prompt="You are a highly helpful and accurate AI assistant. This is an automatically extracted golden dataset.",
             )
+            
+            # 메타데이터 분리 추가 (pii_fields 필터링 대상)
+            message_format["session_id"] = fb.session_id
+            message_format["message_id"] = fb.message_id
+            
             dataset.append(message_format)
 
         # 3. YYYY-MM-DD 를 이용한 저장 경로 생성
@@ -70,7 +76,7 @@ async def extract_and_serialize_golden_dataset():
         saved_path = serialize_to_jsonl(
             dataset=dataset,
             output_filepath=output_filepath,
-            pii_fields=["session_id", "user_id"],
+            pii_fields=["session_id", "user_id", "message_id"],
             strict_alert=True,
         )
 
@@ -104,11 +110,17 @@ def start_scheduler():
         replace_existing=True,
     )
 
-    scheduler.start()
-    logger.info(
-        "[OBS] APScheduler started. Registered background jobs: [%s]",
-        ", ".join([job.id for job in scheduler.get_jobs()]),
-    )
+    if not scheduler.running:
+        scheduler.start()
+        logger.info(
+            "[OBS] APScheduler started. Registered background jobs: [%s]",
+            ", ".join([job.id for job in scheduler.get_jobs()]),
+        )
+    else:
+        logger.info(
+            "[OBS] APScheduler is already running. Jobs updated: [%s]",
+            ", ".join([job.id for job in scheduler.get_jobs()]),
+        )
 
 
 def shutdown_scheduler():
