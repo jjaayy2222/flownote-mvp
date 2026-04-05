@@ -186,3 +186,6 @@ pyrightconfig.json
 # 테스트용 파일
 temp_test_vault/
 test_output.txt
+
+# Golden Dataset
+data/golden_dataset/
