@@ -54,6 +54,32 @@ _DEFAULT_EVAL_MODEL = "gpt-4o-mini"
 _DEFAULT_MAX_EVAL_DOCS = 10
 _DEFAULT_MAX_EVAL_DOC_CHARS = 2000
 
+# 세션별 history 스캔 상한: 가장 최신 N개 메시지만 조회하여 lrange 비용 통제
+# 기본값 200: assistant/user 교대 기준으로 최대 100회 도리(람에) 추적 가능
+_DEFAULT_EVAL_HISTORY_SCAN_LIMIT = 200
+# 안전 상한(Hard Cap): 설정 오류로 인한 과도한 Redis LRANGE 방지
+# 환경변수 값이 이 값을 초과하면 경고 로그 후 이 값으로 클램프
+_MAX_EVAL_HISTORY_SCAN_LIMIT = 4000
+
+# 배치 파이프라인 내 session_history_cache 최대 세션 수
+# 이 크기를 초과하면 캐시를 비워 메모리 스파이크를 방지합니다.
+_MAX_SESSION_HISTORY_CACHE_SIZE = 500
+
+# OpenAI API 키 조회 우선순위 (단일 진실 공급원 SSOT)
+# 이 공통 상수를 수정하면 조회 로직에러 메시지가 자동으로 동기화됩니다.
+OPENAI_API_KEY_ENV_VARS: tuple[str, ...] = (
+    "GPT4O_MINI_API_KEY",
+    "GPT4O_API_KEY",
+    "OPENAI_API_KEY",
+)
+
+# OpenAI Base URL 조회 우선순위
+OPENAI_BASE_URL_ENV_VARS: tuple[str, ...] = (
+    "GPT4O_MINI_BASE_URL",
+    "GPT4O_BASE_URL",
+    "OPENAI_BASE_URL",
+)
+
 # EvalLabel: 분류 결과 리터럴 타입
 EvalLabel = Literal["hallucination", "rag_retrieval_failure", "uncertain"]
 
@@ -120,6 +146,59 @@ def _get_max_eval_doc_chars() -> int:
         return val if val > 0 else _DEFAULT_MAX_EVAL_DOC_CHARS
     except ValueError:
         return _DEFAULT_MAX_EVAL_DOC_CHARS
+
+
+def _get_eval_history_scan_limit() -> int:
+    """
+    세션별 history를 조회할 최대 메시지 수를 환경 변수에서 읽어 반환.
+
+    _MAX_EVAL_HISTORY_SCAN_LIMIT로 클램프하여 설정 오류 시에도
+    과도한 Redis LRANGE 호출이 발생하지 않도록 보호합니다.
+    """
+    try:
+        val = int(os.environ.get("EVAL_HISTORY_SCAN_LIMIT", str(_DEFAULT_EVAL_HISTORY_SCAN_LIMIT)))
+        limit = val if val > 0 else _DEFAULT_EVAL_HISTORY_SCAN_LIMIT
+    except ValueError:
+        return _DEFAULT_EVAL_HISTORY_SCAN_LIMIT
+
+    # 안전 상한 클램프: 비정상적으로 큰 값으로 인한 Redis OOM 방지
+    if limit > _MAX_EVAL_HISTORY_SCAN_LIMIT:
+        logger.warning(
+            "[OBS] EVAL_HISTORY_SCAN_LIMIT=%s exceeds max=%s; clamping to max. "
+            "Check your environment configuration.",
+            limit,
+            _MAX_EVAL_HISTORY_SCAN_LIMIT,
+        )
+        limit = _MAX_EVAL_HISTORY_SCAN_LIMIT
+    return limit
+
+
+def _get_api_key_from_env() -> str:
+    """
+    OpenAI 계열 모델 호출에 사용할 API 키를 환경 변수에서 조회합니다.
+    조회 우선순위: GPT4O_MINI_API_KEY → GPT4O_API_KEY → OPENAI_API_KEY
+
+    OPENAI_API_KEY_ENV_VARS 상수를 단일 진실 공급원(SSOT)으로 사용하여
+    조회 로직과 에러 메시지가 항상 일치하도록 보장합니다.
+
+    Note: 반환된 API 키는 절대 로그에 출력하지 않습니다 (Secret 보호).
+    """
+    for var_name in OPENAI_API_KEY_ENV_VARS:
+        value = os.getenv(var_name)
+        if value:
+            return value
+    raise ValueError(
+        f"OpenAI API key is missing. Please set one of: {', '.join(OPENAI_API_KEY_ENV_VARS)}."
+    )
+
+
+def _get_base_url_from_env() -> Optional[str]:
+    """OpenAI base URL을 환경 변수에서 조회합니다. 설정되지 않으면 None 반환."""
+    for var_name in OPENAI_BASE_URL_ENV_VARS:
+        value = os.getenv(var_name)
+        if value:
+            return value
+    return None
 
 
 @lru_cache(maxsize=4)
@@ -377,23 +456,9 @@ async def classify_negative_feedback(
         eval_model = _get_eval_model()
         prompt_text = _build_eval_prompt(query, retrieved_docs, ai_response)
 
-        # [Performance] 캐시된 LLM 클라이언트 사용 (매 호출마다 인스턴스 생성 방지)
-        api_key = (
-            os.getenv("GPT4O_MINI_API_KEY")
-            or os.getenv("GPT4O_API_KEY")
-            or os.getenv("OPENAI_API_KEY")
-        )
-        if not api_key:
-            raise ValueError(
-                "OpenAI API key is missing. Please set GPT4O_MINI_API_KEY or OPENAI_API_KEY."
-            )
-
-        base_url = (
-            os.getenv("GPT4O_MINI_BASE_URL")
-            or os.getenv("GPT4O_BASE_URL")
-            or os.getenv("OPENAI_BASE_URL")
-        )
-
+        # [Performance + SSOT] 캐시된 LLM 클라이언트 사용 + 공통 헬퍼로 API 키 조회
+        api_key = _get_api_key_from_env()
+        base_url = _get_base_url_from_env()
         eval_llm = _get_eval_llm(eval_model, api_key, base_url)
 
         from langchain_core.messages import HumanMessage  # type: ignore[import]
@@ -488,6 +553,11 @@ async def run_negative_feedback_eval_pipeline(
         if not redis_client.is_connected():
             await redis_client.connect()
 
+        # [Performance] 세션별 history 캐시: 동일 session의 여러 피드백에 대해 lrange를 1회만 수행
+        # 키: session_id, 값: 역순 정렬된 파싱 완료 메시지 dict 리스트
+        session_history_cache: dict[str, list[dict]] = {}
+        history_scan_limit = _get_eval_history_scan_limit()
+
         cursor = 0
         while True:
             cursor, partial_keys = await redis_client.redis.scan(
@@ -523,23 +593,74 @@ async def run_negative_feedback_eval_pipeline(
                         summary["skipped_already_evaluated"] += 1
                         continue
 
-                    # chat:history에서 AI 응답 텍스트 조회
-                    # [Bug Fix] 역순 탐색으로 message_id에 가장 가까운(최신) assistant 메시지를 우선 사용.
-                    # RAG context(chat:rag_context)가 존재하면 이미 message_id로 정확히 매칭되므로,
-                    # 여기서는 RAG context가 없는 경우의 최선 근사값을 찾습니다.
-                    history_key = f"{_HISTORY_PREFIX}{session_id}"
-                    history_raw = await redis_client.redis.lrange(history_key, 0, -1)
+                    # ── chat:history 조회 (세션별 1회 캐싱으로 N×M Redis 호출 원천 차단) ──
+                    # RAG context(chat:rag_context)가 존재하면 message_id로 정확히 매칭되지만,
+                    # 없는 경우에도 최대한 정확한 assistant 메시지를 찾아야 합니다.
+
+                    # [Memory Guard] 캐시 크기 상한 초과 시 캐시 전체 제거
+                    # 장기 실행 프로세스에서 세션 수가 무한히 증가하는 메모리 스파이크를 방지합니다.
+                    if len(session_history_cache) >= _MAX_SESSION_HISTORY_CACHE_SIZE:
+                        logger.warning(
+                            "[OBS] session_history_cache reached max size (%s); clearing cache "
+                            "to prevent memory spike.",
+                            _MAX_SESSION_HISTORY_CACHE_SIZE,
+                        )
+                        session_history_cache.clear()
+
+                    if session_id not in session_history_cache:
+                        history_key = f"{_HISTORY_PREFIX}{session_id}"
+                        # lrange 범위 제한: 최근 N개만 조회하여 메모리·속도 절약
+                        history_raw = await redis_client.redis.lrange(
+                            history_key, -history_scan_limit, -1
+                        )
+                        parsed: list[dict] = []
+                        for item in history_raw:
+                            try:
+                                msg_dict = json.loads(
+                                    item.decode("utf-8") if isinstance(item, bytes) else str(item)
+                                )
+                                if isinstance(msg_dict, dict):
+                                    parsed.append(msg_dict)
+                            except (JSONDecodeError, ValueError, AttributeError):
+                                continue
+                        # 역순 저장: 최신 메시지부터 탐색할 수 있도록 준비
+                        session_history_cache[session_id] = list(reversed(parsed))
+
+                    cached_history = session_history_cache[session_id]
+
+                    # ── AI 응답 이중 매칭 전략 ────────────────────────────────
+                    # 1순위: history 항목에 message_id 필드가 있다면 피드백 msg_id와 정확히 매칭
+                    # 2순위: 정확 매칭 실패 시 가장 최신 assistant 응답으로 fallback
+                    # (history에 message_id가 저장되어 있으면 1순위에서 반드시 매칭됩니다)
                     ai_response: Optional[str] = None
-                    for item in reversed(history_raw):  # 역순으로 최신 assistant 메시지를 먼저 탐색
-                        try:
-                            msg_dict = json.loads(item.decode("utf-8") if isinstance(item, bytes) else str(item))
-                            if msg_dict.get("role") == "assistant":
-                                content = msg_dict.get("content", "")
-                                if content and content.strip():
-                                    ai_response = content
-                                    break  # 첫 번째(가장 최신) assistant 메시지를 찾으면 즉시 종료
-                        except (JSONDecodeError, ValueError, AttributeError):
+                    latest_assistant_response: Optional[str] = None
+
+                    for msg_dict in cached_history:  # 이미 역순 정렬된 캐시
+                        if msg_dict.get("role") != "assistant":
                             continue
+                        content = msg_dict.get("content", "")
+                        if not content or not str(content).strip():
+                            continue
+
+                        # 1순위: message_id 정확 매칭
+                        if msg_dict.get("message_id") == msg_id:
+                            ai_response = str(content)
+                            break
+
+                        # 2순위용 fallback 보관 (최신 assistant 메시지)
+                        if latest_assistant_response is None:
+                            latest_assistant_response = str(content)
+
+                    # 정확 매칭 실패 시 최신 assistant 응답으로 fallback
+                    if not ai_response and latest_assistant_response:
+                        logger.info(
+                            "[OBS] message_id exact match failed; using latest assistant response as fallback.",
+                            extra={
+                                "session_id_hash": mask_pii_id(session_id),
+                                "message_id_hash": mask_pii_id(msg_id),
+                            },
+                        )
+                        ai_response = latest_assistant_response
 
                     if not ai_response:
                         summary["skipped_no_response"] += 1

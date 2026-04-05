@@ -440,8 +440,18 @@ class ChatHistoryService:
                 e,
             )
 
-    async def add_message(self, session_id: str, role: str, content: str) -> None:
+    async def add_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        *,
+        message_id: Optional[str] = None,
+    ) -> None:
         """메시지를 Redis 리스트에 추가하고 세션 메타와 ZSET score를 갱신한다.
+
+        message_id가 제공되면 매시지 dict에 함께 저장하여, 평가 파이프라인(eval_service)이
+        피드백 message_id와 정확히 매칭할 수 있도록 지원합니다.
 
         Raises:
             ValueError: session_id 누락.
@@ -460,6 +470,10 @@ class ChatHistoryService:
                 "content": content,
                 "timestamp": now.isoformat(),
             }
+            # message_id가 유효한 비공백 문자열인 경우에만 포함 (eval_service의 정확한 매칭에 사용됨)
+            # 빈 문자열("")이나 공백만 있는 값도 저장하지 않아 eval 파이프라인의 오매칭을 방지합니다.
+            if message_id and message_id.strip():
+                message["message_id"] = message_id
 
             await redis_client.redis.rpush(key, json.dumps(message))
             await redis_client.redis.expire(key, self.ttl)
