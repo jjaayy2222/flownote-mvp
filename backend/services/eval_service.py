@@ -641,18 +641,23 @@ async def classify_negative_feedback(
 async def run_negative_feedback_eval_pipeline(
     *,
     batch_size: int = 100,
+    sampling_rate: Optional[float] = None,
 ) -> dict[str, Any]:
     """
     Redis의 모든 '싫어요' 피드백을 대상으로 분류 파이프라인을 실행합니다.
     이미 평가된 항목(chat:eval:* 키 존재)은 건너뛰어 중복 LLM 호출을 방지합니다.
 
     [Step 2-2 - 샘플링 전략]
-    EVAL_SAMPLING_RATE 환경변수(기본 1.0)로 평가 비율을 제어합니다.
-    예: EVAL_SAMPLING_RATE=0.2 → '싫어요' 중 무작위 20%만 LLM 분류하여 API 비용 절감.
+    sampling_rate 인자 또는 EVAL_SAMPLING_RATE 환경변수(기본 1.0)로 평가 비율을 제어합니다.
+    예: sampling_rate=0.2 → '싫어요' 중 무작위 20%만 LLM 분류하여 API 비용 절감.
     Ragas 미사용 시 자체 LLM 판별(classify_negative_feedback)이 기본 전략으로 동작합니다.
 
     Args:
-        batch_size: Redis SCAN 한 번에 반환할 최대 키 수.
+        batch_size:     Redis SCAN 한 번에 반환할 최대 키 수.
+        sampling_rate:  평가를 수행할 비율 (0.0 초과 ~ 1.0 이하).
+                        None이면 EVAL_SAMPLING_RATE 환경변수에서 읽어옵니다.
+                        명시적으로 전달하면 환경변수보다 우선합니다.
+                        (테스트 시 환경변수 조작 없이 비율을 제어할 수 있습니다.)
 
     Returns:
         실행 요약 dict:
@@ -668,7 +673,19 @@ async def run_negative_feedback_eval_pipeline(
                 "label_counts": {"hallucination": int, "rag_retrieval_failure": int, "uncertain": int}
             }
     """
-    sampling_rate = _get_eval_sampling_rate()
+    # [DI] 명시적 인자가 제공되면 우선 사용, 아니면 환경변수에서 조회
+    if sampling_rate is None:
+        sampling_rate = _get_eval_sampling_rate()
+    else:
+        # 인자로 전달된 값도 동일한 범위 검증 적용
+        if not (0.0 < sampling_rate <= 1.0):
+            logger.warning(
+                "[OBS] Explicit sampling_rate=%.4f is out of range (0.0, 1.0]; "
+                "using default=%.1f.",
+                sampling_rate,
+                _DEFAULT_EVAL_SAMPLING_RATE,
+            )
+            sampling_rate = _DEFAULT_EVAL_SAMPLING_RATE
     summary: dict[str, Any] = {
         "total_negative": 0,
         "sampled": 0,
@@ -837,6 +854,26 @@ async def run_negative_feedback_eval_pipeline(
 
             if int(cursor) == 0:
                 break
+
+        # [Invariant Post-Check] summary 필드 정합성 검증
+        # total_negative가 모든 하위 분기(skipped + sampled)의 합과 일치하는지 확인.
+        # 어긋나면 파이프라인 내 분기 로직에 누락 경로가 있다는 신호이므로 경고 로그 기록.
+        # (프로덕션 크래시를 방지하기 위해 assert 대신 WARNING 로그 사용)
+        expected_sum = (
+            summary["skipped_already_evaluated"]
+            + summary["skipped_sampling"]
+            + summary["skipped_no_response"]
+            + summary["classified"]
+            + summary["errors"]
+        )
+        if summary["total_negative"] != expected_sum:
+            logger.warning(
+                "[OBS] Pipeline summary invariant mismatch: "
+                "total_negative=%d != sum_of_outcomes=%d. "
+                "This may indicate a logic regression in the pipeline branching.",
+                summary["total_negative"],
+                expected_sum,
+            )
 
         logger.info(
             "[OBS] Negative feedback eval pipeline complete.",
