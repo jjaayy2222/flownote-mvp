@@ -212,14 +212,35 @@ def _get_eval_sampling_rate() -> float:
         )
         return _DEFAULT_EVAL_SAMPLING_RATE
 
+    # [SSOT] 범위 검증을 공통 헬퍼에 위임 (중복 로직 제거)
+    return _validate_sampling_rate(rate, "EVAL_SAMPLING_RATE env")
+
+
+def _validate_sampling_rate(rate: float, source: str) -> float:
+    """
+    [SSOT] sampling_rate 범위 검증 로직의 단일 진실 공급원.
+
+    유효 범위: (0.0, 1.0]. 범위 벗어난 값은 기본값으로 복원하고 경고 로그를 기록.
+    ‘_get_eval_sampling_rate()’(환경변수 경로)와
+    ‘run_negative_feedback_eval_pipeline’(명시적 인자 경로) 모두에서
+    호출하여 검증 로직과 로그 메시지가 한 곳에서 일관되게 유지되도록 합니다.
+
+    Args:
+        rate:   검증할 부동소수점 비율.
+        source: 에러 로그에 표시할 키 출소 ("EVAL_SAMPLING_RATE env" 또는 "explicit arg" 등).
+
+    Returns:
+        유효한 비율 값 또는 복원된 기본값 (_DEFAULT_EVAL_SAMPLING_RATE).
+    """
     if not (0.0 < rate <= 1.0):
         logger.warning(
-            "[OBS] EVAL_SAMPLING_RATE=%.4f is out of range (0.0, 1.0]; using default=%.1f.",
+            "[OBS] sampling_rate=%.4f from '%s' is out of range (0.0, 1.0]; "
+            "using default=%.1f.",
             rate,
+            source,
             _DEFAULT_EVAL_SAMPLING_RATE,
         )
         return _DEFAULT_EVAL_SAMPLING_RATE
-
     return rate
 
 
@@ -641,18 +662,23 @@ async def classify_negative_feedback(
 async def run_negative_feedback_eval_pipeline(
     *,
     batch_size: int = 100,
+    sampling_rate: Optional[float] = None,
 ) -> dict[str, Any]:
     """
     Redis의 모든 '싫어요' 피드백을 대상으로 분류 파이프라인을 실행합니다.
     이미 평가된 항목(chat:eval:* 키 존재)은 건너뛰어 중복 LLM 호출을 방지합니다.
 
     [Step 2-2 - 샘플링 전략]
-    EVAL_SAMPLING_RATE 환경변수(기본 1.0)로 평가 비율을 제어합니다.
-    예: EVAL_SAMPLING_RATE=0.2 → '싫어요' 중 무작위 20%만 LLM 분류하여 API 비용 절감.
+    sampling_rate 인자 또는 EVAL_SAMPLING_RATE 환경변수(기본 1.0)로 평가 비율을 제어합니다.
+    예: sampling_rate=0.2 → '싫어요' 중 무작위 20%만 LLM 분류하여 API 비용 절감.
     Ragas 미사용 시 자체 LLM 판별(classify_negative_feedback)이 기본 전략으로 동작합니다.
 
     Args:
-        batch_size: Redis SCAN 한 번에 반환할 최대 키 수.
+        batch_size:     Redis SCAN 한 번에 반환할 최대 키 수.
+        sampling_rate:  평가를 수행할 비율 (0.0 초과 ~ 1.0 이하).
+                        None이면 EVAL_SAMPLING_RATE 환경변수에서 읽어옵니다.
+                        명시적으로 전달하면 환경변수보다 우선합니다.
+                        (테스트 시 환경변수 조작 없이 비율을 제어할 수 있습니다.)
 
     Returns:
         실행 요약 dict:
@@ -668,7 +694,12 @@ async def run_negative_feedback_eval_pipeline(
                 "label_counts": {"hallucination": int, "rag_retrieval_failure": int, "uncertain": int}
             }
     """
-    sampling_rate = _get_eval_sampling_rate()
+    # [DI] 명시적 인자가 제공되면 우선 사용, 아니면 환경변수에서 조회
+    # 범위 검증은 _validate_sampling_rate() SSOT 헬퍼로 준수 (로직 중복 제거)
+    if sampling_rate is None:
+        sampling_rate = _get_eval_sampling_rate()
+    else:
+        sampling_rate = _validate_sampling_rate(sampling_rate, "explicit arg")
     summary: dict[str, Any] = {
         "total_negative": 0,
         "sampled": 0,
@@ -837,6 +868,34 @@ async def run_negative_feedback_eval_pipeline(
 
             if int(cursor) == 0:
                 break
+
+        # [Invariant Post-Check] 외부 불변식 검증 (False-Positive 제거 버전)
+        #
+        # 파이프라인 분기 트리는 total_negative가 정확히 3가의 배타적 경로로 소진됨:
+        #   total_negative
+        #   ├── skipped_already_evaluated  (중복 평가 방지, continue)
+        #   ├── skipped_sampling            (샘플링 제외, continue)
+        #   └── sampled                     (평가 진행 대상)
+        #       └── (내부: classified, skipped_no_response, errors, None반환등 복합)
+        #
+        # classified/errors를 포함하면 classify_negative_feedback()가 None을 반환하는
+        # 정상 경로를 눌리는 게산 오류로 거짓 경고 발생 가능.
+        # 따라서 진정으로 배타적이고 전체를 포괄하는 외부 불물식만 사용.
+        outer_sum = (
+            summary["skipped_already_evaluated"]
+            + summary["skipped_sampling"]
+            + summary["sampled"]
+        )
+        if summary["total_negative"] != outer_sum:
+            logger.warning(
+                "[OBS] Pipeline summary invariant mismatch: "
+                "total_negative=%d != (skipped_already_evaluated=%d + skipped_sampling=%d + sampled=%d). "
+                "This may indicate a logic regression in the pipeline branching.",
+                summary["total_negative"],
+                summary["skipped_already_evaluated"],
+                summary["skipped_sampling"],
+                summary["sampled"],
+            )
 
         logger.info(
             "[OBS] Negative feedback eval pipeline complete.",
