@@ -212,14 +212,35 @@ def _get_eval_sampling_rate() -> float:
         )
         return _DEFAULT_EVAL_SAMPLING_RATE
 
+    # [SSOT] 범위 검증을 공통 헬퍼에 위임 (중복 로직 제거)
+    return _validate_sampling_rate(rate, "EVAL_SAMPLING_RATE env")
+
+
+def _validate_sampling_rate(rate: float, source: str) -> float:
+    """
+    [SSOT] sampling_rate 범위 검증 로직의 단일 진실 공급원.
+
+    유효 범위: (0.0, 1.0]. 범위 벗어난 값은 기본값으로 복원하고 경고 로그를 기록.
+    ‘_get_eval_sampling_rate()’(환경변수 경로)와
+    ‘run_negative_feedback_eval_pipeline’(명시적 인자 경로) 모두에서
+    호출하여 검증 로직과 로그 메시지가 한 곳에서 일관되게 유지되도록 합니다.
+
+    Args:
+        rate:   검증할 부동소수점 비율.
+        source: 에러 로그에 표시할 키 출소 ("EVAL_SAMPLING_RATE env" 또는 "explicit arg" 등).
+
+    Returns:
+        유효한 비율 값 또는 복원된 기본값 (_DEFAULT_EVAL_SAMPLING_RATE).
+    """
     if not (0.0 < rate <= 1.0):
         logger.warning(
-            "[OBS] EVAL_SAMPLING_RATE=%.4f is out of range (0.0, 1.0]; using default=%.1f.",
+            "[OBS] sampling_rate=%.4f from '%s' is out of range (0.0, 1.0]; "
+            "using default=%.1f.",
             rate,
+            source,
             _DEFAULT_EVAL_SAMPLING_RATE,
         )
         return _DEFAULT_EVAL_SAMPLING_RATE
-
     return rate
 
 
@@ -674,18 +695,11 @@ async def run_negative_feedback_eval_pipeline(
             }
     """
     # [DI] 명시적 인자가 제공되면 우선 사용, 아니면 환경변수에서 조회
+    # 범위 검증은 _validate_sampling_rate() SSOT 헬퍼로 준수 (로직 중복 제거)
     if sampling_rate is None:
         sampling_rate = _get_eval_sampling_rate()
     else:
-        # 인자로 전달된 값도 동일한 범위 검증 적용
-        if not (0.0 < sampling_rate <= 1.0):
-            logger.warning(
-                "[OBS] Explicit sampling_rate=%.4f is out of range (0.0, 1.0]; "
-                "using default=%.1f.",
-                sampling_rate,
-                _DEFAULT_EVAL_SAMPLING_RATE,
-            )
-            sampling_rate = _DEFAULT_EVAL_SAMPLING_RATE
+        sampling_rate = _validate_sampling_rate(sampling_rate, "explicit arg")
     summary: dict[str, Any] = {
         "total_negative": 0,
         "sampled": 0,
@@ -855,24 +869,32 @@ async def run_negative_feedback_eval_pipeline(
             if int(cursor) == 0:
                 break
 
-        # [Invariant Post-Check] summary 필드 정합성 검증
-        # total_negative가 모든 하위 분기(skipped + sampled)의 합과 일치하는지 확인.
-        # 어긋나면 파이프라인 내 분기 로직에 누락 경로가 있다는 신호이므로 경고 로그 기록.
-        # (프로덕션 크래시를 방지하기 위해 assert 대신 WARNING 로그 사용)
-        expected_sum = (
+        # [Invariant Post-Check] 외부 불변식 검증 (False-Positive 제거 버전)
+        #
+        # 파이프라인 분기 트리는 total_negative가 정확히 3가의 배타적 경로로 소진됨:
+        #   total_negative
+        #   ├── skipped_already_evaluated  (중복 평가 방지, continue)
+        #   ├── skipped_sampling            (샘플링 제외, continue)
+        #   └── sampled                     (평가 진행 대상)
+        #       └── (내부: classified, skipped_no_response, errors, None반환등 복합)
+        #
+        # classified/errors를 포함하면 classify_negative_feedback()가 None을 반환하는
+        # 정상 경로를 눌리는 게산 오류로 거짓 경고 발생 가능.
+        # 따라서 진정으로 배타적이고 전체를 포괄하는 외부 불물식만 사용.
+        outer_sum = (
             summary["skipped_already_evaluated"]
             + summary["skipped_sampling"]
-            + summary["skipped_no_response"]
-            + summary["classified"]
-            + summary["errors"]
+            + summary["sampled"]
         )
-        if summary["total_negative"] != expected_sum:
+        if summary["total_negative"] != outer_sum:
             logger.warning(
                 "[OBS] Pipeline summary invariant mismatch: "
-                "total_negative=%d != sum_of_outcomes=%d. "
+                "total_negative=%d != (skipped_already_evaluated=%d + skipped_sampling=%d + sampled=%d). "
                 "This may indicate a logic regression in the pipeline branching.",
                 summary["total_negative"],
-                expected_sum,
+                summary["skipped_already_evaluated"],
+                summary["skipped_sampling"],
+                summary["sampled"],
             )
 
         logger.info(
