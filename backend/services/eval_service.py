@@ -7,6 +7,15 @@
 - RAG Retrieval Failure: 검색된 단락 자체가 질문과 무관한 경우
 - Hallucination: 검색 단락에 없는 내용을 LLM이 생성한 경우
 
+[Step 2-2 설계 결정 - 외부 평가 라이브러리 연동 검토 결과]
+외부 라이브러리(Ragas)는 다음 이유로 미적용 결정:
+  1. 의존성 충돌 위험: ragas 설치 시 langchain-core 강제 업그레이드 + scipy·huggingface_hub 등
+     대규모 패키지 추가로 기존 운영 환경 안정성 훼손 우려.
+  2. 비용 중복: Ragas의 faithfulness·context_recall 지표도 내부적으로 LLM을 호출하므로,
+     이미 구현된 자체 평가 프롬프트(_build_eval_prompt)와 기능이 중복되어 API 비용만 배가됨.
+대신 자체 LLM 판별 프롬프트(classify_negative_feedback)를 기본 전략으로 유지하고,
+배치 파이프라인에 EVAL_SAMPLING_RATE 기반 샘플링 전략을 추가하여 비용을 제어합니다.
+
 관련 이슈: #934
 브랜치: feature/issue-934-eval-framework
 """
@@ -14,6 +23,7 @@
 import json
 import logging
 import os
+import random
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -65,6 +75,12 @@ _MAX_EVAL_HISTORY_SCAN_LIMIT = 4000
 # 배치 파이프라인 내 session_history_cache 최대 세션 수
 # 이 크기를 초과하면 캐시를 비워 메모리 스파이크를 방지합니다.
 _MAX_SESSION_HISTORY_CACHE_SIZE = 500
+
+# [Step 2-2] 샘플링 전략 상수
+# EVAL_SAMPLING_RATE: 전체 '싫어요' 피드백 중 평가를 수행할 비율 (0.0 초과 ~ 1.0 이하)
+# 기본값 1.0 = 전체 평가. 예: 0.2 = 20%만 샘플링하여 OpenAI API 비용 절감.
+# 환경변수 EVAL_SAMPLING_RATE로 오버라이드 가능. 범위 벗어나면 기본값 1.0으로 복원.
+_DEFAULT_EVAL_SAMPLING_RATE = 1.0
 
 # OpenAI API 키 조회 우선순위 (단일 진실 공급원 SSOT)
 # 이 공통 상수를 수정하면 조회 로직에러 메시지가 자동으로 동기화됩니다.
@@ -172,6 +188,39 @@ def _get_eval_history_scan_limit() -> int:
         )
         limit = _MAX_EVAL_HISTORY_SCAN_LIMIT
     return limit
+
+
+def _get_eval_sampling_rate() -> float:
+    """
+    [Step 2-2] 배치 파이프라인에서 평가를 수행할 샘플링 비율을 환경 변수에서 읽어 반환.
+
+    EVAL_SAMPLING_RATE 환경변수로 제어하며, 유효 범위는 (0.0, 1.0] 입니다.
+    - 기본값 1.0 = 전체 평가 (기존 동작과 동일).
+    - 예: 0.2 → '싫어요' 피드백 중 무작위 20%만 LLM 평가하여 API 비용 절감.
+    - 범위를 벗어난 값(0 이하 또는 1 초과, 숫자가 아닌 값)은 기본값 1.0으로 복원하고 경고 로그를 남깁니다.
+
+    Note: Ragas 미적용 대안으로 도입된 비용 제어 전략입니다. (Step 2-2 설계 결정 참조)
+    """
+    raw = os.environ.get("EVAL_SAMPLING_RATE", str(_DEFAULT_EVAL_SAMPLING_RATE))
+    try:
+        rate = float(raw)
+    except ValueError:
+        logger.warning(
+            "[OBS] EVAL_SAMPLING_RATE='%s' is not a valid float; using default=%.1f.",
+            raw,
+            _DEFAULT_EVAL_SAMPLING_RATE,
+        )
+        return _DEFAULT_EVAL_SAMPLING_RATE
+
+    if not (0.0 < rate <= 1.0):
+        logger.warning(
+            "[OBS] EVAL_SAMPLING_RATE=%.4f is out of range (0.0, 1.0]; using default=%.1f.",
+            rate,
+            _DEFAULT_EVAL_SAMPLING_RATE,
+        )
+        return _DEFAULT_EVAL_SAMPLING_RATE
+
+    return rate
 
 
 # ─────────────────────────────────────────────────────────────
@@ -597,25 +646,45 @@ async def run_negative_feedback_eval_pipeline(
     Redis의 모든 '싫어요' 피드백을 대상으로 분류 파이프라인을 실행합니다.
     이미 평가된 항목(chat:eval:* 키 존재)은 건너뛰어 중복 LLM 호출을 방지합니다.
 
+    [Step 2-2 - 샘플링 전략]
+    EVAL_SAMPLING_RATE 환경변수(기본 1.0)로 평가 비율을 제어합니다.
+    예: EVAL_SAMPLING_RATE=0.2 → '싫어요' 중 무작위 20%만 LLM 분류하여 API 비용 절감.
+    Ragas 미사용 시 자체 LLM 판별(classify_negative_feedback)이 기본 전략으로 동작합니다.
+
+    Args:
+        batch_size: Redis SCAN 한 번에 반환할 최대 키 수.
+
     Returns:
         실행 요약 dict:
             {
-                "total_negative": int,
-                "classified": int,
+                "total_negative": int,         # 전체 '싫어요' 피드백 수
+                "sampled": int,                # 샘플링 후 평가 대상 수
+                "sampling_rate": float,        # 적용된 샘플링 비율
+                "classified": int,             # LLM 분류 성공 수
                 "skipped_already_evaluated": int,
+                "skipped_sampling": int,       # 샘플링으로 건너뛴 수
                 "skipped_no_response": int,
                 "errors": int,
                 "label_counts": {"hallucination": int, "rag_retrieval_failure": int, "uncertain": int}
             }
     """
+    sampling_rate = _get_eval_sampling_rate()
     summary: dict[str, Any] = {
         "total_negative": 0,
+        "sampled": 0,
+        "sampling_rate": sampling_rate,
         "classified": 0,
         "skipped_already_evaluated": 0,
+        "skipped_sampling": 0,
         "skipped_no_response": 0,
         "errors": 0,
         "label_counts": {"hallucination": 0, "rag_retrieval_failure": 0, "uncertain": 0},
     }
+
+    logger.info(
+        "[OBS] Starting negative feedback eval pipeline.",
+        extra={"sampling_rate": sampling_rate},
+    )
 
     try:
         if not redis_client.is_connected():
@@ -660,6 +729,15 @@ async def run_negative_feedback_eval_pipeline(
                     if existing:
                         summary["skipped_already_evaluated"] += 1
                         continue
+
+                    # [Step 2-2] 샘플링 전략: EVAL_SAMPLING_RATE 미만인 경우만 평가 진행
+                    # sampling_rate == 1.0이면 random.random() < 1.0이 항상 True → 전체 평가
+                    # sampling_rate == 0.2이면 약 20%만 평가하여 LLM API 비용 절감
+                    if random.random() >= sampling_rate:
+                        summary["skipped_sampling"] += 1
+                        continue
+
+                    summary["sampled"] += 1
 
                     # ── chat:history 조회 (_SessionHistoryCache LRU로 N×M Redis 호출 원천 차단) ──
                     # RAG context(chat:rag_context)가 존재하면 message_id로 정확히 매칭되지만,
