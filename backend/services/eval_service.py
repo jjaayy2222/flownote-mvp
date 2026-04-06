@@ -227,7 +227,7 @@ def _validate_sampling_rate(rate: float, source: str) -> float:
 
     Args:
         rate:   검증할 부동소수점 비율.
-        source: 에러 로그에 표시할 키 출소 ("EVAL_SAMPLING_RATE env" 또는 "explicit arg" 등).
+        source: 에러 로그에 표시할 키 출처 ("EVAL_SAMPLING_RATE env" 또는 "explicit arg" 등).
 
     Returns:
         유효한 비율 값 또는 복원된 기본값 (_DEFAULT_EVAL_SAMPLING_RATE).
