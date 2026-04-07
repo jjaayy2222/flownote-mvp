@@ -25,7 +25,7 @@ import logging
 import os
 import random
 import re
-from collections import OrderedDict, Counter
+from collections import OrderedDict, Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -915,12 +915,25 @@ async def run_negative_feedback_eval_pipeline(
 # 관리자 보고서(대시보드)용 키워드 클러스터링 및 통계 추출 로직
 # ─────────────────────────────────────────────────────────────
 
+# [Step 2-3] 관리자 보고서용 Redis SCAN 상한 (요청당 최대 반복 횟수)
+# 환경변수 EVAL_REPORT_MAX_SCAN_ITERATIONS 로 조정 가능
+_EVAL_REPORT_MAX_SCAN_ITERATIONS = int(os.getenv("EVAL_REPORT_MAX_SCAN_ITERATIONS", "100"))
+
 # [Step 2-3] 조사 제거 및 TF 계산을 위한 경량화된 한국어 불용어
 _KOREAN_STOPWORDS = {
     "어떻게", "무엇인가요", "알려줘", "설명해줘", "어떤", "무엇", "이건", "저건", 
     "있나요", "어디서", "있을까", "인가요", "하는지", "방법", "대해", "대한", "그리고",
     "이", "그", "저", "것", "수", "등", "때", "위해", "관련", "관련된"
 }
+
+# [Step 2-3] 연속 처리를 위해 미리 정렬된 조사 튜플 (길이 역순)
+_POSTPOSITIONS_SORTED = tuple(
+    sorted(
+        ['은', '는', '이', '가', '을', '를', '의', '에', '에게', '에서', '으로', '로', '와', '과', '도', '만'],
+        key=len,
+        reverse=True
+    )
+)
 
 def _extract_keywords(text: str) -> list[str]:
     """
@@ -934,22 +947,27 @@ def _extract_keywords(text: str) -> list[str]:
     cleaned = re.sub(r'[^\w\s]', '', text)
     tokens = cleaned.split()
     
-    postpositions = ['은', '는', '이', '가', '을', '를', '의', '에', '에게', '에서', '으로', '로', '와', '과', '도', '만']
-    extracted = []
+    extracted: list[str] = []
     
     for token in tokens:
         if token in _KOREAN_STOPWORDS:
             continue
             
-        # 가장 긴 조사부터 매칭하여 제거
-        for p in sorted(postpositions, key=len, reverse=True):
-            if token.endswith(p) and len(token) > len(p):
-                token = token[:-len(p)]
+        stem = token
+        while True:
+            stripped_in_this_round = False
+            for josa in _POSTPOSITIONS_SORTED:
+                if stem.endswith(josa) and len(stem) > len(josa):
+                    stem = stem[:-len(josa)]
+                    stripped_in_this_round = True
+                    break
+            
+            if not stripped_in_this_round:
                 break
                 
         # 추출된 단어가 2글자 이상이고 불용어가 아닌 경우만 보존
-        if len(token) > 1 and token not in _KOREAN_STOPWORDS:
-            extracted.append(token)
+        if len(stem) > 1 and stem not in _KOREAN_STOPWORDS:
+            extracted.append(stem)
             
     return extracted
 
@@ -966,11 +984,19 @@ async def generate_eval_report() -> dict[str, Any]:
     if not redis_client.is_connected():
         await redis_client.connect()
         
-    labels_count = {"hallucination": 0, "rag_retrieval_failure": 0, "uncertain": 0}
+    labels_count: dict[str, int] = defaultdict(int)
     failed_queries = []
     
     cursor = 0
+    max_scan_iterations = _EVAL_REPORT_MAX_SCAN_ITERATIONS
+    iteration = 0
+    
     while True:
+        # Safeguard: cap the amount of work this endpoint does per request
+        if iteration >= max_scan_iterations:
+            break
+        iteration += 1
+        
         cursor, keys = await redis_client.redis.scan(cursor, match=f"{_EVAL_RESULT_PREFIX}*", count=500)
         
         for key in keys:
@@ -983,8 +1009,7 @@ async def generate_eval_report() -> dict[str, Any]:
                     parsed = json.loads(val_str)
                     
                     label = parsed.get("label", "uncertain")
-                    if label in labels_count:
-                        labels_count[label] += 1
+                    labels_count[label] += 1
                         
                     # 실패 케이스의 질문 수집
                     if label in ("hallucination", "rag_retrieval_failure"):

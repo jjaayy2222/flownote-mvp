@@ -36,6 +36,6 @@ async def get_eval_report_endpoint(
     try:
         report = await generate_eval_report()
         return report
-    except Exception as e:
-        logger.error(f"[OBS] Error generating eval report: {e}")
+    except Exception:
+        logger.exception("[OBS] Error generating eval report")
         raise HTTPException(status_code=500, detail="Internal Server Error")
