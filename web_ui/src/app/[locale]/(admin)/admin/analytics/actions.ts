@@ -22,6 +22,8 @@ export interface FeedbackDetail {
   timestamp: string;
 }
 
+export type EvalLabel = 'hallucination' | 'rag_retrieval_failure' | 'uncertain';
+
 export interface FeedbackStatsResponse {
   status: string;
   total_up: number;
@@ -29,6 +31,14 @@ export interface FeedbackStatsResponse {
   trends: FeedbackTrend[];
   recent_feedbacks: FeedbackDetail[];
   is_monitoring_active: boolean;
+}
+export interface EvalReportResponse {
+  status: string;
+  total_evaluated: number;
+  label_distribution: Record<EvalLabel, number>;
+  top_failing_topics: Array<{ keyword: string; count: number }>;
+  failed_query_count: number;
+  timestamp: string;
 }
 
 
@@ -89,6 +99,66 @@ export async function fetchFeedbackStats(limit: number = 50): Promise<FeedbackSt
   } catch (error) {
     if (process.env.NODE_ENV === 'development') {
       console.error("[OBS] Server Action `fetchFeedbackStats` failed:", error);
+    }
+    return fallbackResponse;
+  }
+}
+
+/**
+ * [Server Action] AI 평가 파이프라인의 실패 응답 분석 보고서를 백엔드로부터 가져온다.
+ */
+export async function fetchEvalReport(): Promise<EvalReportResponse> {
+  const fallbackResponse: EvalReportResponse = {
+    status: 'error',
+    total_evaluated: 0,
+    label_distribution: {
+      hallucination: 0,
+      rag_retrieval_failure: 0,
+      uncertain: 0,
+    },
+    top_failing_topics: [],
+    failed_query_count: 0,
+    timestamp: new Date().toISOString(),
+  };
+
+  try {
+    const cookieStore = await cookies();
+    const rawRole = cookieStore.get(STORAGE_KEYS.AUTH_ROLE)?.value;
+    const rawEmail = cookieStore.get(STORAGE_KEYS.AUTH_EMAIL)?.value;
+    
+    const role = rawRole ? decodeURIComponent(rawRole) : null;
+    const email = rawEmail ? decodeURIComponent(rawEmail) : null;
+
+    if (!hasAdminAccess(role, email)) {
+      console.warn("[Admin Actions] Unauthorized attempt to fetch eval report.");
+      return fallbackResponse;
+    }
+
+    const adminKey = process.env.ADMIN_API_KEY;
+    if (!adminKey) {
+      console.error("[OBS] ADMIN_API_KEY is missing from environment variables.");
+      return fallbackResponse;
+    }
+
+    const res = await fetch(`${BACKEND_URL}/api/admin/eval-report`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Admin-Key': adminKey,
+      },
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      throw new Error(`Backend returned status ${res.status}`);
+    }
+
+    const data: EvalReportResponse = await res.json();
+    return data;
+    
+  } catch (error) {
+    if (process.env.NODE_ENV === 'development') {
+      console.error("[OBS] Server Action `fetchEvalReport` failed:", error);
     }
     return fallbackResponse;
   }
