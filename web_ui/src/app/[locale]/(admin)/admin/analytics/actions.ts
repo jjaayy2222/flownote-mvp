@@ -155,15 +155,20 @@ export async function fetchEvalReport(): Promise<EvalReportResponse> {
       throw new Error(`Backend returned status ${res.status}`);
     }
 
-    // [Review 991 반영] 백엔드에서 온 동적 레코드를 정규화하여 타입 안정성을 확보합니다.
+    // [Review 993 반영] 코어 라벨과 추가 라벨의 정규화 로직을 일관되게 관리하기 위한 헬퍼
+    const toSafeNumber = (val: unknown): number | null => {
+      const num = Number(val);
+      return Number.isFinite(num) ? num : null;
+    };
+
     const rawData = await res.json();
     const rawDist = rawData.label_distribution || {};
     
-    // 코어 라벨 분류
+    // 코어 라벨 분류 (헬퍼를 사용하여 NaN/Infinity 등을 0으로 일관되게 처리)
     const label_distribution: Record<EvalLabel, number> = {
-      hallucination: Number(rawDist.hallucination) || 0,
-      rag_retrieval_failure: Number(rawDist.rag_retrieval_failure) || 0,
-      uncertain: Number(rawDist.uncertain) || 0,
+      hallucination: toSafeNumber(rawDist.hallucination) ?? 0,
+      rag_retrieval_failure: toSafeNumber(rawDist.rag_retrieval_failure) ?? 0,
+      uncertain: toSafeNumber(rawDist.uncertain) ?? 0,
     };
     
     // [Review 992 반영] EvalLabel에서 자동으로 knownKeys 집합을 파생하여 SSOT 보장
@@ -172,9 +177,9 @@ export async function fetchEvalReport(): Promise<EvalReportResponse> {
     
     Object.keys(rawDist).forEach(key => {
       if (!knownKeys.has(key)) {
-        // [Review 992 반영] 비정상적인 데이터(문자열, null 등)가 섞여 있어도 수치 안정성을 유지하도록 유효성 검증
-        const numericValue = Number(rawDist[key]);
-        if (!Number.isFinite(numericValue)) return;
+        // [Review 993 반영] 추가 라벨도 코어 라벨과 동일한 유효성 검사 로직 공유
+        const numericValue = toSafeNumber(rawDist[key]);
+        if (numericValue === null) return;
         
         additional_labels[key] = numericValue;
       }

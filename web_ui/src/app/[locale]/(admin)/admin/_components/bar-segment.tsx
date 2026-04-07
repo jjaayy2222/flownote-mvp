@@ -12,9 +12,11 @@ interface BarSegmentProps {
  * 이를 통해 모든 IDE 차원의 인라인 스타일 경고를 원천적으로 차단합니다.
  */
 export function BarSegment({ percentage, className }: BarSegmentProps) {
-  // [Review 991/992 반영] NaN, undefined 등에 대한 방어 코드 및 0~100 범위 클램핑 (strict Number.isNaN 사용)
+  // [Review 991/992/993 반영] NaN, Infinity 등 비유한 값에 대한 통합 방어 및 0~100 범위 클램핑
   const basePct = percentage ?? 0;
-  const safePct = Number.isNaN(basePct) ? 0 : Math.max(0, Math.min(100, Math.round(basePct)));
+  const safePct = !Number.isFinite(basePct)
+    ? 0
+    : Math.max(0, Math.min(100, Math.round(basePct)));
 
   // [Review 991 반영] 0%일 때도 null을 반환하지 않고 렌더링을 유지하여 DOM 구조(라운드 처리 등)의 일관성 확보
   const pctClass = `bar-pct-${safePct}`;
