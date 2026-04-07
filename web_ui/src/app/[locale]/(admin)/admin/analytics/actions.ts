@@ -3,6 +3,7 @@
 import { cookies } from 'next/headers';
 import { STORAGE_KEYS } from '@/lib/constants';
 import { hasAdminAccess } from '@/lib/auth';
+import { toSafeNumber } from './analytics-utils';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
 
@@ -154,12 +155,6 @@ export async function fetchEvalReport(): Promise<EvalReportResponse> {
     if (!res.ok) {
       throw new Error(`Backend returned status ${res.status}`);
     }
-
-    // [Review 993 반영] 코어 라벨과 추가 라벨의 정규화 로직을 일관되게 관리하기 위한 헬퍼
-    const toSafeNumber = (val: unknown): number | null => {
-      const num = Number(val);
-      return Number.isFinite(num) ? num : null;
-    };
 
     const rawData = await res.json();
     const rawDist = rawData.label_distribution || {};
