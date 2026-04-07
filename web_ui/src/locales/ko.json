@@ -167,6 +167,17 @@
         "test_btn": "테스트 알림 발송",
         "test_success": "테스트 알림이 발송되었습니다!",
         "test_error": "알림 발송에 실패했습니다."
+      },
+      "eval_report": {
+        "title": "AI 실패 응답 분석 보고서",
+        "description": "응답 실패 원인 분포 및 주요 키워드 클러스터링",
+        "total_failures": "총 실패 분석 건수",
+        "hallucination": "환각 (Hallucination)",
+        "rag_failure": "검색 실패 (Retrieval Failure)",
+        "uncertain": "기타 (Uncertain)",
+        "topics_title": "가장 많이 발생한 실패 키워드 TOP 5",
+        "topics_empty": "분석된 실패 키워드 데이터가 없습니다.",
+        "count_suffix": "건"
       }
     },
     "error": {
