@@ -22,6 +22,8 @@ export interface FeedbackDetail {
   timestamp: string;
 }
 
+export type EvalLabel = 'hallucination' | 'rag_retrieval_failure' | 'uncertain';
+
 export interface FeedbackStatsResponse {
   status: string;
   total_up: number;
@@ -33,7 +35,7 @@ export interface FeedbackStatsResponse {
 export interface EvalReportResponse {
   status: string;
   total_evaluated: number;
-  label_distribution: Record<string, number>;
+  label_distribution: Record<EvalLabel, number>;
   top_failing_topics: Array<{ keyword: string; count: number }>;
   failed_query_count: number;
   timestamp: string;
@@ -109,7 +111,11 @@ export async function fetchEvalReport(): Promise<EvalReportResponse> {
   const fallbackResponse: EvalReportResponse = {
     status: 'error',
     total_evaluated: 0,
-    label_distribution: {},
+    label_distribution: {
+      hallucination: 0,
+      rag_retrieval_failure: 0,
+      uncertain: 0,
+    },
     top_failing_topics: [],
     failed_query_count: 0,
     timestamp: new Date().toISOString(),

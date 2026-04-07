@@ -11,12 +11,11 @@ interface EvalReportCardProps {
 export function EvalReportCard({ report }: EvalReportCardProps) {
   const t = useTranslations('admin.analytics.eval_report');
 
-  const totalEvaluated = report.total_evaluated || 0;
   const hallucinationCount = report.label_distribution?.hallucination || 0;
   const ragFailureCount = report.label_distribution?.rag_retrieval_failure || 0;
   const uncertainCount = report.label_distribution?.uncertain || 0;
 
-  // Calculate percentages securely (handle 0 devision)
+  // Calculate percentages securely (handle 0 division)
   const failedTotal = hallucinationCount + ragFailureCount + uncertainCount;
   
   const getPercentage = (count: number) => {
@@ -54,7 +53,7 @@ export function EvalReportCard({ report }: EvalReportCardProps) {
               {t('total_failures')}
             </p>
             <p className="mt-1 text-4xl font-extrabold tabular-nums tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-400">
-              {totalEvaluated}
+              {failedTotal}
             </p>
           </div>
         </div>
@@ -104,9 +103,9 @@ export function EvalReportCard({ report }: EvalReportCardProps) {
             </div>
             <div className="flex flex-wrap gap-2">
               {report.top_failing_topics && report.top_failing_topics.length > 0 ? (
-                report.top_failing_topics.map((topic, idx) => (
+                report.top_failing_topics.map((topic) => (
                   <div 
-                    key={idx}
+                    key={topic.keyword}
                     className="flex cursor-default items-center gap-2 rounded-full border border-blue-200/50 bg-blue-100/50 px-3 py-1.5 text-sm font-medium text-blue-700 transition-all hover:scale-105 hover:bg-blue-100 hover:shadow-sm dark:border-blue-900/50 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-800/40"
                   >
                     <span>{topic.keyword}</span>
