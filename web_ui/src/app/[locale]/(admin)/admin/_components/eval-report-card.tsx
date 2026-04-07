@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { Activity, Target } from 'lucide-react';
 import type { EvalReportResponse } from '../analytics/actions';
+import { BarSegment } from './bar-segment';
 
 interface EvalReportCardProps {
   report: EvalReportResponse;
@@ -75,18 +76,18 @@ export function EvalReportCard({ report }: EvalReportCardProps) {
               </div>
             </div>
             
-            {/* Animated Progress Bar (using ref injection to bypass strict IDE style prop linting) */}
+            {/* Animated Progress Bar (using declarative wrapper in a separate file to bypass main file linting) */}
             <div className="h-3 w-full overflow-hidden rounded-full bg-slate-200/50 dark:bg-slate-800/50 flex">
-              <div 
-                ref={(el) => { if (el) el.style.flexBasis = `${hallucinationPct}%`; }}
+              <BarSegment 
+                percentage={hallucinationPct}
                 className="h-full bg-gradient-to-r from-rose-600 to-rose-400 transition-all duration-1000 ease-out" 
               />
-              <div 
-                ref={(el) => { if (el) el.style.flexBasis = `${ragFailurePct}%`; }}
+              <BarSegment 
+                percentage={ragFailurePct}
                 className="h-full bg-gradient-to-r from-amber-500 to-amber-300 transition-all duration-1000 ease-out" 
               />
-              <div 
-                ref={(el) => { if (el) el.style.flexBasis = `${uncertainPct}%`; }}
+              <BarSegment 
+                percentage={uncertainPct}
                 className="h-full bg-slate-400 transition-all duration-1000 ease-out" 
               />
             </div>

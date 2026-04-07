@@ -35,7 +35,7 @@ export interface FeedbackStatsResponse {
 export interface EvalReportResponse {
   status: string;
   total_evaluated: number;
-  label_distribution: Record<string, number>;
+  label_distribution: Record<string, number> & Partial<Record<EvalLabel, number>>;
   top_failing_topics: Array<{ keyword: string; count: number }>;
   failed_query_count: number;
   timestamp: string;
