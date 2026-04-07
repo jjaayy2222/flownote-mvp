@@ -22,7 +22,8 @@ export interface FeedbackDetail {
   timestamp: string;
 }
 
-export type EvalLabel = 'hallucination' | 'rag_retrieval_failure' | 'uncertain';
+export const EVAL_LABELS = ['hallucination', 'rag_retrieval_failure', 'uncertain'] as const;
+export type EvalLabel = (typeof EVAL_LABELS)[number];
 
 export interface FeedbackStatsResponse {
   status: string;
@@ -35,7 +36,8 @@ export interface FeedbackStatsResponse {
 export interface EvalReportResponse {
   status: string;
   total_evaluated: number;
-  label_distribution: Record<string, number> & Partial<Record<EvalLabel, number>>;
+  label_distribution: Record<EvalLabel, number>;
+  additional_labels?: Record<string, number>;
   top_failing_topics: Array<{ keyword: string; count: number }>;
   failed_query_count: number;
   timestamp: string;
@@ -153,7 +155,37 @@ export async function fetchEvalReport(): Promise<EvalReportResponse> {
       throw new Error(`Backend returned status ${res.status}`);
     }
 
-    const data: EvalReportResponse = await res.json();
+    // [Review 991 반영] 백엔드에서 온 동적 레코드를 정규화하여 타입 안정성을 확보합니다.
+    const rawData = await res.json();
+    const rawDist = rawData.label_distribution || {};
+    
+    // 코어 라벨 분류
+    const label_distribution: Record<EvalLabel, number> = {
+      hallucination: Number(rawDist.hallucination) || 0,
+      rag_retrieval_failure: Number(rawDist.rag_retrieval_failure) || 0,
+      uncertain: Number(rawDist.uncertain) || 0,
+    };
+    
+    // [Review 992 반영] EvalLabel에서 자동으로 knownKeys 집합을 파생하여 SSOT 보장
+    const knownKeys = new Set<string>(EVAL_LABELS);
+    const additional_labels: Record<string, number> = {};
+    
+    Object.keys(rawDist).forEach(key => {
+      if (!knownKeys.has(key)) {
+        // [Review 992 반영] 비정상적인 데이터(문자열, null 등)가 섞여 있어도 수치 안정성을 유지하도록 유효성 검증
+        const numericValue = Number(rawDist[key]);
+        if (!Number.isFinite(numericValue)) return;
+        
+        additional_labels[key] = numericValue;
+      }
+    });
+
+    const data: EvalReportResponse = {
+      ...rawData,
+      label_distribution,
+      additional_labels: Object.keys(additional_labels).length > 0 ? additional_labels : undefined
+    };
+
     return data;
     
   } catch (error) {

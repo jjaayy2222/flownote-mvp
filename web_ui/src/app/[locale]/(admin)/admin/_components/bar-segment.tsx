@@ -2,7 +2,7 @@ import React from 'react';
 import './bar-pct.css';
 
 interface BarSegmentProps {
-  percentage: number;
+  percentage?: number;
   className: string;
 }
 
@@ -12,10 +12,12 @@ interface BarSegmentProps {
  * 이를 통해 모든 IDE 차원의 인라인 스타일 경고를 원천적으로 차단합니다.
  */
 export function BarSegment({ percentage, className }: BarSegmentProps) {
-  if (percentage <= 0) return null;
+  // [Review 991/992 반영] NaN, undefined 등에 대한 방어 코드 및 0~100 범위 클램핑 (strict Number.isNaN 사용)
+  const basePct = percentage ?? 0;
+  const safePct = Number.isNaN(basePct) ? 0 : Math.max(0, Math.min(100, Math.round(basePct)));
 
-  // 0~100 사이의 올바른 클래스 이름 생성 (Math.round로 안전하게 반올림)
-  const pctClass = `bar-pct-${Math.max(0, Math.min(100, Math.round(percentage)))}`;
+  // [Review 991 반영] 0%일 때도 null을 반환하지 않고 렌더링을 유지하여 DOM 구조(라운드 처리 등)의 일관성 확보
+  const pctClass = `bar-pct-${safePct}`;
 
   return (
     <div className={`${pctClass} ${className}`} />
