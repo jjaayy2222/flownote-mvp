@@ -941,10 +941,7 @@ _POSTPOSITIONS_SORTED = tuple(
 def _strip_postpositions(token: str) -> str:
     """조사(은/는/이/가/...)를 가능한 한 반복적으로 제거합니다."""
     stem = token
-    while True:
-        if len(stem) <= 1:
-            break
-            
+    while len(stem) > 1:
         stripped = False
         for josa in _POSTPOSITIONS_SORTED:
             if stem.endswith(josa) and len(stem) > len(josa):
@@ -984,7 +981,7 @@ async def _iter_eval_records(
     redis_conn: Any,
     key_pattern: str,
     max_scan_iterations: int,
-    scan_batch_size: int
+    scan_batch_size: int = _EVAL_REPORT_SCAN_BATCH_SIZE
 ) -> AsyncIterator[dict[str, Any]]:
     """Redis SCAN 및 JSON 파싱을 수행하는 async 제너레이터 헬퍼"""
     cursor = 0
@@ -1030,8 +1027,7 @@ async def generate_eval_report() -> dict[str, Any]:
     async for parsed in _iter_eval_records(
         redis_conn=redis_client.redis,
         key_pattern=f"{_EVAL_RESULT_PREFIX}*",
-        max_scan_iterations=_EVAL_REPORT_MAX_SCAN_ITERATIONS,
-        scan_batch_size=_EVAL_REPORT_SCAN_BATCH_SIZE
+        max_scan_iterations=_EVAL_REPORT_MAX_SCAN_ITERATIONS
     ):
         label = parsed.get("label", "uncertain")
         labels_count[label] += 1
