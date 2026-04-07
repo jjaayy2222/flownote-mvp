@@ -984,7 +984,7 @@ async def _iter_eval_records(
     redis_conn: Any,
     key_pattern: str,
     max_scan_iterations: int,
-    scan_count: int
+    scan_batch_size: int
 ) -> AsyncIterator[dict[str, Any]]:
     """Redis SCAN 및 JSON 파싱을 수행하는 async 제너레이터 헬퍼"""
     cursor = 0
@@ -995,7 +995,7 @@ async def _iter_eval_records(
             break
         iteration += 1
         
-        cursor, keys = await redis_conn.scan(cursor, match=key_pattern, count=scan_count)
+        cursor, keys = await redis_conn.scan(cursor, match=key_pattern, count=scan_batch_size)
         
         for key in keys:
             key_str = key.decode("utf-8") if isinstance(key, bytes) else str(key)
@@ -1031,7 +1031,7 @@ async def generate_eval_report() -> dict[str, Any]:
         redis_conn=redis_client.redis,
         key_pattern=f"{_EVAL_RESULT_PREFIX}*",
         max_scan_iterations=_EVAL_REPORT_MAX_SCAN_ITERATIONS,
-        scan_count=_EVAL_REPORT_SCAN_BATCH_SIZE
+        scan_batch_size=_EVAL_REPORT_SCAN_BATCH_SIZE
     ):
         label = parsed.get("label", "uncertain")
         labels_count[label] += 1
