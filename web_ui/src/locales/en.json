@@ -167,6 +167,17 @@
         "test_btn": "Trigger Test Alert",
         "test_success": "Diagnostic alert sent!",
         "test_error": "Failed to trigger alert"
+      },
+      "eval_report": {
+        "title": "AI Failure Analysis Report",
+        "description": "Failure root cause distribution & major keyword clustering",
+        "total_failures": "Total Evaluated Failures",
+        "hallucination": "Hallucination",
+        "rag_failure": "Retrieval Failure",
+        "uncertain": "Uncertain",
+        "topics_title": "Top 5 Failing Topics (Keywords)",
+        "topics_empty": "No failure keyword data analyzed yet.",
+        "count_suffix": " issues"
       }
     },
     "error": {
