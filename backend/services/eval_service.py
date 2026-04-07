@@ -24,7 +24,8 @@ import json
 import logging
 import os
 import random
-from collections import OrderedDict
+import re
+from collections import OrderedDict, Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -909,3 +910,141 @@ async def run_negative_feedback_eval_pipeline(
             extra={"error": str(e)},
         )
         raise
+
+# ─────────────────────────────────────────────────────────────
+# 관리자 보고서(대시보드)용 키워드 클러스터링 및 통계 추출 로직
+# ─────────────────────────────────────────────────────────────
+
+# [Step 2-3] 관리자 보고서용 Redis SCAN 상한 (요청당 최대 반복 횟수)
+# 환경변수 EVAL_REPORT_MAX_SCAN_ITERATIONS 로 조정 가능
+_EVAL_REPORT_MAX_SCAN_ITERATIONS = int(os.getenv("EVAL_REPORT_MAX_SCAN_ITERATIONS", "100"))
+
+# [Step 2-3] 조사 제거 및 TF 계산을 위한 경량화된 한국어 불용어
+_KOREAN_STOPWORDS = {
+    "어떻게", "무엇인가요", "알려줘", "설명해줘", "어떤", "무엇", "이건", "저건", 
+    "있나요", "어디서", "있을까", "인가요", "하는지", "방법", "대해", "대한", "그리고",
+    "이", "그", "저", "것", "수", "등", "때", "위해", "관련", "관련된"
+}
+
+# [Step 2-3] 연속 처리를 위해 미리 정렬된 조사 튜플 (길이 역순)
+_POSTPOSITIONS_SORTED = tuple(
+    sorted(
+        ['은', '는', '이', '가', '을', '를', '의', '에', '에게', '에서', '으로', '로', '와', '과', '도', '만'],
+        key=len,
+        reverse=True
+    )
+)
+
+def _extract_keywords(text: str) -> list[str]:
+    """
+    텍스트에서 핵심 키워드를 추출합니다 (KoNLPy/TF-IDF 대안 경량화 알고리즘).
+    - 특수문자 제거
+    - 공백 기준 분리
+    - 기본적인 한국어 조사 제거 (은/는/이/가/을/를/의/에/에서/으로/로/와/과/도/만/에게)
+    - 불용어(Stopwords) 필터링
+    """
+    # 특수문자를 제거하고 공백 단위 분리
+    cleaned = re.sub(r'[^\w\s]', '', text)
+    tokens = cleaned.split()
+    
+    extracted: list[str] = []
+    
+    for token in tokens:
+        if token in _KOREAN_STOPWORDS:
+            continue
+            
+        stem = token
+        while True:
+            stripped_in_this_round = False
+            for josa in _POSTPOSITIONS_SORTED:
+                if stem.endswith(josa) and len(stem) > len(josa):
+                    stem = stem[:-len(josa)]
+                    stripped_in_this_round = True
+                    break
+            
+            if not stripped_in_this_round:
+                break
+                
+        # 추출된 단어가 2글자 이상이고 불용어가 아닌 경우만 보존
+        if len(stem) > 1 and stem not in _KOREAN_STOPWORDS:
+            extracted.append(stem)
+            
+    return extracted
+
+async def generate_eval_report() -> dict[str, Any]:
+    """
+    [Step 2-3] 분류된 '실패 응답'들의 현황 및 키워드 클러스터링 보고서를 생성합니다.
+    FastAPI 엔드포인트를 통해 JSON 형태로 관리자 대시보드에 제공됩니다.
+    
+    기능:
+    - 전체 분류(레이블) 분포 반환
+    - 실패(hallucination, rag_retrieval_failure)로 분류된 질문(rag_query)들에서 핵심 키워드 추출
+    - TF(Term Frequency) 기반 Top 5 키워드 클러스터링 도출
+    """
+    if not redis_client.is_connected():
+        await redis_client.connect()
+        
+    labels_count: dict[str, int] = defaultdict(int)
+    failed_queries = []
+    
+    cursor = 0
+    max_scan_iterations = _EVAL_REPORT_MAX_SCAN_ITERATIONS
+    iteration = 0
+    
+    while True:
+        # Safeguard: cap the amount of work this endpoint does per request
+        if iteration >= max_scan_iterations:
+            break
+        iteration += 1
+        
+        cursor, keys = await redis_client.redis.scan(cursor, match=f"{_EVAL_RESULT_PREFIX}*", count=500)
+        
+        for key in keys:
+            key_str = key.decode("utf-8") if isinstance(key, bytes) else str(key)
+            eval_hash = await redis_client.redis.hgetall(key_str)
+            
+            for msg_id, raw_val in eval_hash.items():
+                try:
+                    val_str = raw_val.decode("utf-8") if isinstance(raw_val, bytes) else str(raw_val)
+                    parsed = json.loads(val_str)
+                    
+                    label = parsed.get("label", "uncertain")
+                    labels_count[label] += 1
+                        
+                    # 실패 케이스의 질문 수집
+                    if label in ("hallucination", "rag_retrieval_failure"):
+                        query = parsed.get("rag_query")
+                        if query:
+                            failed_queries.append(query)
+                except (JSONDecodeError, ValueError):
+                    continue
+                    
+        if int(cursor) == 0:
+            break
+            
+    # 키워드 TF 계산 (TF-IDF 경량 대안)
+    keyword_counter: Counter = Counter()
+    for q in failed_queries:
+        keywords = _extract_keywords(q)
+        keyword_counter.update(keywords)
+        
+    # 클러스터링 (상위 5개의 핵심 키워드로 대표되는 토픽 반환)
+    top_5_keywords = [{"keyword": k, "count": c} for k, c in keyword_counter.most_common(5)]
+    
+    logger.info(
+        "[OBS] Generated Admin Eval Report",
+        extra={
+            "total_evaluated": sum(labels_count.values()),
+            "failed_query_count": len(failed_queries),
+            "top_keyword": top_5_keywords[0]["keyword"] if top_5_keywords else None
+        }
+    )
+    
+    return {
+        "status": "success",
+        "total_evaluated": sum(labels_count.values()),
+        "label_distribution": labels_count,
+        "top_failing_topics": top_5_keywords,
+        "failed_query_count": len(failed_queries),
+        "timestamp": _now_utc_iso()
+    }
