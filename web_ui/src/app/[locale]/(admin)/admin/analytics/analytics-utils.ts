@@ -9,6 +9,11 @@ export const toSafeNumber = (val: unknown): number | null => {
     return null;
   }
   
+  // [Review 995 반영] 빈 문자열이나 공백 문자열이 Number('') === 0 에 의해 0으로 오인되는 것을 원천 차단
+  if (typeof val === 'string' && val.trim().length === 0) {
+    return null;
+  }
+  
   const num = Number(val);
   
   // NaN, Infinity 등 비유한 값은 배제
