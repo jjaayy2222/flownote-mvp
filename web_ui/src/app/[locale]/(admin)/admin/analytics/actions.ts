@@ -22,7 +22,8 @@ export interface FeedbackDetail {
   timestamp: string;
 }
 
-export type EvalLabel = 'hallucination' | 'rag_retrieval_failure' | 'uncertain';
+export const EVAL_LABELS = ['hallucination', 'rag_retrieval_failure', 'uncertain'] as const;
+export type EvalLabel = (typeof EVAL_LABELS)[number];
 
 export interface FeedbackStatsResponse {
   status: string;
@@ -160,18 +161,22 @@ export async function fetchEvalReport(): Promise<EvalReportResponse> {
     
     // 코어 라벨 분류
     const label_distribution: Record<EvalLabel, number> = {
-      hallucination: rawDist.hallucination || 0,
-      rag_retrieval_failure: rawDist.rag_retrieval_failure || 0,
-      uncertain: rawDist.uncertain || 0,
+      hallucination: Number(rawDist.hallucination) || 0,
+      rag_retrieval_failure: Number(rawDist.rag_retrieval_failure) || 0,
+      uncertain: Number(rawDist.uncertain) || 0,
     };
     
-    // 나머지는 additional_labels로 분리 (accidental access 방지)
-    const knownKeys = new Set(['hallucination', 'rag_retrieval_failure', 'uncertain']);
+    // [Review 992 반영] EvalLabel에서 자동으로 knownKeys 집합을 파생하여 SSOT 보장
+    const knownKeys = new Set<string>(EVAL_LABELS);
     const additional_labels: Record<string, number> = {};
     
     Object.keys(rawDist).forEach(key => {
       if (!knownKeys.has(key)) {
-        additional_labels[key] = rawDist[key];
+        // [Review 992 반영] 비정상적인 데이터(문자열, null 등)가 섞여 있어도 수치 안정성을 유지하도록 유효성 검증
+        const numericValue = Number(rawDist[key]);
+        if (!Number.isFinite(numericValue)) return;
+        
+        additional_labels[key] = numericValue;
       }
     });
 
