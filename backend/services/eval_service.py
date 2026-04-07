@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
 from json import JSONDecodeError
-from typing import Any, Literal, Optional
+from typing import Any, AsyncIterator, Literal, Optional
 
 import redis.exceptions
 
@@ -935,6 +935,20 @@ _POSTPOSITIONS_SORTED = tuple(
     )
 )
 
+def _strip_postpositions(token: str) -> str:
+    """조사(은/는/이/가/...)를 가능한 한 반복적으로 제거합니다."""
+    stem = token
+    while True:
+        stripped = False
+        for josa in _POSTPOSITIONS_SORTED:
+            if stem.endswith(josa) and len(stem) > len(josa):
+                stem = stem[:-len(josa)]
+                stripped = True
+                break
+        if not stripped:
+            break
+    return stem
+
 def _extract_keywords(text: str) -> list[str]:
     """
     텍스트에서 핵심 키워드를 추출합니다 (KoNLPy/TF-IDF 대안 경량화 알고리즘).
@@ -943,7 +957,6 @@ def _extract_keywords(text: str) -> list[str]:
     - 기본적인 한국어 조사 제거 (은/는/이/가/을/를/의/에/에서/으로/로/와/과/도/만/에게)
     - 불용어(Stopwords) 필터링
     """
-    # 특수문자를 제거하고 공백 단위 분리
     cleaned = re.sub(r'[^\w\s]', '', text)
     tokens = cleaned.split()
     
@@ -953,23 +966,43 @@ def _extract_keywords(text: str) -> list[str]:
         if token in _KOREAN_STOPWORDS:
             continue
             
-        stem = token
-        while True:
-            stripped_in_this_round = False
-            for josa in _POSTPOSITIONS_SORTED:
-                if stem.endswith(josa) and len(stem) > len(josa):
-                    stem = stem[:-len(josa)]
-                    stripped_in_this_round = True
-                    break
-            
-            if not stripped_in_this_round:
-                break
+        stem = _strip_postpositions(token)
                 
         # 추출된 단어가 2글자 이상이고 불용어가 아닌 경우만 보존
         if len(stem) > 1 and stem not in _KOREAN_STOPWORDS:
             extracted.append(stem)
             
     return extracted
+
+async def _iter_eval_records(
+    redis_conn: Any,
+    key_pattern: str,
+    max_scan_iterations: int
+) -> AsyncIterator[dict[str, Any]]:
+    """Redis SCAN 및 JSON 파싱을 수행하는 async 제너레이터 헬퍼"""
+    cursor = 0
+    iteration = 0
+    
+    while True:
+        if iteration >= max_scan_iterations:
+            break
+        iteration += 1
+        
+        cursor, keys = await redis_conn.scan(cursor, match=key_pattern, count=500)
+        
+        for key in keys:
+            key_str = key.decode("utf-8") if isinstance(key, bytes) else str(key)
+            eval_hash = await redis_conn.hgetall(key_str)
+            
+            for _, raw_val in eval_hash.items():
+                try:
+                    val_str = raw_val.decode("utf-8") if isinstance(raw_val, bytes) else str(raw_val)
+                    yield json.loads(val_str)
+                except (JSONDecodeError, ValueError):
+                    continue
+                    
+        if int(cursor) == 0:
+            break
 
 async def generate_eval_report() -> dict[str, Any]:
     """
@@ -985,48 +1018,26 @@ async def generate_eval_report() -> dict[str, Any]:
         await redis_client.connect()
         
     labels_count: dict[str, int] = defaultdict(int)
-    failed_queries = []
+    failed_queries: list[str] = []
     
-    cursor = 0
-    max_scan_iterations = _EVAL_REPORT_MAX_SCAN_ITERATIONS
-    iteration = 0
-    
-    while True:
-        # Safeguard: cap the amount of work this endpoint does per request
-        if iteration >= max_scan_iterations:
-            break
-        iteration += 1
-        
-        cursor, keys = await redis_client.redis.scan(cursor, match=f"{_EVAL_RESULT_PREFIX}*", count=500)
-        
-        for key in keys:
-            key_str = key.decode("utf-8") if isinstance(key, bytes) else str(key)
-            eval_hash = await redis_client.redis.hgetall(key_str)
+    async for parsed in _iter_eval_records(
+        redis_conn=redis_client.redis,
+        key_pattern=f"{_EVAL_RESULT_PREFIX}*",
+        max_scan_iterations=_EVAL_REPORT_MAX_SCAN_ITERATIONS
+    ):
+        label = parsed.get("label", "uncertain")
+        labels_count[label] += 1
             
-            for msg_id, raw_val in eval_hash.items():
-                try:
-                    val_str = raw_val.decode("utf-8") if isinstance(raw_val, bytes) else str(raw_val)
-                    parsed = json.loads(val_str)
-                    
-                    label = parsed.get("label", "uncertain")
-                    labels_count[label] += 1
-                        
-                    # 실패 케이스의 질문 수집
-                    if label in ("hallucination", "rag_retrieval_failure"):
-                        query = parsed.get("rag_query")
-                        if query:
-                            failed_queries.append(query)
-                except (JSONDecodeError, ValueError):
-                    continue
-                    
-        if int(cursor) == 0:
-            break
+        # 실패 케이스의 질문 수집
+        if label in ("hallucination", "rag_retrieval_failure"):
+            query = parsed.get("rag_query")
+            if query:
+                failed_queries.append(query)
             
     # 키워드 TF 계산 (TF-IDF 경량 대안)
     keyword_counter: Counter = Counter()
     for q in failed_queries:
-        keywords = _extract_keywords(q)
-        keyword_counter.update(keywords)
+        keyword_counter.update(_extract_keywords(q))
         
     # 클러스터링 (상위 5개의 핵심 키워드로 대표되는 토픽 반환)
     top_5_keywords = [{"keyword": k, "count": c} for k, c in keyword_counter.most_common(5)]
@@ -1043,7 +1054,7 @@ async def generate_eval_report() -> dict[str, Any]:
     return {
         "status": "success",
         "total_evaluated": sum(labels_count.values()),
-        "label_distribution": labels_count,
+        "label_distribution": dict(labels_count),
         "top_failing_topics": top_5_keywords,
         "failed_query_count": len(failed_queries),
         "timestamp": _now_utc_iso()

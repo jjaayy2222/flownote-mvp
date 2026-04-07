@@ -2,6 +2,7 @@
 
 """Admin Endpoints"""
 
+import hmac
 import logging
 from typing import Optional
 
@@ -29,7 +30,10 @@ async def get_eval_report_endpoint(
         logger.error("[OBS] ADMIN_API_KEY is not configured in environment.")
         raise HTTPException(status_code=500, detail="Server Configuration Error")
         
-    if not x_admin_key or x_admin_key != admin_key:
+    provided = str(x_admin_key or "")
+    expected = str(admin_key or "")
+    
+    if not hmac.compare_digest(provided, expected):
         logger.warning("[OBS] Unauthorized attempt to access admin eval report.")
         raise HTTPException(status_code=403, detail="Forbidden: Invalid Admin Key")
         
