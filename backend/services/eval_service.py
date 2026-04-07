@@ -917,7 +917,10 @@ async def run_negative_feedback_eval_pipeline(
 
 # [Step 2-3] 관리자 보고서용 Redis SCAN 상한 (요청당 최대 반복 횟수)
 # 환경변수 EVAL_REPORT_MAX_SCAN_ITERATIONS 로 조정 가능
-_EVAL_REPORT_MAX_SCAN_ITERATIONS = int(os.getenv("EVAL_REPORT_MAX_SCAN_ITERATIONS", "100"))
+_EVAL_REPORT_MAX_SCAN_ITERATIONS = max(1, int(os.getenv("EVAL_REPORT_MAX_SCAN_ITERATIONS", "100")))
+
+# [Step 2-3] Redis SCAN 1회당 조회할 키 개수 (기본 500, 최소 1 이상 보장)
+_EVAL_REPORT_SCAN_BATCH_SIZE = max(1, int(os.getenv("EVAL_REPORT_SCAN_BATCH_SIZE", "500")))
 
 # [Step 2-3] 조사 제거 및 TF 계산을 위한 경량화된 한국어 불용어
 _KOREAN_STOPWORDS = {
@@ -938,7 +941,7 @@ _POSTPOSITIONS_SORTED = tuple(
 def _strip_postpositions(token: str) -> str:
     """조사(은/는/이/가/...)를 가능한 한 반복적으로 제거합니다."""
     stem = token
-    while True:
+    while len(stem) > 1:
         stripped = False
         for josa in _POSTPOSITIONS_SORTED:
             if stem.endswith(josa) and len(stem) > len(josa):
@@ -977,7 +980,8 @@ def _extract_keywords(text: str) -> list[str]:
 async def _iter_eval_records(
     redis_conn: Any,
     key_pattern: str,
-    max_scan_iterations: int
+    max_scan_iterations: int,
+    scan_count: int = _EVAL_REPORT_SCAN_BATCH_SIZE
 ) -> AsyncIterator[dict[str, Any]]:
     """Redis SCAN 및 JSON 파싱을 수행하는 async 제너레이터 헬퍼"""
     cursor = 0
@@ -988,7 +992,7 @@ async def _iter_eval_records(
             break
         iteration += 1
         
-        cursor, keys = await redis_conn.scan(cursor, match=key_pattern, count=500)
+        cursor, keys = await redis_conn.scan(cursor, match=key_pattern, count=scan_count)
         
         for key in keys:
             key_str = key.decode("utf-8") if isinstance(key, bytes) else str(key)
@@ -1023,7 +1027,8 @@ async def generate_eval_report() -> dict[str, Any]:
     async for parsed in _iter_eval_records(
         redis_conn=redis_client.redis,
         key_pattern=f"{_EVAL_RESULT_PREFIX}*",
-        max_scan_iterations=_EVAL_REPORT_MAX_SCAN_ITERATIONS
+        max_scan_iterations=_EVAL_REPORT_MAX_SCAN_ITERATIONS,
+        scan_count=_EVAL_REPORT_SCAN_BATCH_SIZE
     ):
         label = parsed.get("label", "uncertain")
         labels_count[label] += 1
