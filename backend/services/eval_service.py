@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
 from json import JSONDecodeError
-from typing import Any, Literal, Optional
+from typing import Any, AsyncIterator, Literal, Optional
 
 import redis.exceptions
 
@@ -974,7 +974,11 @@ def _extract_keywords(text: str) -> list[str]:
             
     return extracted
 
-async def _iter_eval_records(max_scan_iterations: int):
+async def _iter_eval_records(
+    redis_conn: Any,
+    key_pattern: str,
+    max_scan_iterations: int
+) -> AsyncIterator[dict[str, Any]]:
     """Redis SCAN 및 JSON 파싱을 수행하는 async 제너레이터 헬퍼"""
     cursor = 0
     iteration = 0
@@ -984,11 +988,11 @@ async def _iter_eval_records(max_scan_iterations: int):
             break
         iteration += 1
         
-        cursor, keys = await redis_client.redis.scan(cursor, match=f"{_EVAL_RESULT_PREFIX}*", count=500)
+        cursor, keys = await redis_conn.scan(cursor, match=key_pattern, count=500)
         
         for key in keys:
             key_str = key.decode("utf-8") if isinstance(key, bytes) else str(key)
-            eval_hash = await redis_client.redis.hgetall(key_str)
+            eval_hash = await redis_conn.hgetall(key_str)
             
             for _, raw_val in eval_hash.items():
                 try:
@@ -1016,7 +1020,11 @@ async def generate_eval_report() -> dict[str, Any]:
     labels_count: dict[str, int] = defaultdict(int)
     failed_queries: list[str] = []
     
-    async for parsed in _iter_eval_records(_EVAL_REPORT_MAX_SCAN_ITERATIONS):
+    async for parsed in _iter_eval_records(
+        redis_conn=redis_client.redis,
+        key_pattern=f"{_EVAL_RESULT_PREFIX}*",
+        max_scan_iterations=_EVAL_REPORT_MAX_SCAN_ITERATIONS
+    ):
         label = parsed.get("label", "uncertain")
         labels_count[label] += 1
             
