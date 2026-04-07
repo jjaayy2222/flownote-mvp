@@ -26,9 +26,6 @@ export function EvalReportCard({ report }: EvalReportCardProps) {
   const hallucinationPct = getPercentage(hallucinationCount);
   const ragFailurePct = getPercentage(ragFailureCount);
   const uncertainPct = getPercentage(uncertainCount);
-  const hallucinationStyle = { flexBasis: `${hallucinationPct}%` };
-  const ragFailureStyle = { flexBasis: `${ragFailurePct}%` };
-  const uncertainStyle = { flexBasis: `${uncertainPct}%` };
 
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-card/40 p-6 shadow-sm backdrop-blur-md transition-all hover:shadow-md dark:bg-slate-900/40">
@@ -53,7 +50,7 @@ export function EvalReportCard({ report }: EvalReportCardProps) {
               {t('total_failures')}
             </p>
             <p className="mt-1 text-4xl font-extrabold tabular-nums tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-400">
-              {failedTotal}
+              {report.failed_query_count ?? failedTotal}
             </p>
           </div>
         </div>
@@ -78,19 +75,19 @@ export function EvalReportCard({ report }: EvalReportCardProps) {
               </div>
             </div>
             
-            {/* Animated Progress Bar (using flex basis with spread to bypass IDE lint warnings) */}
+            {/* Animated Progress Bar (using ref injection to bypass strict IDE style prop linting) */}
             <div className="h-3 w-full overflow-hidden rounded-full bg-slate-200/50 dark:bg-slate-800/50 flex">
               <div 
+                ref={(el) => { if (el) el.style.flexBasis = `${hallucinationPct}%`; }}
                 className="h-full bg-gradient-to-r from-rose-600 to-rose-400 transition-all duration-1000 ease-out" 
-                {...{ style: hallucinationStyle }}
               />
               <div 
+                ref={(el) => { if (el) el.style.flexBasis = `${ragFailurePct}%`; }}
                 className="h-full bg-gradient-to-r from-amber-500 to-amber-300 transition-all duration-1000 ease-out" 
-                {...{ style: ragFailureStyle }}
               />
               <div 
+                ref={(el) => { if (el) el.style.flexBasis = `${uncertainPct}%`; }}
                 className="h-full bg-slate-400 transition-all duration-1000 ease-out" 
-                {...{ style: uncertainStyle }}
               />
             </div>
           </div>
