@@ -159,7 +159,8 @@ export async function fetchEvalReport(): Promise<EvalReportResponse> {
     const rawData = await res.json();
     const rawDist = rawData.label_distribution || {};
     
-    // 코어 라벨 분류 (헬퍼를 사용하여 NaN/Infinity 등을 0으로 일관되게 처리)
+    // 코어 라벨 분류 (헬퍼를 사용하여 NaN/Infinity/공백 등을 0으로 일관되게 처리)
+    // [Review 995 반영] UI 안정성을 위해 코어 라벨은 기본값 0을 보장하며, 유효하지 않은 값만 무시합니다.
     const label_distribution: Record<EvalLabel, number> = {
       hallucination: toSafeNumber(rawDist.hallucination) ?? 0,
       rag_retrieval_failure: toSafeNumber(rawDist.rag_retrieval_failure) ?? 0,
