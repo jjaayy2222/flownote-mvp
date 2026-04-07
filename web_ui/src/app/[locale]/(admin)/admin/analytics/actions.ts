@@ -35,7 +35,8 @@ export interface FeedbackStatsResponse {
 export interface EvalReportResponse {
   status: string;
   total_evaluated: number;
-  label_distribution: Record<string, number> & Partial<Record<EvalLabel, number>>;
+  label_distribution: Record<EvalLabel, number>;
+  additional_labels?: Record<string, number>;
   top_failing_topics: Array<{ keyword: string; count: number }>;
   failed_query_count: number;
   timestamp: string;
@@ -153,7 +154,33 @@ export async function fetchEvalReport(): Promise<EvalReportResponse> {
       throw new Error(`Backend returned status ${res.status}`);
     }
 
-    const data: EvalReportResponse = await res.json();
+    // [Review 991 반영] 백엔드에서 온 동적 레코드를 정규화하여 타입 안정성을 확보합니다.
+    const rawData = await res.json();
+    const rawDist = rawData.label_distribution || {};
+    
+    // 코어 라벨 분류
+    const label_distribution: Record<EvalLabel, number> = {
+      hallucination: rawDist.hallucination || 0,
+      rag_retrieval_failure: rawDist.rag_retrieval_failure || 0,
+      uncertain: rawDist.uncertain || 0,
+    };
+    
+    // 나머지는 additional_labels로 분리 (accidental access 방지)
+    const knownKeys = new Set(['hallucination', 'rag_retrieval_failure', 'uncertain']);
+    const additional_labels: Record<string, number> = {};
+    
+    Object.keys(rawDist).forEach(key => {
+      if (!knownKeys.has(key)) {
+        additional_labels[key] = rawDist[key];
+      }
+    });
+
+    const data: EvalReportResponse = {
+      ...rawData,
+      label_distribution,
+      additional_labels: Object.keys(additional_labels).length > 0 ? additional_labels : undefined
+    };
+
     return data;
     
   } catch (error) {
