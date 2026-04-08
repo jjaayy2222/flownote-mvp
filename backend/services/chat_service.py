@@ -406,7 +406,7 @@ Standalone Question:"""
         effective_query = query
         rephrase_duration = 0.0
 
-        if session_id:
+        if session_id and session_id.strip():
             history = await self.chat_history_service.get_history(session_id)
             feedback_history = await self.chat_history_service.get_session_feedback(session_id, limit=3)
             if history:

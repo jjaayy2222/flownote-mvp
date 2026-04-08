@@ -697,6 +697,22 @@ class ChatHistoryService:
             key = self._feedback_key(session_id)
             feedback_hash = await redis_client.redis.hgetall(key)
             
+            def _parse_timestamp(ts: Any) -> float:
+                if isinstance(ts, (int, float)) and not isinstance(ts, bool):
+                    return float(ts)
+                if isinstance(ts, str):
+                    ts_str = ts.strip()
+                    try:
+                        # ISO 8601 parsing fallback
+                        return datetime.fromisoformat(ts_str.replace("Z", "+00:00")).timestamp()
+                    except ValueError:
+                        try:
+                            # Numeric string fallback
+                            return float(ts_str)
+                        except ValueError:
+                            pass
+                return 0.0
+            
             feedbacks: List[Dict[str, Any]] = []
             for msg_id_raw, meta_raw in feedback_hash.items():
                 msg_id = _decode_str(msg_id_raw)
@@ -704,18 +720,30 @@ class ChatHistoryService:
                 try:
                     meta = json.loads(meta_str)
                     if isinstance(meta, dict):
+                        raw_ts = meta.get("timestamp")
+                        if isinstance(raw_ts, (int, float, str)) and not isinstance(raw_ts, bool):
+                            ts_str = str(raw_ts).strip()
+                        else:
+                            ts_str = ""
+                            
                         feedbacks.append({
                             "message_id": msg_id,
-                            "rating": meta.get("rating"),
-                            "text": meta.get("text"),
-                            "timestamp": meta.get("timestamp")
+                            "rating": str(meta.get("rating", "none")),
+                            "text": str(meta.get("text")) if meta.get("text") else None,
+                            "timestamp": ts_str,
+                            "_sort_key": _parse_timestamp(raw_ts)
                         })
                 except (JSONDecodeError, ValueError, TypeError):
                     continue
                     
-            # 최신순 정렬 후 제한된 개수만 반환
-            feedbacks.sort(key=lambda x: str(x.get("timestamp", "")), reverse=True)
-            return feedbacks[:limit]
+            # 최신순 정렬 (숫자형 우선, 내림차순) 후 제한된 개수만 잘라서 반환 (_sort_key 제거)
+            feedbacks.sort(key=lambda x: x["_sort_key"], reverse=True)
+            result = []
+            for f in feedbacks[:limit]:
+                del f["_sort_key"]
+                result.append(f)
+                
+            return result
 
         except Exception as e:
             _log_and_reraise_generic(
