@@ -31,13 +31,16 @@ FALLBACK_WINDOW_SIZE: int = 3
 FALLBACK_THRESHOLD: int = 2
 
 # 구성 오류 방지를 위한 불변 조건(Invariant): threshold는 window size를 초과할 수 없음
-assert (
-    FALLBACK_THRESHOLD <= FALLBACK_WINDOW_SIZE
-), "Invalid fallback configuration: FALLBACK_THRESHOLD must be <= FALLBACK_WINDOW_SIZE"
+if FALLBACK_THRESHOLD > FALLBACK_WINDOW_SIZE:
+    raise ValueError(
+        f"Invalid fallback configuration: FALLBACK_THRESHOLD ({FALLBACK_THRESHOLD}) "
+        f"must be <= FALLBACK_WINDOW_SIZE ({FALLBACK_WINDOW_SIZE})"
+    )
 
 # 라우트 타겟 식별자 식별자(Route Target Identifiers) - 오타 방지 및 단일 진실 공급원
-ROUTE_FALLBACK_SEARCH: Literal["fallback_search"] = "fallback_search"
-ROUTE_STANDARD_RAG: Literal["standard_rag"] = "standard_rag"
+FallbackRoute = Literal["fallback_search", "standard_rag"]
+ROUTE_FALLBACK_SEARCH: FallbackRoute = "fallback_search"
+ROUTE_STANDARD_RAG: FallbackRoute = "standard_rag"
 
 # 모듈 로드 시 한글 인사말 조합 생성 (O(1) 탐색, 합성어 오탐 차단)
 _KOREAN_GREETING_FORMS = {
@@ -303,7 +306,7 @@ If you used any document from the context, YOU MUST use inline citations in the 
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def should_fallback(state: AgentState) -> Literal["fallback_search", "standard_rag"]:
+def should_fallback(state: AgentState) -> FallbackRoute:
     """
     피드백 기반 Fallback 분기 라우터:
     엄격한 시간적 윈도우(최근 FALLBACK_WINDOW_SIZE 회 세션) 내에서 
