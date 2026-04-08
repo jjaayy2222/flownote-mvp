@@ -4,7 +4,7 @@ import hashlib
 import json
 import logging
 from json import JSONDecodeError
-from typing import Any, Dict, List, NoReturn, Optional
+from typing import Any, Dict, List, NoReturn, Optional, Tuple
 from datetime import datetime, timezone
 from backend.services.redis_pubsub import redis_client  # type: ignore[import]
 from backend.api.models import ChatMessage  # type: ignore[import]
@@ -714,7 +714,7 @@ class ChatHistoryService:
                             pass
                 return 0.0
             
-            feedbacks_with_keys: List[tuple[float, FeedbackEntry]] = []
+            feedbacks_with_keys: List[Tuple[float, FeedbackEntry]] = []
             for msg_id_raw, meta_raw in feedback_hash.items():
                 msg_id = _decode_str(msg_id_raw)
                 meta_str = _decode_str(meta_raw)
@@ -728,7 +728,7 @@ class ChatHistoryService:
                             ts_str = ""
                             
                         raw_rating = meta.get("rating")
-                        rating = str(raw_rating).lower().strip() if raw_rating else "none"
+                        rating = str(raw_rating).lower().strip() if raw_rating is not None else "none"
                         if rating not in {"up", "down", "none"}:
                             rating = "none"
                             
