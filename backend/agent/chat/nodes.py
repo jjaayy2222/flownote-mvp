@@ -26,6 +26,10 @@ _MAX_GREETING_LENGTH = 15
 # 명시적 int 타입 어노테이션 적용 → Pyre2가 Literal[8000]이아닌 int로 추론하도록 일치
 _MAX_SEARCH_CONTEXT_CHARS: int = 8_000
 
+# Fallback Routing 관련 임계치 및 윈도우 사이즈
+FALLBACK_WINDOW_SIZE: int = 3
+FALLBACK_THRESHOLD: int = 2
+
 # 모듈 로드 시 한글 인사말 조합 생성 (O(1) 탐색, 합성어 오탐 차단)
 _KOREAN_GREETING_FORMS = {
     base + suffix for base in _SIMPLE_KOREAN_GREETINGS for suffix in _KOREAN_SUFFIXES
@@ -290,18 +294,25 @@ If you used any document from the context, YOU MUST use inline citations in the 
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def should_fallback(state: AgentState) -> str:
+def should_fallback(state: AgentState) -> Literal["fallback_search", "standard_rag"]:
     """
     피드백 기반 Fallback 분기 라우터:
-    최근 3개의 피드백 중 'down'이 2개 이상이면 fallback_search, 아니면 standard_rag 반환.
+    엄격한 시간적 윈도우(최근 3회 세션) 내에서 'down'이 기준치 이상이면 fallback_search, 아니면 standard_rag 반환.
     """
     feedback_history = state.get("feedback_history", [])
-    recent_feedbacks = feedback_history[-3:]  # 최근 3개
-    negative_count = sum(1 for f in recent_feedbacks if f.get("rating") == RATING_DOWN)
     
-    if negative_count >= 2:
+    # 윈도우 왜곡(Window Distortion) 방지 및 메모리 할당 최적화
+    # 전체를 검증 후 자르는 것이 아니라, 최신 N개를 먼저 확보한 뒤 내부에서 타입 가드를 수행합니다.
+    recent_feedbacks = feedback_history[-FALLBACK_WINDOW_SIZE:] if feedback_history else []
+    
+    negative_count = sum(
+        1 for f in recent_feedbacks 
+        if isinstance(f, dict) and f.get("rating") == RATING_DOWN
+    )
+    
+    if negative_count >= FALLBACK_THRESHOLD:
         logger.warning(
-            "[Router] 최근 3개 중 부정적 피드백 2개 이상 감지. fallback_search 실행.",
+            f"[Router] 최근 {FALLBACK_WINDOW_SIZE}개 중 부정적 피드백 {FALLBACK_THRESHOLD}개 이상 감지. fallback_search 실행.",
             extra={"negative_count": negative_count}
         )
         return "fallback_search"
