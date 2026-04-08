@@ -10,6 +10,7 @@ from langchain_core.messages import AIMessage, SystemMessage, BaseMessage  # typ
 from backend.agent.chat.state import AgentState  # type: ignore[import, import-untyped, reportMissingImports]
 from backend.agent.chat.tools import search_documents_tool  # type: ignore[import, import-untyped, reportMissingImports]
 from backend.services.chat_service import get_chat_service  # type: ignore[import, import-untyped, reportMissingImports]
+from backend.api.models.shared import RATING_DOWN  # type: ignore[import, import-untyped, reportMissingImports]
 
 logger = logging.getLogger(__name__)
 
@@ -287,6 +288,25 @@ If you used any document from the context, YOU MUST use inline citations in the 
 # ─────────────────────────────────────────────────────────────────────────────
 # 노드 & 엣지 (Thin Orchestrators)
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+def should_fallback(state: AgentState) -> str:
+    """
+    피드백 기반 Fallback 분기 라우터:
+    최근 3개의 피드백 중 'down'이 2개 이상이면 fallback_search, 아니면 standard_rag 반환.
+    """
+    feedback_history = state.get("feedback_history", [])
+    recent_feedbacks = feedback_history[-3:]  # 최근 3개
+    negative_count = sum(1 for f in recent_feedbacks if f.get("rating") == RATING_DOWN)
+    
+    if negative_count >= 2:
+        logger.warning(
+            "[Router] 최근 3개 중 부정적 피드백 2개 이상 감지. fallback_search 실행.",
+            extra={"negative_count": negative_count}
+        )
+        return "fallback_search"
+    
+    return "standard_rag"
 
 
 def router_edge(state: AgentState) -> Literal["planner", "responder"]:
