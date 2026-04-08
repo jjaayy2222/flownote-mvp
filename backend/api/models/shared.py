@@ -10,6 +10,9 @@ SuccessStatus = Literal[
     "success"
 ]  # API가 항상 성공 객체만 반환하는 명시적 응답 컨트랙트용
 FeedbackRating = Literal["up", "down", "none"]
+RATING_UP: FeedbackRating = "up"
+RATING_DOWN: FeedbackRating = "down"
+RATING_NONE: FeedbackRating = "none"
 
 # ---------------------------------------------------------
 # OpenAPI/Swagger Field Descriptions
