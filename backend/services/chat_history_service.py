@@ -682,7 +682,77 @@ class ChatHistoryService:
                 e,
             )
 
+    async def get_session_feedback(self, session_id: str, limit: int = 3) -> List[Dict[str, Any]]:
+        """특정 세션의 최근 피드백 이력을 조회합니다.
+        
+        Raises:
+            ValueError: session_id 누락.
+            RedisUnavailableError: Redis 연결 불가.
+        """
+        if not session_id or not session_id.strip():
+            raise ValueError("session_id is required to get session feedback.")
+
+        try:
+            await self._ensure_connected("get_session_feedback")
+            key = self._feedback_key(session_id)
+            feedback_hash = await redis_client.redis.hgetall(key)
+            
+            def _parse_timestamp(ts: Any) -> float:
+                if isinstance(ts, (int, float)) and not isinstance(ts, bool):
+                    return float(ts)
+                if isinstance(ts, str):
+                    ts_str = ts.strip()
+                    try:
+                        # ISO 8601 parsing fallback
+                        return datetime.fromisoformat(ts_str.replace("Z", "+00:00")).timestamp()
+                    except ValueError:
+                        try:
+                            # Numeric string fallback
+                            return float(ts_str)
+                        except ValueError:
+                            pass
+                return 0.0
+            
+            feedbacks: List[Dict[str, Any]] = []
+            for msg_id_raw, meta_raw in feedback_hash.items():
+                msg_id = _decode_str(msg_id_raw)
+                meta_str = _decode_str(meta_raw)
+                try:
+                    meta = json.loads(meta_str)
+                    if isinstance(meta, dict):
+                        raw_ts = meta.get("timestamp")
+                        if isinstance(raw_ts, (int, float, str)) and not isinstance(raw_ts, bool):
+                            ts_str = str(raw_ts).strip()
+                        else:
+                            ts_str = ""
+                            
+                        feedbacks.append({
+                            "message_id": msg_id,
+                            "rating": str(meta.get("rating", "none")),
+                            "text": str(meta.get("text")) if meta.get("text") else None,
+                            "timestamp": ts_str,
+                            "_sort_key": _parse_timestamp(raw_ts)
+                        })
+                except (JSONDecodeError, ValueError, TypeError):
+                    continue
+                    
+            # 최신순 정렬 (숫자형 우선, 내림차순) 후 제한된 개수만 잘라서 반환 (_sort_key 제거)
+            feedbacks.sort(key=lambda x: x["_sort_key"], reverse=True)
+            result = []
+            for f in feedbacks[:limit]:
+                del f["_sort_key"]
+                result.append(f)
+                
+            return result
+
+        except Exception as e:
+            _log_and_reraise_generic(
+                "Failed to get session feedback",
+                {"session_id_hash": mask_pii_id(session_id), "error": str(e)},
+                e,
+            )
 
 
 def get_chat_history_service() -> ChatHistoryService:
     return ChatHistoryService()
+
