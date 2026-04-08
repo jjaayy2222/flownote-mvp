@@ -8,7 +8,7 @@ from typing import Any, Dict, List, NoReturn, Optional, Tuple
 from datetime import datetime, timezone
 from backend.services.redis_pubsub import redis_client  # type: ignore[import]
 from backend.api.models import ChatMessage  # type: ignore[import]
-from backend.api.models.shared import FeedbackRating  # type: ignore[import]
+from backend.api.models.shared import FeedbackRating, RATING_UP, RATING_DOWN, RATING_NONE  # type: ignore[import]
 from backend.utils import mask_pii_id  # type: ignore[import]
 from backend.agent.chat.state import FeedbackEntry  # type: ignore[import, import-untyped]
 
@@ -91,7 +91,7 @@ def _process_feedback_entry(
 
     raw_rating = meta.get("rating")
     # Frontend FeedbackRating Union 타입('up' | 'down' | 'none')과 일치시키기 위한 강제 캐스팅
-    rating = raw_rating if raw_rating in ("up", "down") else "none"
+    rating = raw_rating if raw_rating in (RATING_UP, RATING_DOWN) else RATING_NONE
     
     # timestamp가 int(epoch)이거나 str(ISO)일 수 있으므로 타입을 명시적으로 검증하여 정규화
     # 주의: bool은 int의 서브클래스이므로 명시적으로 제외 (True/False가 0/1 epoch으로 처리되는 것을 방지)
@@ -102,12 +102,12 @@ def _process_feedback_entry(
         # bool·비-스칼라 값(Dict/List) 또는 None인 경우 빈 문자열로 처리하여 예기치 못한 객체 문자화 방지
         ts = ""
 
-    up_delta = 1 if rating == "up" else 0
-    down_delta = 1 if rating == "down" else 0
+    up_delta = 1 if rating == RATING_UP else 0
+    down_delta = 1 if rating == RATING_DOWN else 0
 
-    if ts and rating in ("up", "down"):
+    if ts and rating in (RATING_UP, RATING_DOWN):
         date_str = ts[:10]
-        day = trends.setdefault(date_str, {"up": 0, "down": 0})
+        day = trends.setdefault(date_str, {RATING_UP: 0, RATING_DOWN: 0})
         day[rating] += 1
 
     item = None
@@ -658,7 +658,7 @@ class ChatHistoryService:
 
             # 3. YYYY-MM-DD 정렬
             sorted_trends = [
-                {"date": d, "up": trends[d]["up"], "down": trends[d]["down"]}
+                {"date": d, "up": trends[d][RATING_UP], "down": trends[d][RATING_DOWN]}
                 for d in sorted(trends.keys())
             ]
             
@@ -728,9 +728,9 @@ class ChatHistoryService:
                             ts_str = ""
                             
                         raw_rating = meta.get("rating")
-                        rating = str(raw_rating).lower().strip() if raw_rating is not None else "none"
-                        if rating not in {"up", "down", "none"}:
-                            rating = "none"
+                        rating = str(raw_rating).lower().strip() if raw_rating is not None else RATING_NONE
+                        if rating not in {RATING_UP, RATING_DOWN, RATING_NONE}:
+                            rating = RATING_NONE
                             
                         entry: FeedbackEntry = {
                             "message_id": msg_id,
