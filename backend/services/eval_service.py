@@ -34,6 +34,7 @@ from typing import Any, AsyncIterator, Literal, Optional
 
 import redis.exceptions
 
+from backend.api.models.shared import FeedbackRating, RATING_DOWN  # type: ignore[import, import-untyped, reportMissingImports]
 from backend.services.chat_history_service import (  # type: ignore[import]
     FEEDBACK_KEY_PREFIX,
     _HISTORY_PREFIX,
@@ -750,7 +751,8 @@ async def run_negative_feedback_eval_pipeline(
                     except (JSONDecodeError, ValueError):
                         continue
 
-                    if meta.get("rating") != "down":
+                    # 성능 최적화: RATING_DOWN ("down") 피드백만 처리
+                    if meta.get("rating") != RATING_DOWN:
                         continue
 
                     summary["total_negative"] += 1

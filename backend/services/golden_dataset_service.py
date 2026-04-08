@@ -16,6 +16,7 @@ import numbers
 from dataclasses import dataclass
 from json import JSONDecodeError
 from typing import Any, Optional
+from backend.api.models.shared import RATING_UP  # type: ignore[import, import-untyped, reportMissingImports]
 
 import redis.exceptions
 
@@ -74,7 +75,7 @@ def _parse_feedback_meta(
     **책임 범위**: 이 함수는 이미 정규화된(디코딩/파싱 완료된) 타입만 입력받습니다.
     - msg_id: 호출부에서 bytes 디코딩을 완료한 str.
     - meta: 호출부에서 json.loads()를 완료한 dict.
-    - rating 게이트("up" 필터링) 책임은 전적으로 호출부 루프에 있습니다.
+    - rating 게이트(RATING_UP 필터링) 책임은 전적으로 호출부 루프에 있습니다.
 
     Args:
         msg_id: 디코딩이 완료된 message_id (str).
@@ -121,7 +122,7 @@ async def filter_positive_feedbacks(
     품질 기준을 통과한 '좋아요(Thumbs Up)' 피드백 항목을 수집합니다.
 
     품질 게이트 (Quality Gates):
-        1. rating == "up" 인 항목만 포함 (부정/없음 제외) — 호출부 루프에서 단일 처리
+        1. rating == RATING_UP 인 항목만 포함 (부정/없음 제외) — 호출부 루프에서 단일 처리
         2. timestamp가 유효한 스칼라 타입이고 비어있지 않아야 함 — _parse_feedback_meta에서 검증
         3. session_id와 message_id 모두 비어있지 않아야 함
         4. (session_id, message_id) 복합 키 기준으로 중복 제거
@@ -165,7 +166,7 @@ async def filter_positive_feedbacks(
         cursor = 0
         total_scanned_keys = 0
         total_skipped_parse = 0    # JSON 디코딩 오류 또는 timestamp 유효성 실패
-        total_skipped_rating = 0   # rating != "up" (부정/없음 평가)
+        total_skipped_rating = 0   # rating != RATING_UP (부정/없음 평가)
         total_skipped_quality = 0  # session_id/message_id 비어있음
         total_skipped_dedup = 0    # (session_id, message_id) 중복
 
@@ -209,7 +210,7 @@ async def filter_positive_feedbacks(
 
                     # [Step 2] rating 게이트: 이 루프가 유일한 rating 필터 레이어입니다.
                     # _parse_feedback_meta는 rating에 관여하지 않습니다.
-                    if meta.get("rating") != "up":
+                    if meta.get("rating") != RATING_UP:
                         total_skipped_rating += 1
                         continue
 
@@ -264,7 +265,7 @@ async def filter_positive_feedbacks(
                 "total_collected": len(results),
                 "total_scanned_keys": total_scanned_keys,
                 "skipped_parse_error": total_skipped_parse,    # 실제 파싱/타입 오류만 집계
-                "skipped_rating_gate": total_skipped_rating,   # rating != "up" 필터 수
+                "skipped_rating_gate": total_skipped_rating,   # rating != RATING_UP 필터 수
                 "skipped_quality_gate": total_skipped_quality,
                 "skipped_dedup": total_skipped_dedup,
             },

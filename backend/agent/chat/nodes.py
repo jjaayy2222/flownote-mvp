@@ -23,8 +23,12 @@ _SIMPLE_LATIN_GREETINGS = ["hello", "hi"]
 _MAX_GREETING_LENGTH = 15
 
 # [Engineering Decision] 검색 결과 총합 토큰 예산 보호 (LLM 컨텍스트 윈도우 안전 범위 유지)
-# 명시적 int 타입 어노테이션 적용 → Pyre2가 Literal[8000]이아닌 int로 추론하도록 일치
+# 名시적 int 타입 어노테이션 적용 → Pyre2가 Literal[8000]이아닌 int로 추론하도록 일치
 _MAX_SEARCH_CONTEXT_CHARS: int = 8_000
+
+# Fallback Routing 관련 임계치 및 윈도우 사이즈
+FALLBACK_WINDOW_SIZE: int = 3
+FALLBACK_THRESHOLD: int = 2
 
 # 모듈 로드 시 한글 인사말 조합 생성 (O(1) 탐색, 합성어 오탐 차단)
 _KOREAN_GREETING_FORMS = {
@@ -290,18 +294,22 @@ If you used any document from the context, YOU MUST use inline citations in the 
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def should_fallback(state: AgentState) -> str:
+def should_fallback(state: AgentState) -> Literal["fallback_search", "standard_rag"]:
     """
     피드백 기반 Fallback 분기 라우터:
-    최근 3개의 피드백 중 'down'이 2개 이상이면 fallback_search, 아니면 standard_rag 반환.
+    설정된 크기의 윈도우(최근 피드백) 내에서 'down'이 기준치 이상이면 fallback_search, 아니면 standard_rag 반환.
     """
     feedback_history = state.get("feedback_history", [])
-    recent_feedbacks = feedback_history[-3:]  # 최근 3개
+    
+    # 런타임 방어: 항목이 dict인지 확증하여 f.get() 호출 시 발생할 수 있는 AttributeError 차단
+    valid_feedbacks = [f for f in feedback_history if isinstance(f, dict)]
+    recent_feedbacks = valid_feedbacks[-FALLBACK_WINDOW_SIZE:] if valid_feedbacks else []
+    
     negative_count = sum(1 for f in recent_feedbacks if f.get("rating") == RATING_DOWN)
     
-    if negative_count >= 2:
+    if negative_count >= FALLBACK_THRESHOLD:
         logger.warning(
-            "[Router] 최근 3개 중 부정적 피드백 2개 이상 감지. fallback_search 실행.",
+            f"[Router] 최근 {FALLBACK_WINDOW_SIZE}개 중 부정적 피드백 {FALLBACK_THRESHOLD}개 이상 감지. fallback_search 실행.",
             extra={"negative_count": negative_count}
         )
         return "fallback_search"
