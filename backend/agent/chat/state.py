@@ -45,3 +45,6 @@ class AgentState(TypedDict):
 
     # 검색된 원본 문서 목록(SSE 'sources' 전송용)
     source_documents: NotRequired[Optional[list[dict]]]
+
+    # 과거 피드백 이력 컨텍스트 (최근 n개)
+    feedback_history: NotRequired[list[dict]]

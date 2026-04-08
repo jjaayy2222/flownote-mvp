@@ -682,7 +682,49 @@ class ChatHistoryService:
                 e,
             )
 
+    async def get_session_feedback(self, session_id: str, limit: int = 3) -> List[Dict[str, Any]]:
+        """특정 세션의 최근 피드백 이력을 조회합니다.
+        
+        Raises:
+            ValueError: session_id 누락.
+            RedisUnavailableError: Redis 연결 불가.
+        """
+        if not session_id or not session_id.strip():
+            raise ValueError("session_id is required to get session feedback.")
+
+        try:
+            await self._ensure_connected("get_session_feedback")
+            key = self._feedback_key(session_id)
+            feedback_hash = await redis_client.redis.hgetall(key)
+            
+            feedbacks: List[Dict[str, Any]] = []
+            for msg_id_raw, meta_raw in feedback_hash.items():
+                msg_id = _decode_str(msg_id_raw)
+                meta_str = _decode_str(meta_raw)
+                try:
+                    meta = json.loads(meta_str)
+                    if isinstance(meta, dict):
+                        feedbacks.append({
+                            "message_id": msg_id,
+                            "rating": meta.get("rating"),
+                            "text": meta.get("text"),
+                            "timestamp": meta.get("timestamp")
+                        })
+                except (JSONDecodeError, ValueError, TypeError):
+                    continue
+                    
+            # 최신순 정렬 후 제한된 개수만 반환
+            feedbacks.sort(key=lambda x: str(x.get("timestamp", "")), reverse=True)
+            return feedbacks[:limit]
+
+        except Exception as e:
+            _log_and_reraise_generic(
+                "Failed to get session feedback",
+                {"session_id_hash": mask_pii_id(session_id), "error": str(e)},
+                e,
+            )
 
 
 def get_chat_history_service() -> ChatHistoryService:
     return ChatHistoryService()
+

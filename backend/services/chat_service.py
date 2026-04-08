@@ -402,11 +402,13 @@ Standalone Question:"""
 
         # 0. 히스토리 로드 및 질의 재구성
         history: List[ChatMessage] = []
+        feedback_history: List[Dict[str, Any]] = []
         effective_query = query
         rephrase_duration = 0.0
 
         if session_id:
             history = await self.chat_history_service.get_history(session_id)
+            feedback_history = await self.chat_history_service.get_session_feedback(session_id, limit=3)
             if history:
                 rephrase_start = time.perf_counter()
                 effective_query = await self._rephrase_query(query, history)
@@ -427,6 +429,7 @@ Standalone Question:"""
             "messages": langchain_history,
             "user_id": user_id,
             "session_id": session_id,
+            "feedback_history": feedback_history,
         }
 
         # 2. workflow 컴파일 및 의존성 주입
