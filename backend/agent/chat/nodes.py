@@ -289,6 +289,25 @@ If you used any document from the context, YOU MUST use inline citations in the 
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def should_fallback(state: AgentState) -> str:
+    """
+    피드백 기반 Fallback 분기 라우터:
+    최근 3개의 피드백 중 'down'이 2개 이상이면 fallback_search, 아니면 standard_rag 반환.
+    """
+    feedback_history = state.get("feedback_history", [])
+    recent_feedbacks = feedback_history[-3:]  # 최근 3개
+    negative_count = sum(1 for f in recent_feedbacks if f.get("rating") == "down")
+    
+    if negative_count >= 2:
+        logger.warning(
+            "[Router] 연속 실패 감지 (부정적 피드백 2개 이상). fallback_search 실행.",
+            extra={"negative_count": negative_count}
+        )
+        return "fallback_search"
+    
+    return "standard_rag"
+
+
 def router_edge(state: AgentState) -> Literal["planner", "responder"]:
     """
     조건부 엣지(Conditional Edge):
