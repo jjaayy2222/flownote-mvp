@@ -30,6 +30,15 @@ _MAX_SEARCH_CONTEXT_CHARS: int = 8_000
 FALLBACK_WINDOW_SIZE: int = 3
 FALLBACK_THRESHOLD: int = 2
 
+# 구성 오류 방지를 위한 불변 조건(Invariant): threshold는 window size를 초과할 수 없음
+assert (
+    FALLBACK_THRESHOLD <= FALLBACK_WINDOW_SIZE
+), "Invalid fallback configuration: FALLBACK_THRESHOLD must be <= FALLBACK_WINDOW_SIZE"
+
+# 라우트 타겟 식별자 식별자(Route Target Identifiers) - 오타 방지 및 단일 진실 공급원
+ROUTE_FALLBACK_SEARCH: Literal["fallback_search"] = "fallback_search"
+ROUTE_STANDARD_RAG: Literal["standard_rag"] = "standard_rag"
+
 # 모듈 로드 시 한글 인사말 조합 생성 (O(1) 탐색, 합성어 오탐 차단)
 _KOREAN_GREETING_FORMS = {
     base + suffix for base in _SIMPLE_KOREAN_GREETINGS for suffix in _KOREAN_SUFFIXES
@@ -297,7 +306,8 @@ If you used any document from the context, YOU MUST use inline citations in the 
 def should_fallback(state: AgentState) -> Literal["fallback_search", "standard_rag"]:
     """
     피드백 기반 Fallback 분기 라우터:
-    엄격한 시간적 윈도우(최근 3회 세션) 내에서 'down'이 기준치 이상이면 fallback_search, 아니면 standard_rag 반환.
+    엄격한 시간적 윈도우(최근 FALLBACK_WINDOW_SIZE 회 세션) 내에서 
+    'down'이 기준치(FALLBACK_THRESHOLD) 이상이면 fallback_search, 아니면 standard_rag 반환.
     """
     feedback_history = state.get("feedback_history", [])
     
@@ -312,12 +322,12 @@ def should_fallback(state: AgentState) -> Literal["fallback_search", "standard_r
     
     if negative_count >= FALLBACK_THRESHOLD:
         logger.warning(
-            f"[Router] 최근 {FALLBACK_WINDOW_SIZE}개 중 부정적 피드백 {FALLBACK_THRESHOLD}개 이상 감지. fallback_search 실행.",
+            f"[Router] 최근 {FALLBACK_WINDOW_SIZE}개 중 부정적 피드백 {FALLBACK_THRESHOLD}개 이상 감지. {ROUTE_FALLBACK_SEARCH} 실행.",
             extra={"negative_count": negative_count}
         )
-        return "fallback_search"
+        return ROUTE_FALLBACK_SEARCH
     
-    return "standard_rag"
+    return ROUTE_STANDARD_RAG
 
 
 def router_edge(state: AgentState) -> Literal["planner", "responder"]:
