@@ -4,12 +4,13 @@ import hashlib
 import json
 import logging
 from json import JSONDecodeError
-from typing import Any, Dict, List, NoReturn, Optional
+from typing import Any, Dict, List, NoReturn, Optional, Tuple
 from datetime import datetime, timezone
 from backend.services.redis_pubsub import redis_client  # type: ignore[import]
 from backend.api.models import ChatMessage  # type: ignore[import]
 from backend.api.models.shared import FeedbackRating  # type: ignore[import]
 from backend.utils import mask_pii_id  # type: ignore[import]
+from backend.agent.chat.state import FeedbackEntry  # type: ignore[import, import-untyped]
 
 logger = logging.getLogger(__name__)
 
@@ -682,7 +683,7 @@ class ChatHistoryService:
                 e,
             )
 
-    async def get_session_feedback(self, session_id: str, limit: int = 3) -> List[Dict[str, Any]]:
+    async def get_session_feedback(self, session_id: str, limit: int = 3) -> List[FeedbackEntry]:
         """특정 세션의 최근 피드백 이력을 조회합니다.
         
         Raises:
@@ -713,7 +714,7 @@ class ChatHistoryService:
                             pass
                 return 0.0
             
-            feedbacks: List[Dict[str, Any]] = []
+            feedbacks_with_keys: List[Tuple[float, FeedbackEntry]] = []
             for msg_id_raw, meta_raw in feedback_hash.items():
                 msg_id = _decode_str(msg_id_raw)
                 meta_str = _decode_str(meta_raw)
@@ -726,24 +727,24 @@ class ChatHistoryService:
                         else:
                             ts_str = ""
                             
-                        feedbacks.append({
+                        raw_rating = meta.get("rating")
+                        rating = str(raw_rating).lower().strip() if raw_rating is not None else "none"
+                        if rating not in {"up", "down", "none"}:
+                            rating = "none"
+                            
+                        entry: FeedbackEntry = {
                             "message_id": msg_id,
-                            "rating": str(meta.get("rating", "none")),
+                            "rating": rating,
                             "text": str(meta.get("text")) if meta.get("text") else None,
                             "timestamp": ts_str,
-                            "_sort_key": _parse_timestamp(raw_ts)
-                        })
+                        }
+                        feedbacks_with_keys.append((_parse_timestamp(raw_ts), entry))
                 except (JSONDecodeError, ValueError, TypeError):
                     continue
                     
-            # 최신순 정렬 (숫자형 우선, 내림차순) 후 제한된 개수만 잘라서 반환 (_sort_key 제거)
-            feedbacks.sort(key=lambda x: x["_sort_key"], reverse=True)
-            result = []
-            for f in feedbacks[:limit]:
-                del f["_sort_key"]
-                result.append(f)
-                
-            return result
+            # 최신순 정렬 (숫자형 우선, 내림차순) 및 원본 자료형(FeedbackEntry) 리스트로 반환 (Mutation 방지)
+            feedbacks_with_keys.sort(key=lambda x: x[0], reverse=True)
+            return [entry for _, entry in feedbacks_with_keys[:limit]]
 
         except Exception as e:
             _log_and_reraise_generic(

@@ -31,6 +31,7 @@ from backend.services.chat_history_service import (  # type: ignore[import, impo
 )
 from backend.api.models import ChatMessage  # type: ignore[import, import-untyped, reportMissingImports]
 from backend.utils import mask_pii_id  # type: ignore[import, import-untyped, reportMissingImports]
+from backend.agent.chat.state import FeedbackEntry  # type: ignore[import, import-untyped]
 
 logger = logging.getLogger(__name__)
 
@@ -402,7 +403,7 @@ Standalone Question:"""
 
         # 0. 히스토리 로드 및 질의 재구성
         history: List[ChatMessage] = []
-        feedback_history: List[Dict[str, Any]] = []
+        feedback_history: List[FeedbackEntry] = []
         effective_query = query
         rephrase_duration = 0.0
 
