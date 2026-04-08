@@ -23,7 +23,7 @@ _SIMPLE_LATIN_GREETINGS = ["hello", "hi"]
 _MAX_GREETING_LENGTH = 15
 
 # [Engineering Decision] 검색 결과 총합 토큰 예산 보호 (LLM 컨텍스트 윈도우 안전 범위 유지)
-# 名시적 int 타입 어노테이션 적용 → Pyre2가 Literal[8000]이아닌 int로 추론하도록 일치
+# 명시적 int 타입 어노테이션 적용 → Pyre2가 Literal[8000]이아닌 int로 추론하도록 일치
 _MAX_SEARCH_CONTEXT_CHARS: int = 8_000
 
 # Fallback Routing 관련 임계치 및 윈도우 사이즈
@@ -297,15 +297,18 @@ If you used any document from the context, YOU MUST use inline citations in the 
 def should_fallback(state: AgentState) -> Literal["fallback_search", "standard_rag"]:
     """
     피드백 기반 Fallback 분기 라우터:
-    설정된 크기의 윈도우(최근 피드백) 내에서 'down'이 기준치 이상이면 fallback_search, 아니면 standard_rag 반환.
+    엄격한 시간적 윈도우(최근 3회 세션) 내에서 'down'이 기준치 이상이면 fallback_search, 아니면 standard_rag 반환.
     """
     feedback_history = state.get("feedback_history", [])
     
-    # 런타임 방어: 항목이 dict인지 확증하여 f.get() 호출 시 발생할 수 있는 AttributeError 차단
-    valid_feedbacks = [f for f in feedback_history if isinstance(f, dict)]
-    recent_feedbacks = valid_feedbacks[-FALLBACK_WINDOW_SIZE:] if valid_feedbacks else []
+    # 윈도우 왜곡(Window Distortion) 방지 및 메모리 할당 최적화
+    # 전체를 검증 후 자르는 것이 아니라, 최신 N개를 먼저 확보한 뒤 내부에서 타입 가드를 수행합니다.
+    recent_feedbacks = feedback_history[-FALLBACK_WINDOW_SIZE:] if feedback_history else []
     
-    negative_count = sum(1 for f in recent_feedbacks if f.get("rating") == RATING_DOWN)
+    negative_count = sum(
+        1 for f in recent_feedbacks 
+        if isinstance(f, dict) and f.get("rating") == RATING_DOWN
+    )
     
     if negative_count >= FALLBACK_THRESHOLD:
         logger.warning(
