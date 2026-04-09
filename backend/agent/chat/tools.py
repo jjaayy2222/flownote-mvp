@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 _MAX_DOC_CONTENT_CHARS = 1_000
 # [Security] 로그에 포함되는 doc_id의 최대 길이 제한 (PII 경계값 명시)
 _MAX_LOG_DOC_ID_LEN = 50
+# [Observability] 로깅 시 에러 원인 추적을 위해 남기는 원본 값 k의 최대 노출 길이 제한
+_MAX_LOG_RAW_K_CHARS = 50
 
 # API 통신 부하 및 비용 방지를 위한 외부 검색 타겟 개수 제한 (하드코딩 분리)
 _MIN_SEARCH_LIMIT = 1
@@ -37,7 +39,7 @@ def _sanitize_search_limit(k: Any, tool_name: str) -> int:
     if isinstance(k, bool):
         logger.warning(
             f"[Tool] {tool_name} - bool 타입 k 입력 감지. 기본값({_DEFAULT_SEARCH_LIMIT})으로 폴백합니다.",
-            extra={"tool_name": tool_name, "invalid_k_type": type(k).__name__}
+            extra={"tool_name": tool_name, "invalid_k_type": type(k).__name__, "raw_k": repr(k)[:_MAX_LOG_RAW_K_CHARS]}
         )
         return _DEFAULT_SEARCH_LIMIT
 
@@ -49,14 +51,14 @@ def _sanitize_search_limit(k: Any, tool_name: str) -> int:
             # 명확한 의미 전달을 위해 여기서 먼저 차단
             logger.warning(
                 f"[Tool] {tool_name} - NaN/inf float k 감지. 기본값({_DEFAULT_SEARCH_LIMIT})으로 폴백합니다.",
-                extra={"tool_name": tool_name, "invalid_k_type": type(k).__name__, "raw_k": repr(k)[:50]}
+                extra={"tool_name": tool_name, "invalid_k_type": type(k).__name__, "raw_k": repr(k)[:_MAX_LOG_RAW_K_CHARS]}
             )
             return _DEFAULT_SEARCH_LIMIT
 
         if not k.is_integer():
             logger.warning(
                 f"[Tool] {tool_name} - float 타입 k 감지. 소수점 이하를 절단하여 처리합니다. (의도된 경우 int 타입으로 전달 권장)",
-                extra={"tool_name": tool_name, "invalid_k_type": type(k).__name__, "raw_k": repr(k)[:50]}
+                extra={"tool_name": tool_name, "invalid_k_type": type(k).__name__, "raw_k": repr(k)[:_MAX_LOG_RAW_K_CHARS]}
             )
         # 경고 후 int()로 절단 → 클램핑 계속 진행
 
@@ -67,7 +69,7 @@ def _sanitize_search_limit(k: Any, tool_name: str) -> int:
     except (ValueError, TypeError, OverflowError):
         logger.warning(
             f"[Tool] {tool_name} - k 파라미터 타입 파싱 실패, 기본값({_DEFAULT_SEARCH_LIMIT})으로 폴백합니다.",
-            extra={"tool_name": tool_name, "invalid_k_type": type(k).__name__}
+            extra={"tool_name": tool_name, "invalid_k_type": type(k).__name__, "raw_k": repr(k)[:_MAX_LOG_RAW_K_CHARS]}
         )
         return _DEFAULT_SEARCH_LIMIT
 
