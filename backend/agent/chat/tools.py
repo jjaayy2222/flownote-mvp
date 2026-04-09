@@ -5,12 +5,30 @@ from typing import Any, Dict, Optional, TypedDict, cast
 from langchain_core.tools import tool  # type: ignore[import, import-untyped, reportMissingImports]
 from backend.services.hybrid_search_service import get_hybrid_search_service  # type: ignore[import, import-untyped, reportMissingImports]
 
+import os
+import asyncio
+from tavily import TavilyClient
+
 logger = logging.getLogger(__name__)
 
 # 도구 내 단일 문서 최대 길이 상수 (하드코딩 방지)
 _MAX_DOC_CONTENT_CHARS = 1_000
 # [Security] 로그에 포함되는 doc_id의 최대 길이 제한 (PII 경계값 명시)
 _MAX_LOG_DOC_ID_LEN = 50
+
+_tavily_client: Optional[TavilyClient] = None
+
+def _get_tavily_client(api_key: str) -> TavilyClient:
+    """
+    Lazily initialize and reuse a module-level TavilyClient instance.
+
+    This avoids constructing a new client for every deep_web_search_tool call
+    while preserving the existing per-call API key validation and error handling.
+    """
+    global _tavily_client
+    if _tavily_client is None:
+        _tavily_client = TavilyClient(api_key=api_key)
+    return _tavily_client
 
 
 class SerializedDoc(TypedDict):
@@ -189,3 +207,72 @@ async def search_documents_tool(query: str, k: int = 5) -> dict:
             extra=_build_log_extra(None, error_type=type(e).__name__),
         )
         return {"context": "문서 검색 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.", "docs": []}
+
+
+@tool
+async def deep_web_search_tool(query: str, k: int = 5) -> dict:
+    """
+    Tavily API 기반 Deep Web Search 도구입니다.
+    기존 내부 문서 검색(RAG)으로 원하는 정보를 찾지 못했거나 부정적인 피드백이 누적되었을 때,
+    최신 외부 지식이나 광범위한 웹 문서를 검색하기 위해 이 도구를 호출하세요.
+
+    Args:
+        query (str): 검색할 핵심 질의어, 키워드 또는 전체 문장.
+        k (int): 검색할 최대 문서 수 (기본값: 5).
+    """
+    logger.info(
+        "[Tool] deep_web_search_tool 실행",
+        extra={"query_length": len(query), "k": k}
+    )
+    api_key = os.getenv("TAVILY_API_KEY")
+    if not api_key:
+        logger.error("[Tool] TAVILY_API_KEY 환경변수가 설정되지 않았습니다.")
+        return {"context": "웹 검색 연결 설정이 누락되어 검색할 수 없습니다.", "docs": []}
+
+    try:
+        client = _get_tavily_client(api_key)
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: client.search(query=query, search_depth="advanced", max_results=k)
+        )
+
+        results = result.get("results", [])
+        if not results:
+            logger.info("[Tool] 웹 검색 결과 없음", extra={"k": k})
+            return {"context": "관련된 웹 검색 결과를 찾을 수 없습니다.", "docs": []}
+
+        formatted_results = []
+        serialized_docs = []
+
+        for i, item in enumerate(results, 1):
+            content_str = str(item.get("content", ""))
+            if len(content_str) > _MAX_DOC_CONTENT_CHARS:
+                content_str = str(content_str[:_MAX_DOC_CONTENT_CHARS]) + "...(truncated)"
+
+            source = str(item.get("url", "unknown"))
+            formatted_results.append(
+                f"--- Web Document {i} (Source: {source}) ---\n{content_str}"
+            )
+
+            safe_doc: SerializedDoc = _normalize_doc({
+                "id": source,
+                "score": float(item.get("score", 0.0) if item.get("score") is not None else 0.0),
+                "content": content_str,
+                "metadata": {"source": source, "title": item.get("title", "")}
+            })
+            serialized_docs.append(safe_doc)
+
+        final_context = "\n\n".join(formatted_results)
+        logger.info(
+            "[Tool] 웹 검색 완료",
+            extra={"doc_count": len(results), "total_length": len(final_context)}
+        )
+        return {"context": final_context, "docs": serialized_docs}
+
+    except Exception as e:
+        logger.error(
+            "[Tool] 웹 검색 중 오류 발생",
+            extra=_build_log_extra(None, error_type=type(e).__name__),
+        )
+        return {"context": "웹 검색 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.", "docs": []}

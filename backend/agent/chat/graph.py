@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from langgraph.graph.state import CompiledStateGraph
 
 from backend.agent.chat.state import AgentState
-from backend.agent.chat.nodes import router_edge, planner_node, responder_node
+from backend.agent.chat.nodes import router_edge, standard_rag_node, fallback_search_node, responder_node
 from backend.agent.checkpointer import get_checkpointer
 
 
@@ -26,24 +26,27 @@ def create_chat_workflow(checkpointer: Optional["BaseCheckpointSaver"] = None) -
     
     # 2. 노드(Nodes) 추가
     # 각 노드는 AgentState를 입력받아, 변동될 속성의 딕셔너리를 반환합니다.
-    workflow.add_node("planner", planner_node)
+    workflow.add_node("standard_rag", standard_rag_node)
+    workflow.add_node("fallback_search", fallback_search_node)
     workflow.add_node("responder", responder_node)
     
     # 3. 라우팅 (조건부 진입점)
     # 시작점(START)에서 사용자의 메시지를 받아, 조건부 엣지(router_edge)를 통해 
-    # 복잡한 검색이 필요한 planner를 거칠지, 단순 인사말인 responder로 직행할지 결정합니다.
+    # 검색 방식(standard_rag, fallback_search)을 선택하거나 단순 인사말인 responder로 직행할지 결정합니다.
     workflow.add_conditional_edges(
         START,
         router_edge,
         {
-            "planner": "planner",
+            "standard_rag": "standard_rag",
+            "fallback_search": "fallback_search",
             "responder": "responder"
         }
     )
     
     # 4. 방향 엣지(Edges) 연결
-    # Planner 작업(검색 및 도구 호출)이 끝나면 무조건 Responder로 넘어와서 최종 텍스트 답변을 구성합니다.
-    workflow.add_edge("planner", "responder")
+    # 검색 작업(내부 문서 검색 혹은 타빌리 웹 검색)이 끝나면 무조건 Responder로 넘어와서 최종 텍스트 답변을 구성합니다.
+    workflow.add_edge("standard_rag", "responder")
+    workflow.add_edge("fallback_search", "responder")
     
     # Responder가 최종 응답을 생성하면 에이전트 그래프 모방을 종료(END)합니다.
     workflow.add_edge("responder", END)
