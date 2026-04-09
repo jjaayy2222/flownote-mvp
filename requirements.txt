@@ -135,3 +135,4 @@ zipp==3.23.0
 zstandard==0.25.0
 exceptiongroup>=1.0.0; python_version < '3.11'
 rank-bm25==0.2.2
+tavily-python==0.7.23

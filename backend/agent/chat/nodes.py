@@ -8,7 +8,7 @@ from typing import Dict, Any, Literal, cast, List, TypedDict
 from langchain_core.messages import AIMessage, SystemMessage, BaseMessage  # type: ignore[import, import-untyped, reportMissingImports]
 
 from backend.agent.chat.state import AgentState  # type: ignore[import, import-untyped, reportMissingImports]
-from backend.agent.chat.tools import search_documents_tool  # type: ignore[import, import-untyped, reportMissingImports]
+from backend.agent.chat.tools import search_documents_tool, deep_web_search_tool  # type: ignore[import, import-untyped, reportMissingImports]
 from backend.services.chat_service import get_chat_service  # type: ignore[import, import-untyped, reportMissingImports]
 from backend.api.models.shared import RATING_DOWN  # type: ignore[import, import-untyped, reportMissingImports]
 
@@ -182,16 +182,18 @@ def _safe_truncate_error_msg(e: Exception, max_chars: int = _MAX_ERROR_MSG_CHARS
     return "".join(islice(sanitized, max_chars))
 
 
-async def _run_planner_with_tools(
+async def _run_search_agent(
     plan_messages: List[BaseMessage],
     base_context: str,
+    search_tool: Any,
+    expected_tool_name: str,
 ) -> PlannerResult:
     """
     LLM에 도구 호출 권한을 부여하고, 도구를 실행하여 search_context를 반환하는 오케스트레이션 헬퍼.
     """
     chat_svc = get_chat_service()
     llm = chat_svc._get_llm(streaming=False)
-    llm_with_tools = llm.bind_tools([search_documents_tool])
+    llm_with_tools = llm.bind_tools([search_tool])
 
     ctx_parts: List[str] = [base_context] if base_context else []
     planner_failed = False
@@ -229,7 +231,7 @@ async def _run_planner_with_tools(
                 else:
                     tool_args = raw_args
 
-                if tool_name != "search_documents_tool":
+                if tool_name != expected_tool_name:
                     logger.debug(
                         "[Tool Dispatch] 미지원 도구 요청 무시",
                         extra={"tool_name": tool_name},
@@ -238,10 +240,10 @@ async def _run_planner_with_tools(
 
                 query_arg = str(tool_args.get("query", ""))
                 logger.info(
-                    "[Planner] -> search_documents_tool 호출",
+                    f"[Planner] -> {expected_tool_name} 호출",
                     extra={"query_length": len(query_arg)},
                 )
-                tool_res_raw = await search_documents_tool.ainvoke(tool_args)
+                tool_res_raw = await search_tool.ainvoke(tool_args)
                 tool_res: str = ""
                 if isinstance(tool_res_raw, dict):
                     tool_res = str(tool_res_raw.get("context", ""))
@@ -333,11 +335,12 @@ def should_fallback(state: AgentState) -> FallbackRoute:
     return ROUTE_STANDARD_RAG
 
 
-def router_edge(state: AgentState) -> Literal["planner", "responder"]:
+def router_edge(state: AgentState) -> Literal["standard_rag", "fallback_search", "responder"]:
     """
     조건부 엣지(Conditional Edge):
     가장 마지막 Human 메시지의 의도를 파악하여
-    복잡한 추론/검색이 필요한지(planner), 단순 인사말인지(responder) 판별합니다.
+    단순 인사말인 경우 responder로 직행하고, 그렇지 않은 경우 
+    과거 피드백 기록에 따라 standard_rag 또는 fallback_search를 결정합니다.
     """
     messages = state.get("messages", [])
     if not messages:
@@ -369,24 +372,38 @@ def router_edge(state: AgentState) -> Literal["planner", "responder"]:
         logger.info("[Router] 단순 대화 감지 -> responder", extra=router_log_extra)
         return "responder"
 
-    router_log_extra["target"] = "planner"
-    logger.info("[Router] 검색/추론 도구 필요 판단 -> planner", extra=router_log_extra)
-    return "planner"
+    router_log_extra["target"] = "search"
+    logger.info("[Router] 검색/추론 도구 필요 판단 -> should_fallback 분기로 전달", extra=router_log_extra)
+    return should_fallback(state)
 
 
-async def planner_node(state: AgentState) -> PlannerResult:
+async def _orchestrate_standard_search_flow(
+    state: AgentState,
+    system_prompt: str,
+) -> tuple[List[BaseMessage], str]:
     """
-    계획자(Planner) 노드 — Thin Orchestrator:
-    - 상태를 수집하고 헬퍼를 호출하여 도구 실행 및 컨텍스트를 구성한 후 반환합니다.
-
-    [Engineering Decision - Coupling]
-    현재 시스템 내에서 LLM 결합 방식에 대한 의존성이 존재하며,
-    Phase 3 Integration 단계에서 LLM 제공자를 DI(의존성 주입)로 분리할 예정입니다.
+    공통 검색 오케스트레이션 헬퍼:
+    - 메시지를 추출하고,
+    - base_context 를 계산한 뒤,
+    - 시스템 프롬프트를 선행 메시지로 추가합니다.
     """
-    logger.info("[Planner Node] 실행 중... (도구 호출 및 검색 활용 계획)")
-
     messages = state.get("messages", [])
-    if not messages:
+    base_context = str(state.get("search_context", "") or "")
+
+    system_message = SystemMessage(content=system_prompt)
+    orchestrated_messages: List[BaseMessage] = [system_message, *messages]
+
+    return orchestrated_messages, base_context
+
+
+async def standard_rag_node(state: AgentState) -> PlannerResult:
+    """
+    기존 RAG (Standard RAG) 노드 — Thin Orchestrator:
+    - 상태를 수집하고 헬퍼를 호출하여 도구 실행 및 컨텍스트를 구성한 후 반환합니다.
+    """
+    logger.info("[Standard RAG Node] 실행 중... (도구 호출 및 검색 활용 계획)")
+
+    if not state.get("messages", []):
         return {
             "search_context": "",
             "planner_failed": False,
@@ -394,18 +411,53 @@ async def planner_node(state: AgentState) -> PlannerResult:
             "source_documents": [],
         }
 
-    base_context = str(state.get("search_context", "") or "")
-
-    sys_prompt = SystemMessage(
-        content=(
-            "당신은 사용자의 질문을 분석하고 외부 지식이 필요한 경우 적절한 도구를 실행하여 정보를 수집하는 Planner입니다.\n"
-            "질문에 답하기 위해 프로젝트 내부 문서, 규정, 특정 지식 확인이 필요하다면 즉시 'search_documents_tool'을 호출하세요.\n"
-            "단순 안부 이외의 대부분의 사실 확인은 이 도구를 통해 컨텍스트를 얻는 것이 안전합니다."
-        )
+    system_prompt = (
+        "당신은 사용자의 질문을 분석하고 외부 지식이 필요한 경우 적절한 도구를 실행하여 정보를 수집하는 Planner입니다.\n"
+        "질문에 답하기 위해 프로젝트 내부 문서, 규정, 특정 지식 확인이 필요하다면 즉시 'search_documents_tool'을 호출하세요.\n"
+        "단순 안부 이외의 대부분의 사실 확인은 이 도구를 통해 컨텍스트를 얻는 것이 안전합니다."
     )
-    plan_messages = [sys_prompt] + messages
 
-    result = await _run_planner_with_tools(plan_messages, base_context)
+    plan_messages, base_context = await _orchestrate_standard_search_flow(
+        state=state,
+        system_prompt=system_prompt,
+    )
+
+    result = await _run_search_agent(plan_messages, base_context, search_documents_tool, "search_documents_tool")
+    return {
+        "search_context": result["search_context"],
+        "planner_failed": result["planner_failed"],
+        "planner_error_message": result["planner_error_message"],
+        "source_documents": cast(list[dict], result.get("source_documents", [])),
+    }
+
+
+async def fallback_search_node(state: AgentState) -> PlannerResult:
+    """
+    딥웹 검출(Fallback Search) 노드 — Thin Orchestrator:
+    지속적인 부정적 피드백으로 감지되었을 때 호출되는 타빌리 검색 기반의 보완 노드입니다.
+    """
+    logger.info("[Fallback Search Node] 실행 중... (Tavily 연동 웹 검색 진행)")
+
+    if not state.get("messages", []):
+        return {
+            "search_context": "",
+            "planner_failed": False,
+            "planner_error_message": "",
+            "source_documents": [],
+        }
+
+    system_prompt = (
+        "당신은 사용자의 질문을 분석하고 웹 상의 최신 지식이 필요한 경우 적절한 도구를 실행하여 정보를 수집하는 Planner입니다.\n"
+        "일반적인 내부 문서(RAG) 검색으로는 사용자를 만족시키기 어렵다고 판단되어 현재 Fallback 외부 검색(웹 검색) 라우팅을 탔습니다.\n"
+        "질문에 답하기 위해 최신 뉴스, 외부 트렌드, 정보가 필요하다면 즉시 'deep_web_search_tool'을 호출하세요."
+    )
+
+    plan_messages, base_context = await _orchestrate_standard_search_flow(
+        state=state,
+        system_prompt=system_prompt,
+    )
+
+    result = await _run_search_agent(plan_messages, base_context, deep_web_search_tool, "deep_web_search_tool")
     return {
         "search_context": result["search_context"],
         "planner_failed": result["planner_failed"],
