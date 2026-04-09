@@ -8,6 +8,7 @@ from backend.services.hybrid_search_service import get_hybrid_search_service  # 
 import os
 import asyncio
 import math
+from collections.abc import Sized
 from tavily import TavilyClient
 
 logger = logging.getLogger(__name__)
@@ -31,14 +32,18 @@ def _build_k_logging_extra(tool_name: str, k: Any) -> Dict[str, Any]:
         "tool_name": tool_name,
         "invalid_k_type": type(k).__name__,
     }
-    # 숫자형(int, float, bool)은 PII 위험이 없으므로 값 자체가 로깅에 유용함
-    if isinstance(k, (int, float, bool)):
+    if isinstance(k, bool):
         extra["raw_k_value"] = k
+    elif isinstance(k, (int, float)):
+        # 극한의 수치(예: 1e100, 초거대 정수)에 의한 로그 부하 및 노이즈 방지를 위해 문자열 변환 후 20자 제한.
+        # 숫자 타입이므로 PII 위험은 없지만 시스템 관측성을 안전하게 유지하기 위함.
+        extra["raw_k_value"] = str(k)[:20]
     else:
         # 그 외 문자열이나 구조화된 데이터는 PII 유출 우려가 있으므로 값 대신 길이만 보존
-        try:
+        # Sized 구현체인지 명시적으로 검사하여 제너레이터 등에서 예외 발생 오버헤드 방지
+        if isinstance(k, Sized):
             extra["raw_k_length"] = len(k)
-        except TypeError:
+        else:
             extra["raw_k_length"] = "unknown"
     return extra
 
