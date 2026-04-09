@@ -30,8 +30,8 @@ def _sanitize_search_limit(k: Any, tool_name: str) -> int:
     # 허용하지 않고, 명시적으로 기본값으로 되돌립니다.
     if isinstance(k, bool):
         logger.warning(
-            f"[Tool] {tool_name} - bool 타입 k 입력({k!r}) 감지. 기본값({_DEFAULT_SEARCH_LIMIT})으로 폴백합니다.",
-            extra={"tool_name": tool_name, "invalid_k": str(k)[:50]}
+            f"[Tool] {tool_name} - bool 타입 k 입력 감지. 기본값({_DEFAULT_SEARCH_LIMIT})으로 폴백합니다.",
+            extra={"tool_name": tool_name, "invalid_k_type": type(k).__name__}
         )
         return _DEFAULT_SEARCH_LIMIT
 
@@ -39,7 +39,7 @@ def _sanitize_search_limit(k: Any, tool_name: str) -> int:
     if not isinstance(k, (int, str)):
         logger.warning(
             f"[Tool] {tool_name} - 비정상적인 k 타입({type(k).__name__}) 주입 시도. 잠재적 버그를 유발할 수 있습니다.",
-            extra={"tool_name": tool_name, "invalid_k": str(k)[:50]}
+            extra={"tool_name": tool_name, "invalid_k_type": type(k).__name__}
         )
 
     try:
@@ -47,7 +47,7 @@ def _sanitize_search_limit(k: Any, tool_name: str) -> int:
     except (ValueError, TypeError):
         logger.warning(
             f"[Tool] {tool_name} - k 파라미터 타입 파싱 실패, 기본값({_DEFAULT_SEARCH_LIMIT})으로 폴백합니다.",
-            extra={"invalid_k": str(k)[:50], "tool_name": tool_name}
+            extra={"tool_name": tool_name, "invalid_k_type": type(k).__name__}
         )
         return _DEFAULT_SEARCH_LIMIT
 

@@ -25,6 +25,8 @@ _MAX_GREETING_LENGTH = 15
 # [Engineering Decision] 검색 결과 총합 토큰 예산 보호 (LLM 컨텍스트 윈도우 안전 범위 유지)
 # 명시적 int 타입 어노테이션 적용 → Pyre2가 Literal[8000]이아닌 int로 추론하도록 일치
 _MAX_SEARCH_CONTEXT_CHARS: int = 8_000
+# 긴 문자열 절단(Truncation) 시 끝에 붙이는 접미사 — 모듈 레벨 상수로 공유
+_TRUNCATION_SUFFIX: str = "...(truncated)"
 
 # Fallback Routing 관련 임계치 및 윈도우 사이즈
 FALLBACK_WINDOW_SIZE: int = 3
@@ -392,15 +394,15 @@ def _resolve_base_context(state: AgentState, override: Any) -> str:
         
     # [Security/Performance] 복잡한 타입이나 거대한 객체가 그대로 문자열화되어
     # 컨텍스트를 과도하게 차지(Bloat)하거나 PII가 유출되는 것을 제한.
-    _TRUNCATION_SUFFIX = "...(truncated)"
     context_str = str(override)
     if len(context_str) > _MAX_SEARCH_CONTEXT_CHARS:
         logger.warning(
             "[Router] _resolve_base_context: 강제 변환된 문자열이 너무 길어 잘림 처리됩니다.",
             extra={"original_length": len(context_str), "limit": _MAX_SEARCH_CONTEXT_CHARS}
         )
-        # 최종 문자열이 _MAX_SEARCH_CONTEXT_CHARS를 넘지 않도록 접미사 길이를 미리 뺌
-        safe_slice_len = _MAX_SEARCH_CONTEXT_CHARS - len(_TRUNCATION_SUFFIX)
+        # max(0, ...) 로 safe_slice_len이 음수가 되는 엣지케이스 방지
+        # (limit가 접미사보다 작더라도 빈 문자열 + 접미사로 안전하게 처리)
+        safe_slice_len = max(0, _MAX_SEARCH_CONTEXT_CHARS - len(_TRUNCATION_SUFFIX))
         context_str = context_str[:safe_slice_len] + _TRUNCATION_SUFFIX
         
     return context_str
