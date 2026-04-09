@@ -390,13 +390,7 @@ def _resolve_base_context(state: AgentState, override: Any) -> str:
     if override is None:
         return ""
         
-    if isinstance(override, str):
-        return override
-        
-    raise TypeError(
-        f"base_context_override must be of type str or None, "
-        f"got {type(override).__name__}"
-    )
+    return str(override)
 
 def _orchestrate_search_flow(
     state: AgentState,
