@@ -392,13 +392,16 @@ def _resolve_base_context(state: AgentState, override: Any) -> str:
         
     # [Security/Performance] 복잡한 타입이나 거대한 객체가 그대로 문자열화되어
     # 컨텍스트를 과도하게 차지(Bloat)하거나 PII가 유출되는 것을 제한.
+    _TRUNCATION_SUFFIX = "...(truncated)"
     context_str = str(override)
     if len(context_str) > _MAX_SEARCH_CONTEXT_CHARS:
         logger.warning(
             "[Router] _resolve_base_context: 강제 변환된 문자열이 너무 길어 잘림 처리됩니다.",
-            extra={"original_length": len(context_str), "truncated_length": _MAX_SEARCH_CONTEXT_CHARS}
+            extra={"original_length": len(context_str), "limit": _MAX_SEARCH_CONTEXT_CHARS}
         )
-        context_str = context_str[:_MAX_SEARCH_CONTEXT_CHARS] + "...(truncated)"
+        # 최종 문자열이 _MAX_SEARCH_CONTEXT_CHARS를 넘지 않도록 접미사 길이를 미리 뺌
+        safe_slice_len = _MAX_SEARCH_CONTEXT_CHARS - len(_TRUNCATION_SUFFIX)
+        context_str = context_str[:safe_slice_len] + _TRUNCATION_SUFFIX
         
     return context_str
 
