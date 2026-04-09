@@ -8,6 +8,7 @@ from backend.services.hybrid_search_service import get_hybrid_search_service  # 
 import os
 import asyncio
 import math
+import numbers
 from collections.abc import Sized
 from tavily import TavilyClient
 
@@ -23,6 +24,23 @@ _MIN_SEARCH_LIMIT = 1
 _MAX_SEARCH_LIMIT = 10
 _DEFAULT_SEARCH_LIMIT = 5
 
+def _format_numeric_safe(k: Any) -> str:
+    """
+    수치형 데이터를 안전하게 문자열로 변환하여 로깅 시 지수 표기법(Scientific Notation) 잘림이나 부호 유실을 방지합니다.
+    """
+    try:
+        val = float(k)
+        formatted = f"{val:.10g}"
+        if len(formatted) > 20:
+            return formatted[:17] + "..."
+        return formatted
+    except Exception:
+        # float 변환이 불가할 정도의 초거대 정수나 특이 수치 표현식은 단순 문자열화 후 안전하게 절단
+        s = str(k)
+        if len(s) > 20:
+            return s[:17] + "..."
+        return s
+
 def _build_k_logging_extra(tool_name: str, k: Any) -> Dict[str, Any]:
     """
     [Security/Observability] k 파라미터 로깅 시 중복을 제거하고,
@@ -34,10 +52,10 @@ def _build_k_logging_extra(tool_name: str, k: Any) -> Dict[str, Any]:
     }
     if isinstance(k, bool):
         extra["raw_k_value"] = k
-    elif isinstance(k, (int, float)):
-        # 극한의 수치(예: 1e100, 초거대 정수)에 의한 로그 부하 및 노이즈 방지를 위해 문자열 변환 후 20자 제한.
-        # 숫자 타입이므로 PII 위험은 없지만 시스템 관측성을 안전하게 유지하기 위함.
-        extra["raw_k_value"] = str(k)[:20]
+    elif isinstance(k, numbers.Number):
+        # 숫자형(int, float, Decimal, numpy 스칼라 등)은 
+        # 극한의 수치에 의한 로그 부하 방지 및 지수 표기법 유지를 위해 헬퍼로 포맷팅
+        extra["raw_k_value"] = _format_numeric_safe(k)
     else:
         # 그 외 문자열이나 구조화된 데이터는 PII 유출 우려가 있으므로 값 대신 길이만 보존
         # Sized 구현체인지 명시적으로 검사하여 제너레이터 등에서 예외 발생 오버헤드 방지
