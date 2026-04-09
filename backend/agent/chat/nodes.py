@@ -380,6 +380,24 @@ def router_edge(state: AgentState) -> Literal["standard_rag", "fallback_search",
 
 _USE_STATE_CONTEXT = object()
 
+def _resolve_base_context(state: AgentState, override: Any) -> str:
+    """
+    base_context_override 파라미터의 센티널 확인, None 폴백 및 타입 검증을 수행하는 헬퍼 함수입니다.
+    """
+    if override is _USE_STATE_CONTEXT:
+        return str(state.get("search_context", "") or "")
+    
+    if override is None:
+        return ""
+        
+    if isinstance(override, str):
+        return override
+        
+    raise TypeError(
+        f"base_context_override must be of type str or None, "
+        f"got {type(override).__name__}"
+    )
+
 def _orchestrate_search_flow(
     state: AgentState,
     system_prompt: str,
@@ -396,14 +414,14 @@ def _orchestrate_search_flow(
         system_prompt: 주입할 시스템 프롬프트.
         base_context_override: 명시적으로 값을 주입할 경우 이 값을 사용하며,
                                기본값(_USE_STATE_CONTEXT 센티널 객체)인 경우 state 내부의 
-                               'search_context'를 로드합니다. 빈 컨텍스트("") 전달과 완전히 구분됩니다.
+                               'search_context'를 로드합니다. 
+                               None은 "컨텍스트 없음"을 의미하며 빈 문자열("")로 취급됩니다.
+
+    Returns:
+        tuple[List[BaseMessage], str]: 시스템 메시지가 주입된 최종 메시지 리스트와 검색 컨텍스트 문자열.
     """
     messages = state.get("messages", [])
-    
-    if base_context_override is not _USE_STATE_CONTEXT:
-        base_context = str(base_context_override)
-    else:
-        base_context = str(state.get("search_context", "") or "")
+    base_context = _resolve_base_context(state, base_context_override)
 
     system_message = SystemMessage(content=system_prompt)
     orchestrated_messages: List[BaseMessage] = [system_message, *messages]
