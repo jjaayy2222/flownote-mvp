@@ -25,9 +25,11 @@ def _sanitize_search_limit(k: Any, tool_name: str) -> int:
     """
     들어온 k 파라미터를 파싱하고 제한 구역 내로 클램프합니다.
     [Comment 반영] 공통 헬퍼로 분리하여 로깅 및 검증 규칙 단일화.
-    - bool 타입: 파이썬에서 int의 하위 클래스이므로 명시적으로 먼저 차단.
-    - 나머지 비정상 타입(list, dict 등): int() 시도 후 실패 시 기본값 반환.
-      numpy.int64, Decimal 같은 int 유사 타입은 int()를 통해 정상 동작.
+    - bool: 파이썬 int 서브클래스 특성으로 인해 명시 차단 → 기본값.
+    - float: int()로 소수점 이하 절단됨(예: 5.9 → 5). 경고 후 절단 값 사용.
+      LLM이 5.0처럼 소수 형태 JSON을 넘기는 경우를 허용하되 가시화.
+    - int/str: int() 변환을 통해 정상 처리.
+    - 나머지 변환 불가 타입: int() 실패 시 기본값 반환.
     """
     # [Bug Fix] bool은 파이썬에서 int의 하위 클래스이므로 int(True)==1 같은 암묵적 변환을
     # 허용하지 않고, 명시적으로 기본값으로 되돌립니다.
@@ -38,7 +40,15 @@ def _sanitize_search_limit(k: Any, tool_name: str) -> int:
         )
         return _DEFAULT_SEARCH_LIMIT
 
-    # bool 이외의 모든 타입은 int() 변환 시도에 위임
+    # float 타입: int()로 소수점이 조용히 절단되므로 가시성 확보를 위해 경고 후 진행
+    if isinstance(k, float):
+        logger.warning(
+            f"[Tool] {tool_name} - float 타입 k 감지. 소수점 이하를 절단하여 처리합니다. (의도된 경우 int 타입으로 전달 권장)",
+            extra={"tool_name": tool_name, "invalid_k_type": type(k).__name__, "raw_k": float(k)}
+        )
+        # 경고 후 int()로 절단 → 클램핑 계속 진행
+
+    # bool/float 이외의 모든 타입은 int() 변환 시도에 위임
     # (numpy.int64, Decimal 등 int 유사 타입 호환성 유지)
     try:
         return max(_MIN_SEARCH_LIMIT, min(int(k), _MAX_SEARCH_LIMIT))
