@@ -4,7 +4,7 @@ import re
 import logging
 import numbers
 from itertools import islice
-from typing import Dict, Any, Literal, cast, List, TypedDict
+from typing import Dict, Any, Literal, cast, List, TypedDict, Optional
 from langchain_core.messages import AIMessage, SystemMessage, BaseMessage  # type: ignore[import, import-untyped, reportMissingImports]
 
 from backend.agent.chat.state import AgentState  # type: ignore[import, import-untyped, reportMissingImports]
@@ -372,23 +372,38 @@ def router_edge(state: AgentState) -> Literal["standard_rag", "fallback_search",
         logger.info("[Router] 단순 대화 감지 -> responder", extra=router_log_extra)
         return "responder"
 
-    router_log_extra["target"] = "search"
-    logger.info("[Router] 검색/추론 도구 필요 판단 -> should_fallback 분기로 전달", extra=router_log_extra)
-    return should_fallback(state)
+    route = should_fallback(state)
+    router_log_extra["target"] = route
+    logger.info(f"[Router] 검색/추론 도구 필요 판단 -> {route} 분기로 전달", extra=router_log_extra)
+    return route
 
 
-async def _orchestrate_standard_search_flow(
+_USE_STATE_CONTEXT = object()
+
+def _orchestrate_search_flow(
     state: AgentState,
     system_prompt: str,
+    base_context_override: Any = _USE_STATE_CONTEXT
 ) -> tuple[List[BaseMessage], str]:
     """
     공통 검색 오케스트레이션 헬퍼:
     - 메시지를 추출하고,
     - base_context 를 계산한 뒤,
     - 시스템 프롬프트를 선행 메시지로 추가합니다.
+
+    Args:
+        state: AgentState 객체.
+        system_prompt: 주입할 시스템 프롬프트.
+        base_context_override: 명시적으로 값을 주입할 경우 이 값을 사용하며,
+                               기본값(_USE_STATE_CONTEXT 센티널 객체)인 경우 state 내부의 
+                               'search_context'를 로드합니다. 빈 컨텍스트("") 전달과 완전히 구분됩니다.
     """
     messages = state.get("messages", [])
-    base_context = str(state.get("search_context", "") or "")
+    
+    if base_context_override is not _USE_STATE_CONTEXT:
+        base_context = str(base_context_override)
+    else:
+        base_context = str(state.get("search_context", "") or "")
 
     system_message = SystemMessage(content=system_prompt)
     orchestrated_messages: List[BaseMessage] = [system_message, *messages]
@@ -417,7 +432,7 @@ async def standard_rag_node(state: AgentState) -> PlannerResult:
         "단순 안부 이외의 대부분의 사실 확인은 이 도구를 통해 컨텍스트를 얻는 것이 안전합니다."
     )
 
-    plan_messages, base_context = await _orchestrate_standard_search_flow(
+    plan_messages, base_context = _orchestrate_search_flow(
         state=state,
         system_prompt=system_prompt,
     )
@@ -452,9 +467,11 @@ async def fallback_search_node(state: AgentState) -> PlannerResult:
         "질문에 답하기 위해 최신 뉴스, 외부 트렌드, 정보가 필요하다면 즉시 'deep_web_search_tool'을 호출하세요."
     )
 
-    plan_messages, base_context = await _orchestrate_standard_search_flow(
+    # Fallback 플로우에서는 기존 RAG의 search_context가 오염되지 않도록 base_context를 빈 값으로 덮어씌움
+    plan_messages, base_context = _orchestrate_search_flow(
         state=state,
         system_prompt=system_prompt,
+        base_context_override=""
     )
 
     result = await _run_search_agent(plan_messages, base_context, deep_web_search_tool, "deep_web_search_tool")
