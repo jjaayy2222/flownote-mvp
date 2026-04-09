@@ -21,6 +21,27 @@ _MIN_SEARCH_LIMIT = 1
 _MAX_SEARCH_LIMIT = 10
 _DEFAULT_SEARCH_LIMIT = 5
 
+def _sanitize_search_limit(k: Any, tool_name: str) -> int:
+    """
+    들어온 k 파라미터를 파싱하고 제한 구역 내로 클램프합니다.
+    [Comment 반영] 공통 헬퍼로 분리하여 로깅 및 검증 규칙 단일화.
+    """
+    # 파이썬 특성상 bool은 int의 하위 클래스이므로 명시적으로 먼저 차단/경고
+    if isinstance(k, bool) or not isinstance(k, (int, str)):
+        logger.warning(
+            f"[Tool] {tool_name} - 비정상적인 k 타입({type(k).__name__}) 주입 시도. 잠재적 버그를 유발할 수 있습니다.",
+            extra={"tool_name": tool_name}
+        )
+
+    try:
+        return max(_MIN_SEARCH_LIMIT, min(int(k), _MAX_SEARCH_LIMIT))
+    except (ValueError, TypeError):
+        logger.warning(
+            f"[Tool] {tool_name} - k 파라미터 타입 파싱 실패, 기본값({_DEFAULT_SEARCH_LIMIT})으로 폴백합니다.",
+            extra={"invalid_k": str(k)[:50], "tool_name": tool_name}
+        )
+        return _DEFAULT_SEARCH_LIMIT
+
 _tavily_client: Optional[TavilyClient] = None
 
 def _get_tavily_client(api_key: str) -> TavilyClient:
@@ -161,14 +182,7 @@ async def search_documents_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> d
         k (int): 검색할 최대 문서 수. (예기치 않은 부하 방지를 위해 제한 구역 내로 클램프되며, 유효하지 않은 값이면 기본값이 사용됩니다).
     """
     # 안전한 범위로 k를 검증/제한하여 예기치 않은 부하나 비용 방지
-    try:
-        k = max(_MIN_SEARCH_LIMIT, min(int(k), _MAX_SEARCH_LIMIT))
-    except (ValueError, TypeError):
-        logger.warning(
-            f"[Tool] search_documents_tool k 파라미터 타입 캐스팅 실패, 기본값({_DEFAULT_SEARCH_LIMIT})으로 폴백합니다.",
-            extra={"invalid_k": str(k)[:50]}
-        )
-        k = _DEFAULT_SEARCH_LIMIT
+    k = _sanitize_search_limit(k, "search_documents_tool")
 
     # [Comment 1 반영] PII 보호: query 원문 대신 길이(비민감 메타데이터)만 로깅
     logger.info(
@@ -236,14 +250,7 @@ async def deep_web_search_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> di
         k (int): 검색할 최대 문서 수. (예기치 않은 부하 방지를 위해 제한 구역 내로 클램프되며, 유효하지 않은 값이면 기본값이 사용됩니다).
     """
     # [Comment 3 반영] 안전한 범위로 k를 검증/제한하여 예기치 않은 부하나 비용 방지
-    try:
-        k = max(_MIN_SEARCH_LIMIT, min(int(k), _MAX_SEARCH_LIMIT))
-    except (ValueError, TypeError):
-        logger.warning(
-            f"[Tool] k 파라미터 타입 캐스팅 실패, 기본값({_DEFAULT_SEARCH_LIMIT})으로 폴백합니다.",
-            extra={"invalid_k": str(k)[:50]}
-        )
-        k = _DEFAULT_SEARCH_LIMIT
+    k = _sanitize_search_limit(k, "deep_web_search_tool")
 
     logger.info(
         "[Tool] deep_web_search_tool 실행",
