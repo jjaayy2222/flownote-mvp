@@ -7,6 +7,7 @@ from backend.services.hybrid_search_service import get_hybrid_search_service  # 
 
 import os
 import asyncio
+import math
 from tavily import TavilyClient
 
 logger = logging.getLogger(__name__)
@@ -40,19 +41,30 @@ def _sanitize_search_limit(k: Any, tool_name: str) -> int:
         )
         return _DEFAULT_SEARCH_LIMIT
 
-    # float 타입: int()로 소수점이 조용히 절단되므로 가시성 확보를 위해 경고 후 진행
+    # float 타입: NaN/inf 먼저 차단 후 소수점 절단 가시화
+    # k.is_integer()가 True인 경우(예: 5.0)는 절단 손실 없으므로 경고 생략
     if isinstance(k, float):
-        logger.warning(
-            f"[Tool] {tool_name} - float 타입 k 감지. 소수점 이하를 절단하여 처리합니다. (의도된 경우 int 타입으로 전달 권장)",
-            extra={"tool_name": tool_name, "invalid_k_type": type(k).__name__, "raw_k": float(k)}
-        )
+        if not math.isfinite(k):
+            # int(inf) → OverflowError, int(nan) → ValueError: 모두 except에 위임 가능하나
+            # 명확한 의미 전달을 위해 여기서 먼저 차단
+            logger.warning(
+                f"[Tool] {tool_name} - NaN/inf float k 감지. 기본값({_DEFAULT_SEARCH_LIMIT})으로 폴백합니다.",
+                extra={"tool_name": tool_name, "invalid_k_type": type(k).__name__, "raw_k": repr(k)[:50]}
+            )
+            return _DEFAULT_SEARCH_LIMIT
+
+        if not k.is_integer():
+            logger.warning(
+                f"[Tool] {tool_name} - float 타입 k 감지. 소수점 이하를 절단하여 처리합니다. (의도된 경우 int 타입으로 전달 권장)",
+                extra={"tool_name": tool_name, "invalid_k_type": type(k).__name__, "raw_k": repr(k)[:50]}
+            )
         # 경고 후 int()로 절단 → 클램핑 계속 진행
 
     # bool/float 이외의 모든 타입은 int() 변환 시도에 위임
     # (numpy.int64, Decimal 등 int 유사 타입 호환성 유지)
     try:
         return max(_MIN_SEARCH_LIMIT, min(int(k), _MAX_SEARCH_LIMIT))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         logger.warning(
             f"[Tool] {tool_name} - k 파라미터 타입 파싱 실패, 기본값({_DEFAULT_SEARCH_LIMIT})으로 폴백합니다.",
             extra={"tool_name": tool_name, "invalid_k_type": type(k).__name__}
