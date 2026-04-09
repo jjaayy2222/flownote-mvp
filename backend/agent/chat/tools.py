@@ -16,6 +16,20 @@ _MAX_DOC_CONTENT_CHARS = 1_000
 # [Security] 로그에 포함되는 doc_id의 최대 길이 제한 (PII 경계값 명시)
 _MAX_LOG_DOC_ID_LEN = 50
 
+_tavily_client: Optional[TavilyClient] = None
+
+def _get_tavily_client(api_key: str) -> TavilyClient:
+    """
+    Lazily initialize and reuse a module-level TavilyClient instance.
+
+    This avoids constructing a new client for every deep_web_search_tool call
+    while preserving the existing per-call API key validation and error handling.
+    """
+    global _tavily_client
+    if _tavily_client is None:
+        _tavily_client = TavilyClient(api_key=api_key)
+    return _tavily_client
+
 
 class SerializedDoc(TypedDict):
     """
@@ -216,7 +230,7 @@ async def deep_web_search_tool(query: str, k: int = 5) -> dict:
         return {"context": "웹 검색 연결 설정이 누락되어 검색할 수 없습니다.", "docs": []}
 
     try:
-        client = TavilyClient(api_key=api_key)
+        client = _get_tavily_client(api_key)
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,

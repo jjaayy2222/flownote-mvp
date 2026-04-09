@@ -377,6 +377,25 @@ def router_edge(state: AgentState) -> Literal["standard_rag", "fallback_search",
     return should_fallback(state)
 
 
+async def _orchestrate_standard_search_flow(
+    state: AgentState,
+    system_prompt: str,
+) -> tuple[List[BaseMessage], str]:
+    """
+    공통 검색 오케스트레이션 헬퍼:
+    - 메시지를 추출하고,
+    - base_context 를 계산한 뒤,
+    - 시스템 프롬프트를 선행 메시지로 추가합니다.
+    """
+    messages = state.get("messages", [])
+    base_context = str(state.get("search_context", "") or "")
+
+    system_message = SystemMessage(content=system_prompt)
+    orchestrated_messages: List[BaseMessage] = [system_message, *messages]
+
+    return orchestrated_messages, base_context
+
+
 async def standard_rag_node(state: AgentState) -> PlannerResult:
     """
     기존 RAG (Standard RAG) 노드 — Thin Orchestrator:
@@ -384,8 +403,7 @@ async def standard_rag_node(state: AgentState) -> PlannerResult:
     """
     logger.info("[Standard RAG Node] 실행 중... (도구 호출 및 검색 활용 계획)")
 
-    messages = state.get("messages", [])
-    if not messages:
+    if not state.get("messages", []):
         return {
             "search_context": "",
             "planner_failed": False,
@@ -393,16 +411,16 @@ async def standard_rag_node(state: AgentState) -> PlannerResult:
             "source_documents": [],
         }
 
-    base_context = str(state.get("search_context", "") or "")
-
-    sys_prompt = SystemMessage(
-        content=(
-            "당신은 사용자의 질문을 분석하고 외부 지식이 필요한 경우 적절한 도구를 실행하여 정보를 수집하는 Planner입니다.\n"
-            "질문에 답하기 위해 프로젝트 내부 문서, 규정, 특정 지식 확인이 필요하다면 즉시 'search_documents_tool'을 호출하세요.\n"
-            "단순 안부 이외의 대부분의 사실 확인은 이 도구를 통해 컨텍스트를 얻는 것이 안전합니다."
-        )
+    system_prompt = (
+        "당신은 사용자의 질문을 분석하고 외부 지식이 필요한 경우 적절한 도구를 실행하여 정보를 수집하는 Planner입니다.\n"
+        "질문에 답하기 위해 프로젝트 내부 문서, 규정, 특정 지식 확인이 필요하다면 즉시 'search_documents_tool'을 호출하세요.\n"
+        "단순 안부 이외의 대부분의 사실 확인은 이 도구를 통해 컨텍스트를 얻는 것이 안전합니다."
     )
-    plan_messages = [sys_prompt] + messages
+
+    plan_messages, base_context = await _orchestrate_standard_search_flow(
+        state=state,
+        system_prompt=system_prompt,
+    )
 
     result = await _run_search_agent(plan_messages, base_context, search_documents_tool, "search_documents_tool")
     return {
@@ -420,8 +438,7 @@ async def fallback_search_node(state: AgentState) -> PlannerResult:
     """
     logger.info("[Fallback Search Node] 실행 중... (Tavily 연동 웹 검색 진행)")
 
-    messages = state.get("messages", [])
-    if not messages:
+    if not state.get("messages", []):
         return {
             "search_context": "",
             "planner_failed": False,
@@ -429,16 +446,16 @@ async def fallback_search_node(state: AgentState) -> PlannerResult:
             "source_documents": [],
         }
 
-    base_context = str(state.get("search_context", "") or "")
-
-    sys_prompt = SystemMessage(
-        content=(
-            "당신은 사용자의 질문을 분석하고 웹 상의 최신 지식이 필요한 경우 적절한 도구를 실행하여 정보를 수집하는 Planner입니다.\n"
-            "일반적인 내부 문서(RAG) 검색으로는 사용자를 만족시키기 어렵다고 판단되어 현재 Fallback 외부 검색(웹 검색) 라우팅을 탔습니다.\n"
-            "질문에 답하기 위해 최신 뉴스, 외부 트렌드, 정보가 필요하다면 즉시 'deep_web_search_tool'을 호출하세요."
-        )
+    system_prompt = (
+        "당신은 사용자의 질문을 분석하고 웹 상의 최신 지식이 필요한 경우 적절한 도구를 실행하여 정보를 수집하는 Planner입니다.\n"
+        "일반적인 내부 문서(RAG) 검색으로는 사용자를 만족시키기 어렵다고 판단되어 현재 Fallback 외부 검색(웹 검색) 라우팅을 탔습니다.\n"
+        "질문에 답하기 위해 최신 뉴스, 외부 트렌드, 정보가 필요하다면 즉시 'deep_web_search_tool'을 호출하세요."
     )
-    plan_messages = [sys_prompt] + messages
+
+    plan_messages, base_context = await _orchestrate_standard_search_flow(
+        state=state,
+        system_prompt=system_prompt,
+    )
 
     result = await _run_search_agent(plan_messages, base_context, deep_web_search_tool, "deep_web_search_tool")
     return {
