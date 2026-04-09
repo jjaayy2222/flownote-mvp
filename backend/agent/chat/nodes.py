@@ -378,21 +378,30 @@ def router_edge(state: AgentState) -> Literal["standard_rag", "fallback_search",
     return route
 
 
+_USE_STATE_CONTEXT = object()
+
 def _orchestrate_search_flow(
     state: AgentState,
     system_prompt: str,
-    base_context_override: Optional[str] = None
+    base_context_override: Any = _USE_STATE_CONTEXT
 ) -> tuple[List[BaseMessage], str]:
     """
     공통 검색 오케스트레이션 헬퍼:
     - 메시지를 추출하고,
     - base_context 를 계산한 뒤,
     - 시스템 프롬프트를 선행 메시지로 추가합니다.
+
+    Args:
+        state: AgentState 객체.
+        system_prompt: 주입할 시스템 프롬프트.
+        base_context_override: 명시적으로 값을 주입할 경우 이 값을 사용하며,
+                               기본값(_USE_STATE_CONTEXT 센티널 객체)인 경우 state 내부의 
+                               'search_context'를 로드합니다. 빈 컨텍스트("") 전달과 완전히 구분됩니다.
     """
     messages = state.get("messages", [])
     
-    if base_context_override is not None:
-        base_context = base_context_override
+    if base_context_override is not _USE_STATE_CONTEXT:
+        base_context = str(base_context_override)
     else:
         base_context = str(state.get("search_context", "") or "")
 

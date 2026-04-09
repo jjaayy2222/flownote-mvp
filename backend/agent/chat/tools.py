@@ -221,7 +221,14 @@ async def deep_web_search_tool(query: str, k: int = 5) -> dict:
         k (int): 검색할 최대 문서 수 (기본값: 5).
     """
     # [Comment 3 반영] 안전한 범위로 k를 검증/제한하여 예기치 않은 부하나 비용 방지
-    k = max(1, min(int(k), 10))
+    try:
+        k = max(1, min(int(k), 10))
+    except (ValueError, TypeError):
+        logger.warning(
+            "[Tool] k 파라미터 타입 캐스팅 실패, 기본값(5)으로 폴백합니다.",
+            extra={"invalid_k": str(k)[:50]}
+        )
+        k = 5
 
     logger.info(
         "[Tool] deep_web_search_tool 실행",
