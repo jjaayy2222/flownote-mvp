@@ -150,7 +150,7 @@ def _normalize_doc(doc: Any) -> SerializedDoc:
 
 
 @tool
-async def search_documents_tool(query: str, k: int = 5) -> dict:
+async def search_documents_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> dict:
     """
     RAG 기반 사내 문서 검색 도구입니다.
     사용자의 질문이나 분석 의도와 관련된 지식 베이스 문서를 검색합니다.
@@ -158,8 +158,18 @@ async def search_documents_tool(query: str, k: int = 5) -> dict:
 
     Args:
         query (str): 검색할 핵심 질의어, 키워드 또는 전체 문장.
-        k (int): 검색할 최대 문서 수 (기본값: 5).
+        k (int): 검색할 최대 문서 수. (예기치 않은 부하 방지를 위해 제한 구역 내로 클램프되며, 유효하지 않은 값이면 기본값이 사용됩니다).
     """
+    # 안전한 범위로 k를 검증/제한하여 예기치 않은 부하나 비용 방지
+    try:
+        k = max(_MIN_SEARCH_LIMIT, min(int(k), _MAX_SEARCH_LIMIT))
+    except (ValueError, TypeError):
+        logger.warning(
+            f"[Tool] search_documents_tool k 파라미터 타입 캐스팅 실패, 기본값({_DEFAULT_SEARCH_LIMIT})으로 폴백합니다.",
+            extra={"invalid_k": str(k)[:50]}
+        )
+        k = _DEFAULT_SEARCH_LIMIT
+
     # [Comment 1 반영] PII 보호: query 원문 대신 길이(비민감 메타데이터)만 로깅
     logger.info(
         "[Tool] search_documents_tool 실행",

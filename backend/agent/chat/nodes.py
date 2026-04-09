@@ -380,6 +380,24 @@ def router_edge(state: AgentState) -> Literal["standard_rag", "fallback_search",
 
 _USE_STATE_CONTEXT = object()
 
+def _resolve_base_context(state: AgentState, override: Any) -> str:
+    """
+    base_context_override 파라미터의 센티널 확인, None 폴백 및 타입 검증을 수행하는 헬퍼 함수입니다.
+    """
+    if override is _USE_STATE_CONTEXT:
+        return str(state.get("search_context", "") or "")
+    
+    if override is None:
+        return ""
+        
+    if isinstance(override, str):
+        return override
+        
+    raise TypeError(
+        f"base_context_override must be of type str or None, "
+        f"got {type(override).__name__}"
+    )
+
 def _orchestrate_search_flow(
     state: AgentState,
     system_prompt: str,
@@ -403,19 +421,7 @@ def _orchestrate_search_flow(
         tuple[List[BaseMessage], str]: 시스템 메시지가 주입된 최종 메시지 리스트와 검색 컨텍스트 문자열.
     """
     messages = state.get("messages", [])
-    
-    if base_context_override is _USE_STATE_CONTEXT:
-        base_context = str(state.get("search_context", "") or "")
-    else:
-        if base_context_override is None:
-            base_context = ""
-        elif isinstance(base_context_override, str):
-            base_context = base_context_override
-        else:
-            raise TypeError(
-                f"base_context_override must be of type str or None, "
-                f"got {type(base_context_override).__name__}"
-            )
+    base_context = _resolve_base_context(state, base_context_override)
 
     system_message = SystemMessage(content=system_prompt)
     orchestrated_messages: List[BaseMessage] = [system_message, *messages]
