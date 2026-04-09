@@ -390,7 +390,17 @@ def _resolve_base_context(state: AgentState, override: Any) -> str:
     if override is None:
         return ""
         
-    return str(override)
+    # [Security/Performance] 복잡한 타입이나 거대한 객체가 그대로 문자열화되어
+    # 컨텍스트를 과도하게 차지(Bloat)하거나 PII가 유출되는 것을 제한.
+    context_str = str(override)
+    if len(context_str) > _MAX_SEARCH_CONTEXT_CHARS:
+        logger.warning(
+            "[Router] _resolve_base_context: 강제 변환된 문자열이 너무 길어 잘림 처리됩니다.",
+            extra={"original_length": len(context_str), "truncated_length": _MAX_SEARCH_CONTEXT_CHARS}
+        )
+        context_str = context_str[:_MAX_SEARCH_CONTEXT_CHARS] + "...(truncated)"
+        
+    return context_str
 
 def _orchestrate_search_flow(
     state: AgentState,

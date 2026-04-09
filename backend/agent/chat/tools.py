@@ -26,6 +26,13 @@ def _sanitize_search_limit(k: Any, tool_name: str) -> int:
     들어온 k 파라미터를 파싱하고 제한 구역 내로 클램프합니다.
     [Comment 반영] 공통 헬퍼로 분리하여 로깅 및 검증 규칙 단일화.
     """
+    # 파이썬 특성상 bool은 int의 하위 클래스이므로 명시적으로 먼저 차단/경고
+    if isinstance(k, bool) or not isinstance(k, (int, str)):
+        logger.warning(
+            f"[Tool] {tool_name} - 비정상적인 k 타입({type(k).__name__}) 주입 시도. 잠재적 버그를 유발할 수 있습니다.",
+            extra={"tool_name": tool_name}
+        )
+
     try:
         return max(_MIN_SEARCH_LIMIT, min(int(k), _MAX_SEARCH_LIMIT))
     except (ValueError, TypeError):
