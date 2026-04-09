@@ -25,6 +25,9 @@ def _sanitize_search_limit(k: Any, tool_name: str) -> int:
     """
     들어온 k 파라미터를 파싱하고 제한 구역 내로 클램프합니다.
     [Comment 반영] 공통 헬퍼로 분리하여 로깅 및 검증 규칙 단일화.
+    - bool 타입: 파이썬에서 int의 하위 클래스이므로 명시적으로 먼저 차단.
+    - 나머지 비정상 타입(list, dict 등): int() 시도 후 실패 시 기본값 반환.
+      numpy.int64, Decimal 같은 int 유사 타입은 int()를 통해 정상 동작.
     """
     # [Bug Fix] bool은 파이썬에서 int의 하위 클래스이므로 int(True)==1 같은 암묵적 변환을
     # 허용하지 않고, 명시적으로 기본값으로 되돌립니다.
@@ -35,13 +38,8 @@ def _sanitize_search_limit(k: Any, tool_name: str) -> int:
         )
         return _DEFAULT_SEARCH_LIMIT
 
-    # int/str 이외의 비정상 타입도 경고 후 그대로 try/except에 위임
-    if not isinstance(k, (int, str)):
-        logger.warning(
-            f"[Tool] {tool_name} - 비정상적인 k 타입({type(k).__name__}) 주입 시도. 잠재적 버그를 유발할 수 있습니다.",
-            extra={"tool_name": tool_name, "invalid_k_type": type(k).__name__}
-        )
-
+    # bool 이외의 모든 타입은 int() 변환 시도에 위임
+    # (numpy.int64, Decimal 등 int 유사 타입 호환성 유지)
     try:
         return max(_MIN_SEARCH_LIMIT, min(int(k), _MAX_SEARCH_LIMIT))
     except (ValueError, TypeError):
