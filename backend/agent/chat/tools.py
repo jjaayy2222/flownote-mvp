@@ -16,6 +16,11 @@ _MAX_DOC_CONTENT_CHARS = 1_000
 # [Security] 로그에 포함되는 doc_id의 최대 길이 제한 (PII 경계값 명시)
 _MAX_LOG_DOC_ID_LEN = 50
 
+# API 통신 부하 및 비용 방지를 위한 외부 검색 타겟 개수 제한 (하드코딩 분리)
+_MIN_SEARCH_LIMIT = 1
+_MAX_SEARCH_LIMIT = 10
+_DEFAULT_SEARCH_LIMIT = 5
+
 _tavily_client: Optional[TavilyClient] = None
 
 def _get_tavily_client(api_key: str) -> TavilyClient:
@@ -210,7 +215,7 @@ async def search_documents_tool(query: str, k: int = 5) -> dict:
 
 
 @tool
-async def deep_web_search_tool(query: str, k: int = 5) -> dict:
+async def deep_web_search_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> dict:
     """
     Tavily API 기반 Deep Web Search 도구입니다.
     기존 내부 문서 검색(RAG)으로 원하는 정보를 찾지 못했거나 부정적인 피드백이 누적되었을 때,
@@ -218,17 +223,17 @@ async def deep_web_search_tool(query: str, k: int = 5) -> dict:
 
     Args:
         query (str): 검색할 핵심 질의어, 키워드 또는 전체 문장.
-        k (int): 검색할 최대 문서 수 (기본값: 5).
+        k (int): 검색할 최대 문서 수. (예기치 않은 부하 방지를 위해 제한 구역 내로 클램프되며, 유효하지 않은 값이면 기본값이 사용됩니다).
     """
     # [Comment 3 반영] 안전한 범위로 k를 검증/제한하여 예기치 않은 부하나 비용 방지
     try:
-        k = max(1, min(int(k), 10))
+        k = max(_MIN_SEARCH_LIMIT, min(int(k), _MAX_SEARCH_LIMIT))
     except (ValueError, TypeError):
         logger.warning(
-            "[Tool] k 파라미터 타입 캐스팅 실패, 기본값(5)으로 폴백합니다.",
+            f"[Tool] k 파라미터 타입 캐스팅 실패, 기본값({_DEFAULT_SEARCH_LIMIT})으로 폴백합니다.",
             extra={"invalid_k": str(k)[:50]}
         )
-        k = 5
+        k = _DEFAULT_SEARCH_LIMIT
 
     logger.info(
         "[Tool] deep_web_search_tool 실행",

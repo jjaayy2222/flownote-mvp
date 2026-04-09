@@ -396,14 +396,26 @@ def _orchestrate_search_flow(
         system_prompt: 주입할 시스템 프롬프트.
         base_context_override: 명시적으로 값을 주입할 경우 이 값을 사용하며,
                                기본값(_USE_STATE_CONTEXT 센티널 객체)인 경우 state 내부의 
-                               'search_context'를 로드합니다. 빈 컨텍스트("") 전달과 완전히 구분됩니다.
+                               'search_context'를 로드합니다. 
+                               None은 "컨텍스트 없음"을 의미하며 빈 문자열("")로 취급됩니다.
+
+    Returns:
+        tuple[List[BaseMessage], str]: 시스템 메시지가 주입된 최종 메시지 리스트와 검색 컨텍스트 문자열.
     """
     messages = state.get("messages", [])
     
-    if base_context_override is not _USE_STATE_CONTEXT:
-        base_context = str(base_context_override)
-    else:
+    if base_context_override is _USE_STATE_CONTEXT:
         base_context = str(state.get("search_context", "") or "")
+    else:
+        if base_context_override is None:
+            base_context = ""
+        elif isinstance(base_context_override, str):
+            base_context = base_context_override
+        else:
+            raise TypeError(
+                f"base_context_override must be of type str or None, "
+                f"got {type(base_context_override).__name__}"
+            )
 
     system_message = SystemMessage(content=system_prompt)
     orchestrated_messages: List[BaseMessage] = [system_message, *messages]
