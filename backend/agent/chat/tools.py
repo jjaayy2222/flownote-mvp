@@ -40,11 +40,12 @@ def _sanitize_search_limit(k: Any, tool_name: str) -> int:
         )
         return _DEFAULT_SEARCH_LIMIT
 
-    # float 타입: int()로 소수점이 조용히 절단되므로 가시성 확보를 위해 경고 후 진행
-    if isinstance(k, float):
+    # float 타입: int()로 소수점이 조용히 절단되므로 가시성 확보를 위해 경고 후 진행.
+    # k.is_integer()가 True인 경우(예: 5.0)는 절단 손실이 없으므로 경고 생략하여 로그 노이즈 방지.
+    if isinstance(k, float) and not k.is_integer():
         logger.warning(
             f"[Tool] {tool_name} - float 타입 k 감지. 소수점 이하를 절단하여 처리합니다. (의도된 경우 int 타입으로 전달 권장)",
-            extra={"tool_name": tool_name, "invalid_k_type": type(k).__name__, "raw_k": float(k)}
+            extra={"tool_name": tool_name, "invalid_k_type": type(k).__name__, "raw_k": repr(k)}
         )
         # 경고 후 int()로 절단 → 클램핑 계속 진행
 
