@@ -35,13 +35,15 @@ def _sanitize_search_limit(k: Any, tool_name: str) -> int:
         )
         return _DEFAULT_SEARCH_LIMIT
 
-    # int/str 이외의 비정상 타입도 경고 후 그대로 try/except에 위임
+    # int/str 이외의 비정상 타입은 즉시 기본값 반환 (중복 경고 방지)
     if not isinstance(k, (int, str)):
         logger.warning(
-            f"[Tool] {tool_name} - 비정상적인 k 타입({type(k).__name__}) 주입 시도. 잠재적 버그를 유발할 수 있습니다.",
+            f"[Tool] {tool_name} - 비정상적인 k 타입({type(k).__name__}) 주입 시도. 기본값({_DEFAULT_SEARCH_LIMIT})으로 폴백합니다.",
             extra={"tool_name": tool_name, "invalid_k_type": type(k).__name__}
         )
+        return _DEFAULT_SEARCH_LIMIT
 
+    # int 또는 str만 이 아래로 도달
     try:
         return max(_MIN_SEARCH_LIMIT, min(int(k), _MAX_SEARCH_LIMIT))
     except (ValueError, TypeError):
