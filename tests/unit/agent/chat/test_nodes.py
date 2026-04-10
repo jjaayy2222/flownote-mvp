@@ -9,12 +9,25 @@ from backend.agent.chat.nodes import (
     FALLBACK_WINDOW_SIZE,
     FALLBACK_THRESHOLD,
 )
-from backend.api.models.shared import RATING_DOWN, RATING_UP
+from backend.api.models.shared import RATING_DOWN, RATING_UP, FeedbackRating
 
 
 class TestChatNodes(unittest.TestCase):
-    def _make_history(self, count: int, rating: str, **kwargs) -> list[dict]:
-        """Factory helper to build a list of feedback dictionaries with arbitrary keys securely."""
+    def _make_history(self, count: int, rating: FeedbackRating, **kwargs) -> list[dict]:
+        """Factory helper to build a list of feedback dictionaries with arbitrary keys securely.
+
+        Args:
+            count: Number of feedback entries to create.
+            rating: A valid FeedbackRating value (e.g. RATING_DOWN, RATING_UP, RATING_NONE).
+                    Typed as FeedbackRating (Literal) to catch invalid values at call sites.
+            **kwargs: Optional extra fields to merge into each feedback entry.
+
+        Note on deepcopy:
+            copy.deepcopy() is used intentionally to future-proof against nested mutable
+            values (e.g. dicts/lists) being passed as kwargs. For current tests the shallow
+            copy would suffice, but deepcopy removes any reference-sharing risk as the
+            schema evolves—accepted overhead given the small test-data sizes here.
+        """
         base_dict = {"rating": rating}
         base_dict.update(kwargs)
         return [copy.deepcopy(base_dict) for _ in range(count)]
