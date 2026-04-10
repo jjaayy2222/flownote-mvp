@@ -1,6 +1,7 @@
 # tests/unit/agent/chat/test_nodes.py
 
 import unittest
+import copy
 from backend.agent.chat.nodes import (
     should_fallback,
     ROUTE_FALLBACK_SEARCH,
@@ -12,9 +13,11 @@ from backend.api.models.shared import RATING_DOWN, RATING_UP
 
 
 class TestChatNodes(unittest.TestCase):
-    def _make_history(self, count: int, **kwargs) -> list[dict]:
-        """Factory helper to build a list of feedback dictionaries with arbitrary keys."""
-        return [kwargs.copy() for _ in range(count)]
+    def _make_history(self, count: int, rating: str, **kwargs) -> list[dict]:
+        """Factory helper to build a list of feedback dictionaries with arbitrary keys securely."""
+        base_dict = {"rating": rating}
+        base_dict.update(kwargs)
+        return [copy.deepcopy(base_dict) for _ in range(count)]
 
     def test_should_fallback_no_history(self):
         state = {"feedback_history": []}
