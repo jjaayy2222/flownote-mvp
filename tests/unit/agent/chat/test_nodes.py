@@ -28,6 +28,12 @@ class TestChatNodes(unittest.TestCase):
         state = {"feedback_history": downs}
         self.assertEqual(should_fallback(state), ROUTE_FALLBACK_SEARCH)
 
+    def test_should_fallback_exceed_threshold(self):
+        # more than the threshold (e.g., threshold + 1) should also route to fallback, checking against == vs >= error
+        downs = [{"rating": RATING_DOWN}] * (FALLBACK_THRESHOLD + 1)
+        state = {"feedback_history": downs}
+        self.assertEqual(should_fallback(state), ROUTE_FALLBACK_SEARCH)
+
     def test_should_fallback_mixed_recent(self):
         # Window size of feedback containing exactly threshold downs at the end
         history = [{"rating": RATING_UP}] * (FALLBACK_WINDOW_SIZE - FALLBACK_THRESHOLD)
