@@ -329,8 +329,14 @@ def should_fallback(state: AgentState) -> FallbackRoute:
     
     if negative_count >= FALLBACK_THRESHOLD:
         logger.warning(
-            f"[OBS][Router] 최근 {FALLBACK_WINDOW_SIZE}개 중 부정적 피드백 {FALLBACK_THRESHOLD}개 이상 감지. {ROUTE_FALLBACK_SEARCH} 실행.",
-            extra={"negative_count": negative_count}
+            "[Router] 부정적 피드백 임계치 초과. Fallback 라우팅을 실행합니다.",
+            extra={
+                "obs": True,
+                "window_size": FALLBACK_WINDOW_SIZE,
+                "threshold": FALLBACK_THRESHOLD,
+                "route": ROUTE_FALLBACK_SEARCH,
+                "negative_count": negative_count,
+            }
         )
         return ROUTE_FALLBACK_SEARCH
     
