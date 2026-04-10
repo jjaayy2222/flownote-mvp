@@ -21,6 +21,7 @@ _MAX_DOC_CONTENT_CHARS = 1_000
 _MAX_LOG_DOC_ID_LEN = 50
 # [Observability] 로깅 시 에러 원인 추적을 위해 남기는 수치형(k) 문자열의 최대 길이 제한
 _MAX_LOG_NUMERIC_CHARS = 20
+_ELLIPSIS = "..."
 
 # API 통신 부하 및 비용 방지를 위한 외부 검색 타겟 개수 제한 (하드코딩 분리)
 _MIN_SEARCH_LIMIT = 1
@@ -40,13 +41,13 @@ def _format_numeric_safe(k: Any) -> str:
             # float 변환 가능한 수치형인 경우 과학적 표기법 등으로 정밀 제어
             val = float(k)
             s = f"{val:.10g}"
-        except Exception:
+        except (ValueError, TypeError, OverflowError):
             # 특이 수치 표현식은 단순 문자열화
             s = str(k)
             
     if len(s) > _MAX_LOG_NUMERIC_CHARS:
-        # 길이 초과 시 끝부분을 '...'으로 치환하여 하드코딩 없이 안전하게 절단
-        return s[:_MAX_LOG_NUMERIC_CHARS - 3] + "..."
+        # 길이 초과 시 끝부분을 _ELLIPSIS 로 치환하여 하드코딩 없이 안전하게 절단
+        return s[:_MAX_LOG_NUMERIC_CHARS - len(_ELLIPSIS)] + _ELLIPSIS
     return s
 
 def _build_k_logging_extra(tool_name: str, k: Any) -> Dict[str, Any]:
