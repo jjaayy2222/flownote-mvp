@@ -6,7 +6,7 @@ from backend.agent.chat.nodes import (
     ROUTE_FALLBACK_SEARCH,
     ROUTE_STANDARD_RAG,
 )
-from backend.api.models.shared import RATING_DOWN
+from backend.api.models.shared import RATING_DOWN, RATING_UP
 
 
 class TestChatNodes(unittest.TestCase):
@@ -26,7 +26,7 @@ class TestChatNodes(unittest.TestCase):
         # 3 recent items, 2 downs
         state = {
             "feedback_history": [
-                {"rating": "up"},
+                {"rating": RATING_UP},
                 {"rating": RATING_DOWN},
                 {"rating": RATING_DOWN},
             ]
@@ -41,12 +41,10 @@ class TestChatNodes(unittest.TestCase):
             "feedback_history": [
                 {"rating": RATING_DOWN},
                 {"rating": RATING_DOWN},
-                {"rating": "up"},
-                {"rating": "up"},
+                {"rating": RATING_UP},
+                {"rating": RATING_UP},
             ]
         }
         self.assertEqual(should_fallback(state), ROUTE_STANDARD_RAG)
 
 
-if __name__ == "__main__":
-    unittest.main()

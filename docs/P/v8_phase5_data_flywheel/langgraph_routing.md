@@ -43,4 +43,4 @@ graph TD
 ## Route Definitions
 - **responder**: For simple greetings, bypassing any search overhead.
 - **standard_rag**: Standard routing path utilizing internal FAISS document embedding retrieval.
-- **fallback_search**: Triggered upon unfulfilled queries tracking `negative_count >= FALLBACK_THRESHOLD` out of the temporal window. Employs Tavily API for Deep Web Research, isolating its context from RAG leftovers to avoid hallucination contamination.
+- **fallback_search**: Triggered for unfulfilled queries when `negative_count >= FALLBACK_THRESHOLD` within the temporal window. Employs Tavily API for Deep Web Research, isolating its context from RAG leftovers to avoid hallucination contamination.
