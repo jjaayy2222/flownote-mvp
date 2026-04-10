@@ -329,7 +329,7 @@ def should_fallback(state: AgentState) -> FallbackRoute:
     
     if negative_count >= FALLBACK_THRESHOLD:
         logger.warning(
-            "[Router] 부정적 피드백 임계치 초과. Fallback 라우팅을 실행합니다.",
+            "Fallback routing triggered",
             extra={
                 "obs": True,
                 "window_size": FALLBACK_WINDOW_SIZE,

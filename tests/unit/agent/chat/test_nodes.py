@@ -18,33 +18,33 @@ class TestChatNodes(unittest.TestCase):
 
     def test_should_fallback_under_threshold(self):
         # 1 under the threshold should route to standard RAG
-        downs = [{"rating": RATING_DOWN}] * (FALLBACK_THRESHOLD - 1)
+        downs = [{"rating": RATING_DOWN} for _ in range(FALLBACK_THRESHOLD - 1)]
         state = {"feedback_history": downs}
         self.assertEqual(should_fallback(state), ROUTE_STANDARD_RAG)
 
     def test_should_fallback_reach_threshold(self):
         # exactly the threshold should route to fallback search
-        downs = [{"rating": RATING_DOWN}] * FALLBACK_THRESHOLD
+        downs = [{"rating": RATING_DOWN} for _ in range(FALLBACK_THRESHOLD)]
         state = {"feedback_history": downs}
         self.assertEqual(should_fallback(state), ROUTE_FALLBACK_SEARCH)
 
     def test_should_fallback_exceed_threshold(self):
         # more than the threshold (e.g., threshold + 1) should also route to fallback, checking against == vs >= error
-        downs = [{"rating": RATING_DOWN}] * (FALLBACK_THRESHOLD + 1)
+        downs = [{"rating": RATING_DOWN} for _ in range(FALLBACK_THRESHOLD + 1)]
         state = {"feedback_history": downs}
         self.assertEqual(should_fallback(state), ROUTE_FALLBACK_SEARCH)
 
     def test_should_fallback_mixed_recent(self):
         # Window size of feedback containing exactly threshold downs at the end
-        history = [{"rating": RATING_UP}] * (FALLBACK_WINDOW_SIZE - FALLBACK_THRESHOLD)
-        history.extend([{"rating": RATING_DOWN}] * FALLBACK_THRESHOLD)
+        history = [{"rating": RATING_UP} for _ in range(FALLBACK_WINDOW_SIZE - FALLBACK_THRESHOLD)]
+        history.extend([{"rating": RATING_DOWN} for _ in range(FALLBACK_THRESHOLD)])
         state = {"feedback_history": history}
         self.assertEqual(should_fallback(state), ROUTE_FALLBACK_SEARCH)
 
     def test_should_fallback_old_downs(self):
         # downs that are older than the window size should be ignored.
         # we put THRESHOLD downs at the very beginning (oldest), and UP for the entire window
-        history = [{"rating": RATING_DOWN}] * FALLBACK_THRESHOLD
-        history.extend([{"rating": RATING_UP}] * FALLBACK_WINDOW_SIZE)
+        history = [{"rating": RATING_DOWN} for _ in range(FALLBACK_THRESHOLD)]
+        history.extend([{"rating": RATING_UP} for _ in range(FALLBACK_WINDOW_SIZE)])
         state = {"feedback_history": history}
         self.assertEqual(should_fallback(state), ROUTE_STANDARD_RAG)
