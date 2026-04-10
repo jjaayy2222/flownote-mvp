@@ -332,6 +332,7 @@ def should_fallback(state: AgentState) -> FallbackRoute:
             "Fallback routing triggered",
             extra={
                 "obs": True,
+                "reason": "negative_feedback_threshold_exceeded",
                 "window_size": FALLBACK_WINDOW_SIZE,
                 "threshold": FALLBACK_THRESHOLD,
                 "route": ROUTE_FALLBACK_SEARCH,
