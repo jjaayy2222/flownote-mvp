@@ -1,7 +1,7 @@
 # tests/e2e/test_fallback_e2e.py
 
 import asyncio
-from backend.agent.chat.nodes import router_edge, should_fallback
+from backend.agent.chat.nodes import router_edge, should_fallback, ROUTE_FALLBACK_SEARCH
 from backend.api.models.shared import RATING_DOWN
 
 
@@ -22,5 +22,5 @@ def test_e2e_routing():
     selected_route = router_edge(mock_state)
 
     assert (
-        selected_route == "fallback_search"
-    ), f"Expected fallback_search, got {selected_route}"
+        selected_route == ROUTE_FALLBACK_SEARCH
+    ), f"Expected {ROUTE_FALLBACK_SEARCH}, got {selected_route}"
