@@ -217,7 +217,10 @@ async def _save_job_status_to_redis(
             logger.warning(
                 "[OBS] extra_fields contained reserved Redis keys and were ignored.",
                 extra={
-                    "skipped_keys": sorted(skipped),
+                    # ELK/Datadog 등 알림 규칙 대응용 기계 판독 머커
+                    "event": "reserved_redis_keys_in_extra_fields",
+                    "intentional_warning": True,
+                    "skipped_reserved_redis_keys": sorted(skipped),
                     # 운영자가 어떤 Job에서 발생한 경고인지 추적할 수 있도록 마스킹 ID 포함
                     "job_id_hash": mask_pii_id(job_id),
                     "redis_key_prefix": _FINETUNE_REDIS_KEY_PREFIX,
