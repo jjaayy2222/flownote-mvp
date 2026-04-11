@@ -110,6 +110,26 @@ class FinetuneJobStatus(str, Enum):
 
 
 # ─────────────────────────────────────────────────────────────
+# 내부 헬퍼: 공통 유틸리티
+# ─────────────────────────────────────────────────────────────
+
+
+def _preview_id(value: str, length: int = 20) -> str:
+    """
+    민감하지 않은 식별자(모델 ID 등)를 로그에서 가독성 있게 축약합니다.
+    동일한 슬라이싱 로직이 여러 곳에 중복되는 것을 방지합니다(DRY 원칙).
+
+    Args:
+        value: 원본 문자열
+        length: 축약 기준 길이 (기본: 20자)
+
+    Returns:
+        length보다 짧으면 원본, 길면 앞 length자 + '...'
+    """
+    return value[:length] + "..." if len(value) > length else value
+
+
+# ─────────────────────────────────────────────────────────────
 # 내부 헬퍼: OpenAI 클라이언트 생성
 # ─────────────────────────────────────────────────────────────
 
@@ -190,14 +210,81 @@ async def _set_active_model_in_redis(fine_tuned_model_id: str) -> None:
         extra={
             "active_model_key": _FINETUNE_ACTIVE_MODEL_KEY,
             # 모델 ID 자체는 민감 정보가 아니므로 일부만 마스킹하여 추적성 유지
-            "model_id_preview": fine_tuned_model_id[:20] + "..." if len(fine_tuned_model_id) > 20 else fine_tuned_model_id,
+            "model_id_preview": _preview_id(fine_tuned_model_id),
         },
     )
 
 
 # ─────────────────────────────────────────────────────────────
-# 핵심 서비스 함수
+# 핵심 서비스 함수 (동기 헬퍼 + 비동기 퍼블릭 API)
 # ─────────────────────────────────────────────────────────────
+
+
+def _upload_jsonl_and_create_finetune_job_sync(
+    jsonl_filename: str,
+    base_model: str,
+) -> Optional[str]:
+    """
+    [동기 전용 내부 헬퍼] JSONL 업로드 및 Fine-tuning Job 생성의 블로킹 I/O를 담당합니다.
+    이벤트 루프 차단 방지를 위해 퍼블릭 API인 upload_jsonl_and_create_finetune_job()에서
+    asyncio.to_thread()를 통해 워커 스레드로 위임합니다.
+
+    Args:
+        jsonl_filename: JSONL 파일명 (경로 없이 파일명만)
+        base_model: 파인튜닝에 사용할 기반 모델 ID
+
+    Returns:
+        OpenAI Fine-tuning Job ID (성공 시), 또는 None (실패 시)
+    """
+    jsonl_path = _FINETUNE_DATA_DIR / jsonl_filename
+
+    try:
+        client = _get_openai_client()
+
+        # 1. JSONL 파일 업로드 (blocking file I/O — 스레드 풀에서 안전)
+        with open(jsonl_path, "rb") as f:
+            upload_response = client.files.create(file=f, purpose="fine-tune")
+
+        file_id = upload_response.id
+        logger.info(
+            "[OBS] JSONL file uploaded to OpenAI Files API.",
+            extra={
+                "file_id_preview": _preview_id(file_id, length=12),
+                "jsonl_filename": jsonl_filename,
+            },
+        )
+
+        # 2. Fine-tuning Job 생성 (blocking network I/O — 스레드 풀에서 안전)
+        job_response = client.fine_tuning.jobs.create(
+            training_file=file_id,
+            model=base_model,
+        )
+
+        logger.info(
+            "[OBS] Fine-tuning job object created via OpenAI API.",
+            extra={
+                "job_id_hash": mask_pii_id(job_response.id),
+                "initial_status": job_response.status,
+                "base_model": base_model,
+            },
+        )
+
+        return job_response.id
+
+    except APIConnectionError as e:
+        logger.error(
+            "[OBS] OpenAI API connection error during fine-tuning job creation.",
+            extra={"error": str(e)},
+            exc_info=True,
+        )
+        return None
+    except APIError as e:
+        logger.error(
+            "[OBS] OpenAI API error during fine-tuning job creation.",
+            extra={"error_code": getattr(e, "code", "unknown"), "error": str(e)},
+            exc_info=True,
+        )
+        return None
 
 
 async def upload_jsonl_and_create_finetune_job(
@@ -208,12 +295,15 @@ async def upload_jsonl_and_create_finetune_job(
     Golden Dataset JSONL 파일을 OpenAI Files API에 업로드하고
     Fine-tuning Job을 생성합니다.
 
+    블로킹 I/O(파일 읽기, 동기 OpenAI 클라이언트)를 asyncio.to_thread()로 워커 스레드에 위임하여
+    이벤트 루프 차단을 방지합니다.
+
     Args:
         jsonl_filename: data/golden_dataset/ 하위의 JSONL 파일명 (예: "2026-04-12.jsonl")
         base_model: 파인튜닝에 사용할 기반 모델 (기본: _FINETUNE_BASE_MODEL 환경 변수)
 
     Returns:
-        OpenAI Fine-tuning Job ID (성공 시), 또는 None (실패 시)
+        생성된 Fine-tuning Job ID (성공 시), 또는 None (실패 시)
 
     Raises:
         FileNotFoundError: 지정된 JSONL 파일이 존재하지 않는 경우
@@ -236,61 +326,25 @@ async def upload_jsonl_and_create_finetune_job(
         },
     )
 
-    try:
-        client = _get_openai_client()
+    # 블로킹 I/O 전체를 워커 스레드로 위임 — 이벤트 루프 차단 방지
+    job_id = await asyncio.to_thread(
+        _upload_jsonl_and_create_finetune_job_sync,
+        jsonl_filename,
+        target_model,
+    )
 
-        # 1. JSONL 파일 업로드 (fine-tune purpose)
-        with open(jsonl_path, "rb") as f:
-            upload_response = client.files.create(file=f, purpose="fine-tune")
-
-        file_id = upload_response.id
-        logger.info(
-            "[OBS] JSONL file uploaded to OpenAI Files API.",
-            extra={
-                "file_id_preview": file_id[:12] + "...",
-                "jsonl_filename": jsonl_filename,
-            },
-        )
-
-        # 2. Fine-tuning Job 생성
-        job_response = client.fine_tuning.jobs.create(
-            training_file=file_id,
-            model=target_model,
-        )
-
-        job_id: str = job_response.id
-        initial_status = FinetuneJobStatus.from_openai_status(job_response.status)
-
-        # 3. 초기 상태를 Redis에 저장
+    if job_id is not None:
+        initial_status = FinetuneJobStatus.PENDING
         await _save_job_status_to_redis(job_id=job_id, status=initial_status)
-
         logger.info(
-            "[OBS] Fine-tuning job created successfully.",
+            "[OBS] Fine-tuning job creation complete. Initial status saved to Redis.",
             extra={
                 "job_id_hash": mask_pii_id(job_id),
                 "initial_status": initial_status.value,
-                "base_model": target_model,
             },
         )
 
-        return job_id
-
-    except FileNotFoundError:
-        raise
-    except APIConnectionError as e:
-        logger.error(
-            "[OBS] OpenAI API connection error during fine-tuning job creation.",
-            extra={"error": str(e)},
-            exc_info=True,
-        )
-        return None
-    except APIError as e:
-        logger.error(
-            "[OBS] OpenAI API error during fine-tuning job creation.",
-            extra={"error_code": getattr(e, "code", "unknown"), "error": str(e)},
-            exc_info=True,
-        )
-        return None
+    return job_id
 
 
 async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
@@ -331,12 +385,18 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
         },
     )
 
+    # do-while 패턴: 첫 번째 조회는 즉시 실행하여 빠른 실패/성공을 즉각 반영합니다.
+    # 이후 순환부터 sleep을 선행하여 불필요한 API 호출 빈도를 조절합니다.
+    first_attempt = True
+
     while elapsed < _FINETUNE_POLL_TIMEOUT_SECS:
-        await asyncio.sleep(_FINETUNE_POLL_INTERVAL_SECS)
-        elapsed += _FINETUNE_POLL_INTERVAL_SECS
+        if not first_attempt:
+            await asyncio.sleep(_FINETUNE_POLL_INTERVAL_SECS)
+            elapsed += _FINETUNE_POLL_INTERVAL_SECS
+        first_attempt = False
 
         try:
-            job_data = client.fine_tuning.jobs.retrieve(job_id)
+            job_data = await asyncio.to_thread(client.fine_tuning.jobs.retrieve, job_id)
             current_status = FinetuneJobStatus.from_openai_status(job_data.status)
             fine_tuned_model: Optional[str] = job_data.fine_tuned_model
 
@@ -355,7 +415,7 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
                         "[OBS] Fine-tuning succeeded. New model is now active.",
                         extra={
                             "job_id_hash": mask_pii_id(job_id),
-                            "model_id_preview": fine_tuned_model[:20] + "..." if len(fine_tuned_model) > 20 else fine_tuned_model,
+                            "model_id_preview": _preview_id(fine_tuned_model),
                         },
                     )
                 else:
@@ -369,16 +429,32 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
                 return current_status
 
         except APIConnectionError as e:
+            # 일시적 네트워크 오류 — 재시도 허용
             logger.warning(
                 "[OBS] Transient connection error during fine-tuning job polling. Will retry.",
                 extra={"job_id_hash": mask_pii_id(job_id), "error": str(e), "elapsed_secs": elapsed},
             )
         except APIError as e:
-            logger.error(
-                "[OBS] OpenAI API error during fine-tuning job polling.",
-                extra={"job_id_hash": mask_pii_id(job_id), "error": str(e), "elapsed_secs": elapsed},
-                exc_info=True,
-            )
+            status_code: int = getattr(e, "status_code", 0) or 0
+            if status_code < 500:
+                # 4xx: 잘못된 Job ID, 권한 오류 등 영구적 실패 — 즉시 중단
+                logger.error(
+                    "[OBS] Permanent API error during fine-tuning job polling. Aborting poll.",
+                    extra={
+                        "job_id_hash": mask_pii_id(job_id),
+                        "status_code": status_code,
+                        "error": str(e),
+                    },
+                    exc_info=True,
+                )
+                await _save_job_status_to_redis(job_id=job_id, status=FinetuneJobStatus.FAILED)
+                return FinetuneJobStatus.FAILED
+            else:
+                # 5xx: 서버 오류 — 재시도 허용
+                logger.error(
+                    "[OBS] Transient server error during fine-tuning job polling. Will retry.",
+                    extra={"job_id_hash": mask_pii_id(job_id), "status_code": status_code, "error": str(e)},
+                )
 
     # 타임아웃 만료
     logger.error(
