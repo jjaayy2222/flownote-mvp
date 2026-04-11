@@ -23,6 +23,7 @@ from openai import OpenAI, APIError, APIConnectionError
 from backend.config import ModelConfig  # type: ignore[import]
 from backend.services.redis_pubsub import redis_client  # type: ignore[import]
 from backend.utils import mask_pii_id  # type: ignore[import]
+from backend.utils.observability import ObsEvent, ObsMetaTag  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
 
@@ -217,9 +218,9 @@ async def _save_job_status_to_redis(
             logger.warning(
                 "[OBS] extra_fields contained reserved Redis keys and were ignored.",
                 extra={
-                    # ELK/Datadog 등 알림 규칙 대응용 기계 판독 머커
-                    "event": "reserved_redis_keys_in_extra_fields",
-                    "intentional_warning": True,
+                    # ELK/Datadog 등 알림 규칙 대응용 기계 판독 마커 (공용 Enum 사용)
+                    "event": ObsEvent.FINETUNE_RESERVED_REDIS_KEY_VIOLATION.value,
+                    ObsMetaTag.INTENTIONAL_WARNING.value: True,
                     "skipped_reserved_redis_keys": sorted(skipped),
                     # 운영자가 어떤 Job에서 발생한 경고인지 추적할 수 있도록 마스킹 ID 포함
                     "job_id_hash": mask_pii_id(job_id),
