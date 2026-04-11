@@ -130,11 +130,11 @@ def _preview_id(value: str, length: int = 20) -> str:
     return value[:length] + "..." if len(value) > length else value
 
 
-def _elapsed(start: float) -> float:
+def _elapsed_secs(start: float) -> float:
     """
-    폴링 시작 시점(start)으로부터 현재까지 경과한 시간(초)을 반환합니다.
+    폴링 시작 시점(start)으로부터 현재까지 경과한 시간을 초 단위로 반환합니다.
     time.monotonic()을 사용하기 때문에 NTP 조정이나 시스템 시간 변경에 영향받지 않는
-    단조 증가(단조롭, monotonic) 경과 시간을 측정합니다. 실제 암/시간과는 일치하지 않을 수 있습니다.
+    단조 증가(monotonic) 경과 시간을 측정합니다. 실제 현재 시각과는 일치하지 않을 수 있습니다.
     결과는 항상 0 이상으로 클램핑되어 음수 값 발생을 방지합니다.
     시간 측정 로직을 단일 지점으로 중앙화하여 일관성을 보장합니다(DRY 원칙).
 
@@ -142,7 +142,7 @@ def _elapsed(start: float) -> float:
         start: 기준 시작 시간 (time.monotonic() 반환값)
 
     Returns:
-        단조 경과 시간 (초), 항상 >= 0.0
+        단조 경과 시간 (초, float), 항상 >= 0.0
     """
     return max(0.0, time.monotonic() - start)
 
@@ -211,6 +211,9 @@ async def _save_job_status_to_redis(
         # 집합 교집(∩)으로 충돌한 예약 키를 직접 하이라이팅하여 의도를 명확히 표현합니다.
         skipped = set(extra_fields) & _RESERVED_REDIS_KEYS
         if skipped:
+            # [INTENTIONAL WARNING] 이 경고는 호출자가 예약 키를 extra_fields에 잘못 전달한
+            # 프로그래밍 버그 감지용입니다. 정상 운영 중에는 절대 발생해서는 안 됩니다.
+            # 빈번한 노이즈가 우려되어 레벨을 낮추는 것은 부적합합니다 — WARNING을 유지합니다.
             logger.warning(
                 "[OBS] extra_fields contained reserved Redis keys and were ignored.",
                 extra={
@@ -485,7 +488,7 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
             # 일시적 네트워크 오류 — 재시도 허용
             logger.warning(
                 "[OBS] Transient connection error during fine-tuning job polling. Will retry.",
-                extra={"job_id_hash": mask_pii_id(job_id), "error": str(e), "elapsed_secs": round(_elapsed(start_time), 1)},
+                extra={"job_id_hash": mask_pii_id(job_id), "error": str(e), "elapsed_secs": round(_elapsed_secs(start_time), 1)},
             )
         except APIError as e:
             status_code: int = getattr(e, "status_code", 0) or 0
@@ -510,7 +513,7 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
                 )
 
     # 타임아웃 만료: start_time 기준으로 실제 경과 시간을 계산하고 음수가 되지 않도록 클램핑
-    actual_elapsed = _elapsed(start_time)
+    actual_elapsed = _elapsed_secs(start_time)
     logger.error(
         "[OBS] Fine-tuning job polling timed out.",
         extra={
