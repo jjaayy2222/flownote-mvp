@@ -130,6 +130,26 @@ def _preview_id(value: str, length: int = 20) -> str:
     return value[:length] + "..." if len(value) > length else value
 
 
+def _elapsed(start: float) -> float:
+    """
+    폴링 시작 시점(start_time)으로부터 현재까지 경과한 실제 벽시계 시간(초)을 반환합니다.
+    결과는 항상 0 이상으로 클램핑되어 음수 값 발생을 방지합니다.
+    시간 측정 로직을 단일 지점으로 중앙화하여 일관성을 보장합니다(DRY 원칙).
+
+    Args:
+        start: 기준 시작 시간 (time.monotonic() 반환값)
+
+    Returns:
+        경과 시간 (초), 항상 >= 0.0
+    """
+    return max(0.0, time.monotonic() - start)
+
+
+# Redis Hash에서 타측에서 교체할 수 없는 핵심 피드 키 목록
+# extra_fields에 이 키가 포함되어도 저장에서 제외(필터링)됩니다.
+_RESERVED_REDIS_KEYS: frozenset[str] = frozenset({"status", "fine_tuned_model"})
+
+
 # ─────────────────────────────────────────────────────────────
 # 내부 헬퍼: OpenAI 클라이언트 생성
 # ─────────────────────────────────────────────────────────────
@@ -184,7 +204,16 @@ async def _save_job_status_to_redis(
     if fine_tuned_model:
         mapping["fine_tuned_model"] = fine_tuned_model
     if extra_fields:
-        mapping.update(extra_fields)
+        # 핵심 키(status, fine_tuned_model)가 오버라이드되지 않도록 예약 키를 필터링합니다.
+        safe_extra = {k: v for k, v in extra_fields.items() if k not in _RESERVED_REDIS_KEYS}
+        skipped = set(extra_fields) - set(safe_extra)
+        if skipped:
+            logger.warning(
+                "[OBS] extra_fields contained reserved Redis keys and were ignored.",
+                extra={"skipped_keys": sorted(skipped)},
+            )
+        if safe_extra:
+            mapping.update(safe_extra)
 
     await redis_client.redis.hset(redis_key, mapping=mapping)
     await redis_client.redis.expire(redis_key, _FINETUNE_REDIS_TTL_SECS)
@@ -448,7 +477,7 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
             # 일시적 네트워크 오류 — 재시도 허용
             logger.warning(
                 "[OBS] Transient connection error during fine-tuning job polling. Will retry.",
-                extra={"job_id_hash": mask_pii_id(job_id), "error": str(e), "elapsed_secs": round(max(0.0, time.monotonic() - start_time), 1)},
+                extra={"job_id_hash": mask_pii_id(job_id), "error": str(e), "elapsed_secs": round(_elapsed(start_time), 1)},
             )
         except APIError as e:
             status_code: int = getattr(e, "status_code", 0) or 0
@@ -473,7 +502,7 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
                 )
 
     # 타임아웃 만료: start_time 기준으로 실제 경과 시간을 계산하고 음수가 되지 않도록 클램핑
-    actual_elapsed = max(0.0, time.monotonic() - start_time)
+    actual_elapsed = _elapsed(start_time)
     logger.error(
         "[OBS] Fine-tuning job polling timed out.",
         extra={
