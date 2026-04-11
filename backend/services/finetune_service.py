@@ -132,7 +132,9 @@ def _preview_id(value: str, length: int = 20) -> str:
 
 def _elapsed(start: float) -> float:
     """
-    폴링 시작 시점(start_time)으로부터 현재까지 경과한 실제 벽시계 시간(초)을 반환합니다.
+    폴링 시작 시점(start)으로부터 현재까지 경과한 시간(초)을 반환합니다.
+    time.monotonic()을 사용하기 때문에 NTP 조정이나 시스템 시간 변경에 영향받지 않는
+    단조 증가(단조롭, monotonic) 경과 시간을 측정합니다. 실제 암/시간과는 일치하지 않을 수 있습니다.
     결과는 항상 0 이상으로 클램핑되어 음수 값 발생을 방지합니다.
     시간 측정 로직을 단일 지점으로 중앙화하여 일관성을 보장합니다(DRY 원칙).
 
@@ -140,7 +142,7 @@ def _elapsed(start: float) -> float:
         start: 기준 시작 시간 (time.monotonic() 반환값)
 
     Returns:
-        경과 시간 (초), 항상 >= 0.0
+        단조 경과 시간 (초), 항상 >= 0.0
     """
     return max(0.0, time.monotonic() - start)
 
@@ -206,11 +208,17 @@ async def _save_job_status_to_redis(
     if extra_fields:
         # 핵심 키(status, fine_tuned_model)가 오버라이드되지 않도록 예약 키를 필터링합니다.
         safe_extra = {k: v for k, v in extra_fields.items() if k not in _RESERVED_REDIS_KEYS}
-        skipped = set(extra_fields) - set(safe_extra)
+        # 집합 교집(∩)으로 충돌한 예약 키를 직접 하이라이팅하여 의도를 명확히 표현합니다.
+        skipped = set(extra_fields) & _RESERVED_REDIS_KEYS
         if skipped:
             logger.warning(
                 "[OBS] extra_fields contained reserved Redis keys and were ignored.",
-                extra={"skipped_keys": sorted(skipped)},
+                extra={
+                    "skipped_keys": sorted(skipped),
+                    # 운영자가 어떤 Job에서 발생한 경고인지 추적할 수 있도록 마스킹 ID 포함
+                    "job_id_hash": mask_pii_id(job_id),
+                    "redis_key_prefix": _FINETUNE_REDIS_KEY_PREFIX,
+                },
             )
         if safe_extra:
             mapping.update(safe_extra)
