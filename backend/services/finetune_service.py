@@ -381,8 +381,9 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
         logger.error("[OBS] Cannot poll fine-tuning job: API client creation failed.", extra={"error": str(e)})
         return FinetuneJobStatus.FAILED
 
-    # 실제 밽시계 시간 기반으로 타임아웃 측정 (jobs.retrieve 지연 시간 포함)
-    deadline: float = time.monotonic() + _FINETUNE_POLL_TIMEOUT_SECS
+    # 실제 벽시계 시간 기반으로 타임아웃 측정 (jobs.retrieve 지연 시간 포함)
+    start_time: float = time.monotonic()
+    deadline: float = start_time + _FINETUNE_POLL_TIMEOUT_SECS
 
     logger.info(
         "[OBS] Starting fine-tuning job polling.",
@@ -397,11 +398,16 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
     # 이후 순환부터 sleep을 선행하여 불필요한 API 호출 빈도를 조절합니다.
     first_attempt = True
 
-    while time.monotonic() < deadline:
+    while True:
+        # 이터레이션 시작 시 한 번만 샘플링하여 루프 내 time.monotonic() 호출 불일치 방지
+        now: float = time.monotonic()
+        if now >= deadline:
+            break
         if not first_attempt:
             await asyncio.sleep(_FINETUNE_POLL_INTERVAL_SECS)
-            # deadline 차감 넌지 time.monotonic()으로 언제나 정확하게 확인
-            if time.monotonic() >= deadline:
+            # deadline을 차감하는 대신 time.monotonic()을 사용해 항상 정확히 확인
+            now = time.monotonic()
+            if now >= deadline:
                 break
         first_attempt = False
 
@@ -442,7 +448,7 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
             # 일시적 네트워크 오류 — 재시도 허용
             logger.warning(
                 "[OBS] Transient connection error during fine-tuning job polling. Will retry.",
-                extra={"job_id_hash": mask_pii_id(job_id), "error": str(e), "elapsed_secs": round(_FINETUNE_POLL_TIMEOUT_SECS - (deadline - time.monotonic()), 1)},
+                extra={"job_id_hash": mask_pii_id(job_id), "error": str(e), "elapsed_secs": round(max(0.0, time.monotonic() - start_time), 1)},
             )
         except APIError as e:
             status_code: int = getattr(e, "status_code", 0) or 0
@@ -466,8 +472,8 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
                     extra={"job_id_hash": mask_pii_id(job_id), "status_code": status_code, "error": str(e)},
                 )
 
-    # 타임아웃 만료: 실제 경과 시간 기록
-    actual_elapsed = _FINETUNE_POLL_TIMEOUT_SECS - (deadline - time.monotonic())
+    # 타임아웃 만료: start_time 기준으로 실제 경과 시간을 계산하고 음수가 되지 않도록 클램핑
+    actual_elapsed = max(0.0, time.monotonic() - start_time)
     logger.error(
         "[OBS] Fine-tuning job polling timed out.",
         extra={
