@@ -13,6 +13,7 @@ Fine-tuning Job을 생성·상태 폴링·Redis 상태 동기화까지 담당합
 import asyncio
 import logging
 import os
+import time
 from enum import Enum
 from pathlib import Path
 from typing import Optional
@@ -163,6 +164,7 @@ async def _save_job_status_to_redis(
     job_id: str,
     status: FinetuneJobStatus,
     fine_tuned_model: Optional[str] = None,
+    extra_fields: Optional[dict[str, str]] = None,
 ) -> None:
     """
     Fine-tuning Job 상태를 Redis Hash에 저장합니다.
@@ -172,6 +174,7 @@ async def _save_job_status_to_redis(
         job_id: OpenAI Fine-tuning Job ID (민감 식별자 — 로그에 원본을 남기지 않습니다.)
         status: 현재 Job 상태 (FinetuneJobStatus)
         fine_tuned_model: 성공 시 반환되는 파인튜닝된 모델 ID (Optional)
+        extra_fields: 상태 외 추가로 저장할 메타데이터 (timed_out, last_error 등)
     """
     if not redis_client.is_connected():
         await redis_client.connect()
@@ -180,6 +183,8 @@ async def _save_job_status_to_redis(
     mapping: dict[str, str] = {"status": status.value}
     if fine_tuned_model:
         mapping["fine_tuned_model"] = fine_tuned_model
+    if extra_fields:
+        mapping.update(extra_fields)
 
     await redis_client.redis.hset(redis_key, mapping=mapping)
     await redis_client.redis.expire(redis_key, _FINETUNE_REDIS_TTL_SECS)
@@ -350,7 +355,7 @@ async def upload_jsonl_and_create_finetune_job(
 async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
     """
     Fine-tuning Job 상태를 주기적으로 폴링하여 완료(succeeded/failed/cancelled)까지 대기합니다.
-    상태 변경이 발생할 때마다 Redis에 동기화하며, 완료 시 Discord 알림을 발생시킵니다.
+    상태 변경이 발생할 때마다 Redis에 동기화합니다.
 
     Args:
         job_id: OpenAI Fine-tuning Job ID
@@ -359,7 +364,9 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
         FinetuneJobStatus: 최종 종료 상태 (SUCCEEDED | FAILED | CANCELLED)
 
     Note:
-        - _FINETUNE_POLL_TIMEOUT_SECS 초과 시 RUNNING 상태를 반환하고 폴링을 종료합니다.
+        - _FINETUNE_POLL_TIMEOUT_SECS 초과 시 FAILED 상태를 Redis에 기록하고 폴링을 종료합니다.
+        - Discord 알림은 [OBS] 태그가 붙은 로그를 DiscordAlertHandler가 자동 감지하여 전송합니다.
+          (별도의 Discord API 호출은 없습니다 — backend/utils/observability.py 참조)
         - 네트워크 오류 발생 시에도 폴링을 유지하며 에러 로그만 남깁니다.
     """
     terminal_statuses = {
@@ -374,7 +381,9 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
         logger.error("[OBS] Cannot poll fine-tuning job: API client creation failed.", extra={"error": str(e)})
         return FinetuneJobStatus.FAILED
 
-    elapsed: float = 0.0
+    # 실제 벽시계 시간 기반으로 타임아웃 측정 (jobs.retrieve 지연 시간 포함)
+    start_time: float = time.monotonic()
+    deadline: float = start_time + _FINETUNE_POLL_TIMEOUT_SECS
 
     logger.info(
         "[OBS] Starting fine-tuning job polling.",
@@ -389,10 +398,17 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
     # 이후 순환부터 sleep을 선행하여 불필요한 API 호출 빈도를 조절합니다.
     first_attempt = True
 
-    while elapsed < _FINETUNE_POLL_TIMEOUT_SECS:
+    while True:
+        # 이터레이션 시작 시 한 번만 샘플링하여 루프 내 time.monotonic() 호출 불일치 방지
+        now: float = time.monotonic()
+        if now >= deadline:
+            break
         if not first_attempt:
             await asyncio.sleep(_FINETUNE_POLL_INTERVAL_SECS)
-            elapsed += _FINETUNE_POLL_INTERVAL_SECS
+            # deadline을 차감하는 대신 time.monotonic()을 사용해 항상 정확히 확인
+            now = time.monotonic()
+            if now >= deadline:
+                break
         first_attempt = False
 
         try:
@@ -432,7 +448,7 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
             # 일시적 네트워크 오류 — 재시도 허용
             logger.warning(
                 "[OBS] Transient connection error during fine-tuning job polling. Will retry.",
-                extra={"job_id_hash": mask_pii_id(job_id), "error": str(e), "elapsed_secs": elapsed},
+                extra={"job_id_hash": mask_pii_id(job_id), "error": str(e), "elapsed_secs": round(max(0.0, time.monotonic() - start_time), 1)},
             )
         except APIError as e:
             status_code: int = getattr(e, "status_code", 0) or 0
@@ -456,15 +472,26 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
                     extra={"job_id_hash": mask_pii_id(job_id), "status_code": status_code, "error": str(e)},
                 )
 
-    # 타임아웃 만료
+    # 타임아웃 만료: start_time 기준으로 실제 경과 시간을 계산하고 음수가 되지 않도록 클램핑
+    actual_elapsed = max(0.0, time.monotonic() - start_time)
     logger.error(
         "[OBS] Fine-tuning job polling timed out.",
         extra={
             "job_id_hash": mask_pii_id(job_id),
             "timeout_secs": _FINETUNE_POLL_TIMEOUT_SECS,
+            "actual_elapsed_secs": round(actual_elapsed, 1),
         },
     )
-    return FinetuneJobStatus.RUNNING
+    # 타임아웃 메타데이터를 Redis에 준영속 기록하여 다운스트림이 상태를 식별할 수 있도록 합니다.
+    await _save_job_status_to_redis(
+        job_id=job_id,
+        status=FinetuneJobStatus.FAILED,
+        extra_fields={
+            "timed_out": "true",
+            "actual_elapsed_secs": str(round(actual_elapsed, 1)),
+        },
+    )
+    return FinetuneJobStatus.FAILED
 
 
 async def get_active_finetune_model() -> Optional[str]:
