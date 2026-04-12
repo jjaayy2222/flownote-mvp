@@ -75,10 +75,11 @@ async def resolve_active_model() -> str:
         # 공백 전용 문자열('   ')은 Truthy이지만 유효하지 않으므로 strip()으로 정규화
         # (반환 타입이 Optional[str]이므로 str 이외의 타입 방어는 불요)
         active_model = raw_model.strip() if isinstance(raw_model, str) else raw_model
-        # strip() 후 빈 문자열이 됐다면 → 원본이 공백 전용 문자열이었음 (Redis 데이터 오염)
-        if raw_model and not active_model:
+        # strip() 후 빈 문자열이 됐다면 → 원본이 빈 문자열이거나 공백 전용 문자열이었음 (Redis 데이터 오염)
+        # isinstance() 로 None(정상 미등록 케이스)을 제외하고, 빈 문자열("")과 공백(" ") 모두 경고 대상에 포함
+        if isinstance(raw_model, str) and not active_model:
             logger.warning(
-                "resolve_active_model: Redis returned a whitespace-only model name. "
+                "resolve_active_model: Redis returned an empty or whitespace-only model name. "
                 "Falling back to %s. Check Redis key '%s' for data corruption.",
                 DEFAULT_MODEL_NAME,
                 _ACTIVE_MODEL_REDIS_KEY,  # 환경 변수 기반 상수 사용 — finetune_service와 동일한 SSOT
