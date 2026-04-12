@@ -23,8 +23,8 @@
 11. [Language Settings](#11-language-settings)
 12. [Troubleshooting](#12-troubleshooting)
 13. [🛠️ Technical & Developer Appendix](#13-technical--developer-appendix)
-    - [RAG Eval & Performance (v8.0)](#rag-eval--performance-v80)
-    - [Adaptive Intelligence (v9.0)](#adaptive-intelligence-v90)
+    - [13.1 RAG Eval & Performance (v8.0)](#131-rag-eval--performance-v80)
+    - [13.2 Adaptive Intelligence (v9.0)](#132-adaptive-intelligence-v90)
 
 ---
 
@@ -675,7 +675,7 @@ python scripts/bootstrap_index.py --vault /path/to/your/vault --concurrency 2
 
 This section contains technical details about RAG quality evaluation and autonomous learning engines.
 
-### RAG Eval & Performance (v8.0)
+### 13.1 RAG Eval & Performance (v8.0)
 
 > [!IMPORTANT]
 > **For Developers**: Tools to measure RAG system reliability and maximize throughput.
@@ -692,7 +692,7 @@ pytest tests/e2e/test_rag_search_quality.py -s -v
 #### 3. Performance Tuning
 - LLM Caching and Redis Pipelining to minimize cold-start latency.
 
-### Adaptive Intelligence (v9.0)
+### 13.2 Adaptive Intelligence (v9.0)
 
 > [!NOTE]
 > **Tech Specs**: Autonomous engine evolving based on user data patterns.
