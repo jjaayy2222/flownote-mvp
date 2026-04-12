@@ -59,7 +59,7 @@ def get_llm(model_name: str = "gpt-4o") -> Optional["BaseChatModel"]:
 
     try:
         # 분류 및 추출 작업에는 결정적인 출력을 위해 temperature=0 사용
-        logger.info(f"Initializing LLM with model: {model_name}")
+        logger.debug(f"Initializing LLM with model: {model_name}")
         return ChatOpenAI(model=model_name, temperature=0)
     except Exception as e:
         logger.error("Error initializing LLM", exc_info=True)

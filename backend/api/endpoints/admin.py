@@ -8,7 +8,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.config import AdminConfig
 from backend.services.eval_service import generate_eval_report
@@ -48,7 +48,13 @@ async def get_eval_report_endpoint(
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 class ActiveModelRequest(BaseModel):
-    model_id: str
+    model_id: str = Field(
+        ...,
+        min_length=3,
+        max_length=128,
+        pattern=r"^[a-zA-Z0-9\-\.:]+$",
+        description="The ID of the model to activate (e.g., ft:gpt-4o:my-org::123 or gpt-4o)"
+    )
 
 @router.post("/models/active", summary="활성 파인튜닝 모델 수동 변경 (Hot-swap)")
 async def set_active_model_endpoint(
