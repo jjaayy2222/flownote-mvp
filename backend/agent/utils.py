@@ -19,6 +19,10 @@ load_dotenv()
 # 이 상수를 수정하면 resolve_active_model() 폴백, get_llm() 기본값이 모두 함께 바뀝니다.
 DEFAULT_MODEL_NAME: str = os.getenv("GPT4O_MODEL", "gpt-4o")
 
+# Hot-swap 활성 모델을 저장하는 Redis 키 (finetune_service._FINETUNE_ACTIVE_MODEL_KEY와 동일한 환경 변수 참조)
+# finetune_service의 상수가 모듈-프라이빗(_)이므로 직접 임포트 대신 동일한 환경 변수를 공유 진실 공급원으로 사용합니다.
+_ACTIVE_MODEL_REDIS_KEY: str = os.getenv("FINETUNE_ACTIVE_MODEL_KEY", "v9:finetune:current_model_id")
+
 # 로거 설정
 logger = logging.getLogger(__name__)
 
@@ -67,18 +71,17 @@ async def resolve_active_model() -> str:
     보장하기 위한 설계 결정입니다. (광범위한 Exception 캐치는 버그 마스킹 위험이 있습니다.)
     """
     try:
-        active_model = await get_active_finetune_model()
-        # 공백 전용 문자열('   ')은 Truthy이지만 유효하지 않으므로 strip()으로 정규화 후 검증
-        # (get_active_finetune_model()의 반환 타입이 Optional[str]이므로 str 이외의 타입 방어는 불요)
-        if isinstance(active_model, str):
-            active_model = active_model.strip()
-        if not active_model and active_model is not None:
-            # None이 아니라 공백 문자열이 들어온 경우 → Redis 데이터 오염 가능성 알림
+        raw_model = await get_active_finetune_model()
+        # 공백 전용 문자열('   ')은 Truthy이지만 유효하지 않으므로 strip()으로 정규화
+        # (반환 타입이 Optional[str]이므로 str 이외의 타입 방어는 불요)
+        active_model = raw_model.strip() if isinstance(raw_model, str) else raw_model
+        # strip() 후 빈 문자열이 됐다면 → 원본이 공백 전용 문자열이었음 (Redis 데이터 오염)
+        if raw_model and not active_model:
             logger.warning(
                 "resolve_active_model: Redis returned a whitespace-only model name. "
                 "Falling back to %s. Check Redis key '%s' for data corruption.",
                 DEFAULT_MODEL_NAME,
-                "v9:finetune:current_model_id",  # 키 이름은 finetune_service 상수와 동일
+                _ACTIVE_MODEL_REDIS_KEY,  # 환경 변수 기반 상수 사용 — finetune_service와 동일한 SSOT
             )
         return active_model or DEFAULT_MODEL_NAME
     # 아래 예외만 캐치 (NameError/TypeError 등 프로그래밍 버그는 의도적으로 통과시킴 → Fail Fast)
