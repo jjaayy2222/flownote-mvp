@@ -335,12 +335,13 @@ flownote-mvp/
 ├── data/                               # Data storage
 ├── docs/                               # Documentation
 │   ├── AR/                             # Archive (Previous phase docs)
+│   │   ├── v4.0/                       # v4.0 (Refactoring)
 │   │   ├── v5.0/                       # v5.0 (MCP, Frontend, etc.)
 │   │   ├── v6.0/                       # v6.0 (WebSocket, Diff, i18n)
-│   │   ├── v7.0_planning/              # v7.0 planning docs
-│   │   └── v8_phase5_data_flywheel/    # v8.0 data flywheel docs
+│   │   ├── v7.0/                       # v7.0 (Hybrid RAG)
+│   │   └── v8.0/                       # v8.0 (Data Flywheel)
 │   ├── P/                              # In-progress phase documentation
-│   │   └── v9_planning/                # v9.0 Adaptive Intelligence (In Progress) ✨
+│   │   └── v9.0/                       # v9.0 Adaptive Intelligence (In Progress) ✨
 │   ├── A/                              # Analysis & Specs (Practices, Specs)
 │   └── R/                              # Resources (Troubleshooting, etc.)
 ├── README.md                           # Korean documentation
@@ -551,7 +552,7 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 | [#11.2.12] | 03/02 | v7.0 Phase 2 (Hybrid RAG) | ✅ |
 | [#11.3.13] | 03/12 | v7.0 Phase 2-3 (Hybrid RAG & AI Assistant) | ✅ |
 | [#867] | 03/25 | v8.0 Phase 1-3 (Advanced RAG Eval & Performance) | ✅ |
-| [#1045] | 04/12 | v9.0 Phase 1 (Adaptive Fine-tuning Service) | 🚧 In Progress |
+| [#1045] | 04/12 | v9.0 Phase 1 (Adaptive Fine-tuning Service) | 🚧 [In Progress](docs/P/v9.0/v9.0_roadmap.md) |
 
 ### Major Commit History
 - \`v5.0\` - MCP Server, Next.js Dashboard, Graph View
