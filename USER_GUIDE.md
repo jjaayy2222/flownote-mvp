@@ -664,11 +664,11 @@ python scripts/bootstrap_index.py --vault /path/to/your/vault --concurrency 2
 
 - **API 문서**: http://localhost:8000/docs (Swagger UI)
 - **Phase 문서**: `docs/AR/` 및 `docs/P/` 디렉토리
-  - [v6.0 Phase 1: WebSocket](docs/AR/v6.0/v6_phase1_websocket/)
-  - [v6.0 Phase 2: Diff Viewer](docs/AR/v6.0/v6_phase2_diff_viewer/)
-  - [v6.0 Phase 3: i18n](docs/AR/v6.0/v6_phase3_i18n/)
-  - [v7.0 Planning: Hybrid RAG](docs/AR/v7.0_planning/)
-  - [v9.0 Planning: Adaptive Intelligence](docs/P/v9_planning/) ✨
+  - [v5.0] [System Core & Dashboard](docs/AR/v5.0/)
+  - [v6.0] [Real-time Sync & i18n](docs/AR/v6.0/)
+  - [v7.0] [Hybrid RAG Search](docs/AR/v7.0/)
+  - [v8.0] [RAG Evaluation Pipeline](docs/AR/v8.0/)
+  - [v9.0] [Adaptive Intelligence](docs/P/v9.0/) ✨
 - **성능 측정**: `tests/performance/benchmark_rag.py`
 - **검색 품질 측정**: `tests/e2e/test_rag_search_quality.py`
 

@@ -657,6 +657,18 @@ python scripts/bootstrap_index.py --vault /path/to/your/vault --concurrency 2
 
 ---
 
+## 📚 Additional Resources
+
+- **API Documentation**: http://localhost:8000/docs (Swagger UI)
+- **Phase Documents**: `docs/AR/` and `docs/P/` directories
+  - [v5.0] [System Core & Dashboard](docs/AR/v5.0/)
+  - [v6.0] [Real-time Sync & i18n](docs/AR/v6.0/)
+  - [v7.0] [Hybrid RAG Search](docs/AR/v7.0/)
+  - [v8.0] [RAG Evaluation Pipeline](docs/AR/v8.0/)
+  - [v9.0] [Adaptive Intelligence](docs/P/v9.0/) ✨
+- **Performance Benchmarks**: `tests/performance/benchmark_rag.py`
+- **Search Quality Measurement**: `tests/e2e/test_rag_search_quality.py`
+
 ---
 
 ## 13. 🛠️ Technical & Developer Appendix
