@@ -13,6 +13,12 @@ from backend.services.finetune_service import get_active_finetune_model
 # 로컬 환경 변수 로드 (.env 파일이 없으면 무시됨)
 load_dotenv()
 
+# ─── 에이전트 기본 모델 상수 ───────────────────────────────────────────────────
+# 환경 변수 GPT4O_MODEL을 우선 참조하고, 없을 경우 'gpt-4o'를 사용합니다.
+# (참고: ModelConfig.GPT4O_MODEL 과 동일한 패턴을 따릅니다.)
+# 이 상수를 수정하면 resolve_active_model() 폴백, get_llm() 기본값이 모두 함께 바뀝니다.
+DEFAULT_MODEL_NAME: str = os.getenv("GPT4O_MODEL", "gpt-4o")
+
 # 로거 설정
 logger = logging.getLogger(__name__)
 
@@ -48,26 +54,33 @@ except ImportError:
 
 async def resolve_active_model() -> str:
     """
-    안전하게 활성 파인튜닝 모델을 조회하고, 예상치 못한 런타임 오류 시 Fallback 모델(gpt-4o)을 반환합니다.
+    안전하게 활성 파인튜닝 모델을 조회하고, 예상치 못한 런타임 오류 시 Fallback 모델을 반환합니다.
+    Fallback 대상 모델은 모듈 상단의 DEFAULT_MODEL_NAME 상수로 단일 관리됩니다.
 
     [에러 분류 및 Fallback 정책]
     아래의 예외들은 서비스 중단을 방지하기 위해 '복구 가능한(Tolerable) 일시적 오류'로 취급합니다:
     - redis.exceptions.RedisError, asyncio.TimeoutError: 일시적인 네트워크 파티션 또는 인프라 지연
     - ValueError, UnicodeDecodeError: Redis에 저장된 모델명 데이터가 오염되었거나 포맷이 잘못된 경우
 
-    단, NameError, TypeError 등 논리적인 프로그래밍 치명적 버그는 마스킹되지 않고 
-    상위로 전파(Fail Fast)되어 신속히 인지할 수 있도록 예외 처리를 명확히 분류했습니다.
+    단, NameError, TypeError 등 논리적인 프로그래밍 치명적 버그는 아래 except 절에서 의도적으로
+    캐치하지 않습니다. 이는 Fail Fast 원칙에 따라 오류를 즉시 상위로 전파하여 신속한 인지를
+    보장하기 위한 설계 결정입니다. (광범위한 Exception 캐치는 버그 마스킹 위험이 있습니다.)
     """
     try:
         active_model = await get_active_finetune_model()
-        return active_model if active_model else "gpt-4o"
+        return active_model if active_model else DEFAULT_MODEL_NAME
+    # 아래 예외만 캐치 (NameError/TypeError 등 프로그래밍 버그는 의도적으로 통과시킴 → Fail Fast)
     except (redis.exceptions.RedisError, asyncio.TimeoutError, ValueError, UnicodeDecodeError) as e:
-        logger.exception("Hot-swap model lookup failed. Defaulting to gpt-4o.", extra={"error_type": type(e).__name__})
-        return "gpt-4o"
+        logger.exception(
+            "Hot-swap model lookup failed. Defaulting to %s.",
+            DEFAULT_MODEL_NAME,
+            extra={"error_type": type(e).__name__},
+        )
+        return DEFAULT_MODEL_NAME
 
 
 @lru_cache(maxsize=4)
-def get_llm(model_name: str = "gpt-4o") -> Optional["BaseChatModel"]:
+def get_llm(model_name: str = DEFAULT_MODEL_NAME) -> Optional["BaseChatModel"]:
     """
     LLM 인스턴스를 반환하는 팩토리 함수.
     LRU Cache를 파라미터(model_name) 기반으로 캐싱하여 모델 전환 시(Hot-swap) 연속성을 보장합니다.
