@@ -51,6 +51,8 @@
 
 **FlowNote**는 AI 기반 문서 자동 분류 시스템입니다. 사용자의 직업과 관심 영역을 학습하여, 업로드된 문서를 PARA 방식으로 지능적으로 분류합니다.
 
+> **💡 개발 배경 및 철학**: 이 프로젝트는 2025년 9~10월경부터 개발자의 주도로 체계적인 로컬 파일 정리를 위해 시작되었습니다. 상세한 개발 역사와 철학은 **[프로젝트 제출 및 변천사](docs/AR/project_submission.md)**에서 확인하실 수 있습니다.
+
 ### 💡 핵심 아이디어
 
 ```
@@ -145,6 +147,9 @@
 - **Mobile Responsive**: 데스크탑/모바일 자동 전환 내비게이션
 - **Accessibility**: ARIA 속성 및 스크린 리더 지원
 
+> [!NOTE]
+> **개발자용 기능**: 대시보드의 실시간 상태 및 그래프 데이터는 WebSocket을 통해 백엔드와 실시간으로 동기화됩니다. (v6.0+)
+
 ### 2.9 🔄 **WebSocket 실시간 업데이트** (v6.0 Phase 1)
 - **실시간 동기화**: Polling 방식 제거, WebSocket 기반 양방향 통신
 - **이벤트 기반 업데이트**: 파일 분류, 동기화 상태 변경 시 즉시 UI 반영
@@ -180,6 +185,16 @@
 - **소스 중복 제거**: 동일 문서 중복 노출 방지를 통한 가독성 향상
 - **동적 세션 관리**: `localStorage` 기반 고유 `user_id` 및 세션 관리
 - **성능 모니터링**: 단계별 지연 시간(Query Rephrasing / Search / Generation) 및 부하 분석 정밀 로깅
+
+### 2.14 📊 **RAG 품질 평가 및 성능 최적화** (v8.0)
+- **Golden Dataset**: 실제 사용자 피드백 기반 자동 데이터셋 추출 파이프라인
+- **평가 프레임워크**: RAG vs. Hallucination 정밀 평가 및 벤치마킹 시스템
+- **성능 고도화**: LLM 클라이언트 캐싱 및 Redis I/O 최적화를 통한 응답 속도 관리
+
+### 2.15 🧠 **Adaptive Intelligence (자가 적응 지능)** (v9.0 진행 중) ✨
+- **자율 파인튜닝 (Adaptive Fine-tuning)**: 모델이 스스로 학습 데이터를 정제하고 파인튜닝된 모델로 핫스왑(Hot-swap) 연동
+- **폴링 고도화**: OpenAI Fine-tuning API 연동 및 상태 변화 자동 추적 시스템
+- **관측성 강화**: `meta_intentional_warning` 등 기계 판독용 로깅 태그를 통한 운영 무결성 확보
 
 ---
 
@@ -322,14 +337,15 @@ flownote-mvp/
 │
 ├── data/                               # 데이터 저장소
 ├── docs/                               # 문서
-│   └── P/                              # 프로젝트 페이즈 문서
-│       ├── v5_phase1_mcp_server/       # MCP 서버 문서
-│       ├── v5_phase2_frontend/         # Frontend 문서
-│       ├── v5_phase3_visualization/    # Visualization 문서
-│       ├── v6.0_phase1_websocket/      # WebSocket 문서 (v6.0) ✨
-│       ├── v6.0_phase2_diff_viewer/    # Diff Viewer 문서 (v6.0) ✨
-│       ├── v6.0_phase3_i18n/           # i18n 문서 (v6.0) ✨
-│       └── v7.0_planning/              # v7.0 계획 문서 (v7.0) ✨
+│   ├── AR/                             # 아카이브 (지난 페이즈 문서)
+│   │   ├── v5.0/                       # v5.0 (MCP, Frontend 등)
+│   │   ├── v6.0/                       # v6.0 (WebSocket, Diff, i18n)
+│   │   ├── v7.0_planning/              # v7.0 계획
+│   │   └── v8_phase5_data_flywheel/    # v8.0 데이터 플라이휠
+│   ├── P/                              # 진행 중인 페이즈 문서
+│   │   └── v9_planning/                # v9.0 자가 적응형 지능 (진행 중) ✨
+│   ├── A/                              # 분석 및 명세 (Practices, Specs)
+│   └── R/                              # 리소스 (Troubleshooting 등)
 ├── README.md                           # 본 문서 (한국어)
 └── README_EN.md                        # 영문 문서
 ```
@@ -341,6 +357,9 @@ flownote-mvp/
 FlowNote는 엄격한 테스트와 품질 관리를 통해 안정성을 보장합니다.
 
 ### 5.1 테스트 실행
+
+> [!IMPORTANT]
+> **개발자 전용**: 아래 명령어는 시스템의 안정성을 검증하기 위한 테스트 코드로, 일반 사용자는 실행할 필요가 없습니다.
 
 ```bash
 # 전체 테스트 실행
@@ -502,6 +521,10 @@ python -m backend.mcp.server
 3. `System` 탭에서 워커 상태 확인
 
 ### 7.7 **Step 7: 하이브리드 RAG 검색 사용 (v7.0)**
+
+> [!TIP]
+> **초기 설정**: 하이브리드 검색을 처음 사용하기 전, 한 번의 인덱싱 작업이 필요합니다 (아래 참조).
+
 1. 초기 인덱스 구축 (최초 1회)
 ```bash
 # Obsidian Vault 전체를 FAISS + BM25 인덱스로 일괄 색인
@@ -530,13 +553,17 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 | [#10.11] | 02/04 | v6.0 Phase 3 (i18n) | ✅ |
 | [#11.2.12] | 03/02 | v7.0 Phase 2 (Hybrid RAG) | ✅ |
 | [#11.3.13] | 03/12 | v7.0 Phase 2-3 (Hybrid RAG & AI Assistant) | ✅ |
+| [#867] | 03/25 | v8.0 Phase 1-3 (Advanced RAG Eval & Performance) | ✅ |
+| [#1045] | 04/12 | v9.0 Phase 1 (Adaptive Fine-tuning Service) | 🚧 진행 중 |
 
 ### 주요 커밋 히스토리
 - `v5.0` - MCP 서버, Next.js 대시보드, Graph View
 - `v6.0 Phase 1` - WebSocket 실시간 업데이트
 - `v6.0 Phase 2` - Conflict Diff Viewer
-- `v6.0 Phase 3` - 다국어 지원 (i18n) ✅
-- `v7.0 Phase 2` - 하이브리드 RAG 검색 엔진 통합 ✅
+- `v6.0 Phase 3` - 다국어 지원 (i18n)
+- `v7.0` - 하이브리드 RAG 검색 엔진 및 AI 어시스턴트
+- `v8.0` - RAG 품질 평가 파이프라인 및 성능 최적화 ✅
+- `v9.0` - 자율 모델 파인튜닝 및 적응형 지능 서비스 엔진 (진행 중) 🚧
 
 ---
 
@@ -592,10 +619,26 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
   - [x] 소스 중복 제거 및 UI 최적화
   - [x] TTFT 측정 및 단계별 지연 시간(Query Rephrasing / Search / Generation) 부하 분석
 
-### 🚧 진행 예정 (v7.0)
+### ✅ 완료된 기능 (v8.0)
+- [x] **Phase 1-2: Golden Dataset & Eval Framework** ✨
+  - [x] 사용자 피드백 기반 자동 골든 데이터셋 추출
+  - [x] RAG 평가 메트릭 (Precision, Recall, Hallucination) 세분화
+- [x] **Phase 3: Performance Optimization** ✨
+  - [x] LLM 클라이언트 인스턴스 캐싱
+  - [x] Redis I/O 최적화 및 비동기 파이프라이닝
+
+### 🚧 진행 중 (v9.0)
+- [ ] **Phase 1: Adaptive Fine-tuning** ✨
+  - [x] OpenAI Fine-tuning 자율 호출 시스템
+  - [x] 벽시계 오차 없는 Monotonic 기반 폴링
+  - [x] 로깅 인프라 표준화 (ObsEvent, ObsMetaTag)
+  - [x] 예약 키 보호 및 데이터 무결성 가드
+  - [ ] 모델 핫스왑(Hot-swap) 메커니즘 고도화
+- [ ] Phase 2-4: 지식 그래프 및 개인화 고도화 예정
+
+### 🚧 진행 예정 (v9.0+)
 - [ ] 추가 언어 지원 (일본어, 중국어)
 - [ ] AI 기반 자동 번역
-- [ ] 고급 검색 필터
 - [ ] 파일 버전 히스토리
 
 ---

@@ -51,6 +51,8 @@
 
 **FlowNote** is an AI-powered document auto-classification system. It learns your profession and areas of interest to intelligently categorize uploaded documents using the PARA method.
 
+> **💡 Project History & Philosophy**: This project was started around September-October 2025 under human leadership to achieve systematic local file organization. Please refer to the **[Project Submission & Evolution](docs/AR/project_submission.md) (KR)** for a detailed history and philosophy.
+
 ### 💡 Core Concept
 
 ```
@@ -180,6 +182,16 @@
 - **Source Deduplication**: Enhanced readability by preventing duplicate exposure of the same document
 - **Dynamic Session Management**: `localStorage`-based unique `user_id` and session management
 - **Performance Monitoring**: Precise logging of latency in each stage (Query Rephrasing / Search / Generation) and load analysis
+
+### 2.14 📊 **RAG Quality Evaluation & Optimization** (v8.0)
+- **Golden Dataset**: Automated dataset extraction pipeline based on real user feedback
+- **Evaluation Framework**: Precision benchmarking system for RAG vs. Hallucination analysis
+- **Performance Hardening**: Response speed management via LLM client caching and Redis I/O optimization
+
+### 2.15 🧠 **Adaptive Intelligence** (v9.0 (In Progress)) ✨
+- **Adaptive Fine-tuning**: Autonomous model training loop with automated data purification and hot-swap integration
+- **Advanced Polling**: Automatic state tracking via OpenAI Fine-tuning API with high precision
+- **Observability Hardening**: Operational integrity via machine-readable logging tags like \`meta_intentional_warning\`
 
 ---
 
@@ -322,14 +334,15 @@ flownote-mvp/
 │
 ├── data/                               # Data storage
 ├── docs/                               # Documentation
-│   └── P/                              # Project phase documentation
-│       ├── v5_phase1_mcp_server/       # MCP server docs
-│       ├── v5_phase2_frontend/         # Frontend docs
-│       ├── v5_phase3_visualization/    # Visualization docs
-│       ├── v6.0_phase1_websocket/      # WebSocket docs (v6.0) ✨
-│       ├── v6.0_phase2_diff_viewer/    # Diff Viewer docs (v6.0) ✨
-│       ├── v6.0_phase3_i18n/           # i18n docs (v6.0) ✨
-│       └── v7.0_planning/              # v7.0 planning docs (v7.0) ✨
+│   ├── AR/                             # Archive (Previous phase docs)
+│   │   ├── v5.0/                       # v5.0 (MCP, Frontend, etc.)
+│   │   ├── v6.0/                       # v6.0 (WebSocket, Diff, i18n)
+│   │   ├── v7.0_planning/              # v7.0 planning docs
+│   │   └── v8_phase5_data_flywheel/    # v8.0 data flywheel docs
+│   ├── P/                              # In-progress phase documentation
+│   │   └── v9_planning/                # v9.0 Adaptive Intelligence (In Progress) ✨
+│   ├── A/                              # Analysis & Specs (Practices, Specs)
+│   └── R/                              # Resources (Troubleshooting, etc.)
 ├── README.md                           # Korean documentation
 └── README_EN.md                        # This document (English)
 ```
@@ -341,6 +354,9 @@ flownote-mvp/
 FlowNote ensures stability through rigorous testing and quality management.
 
 ### 5.1 Running Tests
+
+> [!IMPORTANT]
+> **For Developers**: The following commands are for system stability verification and are not required for regular users.
 
 ```bash
 # Run all tests
@@ -502,6 +518,10 @@ python -m backend.mcp.server
 3. Monitor worker status in `System` tab
 
 ### 7.7 **Step 7: Hybrid RAG Search (v7.0)**
+
+> [!TIP]
+> **Initial Setup**: Before using hybrid search for the first time, a one-time indexing task is required (see below).
+
 1. Build initial index (first time only)
 ```bash
 # Index entire Obsidian Vault into FAISS + BM25
@@ -530,13 +550,17 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 | [#10.11] | 02/04 | v6.0 Phase 3 (i18n) | ✅ |
 | [#11.2.12] | 03/02 | v7.0 Phase 2 (Hybrid RAG) | ✅ |
 | [#11.3.13] | 03/12 | v7.0 Phase 2-3 (Hybrid RAG & AI Assistant) | ✅ |
+| [#867] | 03/25 | v8.0 Phase 1-3 (Advanced RAG Eval & Performance) | ✅ |
+| [#1045] | 04/12 | v9.0 Phase 1 (Adaptive Fine-tuning Service) | 🚧 In Progress |
 
 ### Major Commit History
-- `v5.0` - MCP Server, Next.js Dashboard, Graph View
-- `v6.0 Phase 1` - WebSocket Real-time Updates
-- `v6.0 Phase 2` - Conflict Diff Viewer
-- `v6.0 Phase 3` - Internationalization (i18n) ✅
-- `v7.0 Phase 2` - Hybrid RAG Search Engine Integration ✅
+- \`v5.0\` - MCP Server, Next.js Dashboard, Graph View
+- \`v6.0 Phase 1\` - WebSocket Real-time Updates
+- \`v6.0 Phase 2\` - Conflict Diff Viewer
+- \`v6.0 Phase 3\` - Internationalization (i18n)
+- \`v7.0\` - Hybrid RAG Search & AI Assistant
+- \`v8.0\` - RAG Evaluation Pipeline & Performance Optimization ✅
+- \`v9.0\` - Autonomous Model Fine-tuning & Adaptive Intelligence Engine (In Progress) 🚧
 
 ---
 
@@ -592,10 +616,26 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
   - [x] Source deduplication & UI optimization
   - [x] TTFT measurement & load analysis for each stage (Query Rephrasing / Search / Generation)
 
-### 🚧 Planned (v7.0)
+### ✅ Completed Features (v8.0)
+- [x] **Phase 1-2: Golden Dataset & Eval Framework** ✨
+  - [x] Auto Golden Dataset extraction based on user feedback
+  - [x] Granular RAG metrics (Precision, Recall, Hallucination)
+- [x] **Phase 3: Performance Optimization** ✨
+  - [x] LLM client instance caching
+  - [x] Redis I/O optimization and async pipelining
+
+### 🚧 In Progress (v9.0)
+- [ ] **Phase 1: Adaptive Fine-tuning** ✨
+  - [x] Autonomous OpenAI Fine-tuning invocation system
+  - [x] Monotonic time-based polling (drift-free)
+  - [x] Standardized logging infrastructure (ObsEvent, ObsMetaTag)
+  - [x] Reserved key protection and data integrity guards
+  - [ ] Advanced Model Hot-swap mechanism
+- [ ] Phase 2-4: Knowledge Graph & Advanced Personalization (Planned)
+
+### 🚧 Planned (v9.0+)
 - [ ] Additional language support (Japanese, Chinese)
 - [ ] AI-based auto-translation
-- [ ] Advanced search filters
 - [ ] File version history
 
 ---

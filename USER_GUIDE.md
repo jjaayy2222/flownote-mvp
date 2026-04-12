@@ -1,4 +1,4 @@
-# 📖 FlowNote 사용자 가이드 (v7.0)
+# 📖 FlowNote 사용자 가이드 (v9.0 진행 중)
 
 <p align="center">
   <a href="./USER_GUIDE.md"><strong>한국어</strong></a> | <a href="./USER_GUIDE_EN.md">English</a>
@@ -17,11 +17,14 @@
 5. [검색 기능 사용하기](#5-검색-기능-사용하기)
 6. [하이브리드 RAG 검색](#6-하이브리드-rag-검색)
 7. [AI 어시스턴트 채팅](#7-ai-어시스턴트-채팅)
-8. [대시보드 활용하기](#8-대시보드-활용하기)
-9. [자동화 기능 설정](#9-자동화-기능-설정)
-10. [Obsidian 연동](#10-obsidian-연동)
-11. [언어 설정 변경](#11-언어-설정-변경)
-12. [문제 해결](#12-문제-해결)
+10. [대시보드 활용하기](#10-대시보드-활용하기)
+11. [자동화 기능 설정](#11-자동화-기능-설정)
+12. [Obsidian 연동](#12-obsidian-연동)
+13. [언어 설정 변경](#13-언어-설정-변경)
+14. [문제 해결](#14-문제-해결)
+15. [🛠️ 고급 설정 및 개발자 가이드](#15-고급-설정-및-개발자-가이드)
+    - [RAG 품질 평가 및 성능 (v8.0)](#8-rag-품질-평가-및-성능-v80)
+    - [자가 적응형 지능 (v9.0)](#9-자가-적응형-지능-v90)
 
 ---
 
@@ -667,6 +670,42 @@ python scripts/bootstrap_index.py --vault /path/to/your/vault --concurrency 2
   - [v7.0 Planning: Hybrid RAG](docs/P/v7.0_planning/)
 - **성능 측정**: `tests/performance/benchmark_rag.py`
 - **검색 품질 측정**: `tests/e2e/test_rag_search_quality.py`
+
+---
+
+---
+
+## 15. 🛠️ 고급 설정 및 개발자 가이드
+
+이 섹션은 시스템의 품질 평가 및 자율 학습 엔진에 대한 기술적 세부 정보를 포함합니다.
+
+### RAG 품질 평가 및 성능 (v8.0)
+
+> [!IMPORTANT]
+> **개발자용**: RAG 시스템의 신뢰성을 측정하고 성능을 극대화하기 위한 도구입니다.
+
+#### 1. Golden Dataset 추출
+사용자의 피드백을 바탕으로 '정답 셋'을 자동 생성합니다. (Baseline 활용)
+
+#### 2. 정밀 평가 프레임워크
+```bash
+# E2E 검색 품질 측정
+pytest tests/e2e/test_rag_search_quality.py -s -v
+```
+
+#### 3. 성능 최적화
+- LLM Caching 및 Redis Pipelining을 통한 지연 최적화.
+
+### 자가 적응형 지능 (v9.0)
+
+> [!NOTE]
+> **기술 명세**: 시스템이 사용자의 데이터에 맞춰 스스로 진화하는 엔진입니다.
+
+#### 1. 자율 파인튜닝 (Adaptive Fine-tuning)
+OpenAI Fine-tuning Job을 자율적으로 생성하고 관리하여 분류 정확도를 지속적으로 향상시킵니다.
+
+#### 2. 운영 관측성
+- `ObsEvent`, `ObsMetaTag` 등을 활용한 구조화된 로깅 및 무결성 가드 제공.
 
 ---
 
