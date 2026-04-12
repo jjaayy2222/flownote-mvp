@@ -17,14 +17,14 @@
 5. [Using Search](#5-using-search)
 6. [Hybrid RAG Search](#6-hybrid-rag-search)
 7. [AI Assistant Chat](#7-ai-assistant-chat)
-10. [Using the Dashboard](#10-using-the-dashboard)
-11. [Automation Settings](#11-automation-settings)
-12. [Obsidian Integration](#12-obsidian-integration)
-13. [Language Settings](#13-language-settings)
-14. [Troubleshooting](#14-troubleshooting)
-15. [🛠️ Technical & Developer Appendix](#15-technical--developer-appendix)
-    - [RAG Eval & Performance (v8.0)](#8-rag-eval--performance-v80)
-    - [Adaptive Intelligence (v9.0)](#9-adaptive-intelligence-v90)
+8. [Using the Dashboard](#8-using-the-dashboard)
+9. [Automation Settings](#9-automation-settings)
+10. [Obsidian Integration](#10-obsidian-integration)
+11. [Language Settings](#11-language-settings)
+12. [Troubleshooting](#12-troubleshooting)
+13. [🛠️ Technical & Developer Appendix](#13-technical--developer-appendix)
+    - [RAG Eval & Performance (v8.0)](#rag-eval--performance-v80)
+    - [Adaptive Intelligence (v9.0)](#adaptive-intelligence-v90)
 
 ---
 
@@ -371,7 +371,7 @@ Directly consult with the **AI Assistant**, a core FlowNote feature, to extract 
 
 ## 8. Using the Dashboard
 
-### 10.1 Dashboard Overview
+### 8.1 Dashboard Overview
 
 The dashboard consists of 3 main sections:
 
@@ -657,9 +657,21 @@ python scripts/bootstrap_index.py --vault /path/to/your/vault --concurrency 2
 
 ---
 
+## 📚 Additional Resources
+
+- **API Documentation**: http://localhost:8000/docs (Swagger UI)
+- **Phase Documents**: `docs/AR/` and `docs/P/` directories
+  - [v5.0] [System Core & Dashboard](docs/AR/v5.0/)
+  - [v6.0] [Real-time Sync & i18n](docs/AR/v6.0/)
+  - [v7.0] [Hybrid RAG Search](docs/AR/v7.0/)
+  - [v8.0] [RAG Evaluation Pipeline](docs/AR/v8.0/)
+  - [v9.0] [Adaptive Intelligence](docs/P/v9.0/) ✨
+- **Performance Benchmarks**: `tests/performance/benchmark_rag.py`
+- **Search Quality Measurement**: `tests/e2e/test_rag_search_quality.py`
+
 ---
 
-## 15. 🛠️ Technical & Developer Appendix
+## 13. 🛠️ Technical & Developer Appendix
 
 This section contains technical details about RAG quality evaluation and autonomous learning engines.
 

@@ -37,9 +37,9 @@
 - **버그 수정**: 테스트 과정에서 발견된 중요 버그(Shallow Copy, 파싱 오류 등) 수정 완료
 
 ### ✅ 문서화 (Documentation)
-- **Route 구조 문서**: `docs/P/v4_phase1_service_layer/route_structure.md`
-- **API 엔드포인트 문서**: `docs/P/v4_phase1_service_layer/api_endpoints.md`
-- **Service Layer 아키텍처**: `docs/P/v4_phase1_service_layer/service_layer_architecture.md`
+- **Route 구조 문서**: `docs/AR/release/v4-release/v4_phase1_service_layer/route_structure.md`
+- **API 엔드포인트 문서**: `docs/AR/release/v4-release/v4_phase1_service_layer/api_endpoints.md`
+- **Service Layer 아키텍처**: `docs/AR/release/v4-release/v4_phase1_service_layer/service_layer_architecture.md`
 
 ---
 

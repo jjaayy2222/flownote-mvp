@@ -338,12 +338,13 @@ flownote-mvp/
 ├── data/                               # 데이터 저장소
 ├── docs/                               # 문서
 │   ├── AR/                             # 아카이브 (지난 페이즈 문서)
+│   │   ├── v4.0/                       # v4.0 (Refactoring)
 │   │   ├── v5.0/                       # v5.0 (MCP, Frontend 등)
 │   │   ├── v6.0/                       # v6.0 (WebSocket, Diff, i18n)
-│   │   ├── v7.0_planning/              # v7.0 계획
-│   │   └── v8_phase5_data_flywheel/    # v8.0 데이터 플라이휠
+│   │   ├── v7.0/                       # v7.0 (Hybrid RAG)
+│   │   └── v8.0/                       # v8.0 (Data Flywheel)
 │   ├── P/                              # 진행 중인 페이즈 문서
-│   │   └── v9_planning/                # v9.0 자가 적응형 지능 (진행 중) ✨
+│   │   └── v9.0/                       # v9.0 자가 적응형 지능 (진행 중) ✨
 │   ├── A/                              # 분석 및 명세 (Practices, Specs)
 │   └── R/                              # 리소스 (Troubleshooting 등)
 ├── README.md                           # 본 문서 (한국어)
@@ -554,7 +555,7 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 | [#11.2.12] | 03/02 | v7.0 Phase 2 (Hybrid RAG) | ✅ |
 | [#11.3.13] | 03/12 | v7.0 Phase 2-3 (Hybrid RAG & AI Assistant) | ✅ |
 | [#867] | 03/25 | v8.0 Phase 1-3 (Advanced RAG Eval & Performance) | ✅ |
-| [#1045] | 04/12 | v9.0 Phase 1 (Adaptive Fine-tuning Service) | 🚧 진행 중 |
+| [#1045] | 04/12 | v9.0 Phase 1 (Adaptive Fine-tuning Service) | 🚧 [진행 중](docs/P/v9.0/v9.0_roadmap.md) |
 
 ### 주요 커밋 히스토리
 - `v5.0` - MCP 서버, Next.js 대시보드, Graph View
