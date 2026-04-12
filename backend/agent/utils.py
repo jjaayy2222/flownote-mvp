@@ -1,10 +1,14 @@
 import os
 import re
 import logging
+import asyncio
+import redis
 from typing import List, Optional, TYPE_CHECKING, Any
 from functools import lru_cache
 
 from dotenv import load_dotenv
+
+from backend.services.finetune_service import get_active_finetune_model
 
 # 로컬 환경 변수 로드 (.env 파일이 없으면 무시됨)
 load_dotenv()
@@ -40,6 +44,26 @@ except ImportError:
     ChatOpenAI = None  # type: ignore
     ChatPromptTemplate = None  # type: ignore
     CommaSeparatedListOutputParser = None  # type: ignore
+
+
+async def resolve_active_model() -> str:
+    """
+    안전하게 활성 파인튜닝 모델을 조회하고, 예상치 못한 런타임 오류 시 Fallback 모델(gpt-4o)을 반환합니다.
+
+    [에러 분류 및 Fallback 정책]
+    아래의 예외들은 서비스 중단을 방지하기 위해 '복구 가능한(Tolerable) 일시적 오류'로 취급합니다:
+    - redis.exceptions.RedisError, asyncio.TimeoutError: 일시적인 네트워크 파티션 또는 인프라 지연
+    - ValueError, UnicodeDecodeError: Redis에 저장된 모델명 데이터가 오염되었거나 포맷이 잘못된 경우
+
+    단, NameError, TypeError 등 논리적인 프로그래밍 치명적 버그는 마스킹되지 않고 
+    상위로 전파(Fail Fast)되어 신속히 인지할 수 있도록 예외 처리를 명확히 분류했습니다.
+    """
+    try:
+        active_model = await get_active_finetune_model()
+        return active_model if active_model else "gpt-4o"
+    except (redis.exceptions.RedisError, asyncio.TimeoutError, ValueError, UnicodeDecodeError) as e:
+        logger.exception("Hot-swap model lookup failed. Defaulting to gpt-4o.", extra={"error_type": type(e).__name__})
+        return "gpt-4o"
 
 
 @lru_cache(maxsize=4)
