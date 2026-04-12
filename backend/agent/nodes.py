@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from backend.agent.state import AgentState
 from backend.agent.utils import get_llm, extract_keywords, search_similar_docs
+from backend.services.finetune_service import get_active_finetune_model
 
 # Try importing specific exceptions for better error handling
 try:
@@ -70,11 +71,18 @@ def retrieve_node(state: AgentState) -> Dict[str, Any]:
     return {"retrieved_context": context}
 
 
-def classify_node(state: AgentState) -> Dict[str, Any]:
+async def classify_node(state: AgentState) -> Dict[str, Any]:
     """
     분류 수행 노드: LLM을 사용하여 PARA 카테고리 분류
     """
-    llm = get_llm()
+    try:
+        active_model = await get_active_finetune_model()
+        model_name = active_model if active_model else "gpt-4o"
+    except Exception as e:
+        logger.error(f"Failed to fetch active model from Redis, defaulting to gpt-4o: {e}")
+        model_name = "gpt-4o"
+
+    llm = get_llm(model_name)
 
     # LLM 초기화 실패 시 Stub 반환 (안전장치)
     if not llm:

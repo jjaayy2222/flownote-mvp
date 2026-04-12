@@ -243,7 +243,7 @@ async def _save_job_status_to_redis(
     )
 
 
-async def _set_active_model_in_redis(fine_tuned_model_id: str) -> None:
+async def set_active_finetune_model(fine_tuned_model_id: str) -> None:
     """
     성공적으로 완료된 파인튜닝 모델 ID를 Redis의 Active Model 키에 저장합니다.
     이 값은 Hot-swap 메커니즘에서 LangGraph 에이전트가 참조합니다.
@@ -470,7 +470,7 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
             if current_status in terminal_statuses:
                 if current_status == FinetuneJobStatus.SUCCEEDED and fine_tuned_model:
                     # Hot-swap: 완료된 모델 ID를 Active Model로 등록
-                    await _set_active_model_in_redis(fine_tuned_model)
+                    await set_active_finetune_model(fine_tuned_model)
                     logger.info(
                         "[OBS] Fine-tuning succeeded. New model is now active.",
                         extra={
