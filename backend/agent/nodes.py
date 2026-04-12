@@ -1,15 +1,11 @@
 from typing import Literal, Dict, Any, List, Optional
 import logging
-import asyncio
-import redis
+from backend.agent.state import AgentState
+from backend.agent.utils import get_llm, extract_keywords, search_similar_docs, resolve_active_model
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
-
-from backend.agent.state import AgentState
-from backend.agent.utils import get_llm, extract_keywords, search_similar_docs
-from backend.services.finetune_service import get_active_finetune_model
 
 # Try importing specific exceptions for better error handling
 try:
@@ -73,23 +69,11 @@ def retrieve_node(state: AgentState) -> Dict[str, Any]:
     return {"retrieved_context": context}
 
 
-async def _resolve_active_model() -> str:
-    """
-    안전하게 활성 파인튜닝 모델을 조회하고, 예상치 못한 런타임 오류(네트워크, 디코딩 등) 발생 시 gpt-4o를 반환합니다.
-    """
-    try:
-        active_model = await get_active_finetune_model()
-        return active_model if active_model else "gpt-4o"
-    except (redis.exceptions.RedisError, asyncio.TimeoutError, ValueError, UnicodeDecodeError) as e:
-        logger.exception("Hot-swap model lookup failed. Defaulting to gpt-4o.", extra={"error_type": type(e).__name__})
-        return "gpt-4o"
-
-
 async def classify_node(state: AgentState) -> Dict[str, Any]:
     """
     분류 수행 노드: LLM을 사용하여 PARA 카테고리 분류
     """
-    model_name = await _resolve_active_model()
+    model_name = await resolve_active_model()
 
     llm = get_llm(model_name)
 
