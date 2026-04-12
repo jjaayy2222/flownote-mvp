@@ -8,8 +8,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 
+from pydantic import BaseModel
+
 from backend.config import AdminConfig
 from backend.services.eval_service import generate_eval_report
+from backend.services.finetune_service import set_active_finetune_model
 
 logger = logging.getLogger(__name__)
 
@@ -42,4 +45,42 @@ async def get_eval_report_endpoint(
         return report
     except Exception:
         logger.exception("[OBS] Error generating eval report")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+class ActiveModelRequest(BaseModel):
+    model_id: str
+
+@router.post("/models/active", summary="활성 파인튜닝 모델 수동 변경 (Hot-swap)")
+async def set_active_model_endpoint(
+    request: ActiveModelRequest,
+    x_admin_key: Optional[str] = Header(None, description="어드민 인증 키")
+):
+    """
+    [Hot-swap] 시스템 전역에서 사용할 파인튜닝 모델 ID를 수동으로 지정합니다.
+    - 입력받은 ft-model-id를 Redis 설정(v9:finetune:current_model_id)에 갱신
+    """
+    admin_key = AdminConfig.get_admin_key()
+    
+    if not admin_key:
+        logger.error("[OBS] ADMIN_API_KEY is not configured in environment.")
+        raise HTTPException(status_code=500, detail="Server Configuration Error")
+        
+    provided = str(x_admin_key or "")
+    expected = str(admin_key or "")
+    
+    if not hmac.compare_digest(provided, expected):
+        logger.warning(
+            "[OBS] Unauthorized attempt to update active model.",
+            extra={"model_id": request.model_id}
+        )
+        raise HTTPException(status_code=403, detail="Forbidden: Invalid Admin Key")
+        
+    try:
+        await set_active_finetune_model(request.model_id)
+        return {"status": "success", "active_model_id": request.model_id}
+    except Exception:
+        logger.exception(
+            "[OBS] Error setting active model",
+            extra={"model_id": request.model_id}
+        )
         raise HTTPException(status_code=500, detail="Internal Server Error")

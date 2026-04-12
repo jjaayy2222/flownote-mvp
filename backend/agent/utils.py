@@ -42,11 +42,11 @@ except ImportError:
     CommaSeparatedListOutputParser = None  # type: ignore
 
 
-@lru_cache(maxsize=1)
-def get_llm() -> Optional["BaseChatModel"]:
+@lru_cache(maxsize=4)
+def get_llm(model_name: str = "gpt-4o") -> Optional["BaseChatModel"]:
     """
     LLM 인스턴스를 반환하는 팩토리 함수.
-    LRU Cache를 사용하여 인스턴스 재생성을 방지하고 오버헤드를 줄입니다.
+    LRU Cache를 파라미터(model_name) 기반으로 캐싱하여 모델 전환 시(Hot-swap) 연속성을 보장합니다.
     """
     if ChatOpenAI is None:
         logger.warning("langchain_openai not installed.")
@@ -59,7 +59,8 @@ def get_llm() -> Optional["BaseChatModel"]:
 
     try:
         # 분류 및 추출 작업에는 결정적인 출력을 위해 temperature=0 사용
-        return ChatOpenAI(model="gpt-4o", temperature=0)
+        logger.info(f"Initializing LLM with model: {model_name}")
+        return ChatOpenAI(model=model_name, temperature=0)
     except Exception as e:
         logger.error("Error initializing LLM", exc_info=True)
         return None
