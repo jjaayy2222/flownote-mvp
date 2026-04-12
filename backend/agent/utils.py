@@ -21,7 +21,7 @@ DEFAULT_MODEL_NAME: str = os.getenv("GPT4O_MODEL", "gpt-4o")
 
 # Hot-swap 활성 모델을 저장하는 Redis 키 (finetune_service._FINETUNE_ACTIVE_MODEL_KEY와 동일한 환경 변수 참조)
 # finetune_service의 상수가 모듈-프라이빗(_)이므로 직접 임포트 대신 동일한 환경 변수를 공유 진실 공급원으로 사용합니다.
-# `or` 패턴을 사용하여 FINETUNE_ACTIVE_MODEL_KEY=""(빈 문자열)로 설정된 경우에돈 쨴 Redis 키 사용을 방지합니다.
+# `or` 패턴을 사용하여 FINETUNE_ACTIVE_MODEL_KEY=""(빈 문자열)로 설정된 경우에도 잘못된 Redis 키 사용을 방지합니다.
 _ACTIVE_MODEL_REDIS_KEY: str = os.getenv("FINETUNE_ACTIVE_MODEL_KEY") or "v9:finetune:current_model_id"
 
 # 로거 설정
