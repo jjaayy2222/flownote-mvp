@@ -69,8 +69,17 @@ async def resolve_active_model() -> str:
     try:
         active_model = await get_active_finetune_model()
         # 공백 전용 문자열('   ')은 Truthy이지만 유효하지 않으므로 strip()으로 정규화 후 검증
+        # (get_active_finetune_model()의 반환 타입이 Optional[str]이므로 str 이외의 타입 방어는 불요)
         if isinstance(active_model, str):
             active_model = active_model.strip()
+        if not active_model and active_model is not None:
+            # None이 아니라 공백 문자열이 들어온 경우 → Redis 데이터 오염 가능성 알림
+            logger.warning(
+                "resolve_active_model: Redis returned a whitespace-only model name. "
+                "Falling back to %s. Check Redis key '%s' for data corruption.",
+                DEFAULT_MODEL_NAME,
+                "v9:finetune:current_model_id",  # 키 이름은 finetune_service 상수와 동일
+            )
         return active_model or DEFAULT_MODEL_NAME
     # 아래 예외만 캐치 (NameError/TypeError 등 프로그래밍 버그는 의도적으로 통과시킴 → Fail Fast)
     except (redis.exceptions.RedisError, asyncio.TimeoutError, ValueError, UnicodeDecodeError) as e:
