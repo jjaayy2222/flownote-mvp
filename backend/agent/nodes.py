@@ -1,5 +1,7 @@
 from typing import Literal, Dict, Any, List, Optional
 import logging
+import asyncio
+import redis
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
@@ -78,8 +80,8 @@ async def classify_node(state: AgentState) -> Dict[str, Any]:
     try:
         active_model = await get_active_finetune_model()
         model_name = active_model if active_model else "gpt-4o"
-    except Exception as e:
-        logger.error(f"Failed to fetch active model from Redis, defaulting to gpt-4o: {e}")
+    except (redis.exceptions.RedisError, asyncio.TimeoutError):
+        logger.exception("Failed to fetch active model from Redis, defaulting to gpt-4o")
         model_name = "gpt-4o"
 
     llm = get_llm(model_name)
