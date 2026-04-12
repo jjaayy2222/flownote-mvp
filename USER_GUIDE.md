@@ -17,14 +17,14 @@
 5. [검색 기능 사용하기](#5-검색-기능-사용하기)
 6. [하이브리드 RAG 검색](#6-하이브리드-rag-검색)
 7. [AI 어시스턴트 채팅](#7-ai-어시스턴트-채팅)
-10. [대시보드 활용하기](#10-대시보드-활용하기)
-11. [자동화 기능 설정](#11-자동화-기능-설정)
-12. [Obsidian 연동](#12-obsidian-연동)
-13. [언어 설정 변경](#13-언어-설정-변경)
-14. [문제 해결](#14-문제-해결)
-15. [🛠️ 고급 설정 및 개발자 가이드](#15-고급-설정-및-개발자-가이드)
-    - [RAG 품질 평가 및 성능 (v8.0)](#8-rag-품질-평가-및-성능-v80)
-    - [자가 적응형 지능 (v9.0)](#9-자가-적응형-지능-v90)
+8. [대시보드 활용하기](#8-대시보드-활용하기)
+9. [자동화 기능 설정](#9-자동화-기능-설정)
+10. [Obsidian 연동](#10-obsidian-연동)
+11. [언어 설정 변경](#11-언어-설정-변경)
+12. [문제 해결](#12-문제-해결)
+13. [🛠️ 고급 설정 및 개발자 가이드](#13-고급-설정-및-개발자-가이드)
+    - [RAG 품질 평가 및 성능 (v8.0)](#rag-품질-평가-및-성능-v80)
+    - [자가 적응형 지능 (v9.0)](#자가-적응형-지능-v90)
 
 ---
 
@@ -663,11 +663,12 @@ python scripts/bootstrap_index.py --vault /path/to/your/vault --concurrency 2
 ## 📚 추가 리소스
 
 - **API 문서**: http://localhost:8000/docs (Swagger UI)
-- **Phase 문서**: `docs/P/` 디렉토리
-  - [v6.0 Phase 1: WebSocket](docs/P/v6.0_phase1_websocket/)
-  - [v6.0 Phase 2: Diff Viewer](docs/P/v6.0_phase2_diff_viewer/)
-  - [v6.0 Phase 3: i18n](docs/P/v6.0_phase3_i18n/)
-  - [v7.0 Planning: Hybrid RAG](docs/P/v7.0_planning/)
+- **Phase 문서**: `docs/AR/` 및 `docs/P/` 디렉토리
+  - [v6.0 Phase 1: WebSocket](docs/AR/v6.0/v6_phase1_websocket/)
+  - [v6.0 Phase 2: Diff Viewer](docs/AR/v6.0/v6_phase2_diff_viewer/)
+  - [v6.0 Phase 3: i18n](docs/AR/v6.0/v6_phase3_i18n/)
+  - [v7.0 Planning: Hybrid RAG](docs/AR/v7.0_planning/)
+  - [v9.0 Planning: Adaptive Intelligence](docs/P/v9_planning/) ✨
 - **성능 측정**: `tests/performance/benchmark_rag.py`
 - **검색 품질 측정**: `tests/e2e/test_rag_search_quality.py`
 
@@ -675,7 +676,7 @@ python scripts/bootstrap_index.py --vault /path/to/your/vault --concurrency 2
 
 ---
 
-## 15. 🛠️ 고급 설정 및 개발자 가이드
+## 13. 🛠️ 고급 설정 및 개발자 가이드
 
 이 섹션은 시스템의 품질 평가 및 자율 학습 엔진에 대한 기술적 세부 정보를 포함합니다.
 

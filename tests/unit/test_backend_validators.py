@@ -242,7 +242,7 @@ TOTAL                                               3098   2309    25%
 
 """두번째 수정 후 test_result
 
-tail -30 docs/P/refactoring/phase5/test_result_step2_coverage_boost.txt
+tail -30 docs/AR/v4.0_refactoring/phases/phase5/test_result_step2_coverage_boost.txt
 
 backend/exceptions.py                                 12     12     0%   10-43
 backend/export.py                                     28     28     0%   7-68

@@ -551,7 +551,7 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 | [#11.2.12] | 03/02 | v7.0 Phase 2 (Hybrid RAG) | ✅ |
 | [#11.3.13] | 03/12 | v7.0 Phase 2-3 (Hybrid RAG & AI Assistant) | ✅ |
 | [#867] | 03/25 | v8.0 Phase 1-3 (Advanced RAG Eval & Performance) | ✅ |
-| [#1045] | 04/12 | v9.0 Phase 1 (Adaptive Fine-tuning Service) | 🚧 In Progress |
+| [#1045] | 04/12 | v9.0 Phase 1 (Adaptive Fine-tuning Service) | 🚧 [In Progress](docs/P/v9_planning/v9.0_roadmap.md) |
 
 ### Major Commit History
 - \`v5.0\` - MCP Server, Next.js Dashboard, Graph View
