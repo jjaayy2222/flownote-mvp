@@ -51,6 +51,8 @@
 
 **FlowNote**는 AI 기반 문서 자동 분류 시스템입니다. 사용자의 직업과 관심 영역을 학습하여, 업로드된 문서를 PARA 방식으로 지능적으로 분류합니다.
 
+> **💡 개발 배경 및 철학**: 이 프로젝트는 2025년 9~10월부터 GitHub에 업로드되기 시작했으며, Manus나 Claude와 같은 Agentic AI들이 로컬 파일 정리를 도와주기 전부터 개발자의 주도로 체계적인 로컬 파일 정리를 지향해 왔습니다. AI의 보조를 넘어, 사용자의 고유한 지식 맥락을 존중하는 구조화된 데이터를 지향합니다.
+
 ### 💡 핵심 아이디어
 
 ```
@@ -180,6 +182,16 @@
 - **소스 중복 제거**: 동일 문서 중복 노출 방지를 통한 가독성 향상
 - **동적 세션 관리**: `localStorage` 기반 고유 `user_id` 및 세션 관리
 - **성능 모니터링**: 단계별 지연 시간(Query Rephrasing / Search / Generation) 및 부하 분석 정밀 로깅
+
+### 2.14 📊 **RAG 품질 평가 및 성능 최적화** (v8.0)
+- **Golden Dataset**: 실제 사용자 피드백 기반 자동 데이터셋 추출 파이프라인
+- **평가 프레임워크**: RAG vs. Hallucination 정밀 평가 및 벤치마킹 시스템
+- **성능 고도화**: LLM 클라이언트 캐싱 및 Redis I/O 최적화를 통한 응답 속도 관리
+
+### 2.15 🧠 **Adaptive Intelligence (자가 적응 지능)** (v9.0 진행 중) ✨
+- **자율 파인튜닝 (Adaptive Fine-tuning)**: 모델이 스스로 학습 데이터를 정제하고 파인튜닝된 모델로 핫스왑(Hot-swap) 연동
+- **폴링 고도화**: OpenAI Fine-tuning API 연동 및 상태 변화 자동 추적 시스템
+- **관측성 강화**: `meta_intentional_warning` 등 기계 판독용 로깅 태그를 통한 운영 무결성 확보
 
 ---
 
@@ -530,13 +542,17 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 | [#10.11] | 02/04 | v6.0 Phase 3 (i18n) | ✅ |
 | [#11.2.12] | 03/02 | v7.0 Phase 2 (Hybrid RAG) | ✅ |
 | [#11.3.13] | 03/12 | v7.0 Phase 2-3 (Hybrid RAG & AI Assistant) | ✅ |
+| [#867] | 03/25 | v8.0 Phase 1-3 (Advanced RAG Eval & Performance) | ✅ |
+| [#1045] | 04/12 | v9.0 Phase 1 (Adaptive Fine-tuning Service) | 🚧 진행 중 |
 
 ### 주요 커밋 히스토리
 - `v5.0` - MCP 서버, Next.js 대시보드, Graph View
 - `v6.0 Phase 1` - WebSocket 실시간 업데이트
 - `v6.0 Phase 2` - Conflict Diff Viewer
-- `v6.0 Phase 3` - 다국어 지원 (i18n) ✅
-- `v7.0 Phase 2` - 하이브리드 RAG 검색 엔진 통합 ✅
+- `v6.0 Phase 3` - 다국어 지원 (i18n)
+- `v7.0` - 하이브리드 RAG 검색 엔진 및 AI 어시스턴트
+- `v8.0` - RAG 품질 평가 파이프라인 및 성능 최적화 ✅
+- `v9.0` - 자율 모델 파인튜닝 및 적응형 지능 서비스 엔진 (진행 중) 🚧
 
 ---
 
@@ -592,10 +608,26 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
   - [x] 소스 중복 제거 및 UI 최적화
   - [x] TTFT 측정 및 단계별 지연 시간(Query Rephrasing / Search / Generation) 부하 분석
 
-### 🚧 진행 예정 (v7.0)
+### ✅ 완료된 기능 (v8.0)
+- [x] **Phase 1-2: Golden Dataset & Eval Framework** ✨
+  - [x] 사용자 피드백 기반 자동 골든 데이터셋 추출
+  - [x] RAG 평가 메트릭 (Precision, Recall, Hallucination) 세분화
+- [x] **Phase 3: Performance Optimization** ✨
+  - [x] LLM 클라이언트 인스턴스 캐싱
+  - [x] Redis I/O 최적화 및 비동기 파이프라이닝
+
+### 🚧 진행 중 (v9.0)
+- [ ] **Phase 1: Adaptive Fine-tuning** ✨
+  - [x] OpenAI Fine-tuning 자율 호출 시스템
+  - [x] 벽시계 오차 없는 Monotonic 기반 폴링
+  - [x] 로깅 인프라 표준화 (ObsEvent, ObsMetaTag)
+  - [x] 예약 키 보호 및 데이터 무결성 가드
+  - [ ] 모델 핫스왑(Hot-swap) 메커니즘 고도화
+- [ ] Phase 2-4: 지식 그래프 및 개인화 고도화 예정
+
+### 🚧 진행 예정 (v9.0+)
 - [ ] 추가 언어 지원 (일본어, 중국어)
 - [ ] AI 기반 자동 번역
-- [ ] 고급 검색 필터
 - [ ] 파일 버전 히스토리
 
 ---

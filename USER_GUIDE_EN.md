@@ -1,4 +1,4 @@
-# 📖 FlowNote User Guide (v7.0)
+# 📖 FlowNote User Guide (v9.0 (In Progress))
 
 <p align="center">
   <a href="./USER_GUIDE.md">한국어</a> | <a href="./USER_GUIDE_EN.md"><strong>English</strong></a>
@@ -13,15 +13,17 @@
 1. [Before You Begin](#1-before-you-begin)
 2. [First Run](#2-first-run)
 3. [Onboarding Process](#3-onboarding-process)
-4. [Classifying Files](#4-classifying-files)
+4. [Document Classification](#4-document-classification)
 5. [Using Search](#5-using-search)
 6. [Hybrid RAG Search](#6-hybrid-rag-search)
 7. [AI Assistant Chat](#7-ai-assistant-chat)
-8. [Dashboard Features](#8-dashboard-features)
-9. [Automation Settings](#9-automation-settings)
-10. [Obsidian Integration](#10-obsidian-integration)
-11. [Language Settings](#11-language-settings)
-12. [Troubleshooting](#12-troubleshooting)
+8. [RAG Eval & Performance (v8.0)](#8-rag-eval--performance-v80)
+9. [Adaptive Intelligence (v9.0)](#9-adaptive-intelligence-v90)
+10. [Using the Dashboard](#10-using-the-dashboard)
+11. [Automation Settings](#11-automation-settings)
+12. [Obsidian Integration](#12-obsidian-integration)
+13. [Language Settings](#13-language-settings)
+14. [Troubleshooting](#14-troubleshooting)
 
 ---
 
@@ -170,7 +172,7 @@ After selection, you'll be automatically redirected to the dashboard.
 
 ---
 
-## 4. Classifying Files
+## 4. Document Classification
 
 ### 4.1 Upload Files
 
@@ -362,13 +364,49 @@ Directly consult with the **AI Assistant**, a core FlowNote feature, to extract 
 ### 7.3 Effective Chatting Tips
 
 - **Be Specific**: Instead of asking "How do I write a project proposal?", try "Summarize the key objectives and milestones of 'Project A' in my Projects category."
-- **Verify Sources**: If an answer seems questionable, click the inline citation numbers to verify exactly where in your documents the information came from.
+- **Check Sources**: If you're unsure about an answer, click the inline citation numbers to verify which part of the document the information was pulled from.
 
 ---
 
-## 8. Dashboard Features
+## 8. RAG Eval & Performance (v8.0)
 
-### 8.1 Dashboard Overview
+v8.0 introduces tools to measure the reliability of the RAG system and maximize performance.
+
+### 8.1 Golden Dataset Extraction
+As user feedback (positive/negative) accumulates, the system automatically generates a "Golden Dataset" (ground truth set).
+- **Collection**: Analysis of chat logs and feedback tag filtering.
+- **Usage**: Used as a baseline to compare performance when changing search algorithms or prompts.
+
+### 8.2 Precision Evaluation Framework
+You can measure search accuracy via `tests/e2e/test_rag_search_quality.py`.
+- **Precision**: Ratio of actually relevant documents among search results.
+- **Recall**: Ratio of searched documents among all relevant documents.
+- **Hallucination Check**: Verification that AI answers are strictly based on document evidence.
+
+### 8.3 Performance Optimization (Backend)
+- **LLM Caching**: Reuses LLM clients with the same configuration to reduce session start latency.
+- **Redis Pipelining**: Bundles multiple Redis I/O operations into a single batch to minimize network overhead.
+
+---
+
+## 9. Adaptive Intelligence (v9.0)
+
+v9.0 **Adaptive Intelligence** introduces an engine where the system evolves based on user data.
+
+### 9.1 Adaptive Fine-tuning
+Train the AI classification model autonomously to fit specific document domains (e.g., medical, legal, internal corporate terminology).
+- **Operation**: Once training data exceeds a threshold, an OpenAI Fine-tuning Job is automatically created.
+- **Monitoring**: `FineTuningService` polls the training status in the background and updates Redis once complete.
+
+### 9.2 Operational Observability & Safety
+- **System Tags**: Log fields like `event` and `meta_intentional_warning` allow operators to monitor autonomous system actions via dashboards.
+- **Data Integrity**: Core status values (like `status`) are protected from being overwritten by external metadata, ensuring system stability.
+
+---
+
+## 10. Using the Dashboard
+
+### 10.1 Dashboard Overview
 
 The dashboard consists of 3 main sections:
 

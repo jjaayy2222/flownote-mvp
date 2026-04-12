@@ -51,6 +51,8 @@
 
 **FlowNote** is an AI-powered document auto-classification system. It learns your profession and areas of interest to intelligently categorize uploaded documents using the PARA method.
 
+> **💡 Project History & Philosophy**: This project began being hosted on GitHub around September-October 2025. It prioritized systematic local file organization under human leadership well before the emergence of Agentic AI assistants like Manus or Claude. We aim for structured data that respects the user's unique knowledge context, going beyond simple AI assistance.
+
 ### 💡 Core Concept
 
 ```
@@ -180,6 +182,16 @@
 - **Source Deduplication**: Enhanced readability by preventing duplicate exposure of the same document
 - **Dynamic Session Management**: `localStorage`-based unique `user_id` and session management
 - **Performance Monitoring**: Precise logging of latency in each stage (Query Rephrasing / Search / Generation) and load analysis
+
+### 2.14 📊 **RAG Quality Evaluation & Optimization** (v8.0)
+- **Golden Dataset**: Automated dataset extraction pipeline based on real user feedback
+- **Evaluation Framework**: Precision benchmarking system for RAG vs. Hallucination analysis
+- **Performance Hardening**: Response speed management via LLM client caching and Redis I/O optimization
+
+### 2.15 🧠 **Adaptive Intelligence** (v9.0 (In Progress)) ✨
+- **Adaptive Fine-tuning**: Autonomous model training loop with automated data purification and hot-swap integration
+- **Advanced Polling**: Automatic state tracking via OpenAI Fine-tuning API with high precision
+- **Observability Hardening**: Operational integrity via machine-readable logging tags like \`meta_intentional_warning\`
 
 ---
 
@@ -530,13 +542,17 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 | [#10.11] | 02/04 | v6.0 Phase 3 (i18n) | ✅ |
 | [#11.2.12] | 03/02 | v7.0 Phase 2 (Hybrid RAG) | ✅ |
 | [#11.3.13] | 03/12 | v7.0 Phase 2-3 (Hybrid RAG & AI Assistant) | ✅ |
+| [#867] | 03/25 | v8.0 Phase 1-3 (Advanced RAG Eval & Performance) | ✅ |
+| [#1045] | 04/12 | v9.0 Phase 1 (Adaptive Fine-tuning Service) | 🚧 In Progress |
 
 ### Major Commit History
-- `v5.0` - MCP Server, Next.js Dashboard, Graph View
-- `v6.0 Phase 1` - WebSocket Real-time Updates
-- `v6.0 Phase 2` - Conflict Diff Viewer
-- `v6.0 Phase 3` - Internationalization (i18n) ✅
-- `v7.0 Phase 2` - Hybrid RAG Search Engine Integration ✅
+- \`v5.0\` - MCP Server, Next.js Dashboard, Graph View
+- \`v6.0 Phase 1\` - WebSocket Real-time Updates
+- \`v6.0 Phase 2\` - Conflict Diff Viewer
+- \`v6.0 Phase 3\` - Internationalization (i18n)
+- \`v7.0\` - Hybrid RAG Search & AI Assistant
+- \`v8.0\` - RAG Evaluation Pipeline & Performance Optimization ✅
+- \`v9.0\` - Autonomous Model Fine-tuning & Adaptive Intelligence Engine (In Progress) 🚧
 
 ---
 
@@ -592,10 +608,26 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
   - [x] Source deduplication & UI optimization
   - [x] TTFT measurement & load analysis for each stage (Query Rephrasing / Search / Generation)
 
-### 🚧 Planned (v7.0)
+### ✅ Completed Features (v8.0)
+- [x] **Phase 1-2: Golden Dataset & Eval Framework** ✨
+  - [x] Auto Golden Dataset extraction based on user feedback
+  - [x] Granular RAG metrics (Precision, Recall, Hallucination)
+- [x] **Phase 3: Performance Optimization** ✨
+  - [x] LLM client instance caching
+  - [x] Redis I/O optimization and async pipelining
+
+### 🚧 In Progress (v9.0)
+- [ ] **Phase 1: Adaptive Fine-tuning** ✨
+  - [x] Autonomous OpenAI Fine-tuning invocation system
+  - [x] Monotonic time-based polling (drift-free)
+  - [x] Standardized logging infrastructure (ObsEvent, ObsMetaTag)
+  - [x] Reserved key protection and data integrity guards
+  - [ ] Advanced Model Hot-swap mechanism
+- [ ] Phase 2-4: Knowledge Graph & Advanced Personalization (Planned)
+
+### 🚧 Planned (v9.0+)
 - [ ] Additional language support (Japanese, Chinese)
 - [ ] AI-based auto-translation
-- [ ] Advanced search filters
 - [ ] File version history
 
 ---
