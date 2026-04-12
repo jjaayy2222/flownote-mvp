@@ -83,6 +83,10 @@ async def classify_node(state: AgentState) -> Dict[str, Any]:
     except (redis.exceptions.RedisError, asyncio.TimeoutError):
         logger.exception("Failed to fetch active model from Redis, defaulting to gpt-4o")
         model_name = "gpt-4o"
+    except Exception:
+        # 핫스왑 모듈 구성 문제(오타, 디코딩 에러 등) 발생 시에도 사용자 경험을 위해 분류 시스템은 멈추지 않도록 우아한 성능 저하(Graceful Degradation) 채택
+        logger.exception("Unexpected error fetching active model. Defaulting to gpt-4o to prevent disruption.")
+        model_name = "gpt-4o"
 
     llm = get_llm(model_name)
 
