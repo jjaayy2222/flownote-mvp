@@ -62,7 +62,7 @@ def get_llm(model_name: str = "gpt-4o") -> Optional["BaseChatModel"]:
         logger.debug(f"Initializing LLM with model: {model_name}")
         return ChatOpenAI(model=model_name, temperature=0)
     except Exception:
-        logger.exception("Error initializing LLM", extra={"model_name": model_name})
+        logger.exception("Error initializing LLM: %s", model_name)
         return None
 
 
