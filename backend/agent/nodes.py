@@ -73,20 +73,23 @@ def retrieve_node(state: AgentState) -> Dict[str, Any]:
     return {"retrieved_context": context}
 
 
+async def _resolve_active_model() -> str:
+    """
+    안전하게 활성 파인튜닝 모델을 조회하고, 예상치 못한 런타임 오류(네트워크, 디코딩 등) 발생 시 gpt-4o를 반환합니다.
+    """
+    try:
+        active_model = await get_active_finetune_model()
+        return active_model if active_model else "gpt-4o"
+    except (redis.exceptions.RedisError, asyncio.TimeoutError, ValueError, UnicodeDecodeError) as e:
+        logger.exception("Hot-swap model lookup failed. Defaulting to gpt-4o.", extra={"error_type": type(e).__name__})
+        return "gpt-4o"
+
+
 async def classify_node(state: AgentState) -> Dict[str, Any]:
     """
     분류 수행 노드: LLM을 사용하여 PARA 카테고리 분류
     """
-    try:
-        active_model = await get_active_finetune_model()
-        model_name = active_model if active_model else "gpt-4o"
-    except (redis.exceptions.RedisError, asyncio.TimeoutError):
-        logger.exception("Failed to fetch active model from Redis, defaulting to gpt-4o")
-        model_name = "gpt-4o"
-    except Exception:
-        # 핫스왑 모듈 구성 문제(오타, 디코딩 에러 등) 발생 시에도 사용자 경험을 위해 분류 시스템은 멈추지 않도록 우아한 성능 저하(Graceful Degradation) 채택
-        logger.exception("Unexpected error fetching active model. Defaulting to gpt-4o to prevent disruption.")
-        model_name = "gpt-4o"
+    model_name = await _resolve_active_model()
 
     llm = get_llm(model_name)
 
