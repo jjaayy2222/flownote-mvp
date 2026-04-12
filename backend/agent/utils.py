@@ -68,7 +68,10 @@ async def resolve_active_model() -> str:
     """
     try:
         active_model = await get_active_finetune_model()
-        return active_model if active_model else DEFAULT_MODEL_NAME
+        # 공백 전용 문자열('   ')은 Truthy이지만 유효하지 않으므로 strip()으로 정규화 후 검증
+        if isinstance(active_model, str):
+            active_model = active_model.strip()
+        return active_model or DEFAULT_MODEL_NAME
     # 아래 예외만 캐치 (NameError/TypeError 등 프로그래밍 버그는 의도적으로 통과시킴 → Fail Fast)
     except (redis.exceptions.RedisError, asyncio.TimeoutError, ValueError, UnicodeDecodeError) as e:
         logger.exception(
