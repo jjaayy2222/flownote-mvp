@@ -17,13 +17,14 @@
 5. [Using Search](#5-using-search)
 6. [Hybrid RAG Search](#6-hybrid-rag-search)
 7. [AI Assistant Chat](#7-ai-assistant-chat)
-8. [RAG Eval & Performance (v8.0)](#8-rag-eval--performance-v80)
-9. [Adaptive Intelligence (v9.0)](#9-adaptive-intelligence-v90)
 10. [Using the Dashboard](#10-using-the-dashboard)
 11. [Automation Settings](#11-automation-settings)
 12. [Obsidian Integration](#12-obsidian-integration)
 13. [Language Settings](#13-language-settings)
 14. [Troubleshooting](#14-troubleshooting)
+15. [🛠️ Technical & Developer Appendix](#15-technical--developer-appendix)
+    - [RAG Eval & Performance (v8.0)](#8-rag-eval--performance-v80)
+    - [Adaptive Intelligence (v9.0)](#9-adaptive-intelligence-v90)
 
 ---
 
@@ -364,47 +365,11 @@ Directly consult with the **AI Assistant**, a core FlowNote feature, to extract 
 ### 7.3 Effective Chatting Tips
 
 - **Be Specific**: Instead of asking "How do I write a project proposal?", try "Summarize the key objectives and milestones of 'Project A' in my Projects category."
-- **Check Sources**: If you're unsure about an answer, click the inline citation numbers to verify which part of the document the information was pulled from.
+- **Consistency**: AI utilizes real-time streaming (SSE) and inline citations to ensure transparency in its knowledge extraction.
 
 ---
 
-## 8. RAG Eval & Performance (v8.0)
-
-v8.0 introduces tools to measure the reliability of the RAG system and maximize performance.
-
-### 8.1 Golden Dataset Extraction
-As user feedback (positive/negative) accumulates, the system automatically generates a "Golden Dataset" (ground truth set).
-- **Collection**: Analysis of chat logs and feedback tag filtering.
-- **Usage**: Used as a baseline to compare performance when changing search algorithms or prompts.
-
-### 8.2 Precision Evaluation Framework
-You can measure search accuracy via `tests/e2e/test_rag_search_quality.py`.
-- **Precision**: Ratio of actually relevant documents among search results.
-- **Recall**: Ratio of searched documents among all relevant documents.
-- **Hallucination Check**: Verification that AI answers are strictly based on document evidence.
-
-### 8.3 Performance Optimization (Backend)
-- **LLM Caching**: Reuses LLM clients with the same configuration to reduce session start latency.
-- **Redis Pipelining**: Bundles multiple Redis I/O operations into a single batch to minimize network overhead.
-
----
-
-## 9. Adaptive Intelligence (v9.0)
-
-v9.0 **Adaptive Intelligence** introduces an engine where the system evolves based on user data.
-
-### 9.1 Adaptive Fine-tuning
-Train the AI classification model autonomously to fit specific document domains (e.g., medical, legal, internal corporate terminology).
-- **Operation**: Once training data exceeds a threshold, an OpenAI Fine-tuning Job is automatically created.
-- **Monitoring**: `FineTuningService` polls the training status in the background and updates Redis once complete.
-
-### 9.2 Operational Observability & Safety
-- **System Tags**: Log fields like `event` and `meta_intentional_warning` allow operators to monitor autonomous system actions via dashboards.
-- **Data Integrity**: Core status values (like `status`) are protected from being overwritten by external metadata, ensuring system stability.
-
----
-
-## 10. Using the Dashboard
+## 8. Using the Dashboard
 
 ### 10.1 Dashboard Overview
 
@@ -692,16 +657,39 @@ python scripts/bootstrap_index.py --vault /path/to/your/vault --concurrency 2
 
 ---
 
-## 📚 Additional Resources
+---
 
-- **API Documentation**: http://localhost:8000/docs (Swagger UI)
-- **Phase Documentation**: `docs/P/` directory
-  - [v6.0 Phase 1: WebSocket](docs/P/v6.0_phase1_websocket/)
-  - [v6.0 Phase 2: Diff Viewer](docs/P/v6.0_phase2_diff_viewer/)
-  - [v6.0 Phase 3: i18n](docs/P/v6.0_phase3_i18n/)
-  - [v7.0 Planning: Hybrid RAG](docs/P/v7.0_planning/)
-- **Performance Measurement**: `tests/performance/benchmark_rag.py`
-- **Search Quality Measurement**: `tests/e2e/test_rag_search_quality.py`
+## 15. 🛠️ Technical & Developer Appendix
+
+This section contains technical details about RAG quality evaluation and autonomous learning engines.
+
+### RAG Eval & Performance (v8.0)
+
+> [!IMPORTANT]
+> **For Developers**: Tools to measure RAG system reliability and maximize throughput.
+
+#### 1. Golden Dataset Extraction
+Automatically generates 'Ground Truth' based on user feedback labels.
+
+#### 2. Evaluation Framework
+```bash
+# Measure E2E Search Quality
+pytest tests/e2e/test_rag_search_quality.py -s -v
+```
+
+#### 3. Performance Tuning
+- LLM Caching and Redis Pipelining to minimize cold-start latency.
+
+### Adaptive Intelligence (v9.0)
+
+> [!NOTE]
+> **Tech Specs**: Autonomous engine evolving based on user data patterns.
+
+#### 1. Adaptive Fine-tuning
+Manages OpenAI Fine-tuning Jobs to continuously improve classification precision.
+
+#### 2. Observability
+- Leverages structured tags (`ObsEvent`, `ObsMetaTag`) for auditing autonomous system actions.
 
 ---
 

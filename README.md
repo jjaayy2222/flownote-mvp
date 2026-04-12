@@ -51,7 +51,7 @@
 
 **FlowNote**는 AI 기반 문서 자동 분류 시스템입니다. 사용자의 직업과 관심 영역을 학습하여, 업로드된 문서를 PARA 방식으로 지능적으로 분류합니다.
 
-> **💡 개발 배경 및 철학**: 이 프로젝트는 2025년 9~10월부터 GitHub에 업로드되기 시작했으며, Manus나 Claude와 같은 Agentic AI들이 로컬 파일 정리를 도와주기 전부터 개발자의 주도로 체계적인 로컬 파일 정리를 지향해 왔습니다. AI의 보조를 넘어, 사용자의 고유한 지식 맥락을 존중하는 구조화된 데이터를 지향합니다.
+> **💡 개발 배경 및 철학**: 이 프로젝트는 2025년 9~10월경부터 개발자의 주도로 체계적인 로컬 파일 정리를 위해 시작되었습니다. 상세한 개발 역사와 철학은 **[프로젝트 제출 및 변천사](docs/AR/project_submission.md)**에서 확인하실 수 있습니다.
 
 ### 💡 핵심 아이디어
 
@@ -146,6 +146,9 @@
   - PARA Distribution (카테고리별 비중 Pie Chart)
 - **Mobile Responsive**: 데스크탑/모바일 자동 전환 내비게이션
 - **Accessibility**: ARIA 속성 및 스크린 리더 지원
+
+> [!NOTE]
+> **개발자용 기능**: 대시보드의 실시간 상태 및 그래프 데이터는 WebSocket을 통해 백엔드와 실시간으로 동기화됩니다. (v6.0+)
 
 ### 2.9 🔄 **WebSocket 실시간 업데이트** (v6.0 Phase 1)
 - **실시간 동기화**: Polling 방식 제거, WebSocket 기반 양방향 통신
@@ -334,14 +337,15 @@ flownote-mvp/
 │
 ├── data/                               # 데이터 저장소
 ├── docs/                               # 문서
-│   └── P/                              # 프로젝트 페이즈 문서
-│       ├── v5_phase1_mcp_server/       # MCP 서버 문서
-│       ├── v5_phase2_frontend/         # Frontend 문서
-│       ├── v5_phase3_visualization/    # Visualization 문서
-│       ├── v6.0_phase1_websocket/      # WebSocket 문서 (v6.0) ✨
-│       ├── v6.0_phase2_diff_viewer/    # Diff Viewer 문서 (v6.0) ✨
-│       ├── v6.0_phase3_i18n/           # i18n 문서 (v6.0) ✨
-│       └── v7.0_planning/              # v7.0 계획 문서 (v7.0) ✨
+│   ├── AR/                             # 아카이브 (지난 페이즈 문서)
+│   │   ├── v5.0/                       # v5.0 (MCP, Frontend 등)
+│   │   ├── v6.0/                       # v6.0 (WebSocket, Diff, i18n)
+│   │   ├── v7.0_planning/              # v7.0 계획
+│   │   └── v8_phase5_data_flywheel/    # v8.0 데이터 플라이휠
+│   ├── P/                              # 진행 중인 페이즈 문서
+│   │   └── v9_planning/                # v9.0 자가 적응형 지능 (진행 중) ✨
+│   ├── A/                              # 분석 및 명세 (Practices, Specs)
+│   └── R/                              # 리소스 (Troubleshooting 등)
 ├── README.md                           # 본 문서 (한국어)
 └── README_EN.md                        # 영문 문서
 ```
@@ -353,6 +357,9 @@ flownote-mvp/
 FlowNote는 엄격한 테스트와 품질 관리를 통해 안정성을 보장합니다.
 
 ### 5.1 테스트 실행
+
+> [!IMPORTANT]
+> **개발자 전용**: 아래 명령어는 시스템의 안정성을 검증하기 위한 테스트 코드로, 일반 사용자는 실행할 필요가 없습니다.
 
 ```bash
 # 전체 테스트 실행
@@ -514,6 +521,10 @@ python -m backend.mcp.server
 3. `System` 탭에서 워커 상태 확인
 
 ### 7.7 **Step 7: 하이브리드 RAG 검색 사용 (v7.0)**
+
+> [!TIP]
+> **초기 설정**: 하이브리드 검색을 처음 사용하기 전, 한 번의 인덱싱 작업이 필요합니다 (아래 참조).
+
 1. 초기 인덱스 구축 (최초 1회)
 ```bash
 # Obsidian Vault 전체를 FAISS + BM25 인덱스로 일괄 색인

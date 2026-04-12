@@ -51,7 +51,7 @@
 
 **FlowNote** is an AI-powered document auto-classification system. It learns your profession and areas of interest to intelligently categorize uploaded documents using the PARA method.
 
-> **💡 Project History & Philosophy**: This project began being hosted on GitHub around September-October 2025. It prioritized systematic local file organization under human leadership well before the emergence of Agentic AI assistants like Manus or Claude. We aim for structured data that respects the user's unique knowledge context, going beyond simple AI assistance.
+> **💡 Project History & Philosophy**: This project was started around September-October 2025 under human leadership to achieve systematic local file organization. Please refer to the **[Project Submission & Evolution](docs/AR/project_submission.md) (KR)** for a detailed history and philosophy.
 
 ### 💡 Core Concept
 
@@ -334,14 +334,15 @@ flownote-mvp/
 │
 ├── data/                               # Data storage
 ├── docs/                               # Documentation
-│   └── P/                              # Project phase documentation
-│       ├── v5_phase1_mcp_server/       # MCP server docs
-│       ├── v5_phase2_frontend/         # Frontend docs
-│       ├── v5_phase3_visualization/    # Visualization docs
-│       ├── v6.0_phase1_websocket/      # WebSocket docs (v6.0) ✨
-│       ├── v6.0_phase2_diff_viewer/    # Diff Viewer docs (v6.0) ✨
-│       ├── v6.0_phase3_i18n/           # i18n docs (v6.0) ✨
-│       └── v7.0_planning/              # v7.0 planning docs (v7.0) ✨
+│   ├── AR/                             # Archive (Previous phase docs)
+│   │   ├── v5.0/                       # v5.0 (MCP, Frontend, etc.)
+│   │   ├── v6.0/                       # v6.0 (WebSocket, Diff, i18n)
+│   │   ├── v7.0_planning/              # v7.0 planning docs
+│   │   └── v8_phase5_data_flywheel/    # v8.0 data flywheel docs
+│   ├── P/                              # In-progress phase documentation
+│   │   └── v9_planning/                # v9.0 Adaptive Intelligence (In Progress) ✨
+│   ├── A/                              # Analysis & Specs (Practices, Specs)
+│   └── R/                              # Resources (Troubleshooting, etc.)
 ├── README.md                           # Korean documentation
 └── README_EN.md                        # This document (English)
 ```
@@ -353,6 +354,9 @@ flownote-mvp/
 FlowNote ensures stability through rigorous testing and quality management.
 
 ### 5.1 Running Tests
+
+> [!IMPORTANT]
+> **For Developers**: The following commands are for system stability verification and are not required for regular users.
 
 ```bash
 # Run all tests
@@ -514,6 +518,10 @@ python -m backend.mcp.server
 3. Monitor worker status in `System` tab
 
 ### 7.7 **Step 7: Hybrid RAG Search (v7.0)**
+
+> [!TIP]
+> **Initial Setup**: Before using hybrid search for the first time, a one-time indexing task is required (see below).
+
 1. Build initial index (first time only)
 ```bash
 # Index entire Obsidian Vault into FAISS + BM25
