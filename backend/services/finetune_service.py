@@ -626,12 +626,14 @@ async def get_model_performance_comparison() -> dict:
     from backend.api.models.shared import RATING_UP, RATING_DOWN
     import json
     
+    # 불필요한 MULTI/EXEC 오버헤드 방지를 위해 transaction=False 설정 (읽기 전용이므로 안전)
+    pipeline = redis_client.redis.pipeline(transaction=False)
+    
     while True:
         cursor, keys = await redis_client.redis.scan(cursor, match=f"{FEEDBACK_KEY_PREFIX}*", count=100)
         
         if keys:
             # Pipelining HGETALL calls to significantly reduce network roundtrips
-            pipeline = redis_client.redis.pipeline()
             for key in keys:
                 pipeline.hgetall(key)
             batch_results = await pipeline.execute()
@@ -650,9 +652,10 @@ async def get_model_performance_comparison() -> dict:
                         if rating not in (RATING_UP, RATING_DOWN):
                             continue
                             
-                        ts = 0.0
                         if isinstance(raw_ts, (int, float, str)) and not isinstance(raw_ts, bool):
                             ts = _to_timestamp(raw_ts)
+                        else:
+                            continue
                             
                         # 유효하지 않은 타임스탬프는 맹목적으로 누적하지 않고 생략하여 통계 오염 방지
                         if ts <= 0.0:
