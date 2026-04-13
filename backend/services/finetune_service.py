@@ -247,19 +247,39 @@ async def set_active_finetune_model(fine_tuned_model_id: str) -> None:
     """
     성공적으로 완료된 파인튜닝 모델 ID를 Redis의 Active Model 키에 저장합니다.
     이 값은 Hot-swap 메커니즘에서 LangGraph 에이전트가 참조합니다.
+    성능 비교 분석(A/B 테스트)을 위해 이전 모델과 배포 시간을 기록합니다.
 
     키: {_FINETUNE_ACTIVE_MODEL_KEY} (예: "v9:finetune:current_model_id")
     """
-    if not redis_client.is_connected():
+    if not redis_client.is_connected() or not redis_client.redis:
         await redis_client.connect()
+        if not redis_client.redis:
+            raise RuntimeError("Redis connection not established.")
 
+    # 1. 기존 활성 모델의 ID와 배포 시각을 이전 모델(previous) 키에 백업
+    previous_model = await redis_client.redis.get(_FINETUNE_ACTIVE_MODEL_KEY)
+    previous_deployed_at = await redis_client.redis.get(f"{_FINETUNE_ACTIVE_MODEL_KEY}:deployed_at")
+
+    if previous_model:
+        # decode가 되어 있지 않을 경우를 대비
+        prev_model_str = previous_model.decode("utf-8") if isinstance(previous_model, bytes) else str(previous_model)
+        await redis_client.redis.set(f"{_FINETUNE_ACTIVE_MODEL_KEY}:previous", prev_model_str)
+        if previous_deployed_at:
+            prev_ts_str = previous_deployed_at.decode("utf-8") if isinstance(previous_deployed_at, bytes) else str(previous_deployed_at)
+            await redis_client.redis.set(f"{_FINETUNE_ACTIVE_MODEL_KEY}:previous_deployed_at", prev_ts_str)
+
+    # 2. 신규 파인튜닝 모델 정보 저장 (Hot-swap 적용 및 배포 시각 기록)
+    from datetime import datetime, timezone
+    now_iso = datetime.now(timezone.utc).isoformat()
     await redis_client.redis.set(_FINETUNE_ACTIVE_MODEL_KEY, fine_tuned_model_id)
+    await redis_client.redis.set(f"{_FINETUNE_ACTIVE_MODEL_KEY}:deployed_at", now_iso)
+
     logger.info(
-        "[OBS] Active fine-tuned model ID updated in Redis.",
+        "[OBS] Active fine-tuned model ID updated in Redis (Hot-swapped).",
         extra={
             "active_model_key": _FINETUNE_ACTIVE_MODEL_KEY,
-            # 모델 ID 자체는 민감 정보가 아니므로 일부만 마스킹하여 추적성 유지
             "model_id_preview": _preview_id(fine_tuned_model_id),
+            "deployed_at": now_iso,
         },
     )
 
@@ -555,3 +575,107 @@ async def get_active_finetune_model() -> Optional[str]:
 
     model_id: str = raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
     return model_id if model_id else None
+
+async def get_model_performance_comparison() -> dict:
+    """
+    이전 모델과 현재 파인튜닝 모델 간의 피드백(User Rating)을 비교하여 반환합니다.
+    """
+    if not redis_client.is_connected() or not redis_client.redis:
+        await redis_client.connect()
+        if not redis_client.redis:
+            raise RuntimeError("Redis connection not established.")
+        
+    current_model_raw = await redis_client.redis.get(_FINETUNE_ACTIVE_MODEL_KEY)
+    deployed_at_raw = await redis_client.redis.get(f"{_FINETUNE_ACTIVE_MODEL_KEY}:deployed_at")
+    previous_model_raw = await redis_client.redis.get(f"{_FINETUNE_ACTIVE_MODEL_KEY}:previous")
+    prev_deployed_at_raw = await redis_client.redis.get(f"{_FINETUNE_ACTIVE_MODEL_KEY}:previous_deployed_at")
+
+    def _decode(val) -> str | None:
+        if not val: return None
+        return val.decode("utf-8") if isinstance(val, bytes) else str(val)
+
+    current_model = _decode(current_model_raw)
+    deployed_at_str = _decode(deployed_at_raw)
+    previous_model = _decode(previous_model_raw)
+    prev_deployed_at_str = _decode(prev_deployed_at_raw)
+
+    import datetime
+    
+    def _to_timestamp(raw_ts) -> float:
+        if not raw_ts: return 0.0
+        if isinstance(raw_ts, (int, float)) and not isinstance(raw_ts, bool):
+            return float(raw_ts)
+        iso_str = str(raw_ts).strip()
+        try:
+            return datetime.datetime.fromisoformat(iso_str.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            try:
+                return float(iso_str)
+            except ValueError:
+                return 0.0
+
+    deployed_ts = _to_timestamp(deployed_at_str)
+    prev_deployed_ts = _to_timestamp(prev_deployed_at_str)
+
+    # Redis에서 피드백 데이터 스캔 (ChatHistoryService와 동일한 PREFIX)
+    cursor = 0
+    prev_up = prev_down = 0
+    curr_up = curr_down = 0
+    
+    from backend.services.chat_history_service import FEEDBACK_KEY_PREFIX
+    from backend.api.models.shared import RATING_UP, RATING_DOWN
+    import json
+    
+    while True:
+        cursor, keys = await redis_client.redis.scan(cursor, match=f"{FEEDBACK_KEY_PREFIX}*", count=100)
+        for key in keys:
+            hash_data = await redis_client.redis.hgetall(key)
+            for _, meta_raw in hash_data.items():
+                meta_str = _decode(meta_raw)
+                if not meta_str: continue
+                try:
+                    meta = json.loads(meta_str)
+                    rating = meta.get("rating")
+                    raw_ts = meta.get("timestamp")
+                    
+                    if rating not in (RATING_UP, RATING_DOWN):
+                        continue
+                        
+                    if isinstance(raw_ts, (int, float, str)) and not isinstance(raw_ts, bool):
+                        ts = _to_timestamp(raw_ts)
+                    else:
+                        continue
+                        
+                    # deployed_ts가 0.0이면, Hot-swap 한 번도 안 일어났으므로 모든 것을 현재 모델로 분류
+                    if deployed_ts == 0.0 or ts >= deployed_ts:
+                        if rating == RATING_UP: curr_up += 1
+                        else: curr_down += 1
+                    # deployed_ts 기록은 있지만 이전 기록이 없거나, 이전 기록 시간 이상인 경우
+                    elif prev_deployed_ts == 0.0 or ts >= prev_deployed_ts:
+                        if rating == RATING_UP: prev_up += 1
+                        else: prev_down += 1
+                        
+                except (json.JSONDecodeError, ValueError, TypeError) as e:
+                    logger.debug("[OBS] Failed to parse feedback entry for performance comparison: %s", e)
+        if int(cursor) == 0:
+            break
+            
+    def _calc_score(u: int, d: int) -> float:
+        tot = u + d
+        return round((u / tot) * 100, 2) if tot > 0 else 0.0
+
+    prev_score = _calc_score(prev_up, prev_down)
+    curr_score = _calc_score(curr_up, curr_down)
+
+    return {
+        "previous_model_id": previous_model,
+        "current_model_id": current_model,
+        "deployed_at": deployed_at_str,
+        "previous_up": prev_up,
+        "previous_down": prev_down,
+        "previous_score": prev_score,
+        "current_up": curr_up,
+        "current_down": curr_down,
+        "current_score": curr_score,
+        "score_improvement": round(curr_score - prev_score, 2)
+    }
