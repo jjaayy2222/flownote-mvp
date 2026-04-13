@@ -601,12 +601,18 @@ async def get_model_performance_comparison() -> dict:
 
     import datetime
     
-    def _to_timestamp(iso_str) -> float:
-        if not iso_str: return 0.0
+    def _to_timestamp(raw_ts) -> float:
+        if not raw_ts: return 0.0
+        if isinstance(raw_ts, (int, float)) and not isinstance(raw_ts, bool):
+            return float(raw_ts)
+        iso_str = str(raw_ts).strip()
         try:
             return datetime.datetime.fromisoformat(iso_str.replace("Z", "+00:00")).timestamp()
         except ValueError:
-            return 0.0
+            try:
+                return float(iso_str)
+            except ValueError:
+                return 0.0
 
     deployed_ts = _to_timestamp(deployed_at_str)
     prev_deployed_ts = _to_timestamp(prev_deployed_at_str)
@@ -636,19 +642,21 @@ async def get_model_performance_comparison() -> dict:
                         continue
                         
                     if isinstance(raw_ts, (int, float, str)) and not isinstance(raw_ts, bool):
-                        ts = _to_timestamp(str(raw_ts).strip())
+                        ts = _to_timestamp(raw_ts)
                     else:
                         continue
                         
-                    if ts >= deployed_ts and deployed_ts > 0:
+                    # deployed_ts가 0.0이면, Hot-swap 한 번도 안 일어났으므로 모든 것을 현재 모델로 분류
+                    if deployed_ts == 0.0 or ts >= deployed_ts:
                         if rating == RATING_UP: curr_up += 1
                         else: curr_down += 1
-                    elif ts >= prev_deployed_ts and ts < deployed_ts:
+                    # deployed_ts 기록은 있지만 이전 기록이 없거나, 이전 기록 시간 이상인 경우
+                    elif prev_deployed_ts == 0.0 or ts >= prev_deployed_ts:
                         if rating == RATING_UP: prev_up += 1
                         else: prev_down += 1
                         
-                except Exception:
-                    pass
+                except (json.JSONDecodeError, ValueError, TypeError) as e:
+                    logger.debug("[OBS] Failed to parse feedback entry for performance comparison: %s", e)
         if int(cursor) == 0:
             break
             

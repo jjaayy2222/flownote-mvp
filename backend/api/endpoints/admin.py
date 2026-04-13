@@ -119,19 +119,7 @@ async def get_model_performance_endpoint(
         from backend.services.finetune_service import get_model_performance_comparison
         data = await get_model_performance_comparison()
         
-        return ModelPerformanceComparison(
-            status="success",
-            previous_model_id=data["previous_model_id"],
-            current_model_id=data["current_model_id"],
-            deployed_at=data["deployed_at"],
-            previous_up=data["previous_up"],
-            previous_down=data["previous_down"],
-            previous_score=data["previous_score"],
-            current_up=data["current_up"],
-            current_down=data["current_down"],
-            current_score=data["current_score"],
-            score_improvement=data["score_improvement"]
-        )
+        return ModelPerformanceComparison(status="success", **data)
     except Exception:
         logger.exception("[OBS] Error calculating model performance comparison")
         raise HTTPException(status_code=500, detail="Internal Server Error")
