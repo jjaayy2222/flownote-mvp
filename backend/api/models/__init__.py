@@ -300,6 +300,24 @@ class FeedbackDetail(BaseModel):
     timestamp: str = Field(..., description="피드백 남긴 일시 (ISO 8601)")
 
 
+class ModelPerformanceComparison(BaseModel):
+    """이전 모델과 현행 모델 간의 성능 비교 분석 결과"""
+    status: ApiStatus = Field(..., description=API_STATUS_DESC)
+    previous_model_id: Optional[str] = Field(None, description="이전 모델 ID")
+    current_model_id: Optional[str] = Field(None, description="현재 활성 모델 ID")
+    deployed_at: Optional[str] = Field(None, description="현재 모델 배포(Hot-swap) 일시")
+    
+    previous_up: int = Field(0, description="이전 모델 긍정 피드백 수")
+    previous_down: int = Field(0, description="이전 모델 부정 피드백 수")
+    previous_score: float = Field(0.0, description="이전 모델 User Rating 점수 (0~100)")
+    
+    current_up: int = Field(0, description="현재 모델 긍정 피드백 수")
+    current_down: int = Field(0, description="현재 모델 부정 피드백 수")
+    current_score: float = Field(0.0, description="현재 모델 User Rating 점수 (0~100)")
+    
+    score_improvement: float = Field(0.0, description="점수 증감 (current - previous)")
+
+
 class FeedbackStatsResponse(BaseModel):
     """어드민 대시보드용 AI 피드백 통계 응답"""
     
