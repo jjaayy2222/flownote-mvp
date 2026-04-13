@@ -90,3 +90,48 @@ async def set_active_model_endpoint(
             extra={"model_id": request.model_id}
         )
         raise HTTPException(status_code=500, detail="Internal Server Error")
+
+from backend.api.models import ModelPerformanceComparison
+
+@router.get("/models/performance", response_model=ModelPerformanceComparison, summary="이전 모델과 현행 파인튜닝 모델 간의 성능 비교 분석 자동화 (User Rating 기반)")
+async def get_model_performance_endpoint(
+    x_admin_key: Optional[str] = Header(None, description="어드민 인증 키")
+):
+    """
+    [v9.0 Phase 1] 이전 파인튜닝 모델과 최신 파인튜닝 모델의 성능을 비교 분석합니다.
+    - User Rating(Thumbs Up/Down) 기준
+    - 시간 기반(모델 배포 시간 전/후) 스코어 산출
+    """
+    admin_key = AdminConfig.get_admin_key()
+    
+    if not admin_key:
+        logger.error("[OBS] ADMIN_API_KEY is not configured in environment.")
+        raise HTTPException(status_code=500, detail="Server Configuration Error")
+        
+    provided = str(x_admin_key or "")
+    expected = str(admin_key or "")
+    
+    if not hmac.compare_digest(provided, expected):
+        logger.warning("[OBS] Unauthorized attempt to check model performance.")
+        raise HTTPException(status_code=403, detail="Forbidden: Invalid Admin Key")
+        
+    try:
+        from backend.services.finetune_service import get_model_performance_comparison
+        data = await get_model_performance_comparison()
+        
+        return ModelPerformanceComparison(
+            status="success",
+            previous_model_id=data["previous_model_id"],
+            current_model_id=data["current_model_id"],
+            deployed_at=data["deployed_at"],
+            previous_up=data["previous_up"],
+            previous_down=data["previous_down"],
+            previous_score=data["previous_score"],
+            current_up=data["current_up"],
+            current_down=data["current_down"],
+            current_score=data["current_score"],
+            score_improvement=data["score_improvement"]
+        )
+    except Exception:
+        logger.exception("[OBS] Error calculating model performance comparison")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
