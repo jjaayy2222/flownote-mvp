@@ -626,54 +626,58 @@ async def get_model_performance_comparison() -> dict:
     from backend.api.models.shared import RATING_UP, RATING_DOWN
     import json
     
-    # 불필요한 MULTI/EXEC 오버헤드 방지를 위해 transaction=False 설정 (읽기 전용이므로 안전)
-    pipeline = redis_client.redis.pipeline(transaction=False)
-    
-    while True:
-        cursor, keys = await redis_client.redis.scan(cursor, match=f"{FEEDBACK_KEY_PREFIX}*", count=100)
-        
-        if keys:
-            # Pipelining HGETALL calls to significantly reduce network roundtrips
-            for key in keys:
-                pipeline.hgetall(key)
-            batch_results = await pipeline.execute()
+    def _process_feedback_meta(meta_raw) -> None:
+        nonlocal curr_up, curr_down, prev_up, prev_down
+        meta_str = _decode(meta_raw)
+        if not meta_str: return
+        try:
+            meta = json.loads(meta_str)
+            rating = meta.get("rating")
+            raw_ts = meta.get("timestamp")
             
-            for hash_data in batch_results:
-                if not hash_data: continue
-                # Redis-py 3.x/4.x 버전에 따라 dict 형식이 반환됩니다
-                for _, meta_raw in hash_data.items():
-                    meta_str = _decode(meta_raw)
-                    if not meta_str: continue
-                    try:
-                        meta = json.loads(meta_str)
-                        rating = meta.get("rating")
-                        raw_ts = meta.get("timestamp")
+            if rating not in (RATING_UP, RATING_DOWN):
+                return
+                
+            if isinstance(raw_ts, (int, float, str)) and not isinstance(raw_ts, bool):
+                ts = _to_timestamp(raw_ts)
+            else:
+                return
+                
+            # 유효하지 않은 타임스탬프는 맹목적으로 누적하지 않고 생략하여 통계 오염 방지
+            if ts <= 0.0:
+                return
+                
+            # deployed_ts가 0.0이면, Hot-swap 한 번도 안 일어났으므로 모든 것을 현재 모델로 분류
+            if deployed_ts == 0.0 or ts >= deployed_ts:
+                if rating == RATING_UP: curr_up += 1
+                else: curr_down += 1
+            # deployed_ts 기록은 있지만 이전 기록이 없거나, 이전 기록 시간 이상인 경우
+            elif prev_deployed_ts == 0.0 or ts >= prev_deployed_ts:
+                if rating == RATING_UP: prev_up += 1
+                else: prev_down += 1
+                
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            logger.debug("[OBS] Failed to parse feedback entry for performance comparison: %s", e)
+
+    # 불필요한 MULTI/EXEC 오버헤드 방지 및 생명주기를 완벽히 관리하기 위해 async with 적용
+    async with redis_client.redis.pipeline(transaction=False) as pipeline:
+        while True:
+            cursor, keys = await redis_client.redis.scan(cursor, match=f"{FEEDBACK_KEY_PREFIX}*", count=100)
+            
+            if keys:
+                # Pipelining HGETALL calls to significantly reduce network roundtrips
+                for key in keys:
+                    pipeline.hgetall(key)
+                batch_results = await pipeline.execute()
+                
+                for hash_data in batch_results:
+                    if not hash_data: continue
+                    # Redis-py 3.x/4.x 버전에 따라 dict 형식이 반환됩니다
+                    for _, meta_raw in hash_data.items():
+                        _process_feedback_meta(meta_raw)
                         
-                        if rating not in (RATING_UP, RATING_DOWN):
-                            continue
-                            
-                        if isinstance(raw_ts, (int, float, str)) and not isinstance(raw_ts, bool):
-                            ts = _to_timestamp(raw_ts)
-                        else:
-                            continue
-                            
-                        # 유효하지 않은 타임스탬프는 맹목적으로 누적하지 않고 생략하여 통계 오염 방지
-                        if ts <= 0.0:
-                            continue
-                            
-                        # deployed_ts가 0.0이면, Hot-swap 한 번도 안 일어났으므로 모든 것을 현재 모델로 분류
-                        if deployed_ts == 0.0 or ts >= deployed_ts:
-                            if rating == RATING_UP: curr_up += 1
-                            else: curr_down += 1
-                        # deployed_ts 기록은 있지만 이전 기록이 없거나, 이전 기록 시간 이상인 경우
-                        elif prev_deployed_ts == 0.0 or ts >= prev_deployed_ts:
-                            if rating == RATING_UP: prev_up += 1
-                            else: prev_down += 1
-                            
-                    except (json.JSONDecodeError, ValueError, TypeError) as e:
-                        logger.debug("[OBS] Failed to parse feedback entry for performance comparison: %s", e)
-        if int(cursor) == 0:
-            break
+            if int(cursor) == 0:
+                break
             
     def _calc_score(u: int, d: int) -> float:
         tot = u + d
