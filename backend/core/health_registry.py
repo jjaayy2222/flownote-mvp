@@ -74,9 +74,9 @@ class HealthRegistry:
         ttl_remaining = registry.get_fallback_ttl_remaining_seconds()
     """
 
-    # Redis 키 프리픽스 — 사용자 정보 미포함
-    _REDIS_KEY_PREFIX = "flownote:health:"
-    _REDIS_SUMMARY_KEY = "flownote:health:summary"
+    # Redis 상태를 단일 Hash에 저장하여 HGETALL 한 번으로 전체 조회 (KEYS 살포 O(N) 블로킹 제거)
+    _REDIS_HASH_KEY = "flownote:health:summary"  # 불변 summary hash key
+    # TTL: Hash 전체에 적용 (개별 필드 만료 없음)
 
     def __init__(
         self,
@@ -133,6 +133,37 @@ class HealthRegistry:
                         redis_fallback_ttl_secs=redis_fallback_ttl_secs,
                         redis_url=redis_url,
                     )
+        else:
+            # 이미 생성된 싱글턴이 있을 때 다른 설정으로 호용되면 경고를 남김.
+            # Redis URL 값 자체는 credential 포함 가능성이 있으므로 절대 로그에 기록하지 않음.
+            try:
+                inst = _registry_instance
+                configured_ttl = getattr(inst, "_redis_fallback_ttl_secs", None)
+                configured_redis = getattr(inst, "_redis_url", None)
+                ttl_mismatch = (
+                    redis_fallback_ttl_secs != configured_ttl
+                )
+                redis_mismatch = (
+                    redis_url is not None
+                    and redis_url != configured_redis
+                )
+                if ttl_mismatch or redis_mismatch:
+                    logger.warning(
+                        "[HEALTH_REGISTRY] get_instance called with config that "
+                        "differs from existing singleton "
+                        "(redis_enabled_current=%s, redis_fallback_ttl_current=%r; "
+                        "redis_enabled_requested=%s, redis_fallback_ttl_requested=%r). "
+                        "Existing singleton configuration will be used.",
+                        configured_redis is not None,
+                        configured_ttl,
+                        redis_url is not None,
+                        redis_fallback_ttl_secs,
+                    )
+            except Exception:
+                logger.exception(
+                    "[HEALTH_REGISTRY] Failed to compare singleton configuration "
+                    "in get_instance."
+                )
         return _registry_instance
 
     # ── Redis 클라이언트 지연 초기화 (Fork-safe) ─────────────────────────
@@ -202,14 +233,21 @@ class HealthRegistry:
         self._publish_to_redis(subsystem, status)
 
     def _publish_to_redis(self, subsystem: str, status: SubsystemStatus) -> None:
-        """Redis에 상태를 게시한다. 실패 시 폴백 타이머 시작."""
+        """
+        Redis Hash에 서브시스템 상태를 HSET으로 게시한다.
+
+        단일 Hash(_REDIS_HASH_KEY)에 모든 서브시스템 상태를 field로 저장하며,
+        GET N회 대신 HGETALL 1회로 전체 조회 가능 (라운드트립 1회로 축소).
+        실패 시 TTL 타이머 시작.
+        """
         client = self._get_redis()
         if client is None:
             return
 
-        key = f"{self._REDIS_KEY_PREFIX}{subsystem}"
         try:
-            client.set(key, status.value, ex=self._redis_fallback_ttl_secs * 2)
+            client.hset(self._REDIS_HASH_KEY, subsystem, status.value)
+            # Hash 전체에 TTL 적용 (서브시스템 보고 없으면 자동 만료)
+            client.expire(self._REDIS_HASH_KEY, self._redis_fallback_ttl_secs * 2)
             if not self._redis_available:
                 logger.info(
                     "[HEALTH_REGISTRY] Redis connection restored. "
@@ -258,28 +296,22 @@ class HealthRegistry:
             return {k: v.value for k, v in self._local_state.items()}
 
     def _fetch_from_redis(self) -> Optional[Dict[str, str]]:
-        """Redis에서 전체 상태를 조회한다. 실패 시 None 반환."""
+        """
+        Redis Hash에서 HGETALL로 전체 상태를 단일 Round-trip으로 조회한다.
+
+        KEYS *를 O(N) 블로킹 명령 실행 없이 HGETALL로 맨점 방지.
+        실패 시 None 반환 (In-process 폴백 전환).
+        """
         client = self._get_redis()
         if client is None:
             return None
 
         try:
-            keys = client.keys(f"{self._REDIS_KEY_PREFIX}*")
-            if not keys:
-                # Redis 연결은 OK이지만 키가 없음 — 로컬 상태 참조
-                return None
-
-            result = {}
-            for key in keys:
-                subsystem = key.replace(self._REDIS_KEY_PREFIX, "")
-                value = client.get(key)
-                if value is not None:
-                    result[subsystem] = value
-
+            result: Dict[str, str] = client.hgetall(self._REDIS_HASH_KEY)
             self._redis_available = True
             self._redis_unavailable_since = None
+            # Hash가 비어있으면 로컈 상태 참조
             return result if result else None
-
         except Exception:
             self._on_redis_failure()
             return None

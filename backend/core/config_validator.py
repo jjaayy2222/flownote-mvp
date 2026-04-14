@@ -29,7 +29,7 @@ from __future__ import annotations
 import logging
 import os
 from enum import Enum
-from typing import ClassVar, Dict
+from typing import Callable, ClassVar, Dict
 
 # 프로젝트 공통 유틸 재사용 — 중복 구현 금지
 from backend.config import ConfigRange, _clamp
@@ -206,7 +206,7 @@ def _parse_float_subsystem(
 def _parse_int_clamped(
     env_key: str,
     *,
-    default_factory,
+    default_factory: Callable[[], int],
     range_: ConfigRange,
 ) -> int:
     """
@@ -335,6 +335,7 @@ class PersonalizedRAGConfig:
         )
 
         # ── 2. 서브시스템 설정 (Subsystem Hard Failure) ───────────────────
+        # subsystem_ok 키는 항상 str (Subsystem.value) 로 통일 — HealthRegistry 경계와 일치
         subsystem_ok: Dict[str, bool] = {}
 
         faiss_threshold, ok_ft = _parse_int_subsystem(
@@ -350,14 +351,14 @@ class PersonalizedRAGConfig:
             subsystem=Subsystem.FAISS_COMPACTION,
         )
         # 두 설정 중 하나라도 실패하면 FAISS Compaction 서브시스템 비활성화
-        subsystem_ok[Subsystem.FAISS_COMPACTION] = ok_ft and ok_fr
+        subsystem_ok[Subsystem.FAISS_COMPACTION.value] = ok_ft and ok_fr
 
         topic_ttl, ok_ttl = _parse_int_subsystem(
             "TOPIC_CLUSTER_CACHE_TTL",
             default=3600,
             subsystem=Subsystem.TOPIC_CLUSTERING,
         )
-        subsystem_ok[Subsystem.TOPIC_CLUSTERING] = ok_ttl
+        subsystem_ok[Subsystem.TOPIC_CLUSTERING.value] = ok_ttl
 
         p_weight, ok_pw = _parse_float_subsystem(
             "PERSONALIZED_INDEX_WEIGHT",
@@ -371,7 +372,7 @@ class PersonalizedRAGConfig:
             range_=cls._WEIGHT_RANGE,
             subsystem=Subsystem.HYBRID_SEARCH,
         )
-        subsystem_ok[Subsystem.HYBRID_SEARCH] = ok_pw and ok_gw
+        subsystem_ok[Subsystem.HYBRID_SEARCH.value] = ok_pw and ok_gw
 
         # Redis 폴백 TTL은 인프라 설정이므로 Subsystem 비활성화 없이 기본값 적용
         redis_ttl, _ = _parse_int_subsystem(
