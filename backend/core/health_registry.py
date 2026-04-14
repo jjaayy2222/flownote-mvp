@@ -310,8 +310,8 @@ class HealthRegistry:
             result: Dict[str, str] = client.hgetall(self._REDIS_HASH_KEY)
             self._redis_available = True
             self._redis_unavailable_since = None
-            # Hash가 비어있으면 로컈 상태 참조
-            return result if result else None
+            # Hash가 비어있으면 None 반환 (In-process 폴백 전환)
+            return result or None
         except Exception:
             self._on_redis_failure()
             return None
