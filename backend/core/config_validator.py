@@ -233,7 +233,7 @@ def _parse_int_clamped(
     except (ValueError, TypeError):
         logger.warning(
             "[CONFIG][CLAMP] '%s'=%r is not a valid integer; "
-            "falling back to heuristic default %d (min(32, os.cpu_count() + 4)).",
+            "falling back to default %d provided by default_factory.",
             env_key,
             raw,
             default,
@@ -291,6 +291,8 @@ class PersonalizedRAGConfig:
     _FAISS_RATIO_RANGE: ClassVar[ConfigRange] = ConfigRange(min=0.0, max=1.0)
     _FAISS_THRESHOLD_RANGE: ClassVar[ConfigRange] = ConfigRange(min=100, max=100_000)
     _AWS_WORKERS_RANGE: ClassVar[ConfigRange] = ConfigRange(min=10, max=100)
+    # Weight 합계 검증 허용 오차 (에: |sum - 1.0| ≤ 0.01이면 정상)
+    _WEIGHT_SUM_TOLERANCE: ClassVar[float] = 0.01
 
     def __init__(
         self,
@@ -373,6 +375,20 @@ class PersonalizedRAGConfig:
             subsystem=Subsystem.HYBRID_SEARCH,
         )
         subsystem_ok[Subsystem.HYBRID_SEARCH.value] = ok_pw and ok_gw
+
+        # Weight 합계 검증: 운영자 오설정 조기 감지
+        # 정규화는 Silent 수정으로 Zero Trust 원칙 위반 — WARNING 로그만 출력하고 원래 값 유지
+        weight_sum = p_weight + g_weight
+        if abs(weight_sum - 1.0) > cls._WEIGHT_SUM_TOLERANCE:
+            logger.warning(
+                "[CONFIG] PERSONALIZED_INDEX_WEIGHT=%.4f + GLOBAL_INDEX_WEIGHT=%.4f "
+                "= %.4f (expected ~1.0, tolerance=±%.2f). "
+                "Verify weights are configured correctly.",
+                p_weight,
+                g_weight,
+                weight_sum,
+                cls._WEIGHT_SUM_TOLERANCE,
+            )
 
         # Redis 폴백 TTL은 인프라 설정이므로 Subsystem 비활성화 없이 기본값 적용
         redis_ttl, _ = _parse_int_subsystem(
