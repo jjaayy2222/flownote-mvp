@@ -134,7 +134,7 @@ class HealthRegistry:
                         redis_url=redis_url,
                     )
         else:
-            # 이미 생성된 싱글턴이 있을 때 다른 설정으로 호용되면 경고를 남김.
+            # 이미 생성된 싱글턴이 있을 때 다른 설정으로 허용되면 경고를 남김.
             # Redis URL 값 자체는 credential 포함 가능성이 있으므로 절대 로그에 기록하지 않음.
             try:
                 inst = _registry_instance
