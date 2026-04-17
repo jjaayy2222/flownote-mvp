@@ -99,6 +99,7 @@ class HealthRegistry:
         # Redis 폴백 추적
         self._redis_available: bool = True
         self._redis_unavailable_since: Optional[float] = None  # monotonic timestamp
+        self._logged_empty_hash_fallback: bool = False  # 로그 스팸 방지 가드
 
         # Redis 클라이언트 (지연 초기화, fork-safe)
         self._redis_client = None
@@ -280,13 +281,20 @@ class HealthRegistry:
             if not redis_state:
                 with self._state_lock:
                     local_cache = {k: v.value for k, v in self._local_state.items()}
-                if local_cache:
-                    logger.info(
-                        "[HEALTH_REGISTRY] Redis returned empty hash. "
-                        "Falling back to local cache to expose existing subsystem states "
-                        "(startup/lag condition)."
-                    )
-                    return local_cache
+                    if local_cache:
+                        if not self._logged_empty_hash_fallback:
+                            logger.info(
+                                "[HEALTH_REGISTRY] Redis returned empty hash. "
+                                "Falling back to local cache to expose existing subsystem states "
+                                "(startup/lag condition)."
+                            )
+                            self._logged_empty_hash_fallback = True
+                        return local_cache
+            # 정상적으로 데이터를 수신하면 가드 리셋
+            else:
+                with self._state_lock:
+                    if self._logged_empty_hash_fallback:
+                        self._logged_empty_hash_fallback = False
             return redis_state
 
         # Redis 파티션 — 폴백 TTL 확인
