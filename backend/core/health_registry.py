@@ -275,6 +275,18 @@ class HealthRegistry:
         # Redis SSOT 조회 시도
         redis_state = self._fetch_from_redis()
         if redis_state is not None:
+            # Redis가 정상이나, 아직 리포트가 없어 빈 해시({})를 반환한 경우,
+            # 상태 은폐 방지를 위해 워커 로컬에 누적된 서브시스템 상태를 우선 노출합니다.
+            if not redis_state:
+                with self._state_lock:
+                    local_cache = {k: v.value for k, v in self._local_state.items()}
+                if local_cache:
+                    logger.info(
+                        "[HEALTH_REGISTRY] Redis returned empty hash. "
+                        "Falling back to local cache to expose existing subsystem states "
+                        "(startup/lag condition)."
+                    )
+                    return local_cache
             return redis_state
 
         # Redis 파티션 — 폴백 TTL 확인
@@ -301,6 +313,9 @@ class HealthRegistry:
 
         KEYS *를 O(N) 블로킹 명령 실행 없이 HGETALL로 맨점 방지.
         실패 시 None 반환 (In-process 폴백 전환).
+        빈 dict {}는 "Redis 정상, 아직 보고된 서브시스템 없음"을 의미하므로,
+        None과 동일하게 취급하지 않음. 빈 hash를 None으로 반환하면 정상 Redis를
+        파티션 상황으로 오판하는 버그가 발생함.
         """
         client = self._get_redis()
         if client is None:
@@ -310,8 +325,8 @@ class HealthRegistry:
             result: Dict[str, str] = client.hgetall(self._REDIS_HASH_KEY)
             self._redis_available = True
             self._redis_unavailable_since = None
-            # Hash가 비어있으면 None 반환 (In-process 폴백 전환)
-            return result or None
+            # 빈 dict {}도 유효한 결과 — None으로 변환하지 않음
+            return result
         except Exception:
             self._on_redis_failure()
             return None

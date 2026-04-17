@@ -233,7 +233,7 @@ def _parse_int_clamped(
     except (ValueError, TypeError):
         logger.warning(
             "[CONFIG][CLAMP] '%s'=%r is not a valid integer; "
-            "falling back to heuristic default %d (min(32, os.cpu_count() + 4)).",
+            "falling back to default %d provided by default_factory.",
             env_key,
             raw,
             default,
@@ -373,6 +373,40 @@ class PersonalizedRAGConfig:
             subsystem=Subsystem.HYBRID_SEARCH,
         )
         subsystem_ok[Subsystem.HYBRID_SEARCH.value] = ok_pw and ok_gw
+
+        # 환경 변수에서 WEIGHT_SUM_TOLERANCE 파싱 (기본값 0.01)
+        raw_tolerance = os.environ.get("WEIGHT_SUM_TOLERANCE")
+        tolerance = 0.01
+        if raw_tolerance is not None:
+            try:
+                parsed_val = float(raw_tolerance)
+                tolerance = max(0.0, min(parsed_val, 1.0))
+                if tolerance != parsed_val:
+                    logger.warning(
+                        "[CONFIG][CLAMP] 'WEIGHT_SUM_TOLERANCE'=%g is out of safe range [0.0, 1.0]; clamped to %g.",
+                        parsed_val,
+                        tolerance,
+                    )
+            except ValueError:
+                logger.warning(
+                    "[CONFIG] 'WEIGHT_SUM_TOLERANCE'=%r is not a valid float; using default %.2f.",
+                    raw_tolerance,
+                    tolerance,
+                )
+
+        # Weight 합계 검증: 운영자 오설정 조기 감지
+        # 정규화는 Silent 수정으로 Zero Trust 원칙 위반 — WARNING 로그만 출력하고 원래 값 유지
+        weight_sum = p_weight + g_weight
+        if abs(weight_sum - 1.0) > tolerance:
+            logger.warning(
+                "[CONFIG] PERSONALIZED_INDEX_WEIGHT=%.4f + GLOBAL_INDEX_WEIGHT=%.4f "
+                "= %.4f (expected ~1.0, tolerance=±%.2f). "
+                "Verify weights are configured correctly.",
+                p_weight,
+                g_weight,
+                weight_sum,
+                tolerance,
+            )
 
         # Redis 폴백 TTL은 인프라 설정이므로 Subsystem 비활성화 없이 기본값 적용
         redis_ttl, _ = _parse_int_subsystem(
