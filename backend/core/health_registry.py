@@ -275,6 +275,13 @@ class HealthRegistry:
         # Redis SSOT 조회 시도
         redis_state = self._fetch_from_redis()
         if redis_state is not None:
+            # Redis가 정상이나, 아직 리포트가 없어 빈 해시({})를 반환한 경우,
+            # 상태 은폐 방지를 위해 워커 로컬에 누적된 서브시스템 상태를 우선 노출합니다.
+            if not redis_state:
+                with self._state_lock:
+                    local_cache = {k: v.value for k, v in self._local_state.items()}
+                if local_cache:
+                    return local_cache
             return redis_state
 
         # Redis 파티션 — 폴백 TTL 확인
