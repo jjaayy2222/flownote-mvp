@@ -279,17 +279,21 @@ class HealthRegistry:
             # Redis가 정상이나, 아직 리포트가 없어 빈 해시({})를 반환한 경우,
             # 상태 은폐 방지를 위해 워커 로컬에 누적된 서브시스템 상태를 우선 노출합니다.
             if not redis_state:
+                should_log = False
                 with self._state_lock:
                     local_cache = {k: v.value for k, v in self._local_state.items()}
-                    if local_cache:
-                        if not self._logged_empty_hash_fallback:
-                            logger.info(
-                                "[HEALTH_REGISTRY] Redis returned empty hash. "
-                                "Falling back to local cache to expose existing subsystem states "
-                                "(startup/lag condition)."
-                            )
-                            self._logged_empty_hash_fallback = True
-                        return local_cache
+                    if local_cache and not self._logged_empty_hash_fallback:
+                        should_log = True
+                        self._logged_empty_hash_fallback = True
+
+                if local_cache:
+                    if should_log:
+                        logger.info(
+                            "[HEALTH_REGISTRY] Redis returned empty hash. "
+                            "Falling back to local cache to expose existing subsystem states "
+                            "(startup/lag condition)."
+                        )
+                    return local_cache
             # 정상적으로 데이터를 수신하면 가드 리셋
             else:
                 with self._state_lock:
