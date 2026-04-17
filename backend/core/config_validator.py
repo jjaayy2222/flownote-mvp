@@ -112,6 +112,28 @@ def _parse_int_critical(env_key: str, *, min_val: int | None = None) -> int:
     return value
 
 
+def _log_clamp_warning(
+    env_key: str,
+    original: int | float,
+    clamped: int | float,
+    range_: ConfigRange,
+) -> None:
+    """Clamping 로그 일관화 헬퍼."""
+    reason = "범위 미만 보정" if original < range_.min else "범위 초과 보정"
+    logger.warning(
+        "[CONFIG][CLAMP] '%s'=%g is outside safe range [%g, %g]; "
+        "clamped to %g (%s). "
+        "Adjust '%s' to suppress this warning.",
+        env_key,
+        original,
+        range_.min,
+        range_.max,
+        clamped,
+        reason,
+        env_key,
+    )
+
+
 def _parse_int_subsystem(
     env_key: str,
     *,
@@ -145,14 +167,7 @@ def _parse_int_subsystem(
     if range_ is not None:
         clamped = _clamp(value, range_)
         if clamped != value:
-            logger.warning(
-                "[CONFIG][CLAMP] '%s'=%d is out of range [%d, %d]; clamped to %d.",
-                env_key,
-                value,
-                range_.min,
-                range_.max,
-                clamped,
-            )
+            _log_clamp_warning(env_key, value, clamped, range_)
         return clamped, True
 
     return value, True
@@ -190,14 +205,7 @@ def _parse_float_subsystem(
     if range_ is not None:
         clamped = _clamp(value, range_)
         if clamped != value:
-            logger.warning(
-                "[CONFIG][CLAMP] '%s'=%g is out of range [%g, %g]; clamped to %g.",
-                env_key,
-                value,
-                range_.min,
-                range_.max,
-                clamped,
-            )
+            _log_clamp_warning(env_key, value, clamped, range_)
         return clamped, True
 
     return value, True
@@ -242,19 +250,7 @@ def _parse_int_clamped(
 
     clamped = _clamp(value, range_)
     if clamped != value:
-        reason = "범위 미만 보정" if value < range_.min else "범위 초과 보정"
-        logger.warning(
-            "[CONFIG][CLAMP] '%s'=%d is outside safe range [%d, %d]; "
-            "clamped to %d (%s). "
-            "Adjust '%s' to suppress this warning.",
-            env_key,
-            value,
-            range_.min,
-            range_.max,
-            clamped,
-            reason,
-            env_key,
-        )
+        _log_clamp_warning(env_key, value, clamped, range_)
     return clamped
 
 
@@ -286,17 +282,7 @@ def _parse_float_clamped(
 
     clamped = _clamp(value, range_)
     if clamped != value:
-        reason = "범위 미만 보정" if value < range_.min else "범위 초과 보정"
-        logger.warning(
-            "[CONFIG][CLAMP] '%s'=%g is outside safe range [%g, %g]; "
-            "clamped to %g (%s).",
-            env_key,
-            value,
-            range_.min,
-            range_.max,
-            clamped,
-            reason,
-        )
+        _log_clamp_warning(env_key, value, clamped, range_)
     return clamped
 
 
