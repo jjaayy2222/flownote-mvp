@@ -258,6 +258,48 @@ def _parse_int_clamped(
     return clamped
 
 
+def _parse_float_clamped(
+    env_key: str,
+    *,
+    default: float,
+    range_: ConfigRange,
+) -> float:
+    """
+    범위 기반 float 환경 변수를 파싱한다 (Graceful Fallback / Clamping).
+    """
+    raw = os.environ.get(env_key)
+
+    if raw is None:
+        return default
+
+    try:
+        value = float(raw)
+    except (ValueError, TypeError):
+        logger.warning(
+            "[CONFIG][CLAMP] '%s'=%r is not a valid float; "
+            "falling back to default %g.",
+            env_key,
+            raw,
+            default,
+        )
+        return default
+
+    clamped = _clamp(value, range_)
+    if clamped != value:
+        reason = "범위 미만 보정" if value < range_.min else "범위 초과 보정"
+        logger.warning(
+            "[CONFIG][CLAMP] '%s'=%g is outside safe range [%g, %g]; "
+            "clamped to %g (%s).",
+            env_key,
+            value,
+            range_.min,
+            range_.max,
+            clamped,
+            reason,
+        )
+    return clamped
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 2 통합 설정 클래스
 # ─────────────────────────────────────────────────────────────────────────────
@@ -291,6 +333,8 @@ class PersonalizedRAGConfig:
     _FAISS_RATIO_RANGE: ClassVar[ConfigRange] = ConfigRange(min=0.0, max=1.0)
     _FAISS_THRESHOLD_RANGE: ClassVar[ConfigRange] = ConfigRange(min=100, max=100_000)
     _AWS_WORKERS_RANGE: ClassVar[ConfigRange] = ConfigRange(min=10, max=100)
+    
+    _DEFAULT_WEIGHT_SUM_TOLERANCE: ClassVar[float] = 0.01
 
     def __init__(
         self,
@@ -374,25 +418,11 @@ class PersonalizedRAGConfig:
         )
         subsystem_ok[Subsystem.HYBRID_SEARCH.value] = ok_pw and ok_gw
 
-        # 환경 변수에서 WEIGHT_SUM_TOLERANCE 파싱 (기본값 0.01)
-        raw_tolerance = os.environ.get("WEIGHT_SUM_TOLERANCE")
-        tolerance = 0.01
-        if raw_tolerance is not None:
-            try:
-                parsed_val = float(raw_tolerance)
-                tolerance = max(0.0, min(parsed_val, 1.0))
-                if tolerance != parsed_val:
-                    logger.warning(
-                        "[CONFIG][CLAMP] 'WEIGHT_SUM_TOLERANCE'=%g is out of safe range [0.0, 1.0]; clamped to %g.",
-                        parsed_val,
-                        tolerance,
-                    )
-            except ValueError:
-                logger.warning(
-                    "[CONFIG] 'WEIGHT_SUM_TOLERANCE'=%r is not a valid float; using default %.2f.",
-                    raw_tolerance,
-                    tolerance,
-                )
+        tolerance = _parse_float_clamped(
+            "WEIGHT_SUM_TOLERANCE",
+            default=cls._DEFAULT_WEIGHT_SUM_TOLERANCE,
+            range_=ConfigRange(min=0.0, max=1.0),
+        )
 
         # Weight 합계 검증: 운영자 오설정 조기 감지
         # 정규화는 Silent 수정으로 Zero Trust 원칙 위반 — WARNING 로그만 출력하고 원래 값 유지
