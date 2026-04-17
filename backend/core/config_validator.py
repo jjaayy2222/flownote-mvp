@@ -335,6 +335,7 @@ class PersonalizedRAGConfig:
     _AWS_WORKERS_RANGE: ClassVar[ConfigRange] = ConfigRange(min=10, max=100)
     
     _DEFAULT_WEIGHT_SUM_TOLERANCE: ClassVar[float] = 0.01
+    _WEIGHT_SUM_TOLERANCE_RANGE: ClassVar[ConfigRange] = ConfigRange(min=0.0, max=1.0)
 
     def __init__(
         self,
@@ -421,7 +422,7 @@ class PersonalizedRAGConfig:
         tolerance = _parse_float_clamped(
             "WEIGHT_SUM_TOLERANCE",
             default=cls._DEFAULT_WEIGHT_SUM_TOLERANCE,
-            range_=ConfigRange(min=0.0, max=1.0),
+            range_=cls._WEIGHT_SUM_TOLERANCE_RANGE,
         )
 
         # Weight 합계 검증: 운영자 오설정 조기 감지
