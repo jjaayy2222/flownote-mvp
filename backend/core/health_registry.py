@@ -281,6 +281,11 @@ class HealthRegistry:
                 with self._state_lock:
                     local_cache = {k: v.value for k, v in self._local_state.items()}
                 if local_cache:
+                    logger.info(
+                        "[HEALTH_REGISTRY] Redis returned empty hash. "
+                        "Falling back to local cache to expose existing subsystem states "
+                        "(startup/lag condition)."
+                    )
                     return local_cache
             return redis_state
 

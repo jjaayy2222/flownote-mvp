@@ -379,7 +379,14 @@ class PersonalizedRAGConfig:
         tolerance = 0.01
         if raw_tolerance is not None:
             try:
-                tolerance = float(raw_tolerance)
+                parsed_val = float(raw_tolerance)
+                tolerance = max(0.0, min(parsed_val, 1.0))
+                if tolerance != parsed_val:
+                    logger.warning(
+                        "[CONFIG][CLAMP] 'WEIGHT_SUM_TOLERANCE'=%g is out of safe range [0.0, 1.0]; clamped to %g.",
+                        parsed_val,
+                        tolerance,
+                    )
             except ValueError:
                 logger.warning(
                     "[CONFIG] 'WEIGHT_SUM_TOLERANCE'=%r is not a valid float; using default %.2f.",
