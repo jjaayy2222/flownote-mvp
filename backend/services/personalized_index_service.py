@@ -241,11 +241,11 @@ class IndexMetadata:
             if origin in union_types:
                 args = [a for a in typing.get_args(field_type) if a is not type(None)]
                 if len(args) > 1:
-                     raise TypeError(
-                         f"[PERSONALIZED_INDEX][SCHEMA] Field '{field_name}' uses a multi-type Union: {field_type}. "
-                         f"from_redis_dict does not support converting abstract multiple types. "
-                         f"Please use a single concrete type or Optional[T]."
-                     )
+                    raise TypeError(
+                        f"[PERSONALIZED_INDEX][SCHEMA] Field '{field_name}' uses a multi-type Union: {field_type}. "
+                        f"from_redis_dict does not support converting abstract multiple types. "
+                        f"Please use a single concrete type or Optional[T]."
+                    )
                 field_type = args[0] if args else str
 
             if field_type is str:
