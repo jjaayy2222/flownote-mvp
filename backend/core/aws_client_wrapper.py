@@ -20,7 +20,9 @@ class FatalSecurityError(SystemExit):
     일반 예외(Exception) 핸들러에서 삼켜지는 것(Swallowed)을 방지하고, 
     프로세스 Fail-fast(즉시 종료)를 보장하기 위해 SystemExit을 상속받습니다.
     """
-    pass
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.code = 1  # 정상 종료(0)로 오인되는 것을 방지하기 위해 강제 설정
 
 # Boto3 기본 재시도 비활성화 (애플리케이션 레이어 권한 통제)
 AWS_CONFIG = Config(
@@ -76,7 +78,7 @@ async def fetch_global_pepper() -> str:
     base_delay = 1.0
     cap_delay = 10.0
 
-    for attempt in range(max_retries + 1):
+    for retry_index in range(max_retries + 1):
         try:
             response = await asyncio.to_thread(
                 client.get_parameter,
@@ -111,14 +113,14 @@ async def fetch_global_pepper() -> str:
             logger.critical("[AWS][SECURITY] Unexpected error fetching pepper: %s", type(e).__name__)
             raise FatalSecurityError("Fatal Security Error: Unexpected exception during pepper retrieval.") from e
 
-        if attempt == max_retries:
+        if retry_index == max_retries:
             logger.error("[AWS][RETRY] Max retries reached for transient error: %s", error_code)
-            raise FatalSecurityError(f"Max retries reached: {error_code}")
+            raise FatalSecurityError(f"Max retries reached: {error_code}") from e
 
-        delay = min(cap_delay, base_delay * (2**attempt))
+        delay = min(cap_delay, base_delay * (2**retry_index))
         jitter = random.uniform(0, delay)
         
-        current_retry = attempt + 1
+        current_retry = retry_index + 1
         logger.warning(
             "[AWS][RETRY] Transient error %s. Retrying in %.2fs (Retry %d/%d).",
             error_code,
