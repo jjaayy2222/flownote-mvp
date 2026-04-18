@@ -1,0 +1,454 @@
+# backend/services/personalized_index_service.py
+
+"""
+[Step 2 - Phase 2] 사용자별 결정론적 FAISS 서브-인덱스 경로 생성 및 메타데이터 관리
+======================================================================================
+
+설계 원칙 (개인정보 보호 우선):
+  - user_id는 절대 파일 시스템, Redis 키, 로그에 평문으로 기록하지 않는다.
+  - 파일 경로 생성에는 SHA-256(user_id + per_user_salt + global_pepper) 해시만 사용한다.
+  - global_pepper는 AWS KMS(SSM Parameter Store)를 통해 런타임 메모리에만 주입된다.
+  - 로그에 user_id를 출력해야 하는 경우 반드시 mask_pii_id() 헬퍼를 사용한다.
+
+Redis 스키마:
+  - Key   : "prs_idx:meta:{hashed_user_id}"   (Hash)
+  - Fields: created_at, updated_at, vector_count, index_path
+
+Path 전략:
+  - {STORAGE_BASE_PATH}/user_data/idx/{hashed_user_id}.faiss
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import os
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+
+from backend.core.aws_client_wrapper import fetch_global_pepper  # type: ignore[import]
+from backend.core.config_validator import PersonalizedRAGConfig   # type: ignore[import]
+from backend.services.redis_pubsub import redis_client            # type: ignore[import]
+from backend.utils import mask_pii_id                             # type: ignore[import]
+
+logger = logging.getLogger(__name__)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 모듈 레벨 상수 (하드코딩 금지 — 모두 여기서 중앙 관리)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Redis 키 접두사 — 변경 시 이 상수 하나만 수정하면 전체 반영
+_REDIS_META_PREFIX: str = "prs_idx:meta"
+
+# 인덱스 파일이 위치할 서브디렉토리 경로 조각 (STORAGE_BASE_PATH 하위)
+_INDEX_SUBDIR: str = "user_data/idx"
+
+# 해시 알고리즘 식별자 — 변경 시 이 상수 하나만 수정
+_HASH_ALGORITHM: str = "sha256"
+
+# Redis 메타데이터 TTL (초): 환경 변수 PERSONALIZED_INDEX_META_TTL로 오버라이드 가능
+# 기본값 30일 = 2,592,000초 (운영 환경에서 충분한 캐시 보존)
+_DEFAULT_META_TTL_SECS: int = 2_592_000
+_META_TTL_MIN_SECS: int = 3_600       # 최소 1시간
+_META_TTL_MAX_SECS: int = 31_536_000  # 최대 1년
+
+
+def _load_meta_ttl() -> int:
+    """
+    PERSONALIZED_INDEX_META_TTL 환경 변수를 파싱하여 TTL(초)를 반환한다.
+    - 미설정: 기본값(_DEFAULT_META_TTL_SECS) 사용
+    - 비정수 또는 범위 초과: WARNING 로그 후 기본값으로 폴백 (Silent Failure 금지)
+    """
+    raw = os.environ.get("PERSONALIZED_INDEX_META_TTL")
+    if raw is None:
+        return _DEFAULT_META_TTL_SECS
+
+    try:
+        value = int(raw)
+    except (ValueError, TypeError):
+        logger.warning(
+            "[PERSONALIZED_INDEX][CONFIG] 'PERSONALIZED_INDEX_META_TTL'=%r is not a valid "
+            "integer; falling back to default %d seconds.",
+            raw,
+            _DEFAULT_META_TTL_SECS,
+        )
+        return _DEFAULT_META_TTL_SECS
+
+    if not (_META_TTL_MIN_SECS <= value <= _META_TTL_MAX_SECS):
+        clamped = max(_META_TTL_MIN_SECS, min(_META_TTL_MAX_SECS, value))
+        logger.warning(
+            "[PERSONALIZED_INDEX][CONFIG] 'PERSONALIZED_INDEX_META_TTL'=%d is outside "
+            "valid range [%d, %d]; clamped to %d.",
+            value,
+            _META_TTL_MIN_SECS,
+            _META_TTL_MAX_SECS,
+            clamped,
+        )
+        return clamped
+
+    return value
+
+
+# 모듈 로드 시 1회 파싱 (런타임 보정 완료 후 고정)
+_META_TTL_SECS: int = _load_meta_ttl()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 데이터 클래스: Redis에 저장할 인덱스 메타데이터 스키마
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class IndexMetadata:
+    """
+    Redis Hash에 저장되는 FAISS 서브-인덱스 메타데이터.
+
+    Fields:
+        created_at   : 인덱스 최초 생성 ISO 8601 UTC 타임스탬프
+        updated_at   : 마지막 업데이트 ISO 8601 UTC 타임스탬프
+        vector_count : 현재 저장된 벡터 수 (삭제된 벡터 포함 총계)
+        index_path   : 파일 시스템 상의 .faiss 파일 절대 경로
+                       (hashed_user_id 기반이므로 PII 미포함)
+    """
+
+    created_at: str
+    updated_at: str
+    vector_count: int
+    index_path: str
+
+    def to_redis_dict(self) -> dict[str, str]:
+        """Redis hset에 전달할 string dict 반환."""
+        return {
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "vector_count": str(self.vector_count),
+            "index_path": self.index_path,
+        }
+
+    @classmethod
+    def from_redis_dict(cls, raw: dict[bytes | str, bytes | str]) -> "IndexMetadata":
+        """
+        Redis hgetall 결과(bytes or str 키/값)를 IndexMetadata로 변환한다.
+
+        첫 단계에서 모든 키·값을 str로 정규화하여 Redis 클라이언트의
+        decode_responses 설정(True/False)에 관계없이 안전하게 동작한다.
+        이후 로직은 순수 str dict으로만 처리하여 예기치 않은 KeyError를 방지한다.
+        """
+
+        def _to_str(v: bytes | str) -> str:
+            return v.decode("utf-8") if isinstance(v, bytes) else str(v)
+
+        # 1회 정규화: 이후 코드는 str key/value만 사용 — KeyError 교차 발생 원천 차단
+        normalized: dict[str, str] = {_to_str(k): _to_str(v) for k, v in raw.items()}
+
+        _REQUIRED_FIELDS = ("created_at", "updated_at", "vector_count", "index_path")
+        missing = [f for f in _REQUIRED_FIELDS if f not in normalized]
+        if missing:
+            raise KeyError(
+                f"IndexMetadata.from_redis_dict: missing required fields {missing}. "
+                "Redis hash may be corrupted or schema has changed."
+            )
+
+        return cls(
+            created_at=normalized["created_at"],
+            updated_at=normalized["updated_at"],
+            vector_count=int(normalized["vector_count"]),
+            index_path=normalized["index_path"],
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 내부 헬퍼 함수
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _build_meta_key(hashed_user_id: str) -> str:
+    """
+    Redis 메타데이터 Hash 키를 생성한다.
+    모든 Redis 키는 반드시 이 함수를 통해 생성 — 하드코딩 금지.
+
+    Returns:
+        "prs_idx:meta:{hashed_user_id}"
+    """
+    return f"{_REDIS_META_PREFIX}:{hashed_user_id}"
+
+
+def _now_utc_iso() -> str:
+    """현재 UTC 시각을 ISO 8601 문자열로 반환한다."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 핵심 공개 함수
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def compute_hashed_user_id(
+    user_id: str,
+    per_user_salt: str,
+    global_pepper: str,
+) -> str:
+    """
+    SHA-256(user_id + per_user_salt + global_pepper) 기반의 결정론적 해시를 생성한다.
+
+    보안 설계:
+      - user_id    : 식별자 (PII 포함 가능)
+      - per_user_salt: DB 레코드에 평문 저장 (고유성 목적)
+      - global_pepper: KMS에서 메모리로만 주입 (역추적 방어)
+
+    세 값을 단순 연결(concatenation)하면 길이 연장 공격(length-extension attack)에
+    취약하므로, HMAC 없이 충분한 엔드로피를 확보하기 위해 '|' 구분자를 사용하여
+    각 구성 요소가 명확히 분리되도록 한다.
+
+    Args:
+        user_id       : 사용자 식별자 (PII — 이 함수 외부로 절대 유출 금지)
+        per_user_salt : DB에 저장된 사용자별 고유 솔트
+        global_pepper : KMS에서 메모리로 주입된 글로벌 페퍼
+
+    Returns:
+        64자 16진수 문자열 (SHA-256 hex digest)
+
+    Raises:
+        ValueError: 입력 중 하나라도 빈 문자열인 경우
+    """
+    if not user_id:
+        raise ValueError("compute_hashed_user_id: 'user_id' must not be empty.")
+    if not per_user_salt:
+        raise ValueError("compute_hashed_user_id: 'per_user_salt' must not be empty.")
+    if not global_pepper:
+        raise ValueError("compute_hashed_user_id: 'global_pepper' must not be empty.")
+
+    # '|' 구분자로 각 구성 요소를 명확히 분리하여 prefix collision 방지
+    raw_material = f"{user_id}|{per_user_salt}|{global_pepper}"
+    digest = hashlib.new(_HASH_ALGORITHM, raw_material.encode("utf-8")).hexdigest()
+
+    # PII 보호: user_id 자체는 절대 로그에 기록하지 않는다
+    logger.debug(
+        "[PERSONALIZED_INDEX] hashed_user_id computed (masked_uid=%s, algo=%s)",
+        mask_pii_id(user_id),
+        _HASH_ALGORITHM,
+    )
+    return digest
+
+
+def build_index_path(hashed_user_id: str, storage_base_path: str) -> Path:
+    """
+    hashed_user_id와 STORAGE_BASE_PATH를 조합하여 결정론적 .faiss 파일 경로를 반환한다.
+
+    경로 구조: {storage_base_path}/user_data/idx/{hashed_user_id}.faiss
+
+    Args:
+        hashed_user_id   : compute_hashed_user_id()의 반환값 (PII 미포함)
+        storage_base_path: PersonalizedRAGConfig.storage_base_path (필수 환경변수)
+
+    Returns:
+        Path 객체 (파일 생성 전 디렉토리 존재 여부는 보장하지 않음)
+
+    Raises:
+        ValueError: hashed_user_id 또는 storage_base_path가 비어 있는 경우
+    """
+    if not hashed_user_id:
+        raise ValueError("build_index_path: 'hashed_user_id' must not be empty.")
+    if not storage_base_path:
+        raise ValueError("build_index_path: 'storage_base_path' must not be empty.")
+
+    index_path = Path(storage_base_path) / _INDEX_SUBDIR / f"{hashed_user_id}.faiss"
+
+    logger.debug(
+        "[PERSONALIZED_INDEX] index_path resolved (subdir=%s)",
+        _INDEX_SUBDIR,
+    )
+    return index_path
+
+
+def ensure_index_directory(index_path: Path) -> None:
+    """
+    인덱스 파일의 부모 디렉토리가 존재하지 않으면 생성한다.
+    디렉토리 생성 권한이 없는 경우 PermissionError를 상위로 전파한다.
+
+    Args:
+        index_path: build_index_path()의 반환값
+    """
+    parent = index_path.parent
+    if not parent.exists():
+        logger.info(
+            "[PERSONALIZED_INDEX] Creating index directory: %s",
+            parent,
+        )
+        parent.mkdir(parents=True, exist_ok=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Redis 메타데이터 CRUD
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def save_index_metadata(
+    hashed_user_id: str,
+    metadata: IndexMetadata,
+) -> None:
+    """
+    FAISS 인덱스 메타데이터를 Redis Hash에 저장(upsert)한다.
+
+    Redis Key: "prs_idx:meta:{hashed_user_id}"
+    TTL      : _META_TTL_SECS (환경변수로 조정 가능)
+
+    Args:
+        hashed_user_id: compute_hashed_user_id()의 반환값 (PII 미포함)
+        metadata      : IndexMetadata 인스턴스
+
+    Raises:
+        RuntimeError: Redis 연결 실패 시
+    """
+    if not redis_client.is_connected():
+        await redis_client.connect()
+
+    key = _build_meta_key(hashed_user_id)
+    payload = metadata.to_redis_dict()
+
+    await redis_client.redis.hset(key, mapping=payload)
+    await redis_client.redis.expire(key, _META_TTL_SECS)
+
+    logger.info(
+        "[PERSONALIZED_INDEX] Metadata saved to Redis (key_prefix=%s, ttl=%ds, vectors=%d)",
+        _REDIS_META_PREFIX,
+        _META_TTL_SECS,
+        metadata.vector_count,
+    )
+
+
+async def load_index_metadata(hashed_user_id: str) -> Optional[IndexMetadata]:
+    """
+    Redis에서 FAISS 인덱스 메타데이터를 조회한다.
+
+    Args:
+        hashed_user_id: compute_hashed_user_id()의 반환값 (PII 미포함)
+
+    Returns:
+        IndexMetadata 인스턴스, 또는 키가 존재하지 않으면 None
+
+    Raises:
+        RuntimeError: Redis 연결 실패 시
+    """
+    if not redis_client.is_connected():
+        await redis_client.connect()
+
+    key = _build_meta_key(hashed_user_id)
+    raw = await redis_client.redis.hgetall(key)
+
+    if not raw:
+        logger.debug(
+            "[PERSONALIZED_INDEX] No metadata found in Redis (key_prefix=%s).",
+            _REDIS_META_PREFIX,
+        )
+        return None
+
+    metadata = IndexMetadata.from_redis_dict(raw)
+    logger.debug(
+        "[PERSONALIZED_INDEX] Metadata loaded from Redis (vectors=%d)",
+        metadata.vector_count,
+    )
+    return metadata
+
+
+async def delete_index_metadata(hashed_user_id: str) -> None:
+    """
+    Redis에서 FAISS 인덱스 메타데이터를 영구 삭제한다.
+    GDPR Right-to-Erasure 처리 파이프라인에서 호출된다.
+
+    Args:
+        hashed_user_id: compute_hashed_user_id()의 반환값 (PII 미포함)
+    """
+    if not redis_client.is_connected():
+        await redis_client.connect()
+
+    key = _build_meta_key(hashed_user_id)
+    deleted = await redis_client.redis.delete(key)
+
+    if deleted:
+        logger.info(
+            "[PERSONALIZED_INDEX][GDPR] Metadata deleted from Redis (key_prefix=%s).",
+            _REDIS_META_PREFIX,
+        )
+    else:
+        logger.debug(
+            "[PERSONALIZED_INDEX][GDPR] No metadata key to delete (key_prefix=%s).",
+            _REDIS_META_PREFIX,
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 고수준 오케스트레이션: 인덱스 초기화
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def initialize_user_index(
+    user_id: str,
+    per_user_salt: str,
+    cfg: PersonalizedRAGConfig,
+) -> tuple[str, Path]:
+    """
+    사용자 식별자를 받아 결정론적 해시 경로를 생성하고 Redis 메타데이터를 초기화한다.
+    인덱스 파일(.faiss) 자체는 이 함수에서 생성하지 않으며, 경로만 결정한다.
+
+    처리 순서:
+      1. KMS에서 global_pepper를 메모리로 페치
+      2. SHA-256 해시 계산 → hashed_user_id 생성
+      3. 결정론적 파일 경로 계산
+      4. 인덱스 디렉토리 생성 (없는 경우)
+      5. Redis에 초기 메타데이터 저장 (기존 데이터 없을 때만)
+
+    Args:
+        user_id       : 사용자 식별자 (PII — 내부에서 즉시 해시화 후 폐기)
+        per_user_salt : DB에서 조회한 사용자별 솔트
+        cfg           : PersonalizedRAGConfig 인스턴스 (bootstrap에서 주입)
+
+    Returns:
+        (hashed_user_id, index_path) 튜플
+
+    Raises:
+        FatalSecurityError : KMS 조회 치명 실패 시 (aws_client_wrapper 위임)
+        PermissionError    : 디렉토리 생성 권한 부재 시
+        ValueError         : 입력값 검증 실패 시
+    """
+    # 1. global_pepper: KMS → 메모리 (이 변수 외부로 절대 유출 금지)
+    global_pepper = await fetch_global_pepper()
+
+    # 2. PII를 해시화 → hashed_user_id (이후 user_id는 더 이상 사용하지 않는다)
+    hashed_user_id = compute_hashed_user_id(user_id, per_user_salt, global_pepper)
+
+    # 3. 파일 경로 계산
+    index_path = build_index_path(hashed_user_id, cfg.storage_base_path)
+
+    # 4. 디렉토리 보장
+    ensure_index_directory(index_path)
+
+    # 5. Redis 메타데이터: 이미 존재하면 skip (멱등성 보장)
+    existing = await load_index_metadata(hashed_user_id)
+    if existing is None:
+        now = _now_utc_iso()
+        initial_meta = IndexMetadata(
+            created_at=now,
+            updated_at=now,
+            vector_count=0,
+            index_path=str(index_path),
+        )
+        await save_index_metadata(hashed_user_id, initial_meta)
+        logger.info(
+            "[PERSONALIZED_INDEX] New user index initialized "
+            "(masked_uid=%s, path_dir=%s).",
+            mask_pii_id(user_id),
+            index_path.parent,
+        )
+    else:
+        logger.debug(
+            "[PERSONALIZED_INDEX] User index already exists in Redis "
+            "(masked_uid=%s, vectors=%d).",
+            mask_pii_id(user_id),
+            existing.vector_count,
+        )
+
+    return hashed_user_id, index_path
