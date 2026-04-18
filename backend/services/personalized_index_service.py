@@ -129,17 +129,34 @@ class IndexMetadata:
         }
 
     @classmethod
-    def from_redis_dict(cls, raw: dict) -> "IndexMetadata":
-        """Redis hgetall 결과(bytes or str)를 IndexMetadata로 변환."""
+    def from_redis_dict(cls, raw: dict[bytes | str, bytes | str]) -> "IndexMetadata":
+        """
+        Redis hgetall 결과(bytes or str 키/값)를 IndexMetadata로 변환한다.
 
-        def _decode(v: bytes | str) -> str:
+        첫 단계에서 모든 키·값을 str로 정규화하여 Redis 클라이언트의
+        decode_responses 설정(True/False)에 관계없이 안전하게 동작한다.
+        이후 로직은 순수 str dict으로만 처리하여 예기치 않은 KeyError를 방지한다.
+        """
+
+        def _to_str(v: bytes | str) -> str:
             return v.decode("utf-8") if isinstance(v, bytes) else str(v)
 
+        # 1회 정규화: 이후 코드는 str key/value만 사용 — KeyError 교차 발생 원천 차단
+        normalized: dict[str, str] = {_to_str(k): _to_str(v) for k, v in raw.items()}
+
+        _REQUIRED_FIELDS = ("created_at", "updated_at", "vector_count", "index_path")
+        missing = [f for f in _REQUIRED_FIELDS if f not in normalized]
+        if missing:
+            raise KeyError(
+                f"IndexMetadata.from_redis_dict: missing required fields {missing}. "
+                "Redis hash may be corrupted or schema has changed."
+            )
+
         return cls(
-            created_at=_decode(raw[b"created_at" if b"created_at" in raw else "created_at"]),
-            updated_at=_decode(raw[b"updated_at" if b"updated_at" in raw else "updated_at"]),
-            vector_count=int(_decode(raw[b"vector_count" if b"vector_count" in raw else "vector_count"])),
-            index_path=_decode(raw[b"index_path" if b"index_path" in raw else "index_path"]),
+            created_at=normalized["created_at"],
+            updated_at=normalized["updated_at"],
+            vector_count=int(normalized["vector_count"]),
+            index_path=normalized["index_path"],
         )
 
 
