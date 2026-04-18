@@ -28,13 +28,13 @@ MIN_OS_EXIT_CODE = 1
 MAX_OS_EXIT_CODE = 255
 
 class FatalSecurityError(SystemExit):
-    """
+    f"""
     치명적인 보안 관련 에러에 사용되는 예외입니다. 
     일반 예외(Exception) 핸들러에서 삼켜지는 것(Swallowed)을 방지하고, 
     프로세스 Fail-fast(즉시 종료)를 보장하기 위해 SystemExit을 상속받습니다.
     
     [종료 코드 정규화 정책]
-    임의의 exit_code 입력은 안전한 OS 종료 코드 범위(1~255)로 정규화됩니다.
+    임의의 exit_code 입력은 안전한 OS 종료 코드 범위({MIN_OS_EXIT_CODE}~{MAX_OS_EXIT_CODE})로 정규화됩니다.
     정상 종료로 오인되는 0이나 허용 범위를 넘어서는 값, 혹은 Int 캐스팅이 불가능한 타입이 주입될 경우,
     안전성을 위해 SecurityExitCode.GENERIC_FAILURE 로 자동 폴백(Fallback) 처리됩니다.
     """
@@ -42,14 +42,22 @@ class FatalSecurityError(SystemExit):
         # 1. API 유연성 및 타입 안전성: Enum/int 수용 및 명시적 정규화
         if isinstance(exit_code, SecurityExitCode):
             raw_code = exit_code.value
+        elif isinstance(exit_code, bool):
+            # 파이썬에서 bool(True/False)은 int의 서브클래스이므로 int()에 의해 조용히 1/0으로 파싱됩니다.
+            # 이러한 오작동을 사전에 필터링합니다.
+            raw_code = SecurityExitCode.GENERIC_FAILURE.value
+            logger.warning(
+                "[AWS][SECURITY] Boolean is implicitly castable to int, but rejected as exit_code (value=%r). Falling back to GENERIC_FAILURE.",
+                exit_code
+            )
         else:
             try:
                 raw_code = int(exit_code)
             except (ValueError, TypeError):
                 raw_code = SecurityExitCode.GENERIC_FAILURE.value
                 logger.warning(
-                    "[AWS][SECURITY] Invalid exit_code type provided: %s. Falling back to GENERIC_FAILURE.",
-                    type(exit_code).__name__
+                    "[AWS][SECURITY] Invalid exit_code type provided: %s (value=%r). Falling back to GENERIC_FAILURE.",
+                    type(exit_code).__name__, exit_code
                 )
                 
         # OS Exit Code 바운더리 검증
