@@ -41,7 +41,7 @@ class FatalSecurityError(SystemExit):
     def __init__(self, log_message: str, exit_code: int | SecurityExitCode = SecurityExitCode.GENERIC_FAILURE) -> None:
         # 공통 로깅 메타데이터(SIEM/APM용 구조화 필드) 사전 선언
         injected_type = type(exit_code).__name__
-        sec_extra = {"security_violation": True, "invalid_parameter": "exit_code", "injected_type": injected_type}
+        base_extra = {"security_violation": True, "invalid_parameter": "exit_code", "injected_type": injected_type}
 
         # 1. API 유연성 및 타입 안전성: Enum/int 수용 및 명시적 정규화
         if isinstance(exit_code, SecurityExitCode):
@@ -56,7 +56,7 @@ class FatalSecurityError(SystemExit):
             logger.error(
                 "[AWS][SECURITY] Boolean is implicitly castable to int, but rejected as exit_code (type=%s). Raising TypeError.",
                 injected_type,
-                extra=sec_extra
+                extra={**base_extra, "reason": "invalid_type"}
             )
             # 런타임 값의 PII 유출을 방지하기 위해 값 대신 Type을 노출하여 디버깅을 지원합니다.
             raise TypeError(
@@ -71,7 +71,7 @@ class FatalSecurityError(SystemExit):
                 logger.warning(
                     "[AWS][SECURITY] Invalid exit_code type provided: %s. Falling back to GENERIC_FAILURE.",
                     injected_type,
-                    extra=sec_extra
+                    extra={**base_extra, "reason": "invalid_type"}
                 )
                 
         # OS Exit Code 바운더리 검증
@@ -80,7 +80,7 @@ class FatalSecurityError(SystemExit):
             logger.warning(
                 "[AWS][SECURITY] exit_code %s is out of valid OS bounds (%d-%d). Falling back to GENERIC_FAILURE.",
                 raw_code, MIN_OS_EXIT_CODE, MAX_OS_EXIT_CODE,
-                extra=sec_extra
+                extra={**base_extra, "reason": "out_of_bounds", "out_of_bounds_value": raw_code}
             )
             raw_code = SecurityExitCode.GENERIC_FAILURE.value
         
