@@ -3,7 +3,7 @@ import asyncio
 import threading
 import logging
 import random
-from enum import IntEnum
+from enum import Enum
 from typing import Optional, Callable, Any, Union
 from concurrent.futures import ThreadPoolExecutor
 
@@ -15,7 +15,7 @@ from backend.core.config_validator import PersonalizedRAGConfig
 
 logger = logging.getLogger(__name__)
 
-class SecurityExitCode(IntEnum):
+class SecurityExitCode(Enum):
     """
     FatalSecurityError 발생 시의 표준화된 프로세스 종료 코드 체계입니다.
     무분별한 임의 숫자 사용을 방지하고, K8s 등 외부 모니터링 시스템과의 정합성을 유지합니다.
@@ -30,13 +30,21 @@ class FatalSecurityError(SystemExit):
     일반 예외(Exception) 핸들러에서 삼켜지는 것(Swallowed)을 방지하고, 
     프로세스 Fail-fast(즉시 종료)를 보장하기 위해 SystemExit을 상속받습니다.
     """
-    def __init__(self, log_message: str, exit_code: Union[int, SecurityExitCode] = SecurityExitCode.GENERIC_FAILURE) -> None:
-        # 1. API 유연성: Enum 또는 원시(int) 값을 모두 수용하여 호출자의 편의를 보장
-        raw_code = exit_code.value if isinstance(exit_code, SecurityExitCode) else exit_code
+    def __init__(self, log_message: str, exit_code: int | SecurityExitCode = SecurityExitCode.GENERIC_FAILURE) -> None:
+        # 1. API 유연성 및 타입 안전성: Enum/int 수용 및 명시적 정규화
+        if isinstance(exit_code, SecurityExitCode):
+            raw_code = exit_code.value
+        else:
+            try:
+                raw_code = int(exit_code)
+            except (ValueError, TypeError):
+                raw_code = SecurityExitCode.GENERIC_FAILURE.value
+                logger.error("[AWS][SECURITY] Invalid exit_code type provided: %s. Falling back to GENERIC_FAILURE.", type(exit_code).__name__)
         
         # SystemExit.code 에 프로세스 종료 코드를 명시적으로 전달합니다.
         super().__init__(raw_code)
         self.log_message = log_message
+        self.exit_code_int = raw_code  # 원시 정수 속성을 노출시켜 하위 계층 편의 제공
         
         # 2. 관측성 보장: 다운스트림 로거가 Enum의 풍부한 시맨틱(.name 등)을 읽을 수 있도록 보존
         try:
