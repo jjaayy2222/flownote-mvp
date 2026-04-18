@@ -24,6 +24,8 @@ import dataclasses
 import hashlib
 import logging
 import os
+import types
+import typing
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -192,8 +194,6 @@ class IndexMetadata:
           5. per-type 디스패처로 str/int/float/bool 타입 각각 안전하게 변환.
              미지원 타입은 WARNING 로그 후 raw str 사용.
         """
-        import typing
-
         def _to_str(v: bytes | str) -> str:
             return v.decode("utf-8") if isinstance(v, bytes) else str(v)
 
@@ -207,23 +207,18 @@ class IndexMetadata:
         def _get_field_default(f: dataclasses.Field) -> object:
             """
             dataclasses.Field에서 실제 기본값을 반환한다.
-            MISSING(기본값 없음) → ValueError로 즉시 실패 (Fail-fast).
-            None을 조용히 반환하지 않아 구성 버그가 런타임에 은폐되지 않는다.
+            기본값이 없으면 dataclasses.MISSING 을 반환한다.
             """
             if f.default is not dataclasses.MISSING:
                 return f.default
             if f.default_factory is not dataclasses.MISSING:  # type: ignore[misc]
                 return f.default_factory()  # type: ignore[misc]
-            raise ValueError(
-                f"[PERSONALIZED_INDEX][SCHEMA] IndexMetadata field '{f.name}' has no "
-                f"default value and was not supplied by Redis. "
-                f"All IndexMetadata fields must have a dataclass default."
-            )
+            return dataclasses.MISSING
 
         field_defaults: dict[str, object] = {f.name: _get_field_default(f) for f in cls_fields}
 
-        # 누락 필드 감지: dataclass 기본값으로 폴백 + _SCHEMA_LOG_LEVEL 레벨 로그
-        missing = [name for name in field_defaults if name not in normalized]
+        # 누락 필드 감지: dataclass 기본값으로 폴백 (MISSING이 아닌 경우) + _SCHEMA_LOG_LEVEL 레벨 로그
+        missing = [name for name in field_defaults if name not in normalized and field_defaults[name] is not dataclasses.MISSING]
         if missing:
             logger.log(
                 _SCHEMA_LOG_LEVEL,
@@ -239,10 +234,18 @@ class IndexMetadata:
             지원 타입: str, int, float, bool
             미지원 타입: WARNING 로그 후 raw str 반환 (서비스 장애 전파 방지)
             """
-            origin = typing.get_origin(field_type)  # Optional, Union 등의 원본 타입
-            # Optional[X] → X 로 언래핑
-            if origin is typing.Union:
+            origin = typing.get_origin(field_type)  # Optional, Union (typing / PEP 604) 등의 원본 타입
+            
+            # Union 처리 (typing.Union 또는 types.UnionType)
+            union_types = (typing.Union, getattr(types, "UnionType", ()))
+            if origin in union_types:
                 args = [a for a in typing.get_args(field_type) if a is not type(None)]
+                if len(args) > 1:
+                     raise TypeError(
+                         f"[PERSONALIZED_INDEX][SCHEMA] Field '{field_name}' uses a multi-type Union: {field_type}. "
+                         f"from_redis_dict does not support converting abstract multiple types. "
+                         f"Please use a single concrete type or Optional[T]."
+                     )
                 field_type = args[0] if args else str
 
             if field_type is str:
@@ -290,7 +293,14 @@ class IndexMetadata:
             default = field_defaults[f.name]
             raw_val = normalized.get(f.name)
             if raw_val is None:
-                # 필드가 Redis에 없는 경우: dataclass 기본값 사용 (이미 missing 로그 처리됨)
+                # 필드가 Redis에 없는 경우
+                if default is dataclasses.MISSING:
+                    # Redis에도 데이터가 없고, dataclass에도 기본값이 없는 경우에만 fail-fast
+                    raise ValueError(
+                        f"[PERSONALIZED_INDEX][SCHEMA] IndexMetadata field '{f.name}' has no "
+                        f"default value and was not supplied by Redis. Cannot instantiate."
+                    )
+                # dataclass 기본값 사용 (이미 missing 로그 처리됨)
                 kwargs[f.name] = default
             else:
                 kwargs[f.name] = _parse_value(f.name, raw_val, field_type, default)
