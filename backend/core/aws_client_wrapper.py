@@ -38,7 +38,8 @@ class FatalSecurityError(SystemExit):
             try:
                 raw_code = int(exit_code)
             except (ValueError, TypeError):
-                raw_code = 1  # 비정상 타입 유입 시 폴백(fallback)
+                raw_code = SecurityExitCode.GENERIC_FAILURE.value
+                logger.error("[AWS][SECURITY] Invalid exit_code type provided: %s. Falling back to GENERIC_FAILURE.", type(exit_code).__name__)
         
         # SystemExit.code 에 프로세스 종료 코드를 명시적으로 전달합니다.
         super().__init__(raw_code)
