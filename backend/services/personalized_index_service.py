@@ -197,36 +197,63 @@ class IndexMetadata:
         # 1회 정규화: 이후 코드는 str key/value만 사용 — KeyError 교차 발생 원천 차단
         normalized: dict[str, str] = {_to_str(k): _to_str(v) for k, v in raw.items()}
 
-        # 필드 목록을 데이터클래스 정의에서 동적 파생 — _ALL_FIELDS 하드코딩 제거 (SSOT)
-        all_field_names = [f.name for f in dataclasses.fields(cls)]
-        missing = [name for name in all_field_names if name not in normalized]
+        # 필드 메타데이터를 데이터클래스 정의에서 동적 파생 — 이름·기본값 모두 SSOT
+        cls_fields = dataclasses.fields(cls)
+
+        # 각 필드의 실제 기본값을 읽어 fallback 딕셔너리를 구성한다.
+        # - field.default         : 리터럴 기본값 (e.g. "", 0, False)
+        # - field.default_factory : 팩토리 함수 기반 기본값 (e.g. list, dict)
+        # - dataclasses.MISSING   : 기본값이 없는 필수 필드 → 이 클래스에서는 허용하지 않으므로 경고
+        def _get_field_default(f: dataclasses.Field) -> object:
+            """dataclasses.Field에서 실제 사용 가능한 기본값을 반환한다."""
+            if f.default is not dataclasses.MISSING:
+                return f.default
+            if f.default_factory is not dataclasses.MISSING:  # type: ignore[misc]
+                return f.default_factory()  # type: ignore[misc]
+            # 기본값 없는 필드: 데이터 없이 인스턴스 생성 불가 → None 반환 후 호출자가 처리
+            logger.error(
+                "[PERSONALIZED_INDEX][SCHEMA] Field '%s' has no default value in IndexMetadata. "
+                "Redis data must always supply this field.",
+                f.name,
+            )
+            return None
+
+        field_defaults: dict[str, object] = {f.name: _get_field_default(f) for f in cls_fields}
+
+        # 누락 필드 감지: 하드 크래시 대신 _SCHEMA_LOG_LEVEL 레벨 로그 후 dataclass 기본값 폴백
+        missing = [name for name in field_defaults if name not in normalized]
         if missing:
             logger.log(
                 _SCHEMA_LOG_LEVEL,
                 "[PERSONALIZED_INDEX][SCHEMA] from_redis_dict: missing fields %s — "
-                "falling back to defaults. Redis hash may be from an older schema version. "
+                "falling back to dataclass defaults. Redis hash may be from an older schema version. "
                 "(Adjust 'PERSONALIZED_INDEX_SCHEMA_LOG_LEVEL' env var to suppress during migration.)",
                 missing,
             )
 
-        # vector_count: 비정수인 경우 0으로 폴백 (파싱 실패가 서비스 장애로 이어지지 않도록)
-        raw_count = normalized.get("vector_count", "0")
+        # vector_count: Redis는 모든 값을 str로 저장하므로 int 타입 필드는 별도 파싱
+        raw_count = normalized.get("vector_count", str(field_defaults.get("vector_count", 0)))
         try:
             vector_count = int(raw_count)
         except (ValueError, TypeError):
             logger.log(
                 _SCHEMA_LOG_LEVEL,
                 "[PERSONALIZED_INDEX][SCHEMA] from_redis_dict: 'vector_count'=%r is not "
-                "a valid integer; falling back to 0. "
+                "a valid integer; falling back to dataclass default. "
                 "(Adjust 'PERSONALIZED_INDEX_SCHEMA_LOG_LEVEL' env var to suppress during migration.)",
                 raw_count,
             )
-            vector_count = 0
+            vector_count = int(field_defaults.get("vector_count", 0))  # type: ignore[arg-type]
 
-        return cls(
-            **{name: normalized.get(name, "") for name in all_field_names if name != "vector_count"},
-            vector_count=vector_count,
-        )
+        # str 필드: normalized 값 우선, 없으면 dataclass 실제 기본값 사용 — "" 하드코딩 완전 제거
+        str_kwargs = {
+            name: normalized.get(name, field_defaults[name])
+            for name in field_defaults
+            if name != "vector_count"
+        }
+
+        return cls(**str_kwargs, vector_count=vector_count)
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
