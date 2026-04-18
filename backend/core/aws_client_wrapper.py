@@ -14,8 +14,12 @@ from backend.core.config_validator import PersonalizedRAGConfig
 
 logger = logging.getLogger(__name__)
 
-class FatalSecurityError(Exception):
-    """치명적인 보안 관련 에러에 사용되는 예외"""
+class FatalSecurityError(SystemExit):
+    """
+    치명적인 보안 관련 에러에 사용되는 예외입니다. 
+    일반 예외(Exception) 핸들러에서 삼켜지는 것(Swallowed)을 방지하고, 
+    프로세스 Fail-fast(즉시 종료)를 보장하기 위해 SystemExit을 상속받습니다.
+    """
     pass
 
 # Boto3 기본 재시도 비활성화 (애플리케이션 레이어 권한 통제)
@@ -113,11 +117,13 @@ async def fetch_global_pepper() -> str:
 
         delay = min(cap_delay, base_delay * (2**attempt))
         jitter = random.uniform(0, delay)
+        
+        current_retry = attempt + 1
         logger.warning(
-            "[AWS][RETRY] Transient error %s. Retrying in %.2fs (Attempt %d/%d).",
+            "[AWS][RETRY] Transient error %s. Retrying in %.2fs (Retry %d/%d).",
             error_code,
             jitter,
-            attempt + 1,
+            current_retry,
             max_retries,
         )
         await asyncio.sleep(jitter)
