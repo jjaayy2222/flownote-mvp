@@ -4,7 +4,7 @@ import threading
 import logging
 import random
 from enum import IntEnum
-from typing import Optional, Callable, Any
+from typing import Optional, Callable, Any, Union
 from concurrent.futures import ThreadPoolExecutor
 
 import boto3
@@ -30,11 +30,19 @@ class FatalSecurityError(SystemExit):
     일반 예외(Exception) 핸들러에서 삼켜지는 것(Swallowed)을 방지하고, 
     프로세스 Fail-fast(즉시 종료)를 보장하기 위해 SystemExit을 상속받습니다.
     """
-    def __init__(self, log_message: str, exit_code: SecurityExitCode = SecurityExitCode.GENERIC_FAILURE) -> None:
+    def __init__(self, log_message: str, exit_code: Union[int, SecurityExitCode] = SecurityExitCode.GENERIC_FAILURE) -> None:
+        # 1. API 유연성: Enum 또는 원시(int) 값을 모두 수용하여 호출자의 편의를 보장
+        raw_code = exit_code.value if isinstance(exit_code, SecurityExitCode) else exit_code
+        
         # SystemExit.code 에 프로세스 종료 코드를 명시적으로 전달합니다.
-        # 기존 파이썬 예외 표준(str(e))을 깨지 않기 위해 페이로드를 별도 해제합니다.
-        super().__init__(exit_code.value)
+        super().__init__(raw_code)
         self.log_message = log_message
+        
+        # 2. 관측성 보장: 다운스트림 로거가 Enum의 풍부한 시맨틱(.name 등)을 읽을 수 있도록 보존
+        try:
+            self.exit_code_enum = SecurityExitCode(raw_code)
+        except ValueError:
+            self.exit_code_enum = None
 
     def __str__(self) -> str:
         return self.log_message
