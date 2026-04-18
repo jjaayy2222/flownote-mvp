@@ -24,11 +24,19 @@ class SecurityExitCode(Enum):
     # 향후 AWS IAM(액세스 거부) 또는 네트워크(타임아웃) 등 
     # 세분화된 장애가 필요할 경우 여기에 추가 정의합니다.
 
+MIN_OS_EXIT_CODE = 1
+MAX_OS_EXIT_CODE = 255
+
 class FatalSecurityError(SystemExit):
     """
     치명적인 보안 관련 에러에 사용되는 예외입니다. 
     일반 예외(Exception) 핸들러에서 삼켜지는 것(Swallowed)을 방지하고, 
     프로세스 Fail-fast(즉시 종료)를 보장하기 위해 SystemExit을 상속받습니다.
+    
+    [종료 코드 정규화 정책]
+    임의의 exit_code 입력은 안전한 OS 종료 코드 범위(1~255)로 정규화됩니다.
+    정상 종료로 오인되는 0이나 허용 범위를 넘어서는 값, 혹은 Int 캐스팅이 불가능한 타입이 주입될 경우,
+    안전성을 위해 SecurityExitCode.GENERIC_FAILURE 로 자동 폴백(Fallback) 처리됩니다.
     """
     def __init__(self, log_message: str, exit_code: int | SecurityExitCode = SecurityExitCode.GENERIC_FAILURE) -> None:
         # 1. API 유연성 및 타입 안전성: Enum/int 수용 및 명시적 정규화
@@ -44,12 +52,12 @@ class FatalSecurityError(SystemExit):
                     type(exit_code).__name__
                 )
                 
-        # OS Exit Code 바운더리 검증 (1 ~ 255)
-        # 0은 정상 종료인 false-positive를 유발하므로 허용하지 않으며, 255 초과는 Unix에서 모듈로 연산됨
-        if not (1 <= raw_code <= 255):
+        # OS Exit Code 바운더리 검증
+        # 0은 정상 종료인 false-positive를 유발하므로 허용하지 않으며, MAX 초과는 Unix에서 모듈로 연산됨
+        if not (MIN_OS_EXIT_CODE <= raw_code <= MAX_OS_EXIT_CODE):
             logger.warning(
-                "[AWS][SECURITY] exit_code %s is out of valid OS bounds (1-255). Falling back to GENERIC_FAILURE.",
-                raw_code
+                "[AWS][SECURITY] exit_code %s is out of valid OS bounds (%d-%d). Falling back to GENERIC_FAILURE.",
+                raw_code, MIN_OS_EXIT_CODE, MAX_OS_EXIT_CODE
             )
             raw_code = SecurityExitCode.GENERIC_FAILURE.value
         
