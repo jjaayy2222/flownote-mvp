@@ -39,7 +39,19 @@ class FatalSecurityError(SystemExit):
                 raw_code = int(exit_code)
             except (ValueError, TypeError):
                 raw_code = SecurityExitCode.GENERIC_FAILURE.value
-                logger.error("[AWS][SECURITY] Invalid exit_code type provided: %s. Falling back to GENERIC_FAILURE.", type(exit_code).__name__)
+                logger.warning(
+                    "[AWS][SECURITY] Invalid exit_code type provided: %s. Falling back to GENERIC_FAILURE.",
+                    type(exit_code).__name__
+                )
+                
+        # OS Exit Code 바운더리 검증 (1 ~ 255)
+        # 0은 정상 종료인 false-positive를 유발하므로 허용하지 않으며, 255 초과는 Unix에서 모듈로 연산됨
+        if not (1 <= raw_code <= 255):
+            logger.warning(
+                "[AWS][SECURITY] exit_code %s is out of valid OS bounds (1-255). Falling back to GENERIC_FAILURE.",
+                raw_code
+            )
+            raw_code = SecurityExitCode.GENERIC_FAILURE.value
         
         # SystemExit.code 에 프로세스 종료 코드를 명시적으로 전달합니다.
         super().__init__(raw_code)
