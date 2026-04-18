@@ -20,11 +20,11 @@ Path 전략:
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
-import json
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -54,6 +54,48 @@ _HASH_ALGORITHM: str = "sha256"
 _DEFAULT_META_TTL_SECS: int = 2_592_000
 _META_TTL_MIN_SECS: int = 3_600       # 최소 1시간
 _META_TTL_MAX_SECS: int = 31_536_000  # 최대 1년
+
+# 스키마 파싱 경고 로그 레벨
+# 기본값: WARNING (일반 운영)
+# 마이그레이션 중 다량의 구(old) 레코드 처리 시 INFO로 낮춰 APM 노이즈를 억제할 수 있음:
+#   PERSONALIZED_INDEX_SCHEMA_LOG_LEVEL=INFO
+_SCHEMA_LOG_LEVEL_MAP: dict[str, int] = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+}
+_DEFAULT_SCHEMA_LOG_LEVEL: int = logging.WARNING
+
+
+def _load_schema_log_level() -> int:
+    """
+    PERSONALIZED_INDEX_SCHEMA_LOG_LEVEL 환경 변수를 파싱하여 로그 레벨 int를 반환한다.
+
+    - 미설정: 기본값 WARNING 사용
+    - 알 수 없는 레벨명: WARNING 로그 후 기본값으로 폴백
+
+    허용 값: DEBUG, INFO, WARNING, ERROR (대소문자 무시)
+    """
+    raw = os.environ.get("PERSONALIZED_INDEX_SCHEMA_LOG_LEVEL", "").strip().upper()
+    if not raw:
+        return _DEFAULT_SCHEMA_LOG_LEVEL
+
+    level = _SCHEMA_LOG_LEVEL_MAP.get(raw)
+    if level is None:
+        logger.warning(
+            "[PERSONALIZED_INDEX][CONFIG] 'PERSONALIZED_INDEX_SCHEMA_LOG_LEVEL'=%r is "
+            "not a valid log level (allowed: %s); falling back to WARNING.",
+            raw,
+            list(_SCHEMA_LOG_LEVEL_MAP.keys()),
+        )
+        return _DEFAULT_SCHEMA_LOG_LEVEL
+
+    return level
+
+
+# 모듈 로드 시 1회 파싱 (운영 중 환경변수 변경은 재시작 필요)
+_SCHEMA_LOG_LEVEL: int = _load_schema_log_level()
 
 
 def _load_meta_ttl() -> int:
@@ -141,9 +183,12 @@ class IndexMetadata:
 
         처리 원칙:
           1. 모든 키·값을 str로 1회 정규화 — decode_responses 설정 무관 안전 동작.
-          2. 필드 누락 시 하드 크래시 대신 데이터클래스 기본값으로 폴백하고 WARNING 로그.
-             → Redis 스키마 마이그레이션 중 구(old) 레코드와 공존 가능.
-          3. vector_count 파싱 실패(비정수) 시 0으로 폴백하고 WARNING 로그.
+          2. 필드 목록은 dataclasses.fields(cls)에서 동적으로 파생 — 하드코딩 금지.
+             스키마 변경 시 데이터클래스 정의 한 곳만 수정하면 자동 반영 (SSOT).
+          3. 필드 누락 시 하드 크래시 대신 데이터클래스 기본값으로 폴백하고
+             _SCHEMA_LOG_LEVEL(환경변수 PERSONALIZED_INDEX_SCHEMA_LOG_LEVEL) 레벨로 로그.
+             → 마이그레이션 중 다량의 구(old) 레코드 처리 시 INFO로 낮춰 APM 노이즈 억제 가능.
+          4. vector_count 파싱 실패(비정수) 시 0으로 폴백하고 동일 레벨로 로그.
         """
 
         def _to_str(v: bytes | str) -> str:
@@ -152,13 +197,15 @@ class IndexMetadata:
         # 1회 정규화: 이후 코드는 str key/value만 사용 — KeyError 교차 발생 원천 차단
         normalized: dict[str, str] = {_to_str(k): _to_str(v) for k, v in raw.items()}
 
-        # 누락 필드 감지: 하드 크래시 대신 WARNING 로그 후 기본값 폴백
-        _ALL_FIELDS = ("created_at", "updated_at", "vector_count", "index_path")
-        missing = [f for f in _ALL_FIELDS if f not in normalized]
+        # 필드 목록을 데이터클래스 정의에서 동적 파생 — _ALL_FIELDS 하드코딩 제거 (SSOT)
+        all_field_names = [f.name for f in dataclasses.fields(cls)]
+        missing = [name for name in all_field_names if name not in normalized]
         if missing:
-            logger.warning(
+            logger.log(
+                _SCHEMA_LOG_LEVEL,
                 "[PERSONALIZED_INDEX][SCHEMA] from_redis_dict: missing fields %s — "
-                "falling back to defaults. Redis hash may be from an older schema version.",
+                "falling back to defaults. Redis hash may be from an older schema version. "
+                "(Adjust 'PERSONALIZED_INDEX_SCHEMA_LOG_LEVEL' env var to suppress during migration.)",
                 missing,
             )
 
@@ -167,18 +214,18 @@ class IndexMetadata:
         try:
             vector_count = int(raw_count)
         except (ValueError, TypeError):
-            logger.warning(
+            logger.log(
+                _SCHEMA_LOG_LEVEL,
                 "[PERSONALIZED_INDEX][SCHEMA] from_redis_dict: 'vector_count'=%r is not "
-                "a valid integer; falling back to 0.",
+                "a valid integer; falling back to 0. "
+                "(Adjust 'PERSONALIZED_INDEX_SCHEMA_LOG_LEVEL' env var to suppress during migration.)",
                 raw_count,
             )
             vector_count = 0
 
         return cls(
-            created_at=normalized.get("created_at", ""),
-            updated_at=normalized.get("updated_at", ""),
+            **{name: normalized.get(name, "") for name in all_field_names if name != "vector_count"},
             vector_count=vector_count,
-            index_path=normalized.get("index_path", ""),
         )
 
 
