@@ -45,11 +45,16 @@ class FatalSecurityError(SystemExit):
         elif isinstance(exit_code, bool):
             # 파이썬에서 bool(True/False)은 int의 서브클래스이므로 int()에 의해 조용히 1/0으로 파싱됩니다.
             # 이와 같은 명시적인 오용(Misuse)은 Fallback으로 덮지 않고 즉각적인 TypeError로 개발자에게 피드백합니다.
-            logger.error(
+            logger.warning(
                 "[AWS][SECURITY] Boolean is implicitly castable to int, but rejected as exit_code (value=%r). Raising TypeError.",
-                exit_code
+                exit_code,
+                extra={"security_violation": True, "invalid_parameter": "exit_code", "injected_value": exit_code}
             )
-            raise TypeError(f"exit_code cannot be a boolean (received: {exit_code}). Use int or SecurityExitCode.")
+            # 호명된 파라미터와 정확한 런타임 값을 문자열 시그니처에 노출하여 개발자의 디버깅을 보조합니다.
+            raise TypeError(
+                f"Configuration Error: 'exit_code' parameter rejected. "
+                f"Expected int or SecurityExitCode, but explicitly got bool with value: {exit_code}."
+            )
         else:
             try:
                 raw_code = int(exit_code)
