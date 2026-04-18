@@ -39,21 +39,29 @@ class FatalSecurityError(SystemExit):
     안전성을 위해 SecurityExitCode.GENERIC_FAILURE 로 자동 폴백(Fallback) 처리됩니다.
     """
     def __init__(self, log_message: str, exit_code: int | SecurityExitCode = SecurityExitCode.GENERIC_FAILURE) -> None:
+        # 공통 로깅 메타데이터(SIEM/APM용 구조화 필드) 사전 선언
+        injected_type = type(exit_code).__name__
+        sec_extra = {"security_violation": True, "invalid_parameter": "exit_code", "injected_type": injected_type}
+
         # 1. API 유연성 및 타입 안전성: Enum/int 수용 및 명시적 정규화
         if isinstance(exit_code, SecurityExitCode):
             raw_code = exit_code.value
         elif isinstance(exit_code, bool):
             # 파이썬에서 bool(True/False)은 int의 서브클래스이므로 int()에 의해 조용히 1/0으로 파싱됩니다.
             # 이와 같은 명시적인 오용(Misuse)은 Fallback으로 덮지 않고 즉각적인 TypeError로 개발자에게 피드백합니다.
+            
+            # [알럿 격상 정책]: 
+            # 이건 단순한 폴백 복구가 아닌, 보안 코드에 인증 불가 타입이 삽입된 명백한 논리 오류(개발 시점 이슈)입니다.
+            # APM에 치명적 위반으로 리포팅하도록 ERROR 레벨을 고수하여 Ops 모니터링 가시성을 보장합니다.
             logger.error(
                 "[AWS][SECURITY] Boolean is implicitly castable to int, but rejected as exit_code (type=%s). Raising TypeError.",
-                type(exit_code).__name__,
-                extra={"security_violation": True, "invalid_parameter": "exit_code", "injected_type": type(exit_code).__name__}
+                injected_type,
+                extra=sec_extra
             )
             # 런타임 값의 PII 유출을 방지하기 위해 값 대신 Type을 노출하여 디버깅을 지원합니다.
             raise TypeError(
                 f"Configuration Error: 'exit_code' parameter rejected. "
-                f"Expected int or SecurityExitCode, but explicitly got type: {type(exit_code).__name__}."
+                f"Expected int or SecurityExitCode, but explicitly got type: {injected_type}."
             )
         else:
             try:
@@ -61,8 +69,9 @@ class FatalSecurityError(SystemExit):
             except (ValueError, TypeError):
                 raw_code = SecurityExitCode.GENERIC_FAILURE.value
                 logger.warning(
-                    "[AWS][SECURITY] Invalid exit_code type provided: %s (value=%r). Falling back to GENERIC_FAILURE.",
-                    type(exit_code).__name__, exit_code
+                    "[AWS][SECURITY] Invalid exit_code type provided: %s. Falling back to GENERIC_FAILURE.",
+                    injected_type,
+                    extra=sec_extra
                 )
                 
         # OS Exit Code 바운더리 검증
@@ -70,7 +79,8 @@ class FatalSecurityError(SystemExit):
         if not (MIN_OS_EXIT_CODE <= raw_code <= MAX_OS_EXIT_CODE):
             logger.warning(
                 "[AWS][SECURITY] exit_code %s is out of valid OS bounds (%d-%d). Falling back to GENERIC_FAILURE.",
-                raw_code, MIN_OS_EXIT_CODE, MAX_OS_EXIT_CODE
+                raw_code, MIN_OS_EXIT_CODE, MAX_OS_EXIT_CODE,
+                extra=sec_extra
             )
             raw_code = SecurityExitCode.GENERIC_FAILURE.value
         
