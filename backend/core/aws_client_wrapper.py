@@ -20,10 +20,10 @@ class FatalSecurityError(SystemExit):
     일반 예외(Exception) 핸들러에서 삼켜지는 것(Swallowed)을 방지하고, 
     프로세스 Fail-fast(즉시 종료)를 보장하기 위해 SystemExit을 상속받습니다.
     """
-    def __init__(self, log_message: str) -> None:
+    def __init__(self, log_message: str, exit_code: int = 1) -> None:
         # SystemExit.code 에 프로세스 종료 코드를 명시적으로 전달합니다.
         # 기존 파이썬 예외 표준(str(e))을 깨지 않기 위해 페이로드를 별도 해제합니다.
-        super().__init__(1)
+        super().__init__(exit_code)
         self.log_message = log_message
 
     def __str__(self) -> str:
