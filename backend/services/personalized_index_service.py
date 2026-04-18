@@ -112,12 +112,18 @@ class IndexMetadata:
         vector_count : 현재 저장된 벡터 수 (삭제된 벡터 포함 총계)
         index_path   : 파일 시스템 상의 .faiss 파일 절대 경로
                        (hashed_user_id 기반이므로 PII 미포함)
+
+    설계 원칙:
+        - 필드에 기본값을 부여하여 Redis 스키마 마이그레이션 중 구(old) 레코드와
+          신(new) 스키마가 공존할 때 서비스 장애를 방지한다 (Graceful Degradation).
+        - index_path가 Redis에 없더라도 hashed_user_id + cfg로 재계산 가능하므로
+          빈 문자열을 기본값으로 허용하고 호출자가 필요 시 재보정한다.
     """
 
-    created_at: str
-    updated_at: str
-    vector_count: int
-    index_path: str
+    created_at: str = ""
+    updated_at: str = ""
+    vector_count: int = 0
+    index_path: str = ""
 
     def to_redis_dict(self) -> dict[str, str]:
         """Redis hset에 전달할 string dict 반환."""
@@ -131,11 +137,13 @@ class IndexMetadata:
     @classmethod
     def from_redis_dict(cls, raw: dict[bytes | str, bytes | str]) -> "IndexMetadata":
         """
-        Redis hgetall 결과(bytes or str 키/값)를 IndexMetadata로 변환한다.
+        Redis hgetall 결과(bytes or str 키/값)를 IndexMetadata로 관대하게 변환한다.
 
-        첫 단계에서 모든 키·값을 str로 정규화하여 Redis 클라이언트의
-        decode_responses 설정(True/False)에 관계없이 안전하게 동작한다.
-        이후 로직은 순수 str dict으로만 처리하여 예기치 않은 KeyError를 방지한다.
+        처리 원칙:
+          1. 모든 키·값을 str로 1회 정규화 — decode_responses 설정 무관 안전 동작.
+          2. 필드 누락 시 하드 크래시 대신 데이터클래스 기본값으로 폴백하고 WARNING 로그.
+             → Redis 스키마 마이그레이션 중 구(old) 레코드와 공존 가능.
+          3. vector_count 파싱 실패(비정수) 시 0으로 폴백하고 WARNING 로그.
         """
 
         def _to_str(v: bytes | str) -> str:
@@ -144,19 +152,33 @@ class IndexMetadata:
         # 1회 정규화: 이후 코드는 str key/value만 사용 — KeyError 교차 발생 원천 차단
         normalized: dict[str, str] = {_to_str(k): _to_str(v) for k, v in raw.items()}
 
-        _REQUIRED_FIELDS = ("created_at", "updated_at", "vector_count", "index_path")
-        missing = [f for f in _REQUIRED_FIELDS if f not in normalized]
+        # 누락 필드 감지: 하드 크래시 대신 WARNING 로그 후 기본값 폴백
+        _ALL_FIELDS = ("created_at", "updated_at", "vector_count", "index_path")
+        missing = [f for f in _ALL_FIELDS if f not in normalized]
         if missing:
-            raise KeyError(
-                f"IndexMetadata.from_redis_dict: missing required fields {missing}. "
-                "Redis hash may be corrupted or schema has changed."
+            logger.warning(
+                "[PERSONALIZED_INDEX][SCHEMA] from_redis_dict: missing fields %s — "
+                "falling back to defaults. Redis hash may be from an older schema version.",
+                missing,
             )
 
+        # vector_count: 비정수인 경우 0으로 폴백 (파싱 실패가 서비스 장애로 이어지지 않도록)
+        raw_count = normalized.get("vector_count", "0")
+        try:
+            vector_count = int(raw_count)
+        except (ValueError, TypeError):
+            logger.warning(
+                "[PERSONALIZED_INDEX][SCHEMA] from_redis_dict: 'vector_count'=%r is not "
+                "a valid integer; falling back to 0.",
+                raw_count,
+            )
+            vector_count = 0
+
         return cls(
-            created_at=normalized["created_at"],
-            updated_at=normalized["updated_at"],
-            vector_count=int(normalized["vector_count"]),
-            index_path=normalized["index_path"],
+            created_at=normalized.get("created_at", ""),
+            updated_at=normalized.get("updated_at", ""),
+            vector_count=vector_count,
+            index_path=normalized.get("index_path", ""),
         )
 
 
@@ -179,6 +201,18 @@ def _build_meta_key(hashed_user_id: str) -> str:
 def _now_utc_iso() -> str:
     """현재 UTC 시각을 ISO 8601 문자열로 반환한다."""
     return datetime.now(timezone.utc).isoformat()
+
+
+async def _ensure_redis_connected() -> None:
+    """
+    Redis 연결 상태를 확인하고, 미연결 시 연결을 시도하는 내부 헬퍼.
+
+    각 비동기 함수마다 `if not redis_client.is_connected(): await redis_client.connect()`
+    패턴이 중복되는 것을 방지하기 위해 이 헬퍼를 통해 연결 관리를 중앙집중화한다.
+    연결 실패 시 예외를 상위로 전파한다.
+    """
+    if not redis_client.is_connected():
+        await redis_client.connect()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -303,8 +337,7 @@ async def save_index_metadata(
     Raises:
         RuntimeError: Redis 연결 실패 시
     """
-    if not redis_client.is_connected():
-        await redis_client.connect()
+    await _ensure_redis_connected()
 
     key = _build_meta_key(hashed_user_id)
     payload = metadata.to_redis_dict()
@@ -333,8 +366,7 @@ async def load_index_metadata(hashed_user_id: str) -> Optional[IndexMetadata]:
     Raises:
         RuntimeError: Redis 연결 실패 시
     """
-    if not redis_client.is_connected():
-        await redis_client.connect()
+    await _ensure_redis_connected()
 
     key = _build_meta_key(hashed_user_id)
     raw = await redis_client.redis.hgetall(key)
@@ -362,8 +394,7 @@ async def delete_index_metadata(hashed_user_id: str) -> None:
     Args:
         hashed_user_id: compute_hashed_user_id()의 반환값 (PII 미포함)
     """
-    if not redis_client.is_connected():
-        await redis_client.connect()
+    await _ensure_redis_connected()
 
     key = _build_meta_key(hashed_user_id)
     deleted = await redis_client.redis.delete(key)
