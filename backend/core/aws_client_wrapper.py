@@ -45,6 +45,9 @@ async def get_boto3_session_async() -> boto3.Session:
     비동기 파이썬 환경에서 데드락(Deadlock)을 방지하기 위해 
     Boto3 초기화 연산을 기본 이벤트 루프 스레드 풀에 오프로드(Offload)합니다.
     """
+    global _boto_session
+    if _boto_session is not None:
+        return _boto_session
     return await asyncio.to_thread(get_boto3_session)
 
 
@@ -93,16 +96,16 @@ async def fetch_global_pepper() -> str:
                     "[AWS][HARD-FAIL] Fatal ClientError: %s. Aborting immediately without retries.",
                     error_code,
                 )
-                raise FatalSecurityError(f"Fatal Security Error: {error_code}")
+                raise FatalSecurityError(f"Fatal Security Error: {error_code}") from e
 
             is_transient = error_code in TRANSIENT_CLIENT_ERRORS
             if not is_transient:
                 logger.error("[AWS] Unhandled ClientError: %s", error_code)
-                raise FatalSecurityError(f"Unhandled AWS exception: {error_code}")
+                raise FatalSecurityError(f"Unhandled AWS exception: {error_code}") from e
                 
         except Exception as e:
             logger.critical("[AWS][SECURITY] Unexpected error fetching pepper: %s", type(e).__name__)
-            raise FatalSecurityError("Fatal Security Error: Unexpected exception during pepper retrieval.")
+            raise FatalSecurityError("Fatal Security Error: Unexpected exception during pepper retrieval.") from e
 
         if attempt == max_retries:
             logger.error("[AWS][RETRY] Max retries reached for transient error: %s", error_code)
