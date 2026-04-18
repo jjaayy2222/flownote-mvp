@@ -20,11 +20,14 @@ class FatalSecurityError(SystemExit):
     일반 예외(Exception) 핸들러에서 삼켜지는 것(Swallowed)을 방지하고, 
     프로세스 Fail-fast(즉시 종료)를 보장하기 위해 SystemExit을 상속받습니다.
     """
-    def __init__(self, message: str) -> None:
+    def __init__(self, log_message: str) -> None:
         # SystemExit.code 에 프로세스 종료 코드를 명시적으로 전달합니다.
-        # 사람이 읽을 수 있는 에러 메시지는 별도 속성으로 보관해 로깅 등에 활용합니다.
+        # 기존 파이썬 예외 표준(str(e))을 깨지 않기 위해 페이로드를 별도 해제합니다.
         super().__init__(1)
-        self.message = message
+        self.log_message = log_message
+
+    def __str__(self) -> str:
+        return self.log_message
 
 # Boto3 기본 재시도 비활성화 (애플리케이션 레이어 권한 통제)
 AWS_CONFIG = Config(
