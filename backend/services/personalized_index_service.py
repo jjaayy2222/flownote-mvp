@@ -183,13 +183,16 @@ class IndexMetadata:
 
         처리 원칙:
           1. 모든 키·값을 str로 1회 정규화 — decode_responses 설정 무관 안전 동작.
-          2. 필드 목록은 dataclasses.fields(cls)에서 동적으로 파생 — 하드코딩 금지.
-             스키마 변경 시 데이터클래스 정의 한 곳만 수정하면 자동 반영 (SSOT).
-          3. 필드 누락 시 하드 크래시 대신 데이터클래스 기본값으로 폴백하고
-             _SCHEMA_LOG_LEVEL(환경변수 PERSONALIZED_INDEX_SCHEMA_LOG_LEVEL) 레벨로 로그.
-             → 마이그레이션 중 다량의 구(old) 레코드 처리 시 INFO로 낮춰 APM 노이즈 억제 가능.
-          4. vector_count 파싱 실패(비정수) 시 0으로 폴백하고 동일 레벨로 로그.
+          2. 필드 목록·기본값·타입을 dataclasses.fields(cls)와 get_type_hints(cls)에서
+             동적으로 파생 — 하드코딩 금지 (완전한 SSOT).
+          3. 기본값 없는 필수 필드(MISSING)가 Redis에도 없으면 즉시 ValueError — Fail-fast.
+             (현재 IndexMetadata는 모든 필드에 기본값이 있어 이 경로는 미래 대비 방어)
+          4. 필드 누락 시 dataclass 기본값으로 폴백, _SCHEMA_LOG_LEVEL 레벨로 로그.
+             → 마이그레이션 중 INFO로 낮춰 APM 노이즈 억제 가능.
+          5. per-type 디스패처로 str/int/float/bool 타입 각각 안전하게 변환.
+             미지원 타입은 WARNING 로그 후 raw str 사용.
         """
+        import typing
 
         def _to_str(v: bytes | str) -> str:
             return v.decode("utf-8") if isinstance(v, bytes) else str(v)
@@ -197,36 +200,104 @@ class IndexMetadata:
         # 1회 정규화: 이후 코드는 str key/value만 사용 — KeyError 교차 발생 원천 차단
         normalized: dict[str, str] = {_to_str(k): _to_str(v) for k, v in raw.items()}
 
-        # 필드 목록을 데이터클래스 정의에서 동적 파생 — _ALL_FIELDS 하드코딩 제거 (SSOT)
-        all_field_names = [f.name for f in dataclasses.fields(cls)]
-        missing = [name for name in all_field_names if name not in normalized]
+        # 필드 메타데이터를 데이터클래스 정의에서 동적 파생 (완전한 SSOT)
+        cls_fields = dataclasses.fields(cls)
+        type_hints: dict[str, type] = typing.get_type_hints(cls)
+
+        def _get_field_default(f: dataclasses.Field) -> object:
+            """
+            dataclasses.Field에서 실제 기본값을 반환한다.
+            MISSING(기본값 없음) → ValueError로 즉시 실패 (Fail-fast).
+            None을 조용히 반환하지 않아 구성 버그가 런타임에 은폐되지 않는다.
+            """
+            if f.default is not dataclasses.MISSING:
+                return f.default
+            if f.default_factory is not dataclasses.MISSING:  # type: ignore[misc]
+                return f.default_factory()  # type: ignore[misc]
+            raise ValueError(
+                f"[PERSONALIZED_INDEX][SCHEMA] IndexMetadata field '{f.name}' has no "
+                f"default value and was not supplied by Redis. "
+                f"All IndexMetadata fields must have a dataclass default."
+            )
+
+        field_defaults: dict[str, object] = {f.name: _get_field_default(f) for f in cls_fields}
+
+        # 누락 필드 감지: dataclass 기본값으로 폴백 + _SCHEMA_LOG_LEVEL 레벨 로그
+        missing = [name for name in field_defaults if name not in normalized]
         if missing:
             logger.log(
                 _SCHEMA_LOG_LEVEL,
                 "[PERSONALIZED_INDEX][SCHEMA] from_redis_dict: missing fields %s — "
-                "falling back to defaults. Redis hash may be from an older schema version. "
+                "falling back to dataclass defaults. Redis hash may be from an older schema version. "
                 "(Adjust 'PERSONALIZED_INDEX_SCHEMA_LOG_LEVEL' env var to suppress during migration.)",
                 missing,
             )
 
-        # vector_count: 비정수인 경우 0으로 폴백 (파싱 실패가 서비스 장애로 이어지지 않도록)
-        raw_count = normalized.get("vector_count", "0")
-        try:
-            vector_count = int(raw_count)
-        except (ValueError, TypeError):
-            logger.log(
-                _SCHEMA_LOG_LEVEL,
-                "[PERSONALIZED_INDEX][SCHEMA] from_redis_dict: 'vector_count'=%r is not "
-                "a valid integer; falling back to 0. "
-                "(Adjust 'PERSONALIZED_INDEX_SCHEMA_LOG_LEVEL' env var to suppress during migration.)",
-                raw_count,
-            )
-            vector_count = 0
+        def _parse_value(field_name: str, raw_val: str, field_type: type, default: object) -> object:
+            """
+            Redis raw str 값을 필드의 실제 Python 타입으로 안전하게 변환한다.
+            지원 타입: str, int, float, bool
+            미지원 타입: WARNING 로그 후 raw str 반환 (서비스 장애 전파 방지)
+            """
+            origin = typing.get_origin(field_type)  # Optional, Union 등의 원본 타입
+            # Optional[X] → X 로 언래핑
+            if origin is typing.Union:
+                args = [a for a in typing.get_args(field_type) if a is not type(None)]
+                field_type = args[0] if args else str
 
-        return cls(
-            **{name: normalized.get(name, "") for name in all_field_names if name != "vector_count"},
-            vector_count=vector_count,
-        )
+            if field_type is str:
+                return raw_val
+            if field_type is int:
+                try:
+                    return int(raw_val)
+                except (ValueError, TypeError):
+                    logger.log(
+                        _SCHEMA_LOG_LEVEL,
+                        "[PERSONALIZED_INDEX][SCHEMA] from_redis_dict: field '%s'=%r "
+                        "cannot be parsed as int; falling back to dataclass default. "
+                        "(Adjust 'PERSONALIZED_INDEX_SCHEMA_LOG_LEVEL' env var to suppress.)",
+                        field_name, raw_val,
+                    )
+                    return default
+            if field_type is float:
+                try:
+                    return float(raw_val)
+                except (ValueError, TypeError):
+                    logger.log(
+                        _SCHEMA_LOG_LEVEL,
+                        "[PERSONALIZED_INDEX][SCHEMA] from_redis_dict: field '%s'=%r "
+                        "cannot be parsed as float; falling back to dataclass default.",
+                        field_name, raw_val,
+                    )
+                    return default
+            if field_type is bool:
+                # Redis에 "True"/"False"/"1"/"0" 형태로 저장될 수 있음
+                return raw_val.lower() in ("true", "1", "yes")
+
+            # 미지원 타입: 안전하게 raw str 반환하고 운영자에게 알림
+            logger.warning(
+                "[PERSONALIZED_INDEX][SCHEMA] from_redis_dict: field '%s' has unsupported "
+                "type '%s' for automatic conversion; returning raw string. "
+                "Add a type handler to _parse_value() to suppress this warning.",
+                field_name, field_type,
+            )
+            return raw_val
+
+        # per-type 디스패처로 모든 필드를 타입에 맞게 안전하게 변환
+        kwargs: dict[str, object] = {}
+        for f in cls_fields:
+            field_type = type_hints.get(f.name, str)
+            default = field_defaults[f.name]
+            raw_val = normalized.get(f.name)
+            if raw_val is None:
+                # 필드가 Redis에 없는 경우: dataclass 기본값 사용 (이미 missing 로그 처리됨)
+                kwargs[f.name] = default
+            else:
+                kwargs[f.name] = _parse_value(f.name, raw_val, field_type, default)
+
+        return cls(**kwargs)
+
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
