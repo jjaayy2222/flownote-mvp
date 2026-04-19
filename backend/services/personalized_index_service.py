@@ -432,15 +432,18 @@ def _extract_masked_uid_from_key(key: str) -> str:
     if not isinstance(key, str) or not key.startswith(expected_prefix):
         # [리뷰반영] 보안성을 위해 전체 키를 노출하지 않으면서도, 디버깅을 위한
         # 짧은 프리뷰(또는 타입) 단서를 제공하여 실패 원인 추적을 용이하게 함
-        preview = str(key)[:15] + "..." if isinstance(key, str) else type(key).__name__
+        key_type = type(key).__name__
+        key_len = len(key) if isinstance(key, str) else "N/A"
         raise ValueError(
-            f"Invalid Redis key format for masked UID extraction (preview: {preview})"
+            f"Invalid Redis key format for masked UID extraction "
+            f"(type={key_type}, len={key_len})"
         )
-    
+
     uid_part = key[len(expected_prefix):]
     if not uid_part:
+        # [리뷰반영] 향후 리팩터링 안전성을 위해 len(str(key)) 방어적 처리 사용
         raise ValueError(
-            f"Empty UID part in Redis key (prefix matched, total length: {len(key)})"
+            f"Empty UID part in Redis key (prefix matched, total length: {len(str(key))})"
         )
         
     return uid_part[:8]
