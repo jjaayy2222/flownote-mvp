@@ -21,7 +21,6 @@ Path 전략:
 from __future__ import annotations
 
 import dataclasses
-import asyncio
 import hashlib
 import logging
 import os
@@ -764,15 +763,12 @@ class LuaScriptCache:
     def __init__(self, script_body: str):
         self.script_body = script_body
         self._compiled: Optional["redis.commands.core.AsyncScript"] = None
-        self._lock = asyncio.Lock()
 
-    async def get_or_register(self, client: "redis_async.Redis") -> "redis.commands.core.AsyncScript":
-        # 다수 코루틴 간 경쟁 상황(Race Condition)으로 인한 스크립트 중복 등록을
-        # 방지하기 위해 비동기 락과 Double-Checked Locking 적용
+    def get_or_register(self, client: "redis_async.Redis") -> "redis.commands.core.AsyncScript":
+        # Coroutine 경쟁이 일어나더라도 register_script 의 부하가 미비하므로
+        # 락 없이 단순화하여 인지 부담(Cognitive Load)을 줄임
         if self._compiled is None:
-            async with self._lock:
-                if self._compiled is None:
-                    self._compiled = client.register_script(self.script_body)
+            self._compiled = client.register_script(self.script_body)
         return self._compiled
 
     def invalidate(self) -> None:
@@ -783,7 +779,6 @@ _meta_updater = LuaScriptCache(_LUA_UPDATE_META_SCRIPT)
 
 async def _execute_update_meta_script(
     client: "redis_async.Redis",
-    masked_uid: str,
     key: str,
     vector_delta: int,
     delete_delta: int,
@@ -792,7 +787,13 @@ async def _execute_update_meta_script(
 ) -> Optional[list[typing.Any]]:
     # 전역 인스턴스에 강제 종속되지 않도록 대체 캐시(DI) 허용
     updater = meta_updater or _meta_updater
-    compiled_script = await updater.get_or_register(client)
+    compiled_script = updater.get_or_register(client)
+
+    # 파라미터 개수를 줄이고 내부에서 masked uid 추출 (캡슐화)
+    try:
+        masked_uid = key.rsplit(":", 1)[-1][:8]
+    except Exception:
+        masked_uid = "unknown"
 
     try:
         return await compiled_script(
@@ -863,7 +864,6 @@ async def update_index_after_op(
     # 분리된 Helper를 통해 스크립트 실행 (에러 시 raise되어 제어권 위임됨)
     raw_list = await _execute_update_meta_script(
         client=redis_client.redis,
-        masked_uid=hashed_user_id[:8],
         key=key,
         vector_delta=vector_delta,
         delete_delta=delete_delta,
