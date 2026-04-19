@@ -759,6 +759,58 @@ def should_rebuild_index(metadata: IndexMetadata) -> bool:
 
 _compiled_lua_script = None
 
+async def _execute_update_meta_script(
+    key: str,
+    vector_delta: int,
+    delete_delta: int,
+    now: str,
+) -> Optional[list[typing.Any]]:
+    global _compiled_lua_script
+
+    if _compiled_lua_script is None:
+        _compiled_lua_script = redis_client.redis.register_script(_LUA_UPDATE_META_SCRIPT)
+
+    try:
+        return await _compiled_lua_script(
+            keys=[key],
+            args=[str(vector_delta), str(delete_delta), str(now), str(_META_TTL_SECS)],
+        )
+    except (redis.exceptions.NoScriptError, redis.exceptions.ConnectionError) as e:
+        # [리뷰반영] Transient 에러나 스크립트 리셋 상황(NOSCRIPT 등)에서만 캐시 무효화 수행
+        _compiled_lua_script = None
+        logger.error(
+            "[PERSONALIZED_INDEX] Failed to execute atomic Lua script for key=%s "
+            "(Script Cache invalidated): %s",
+            key,
+            e,
+        )
+        raise
+    except redis.exceptions.RedisError as e:
+        # [리뷰반영] 일반적인 Redis 장애는 캐시 무효화 없이 로깅 후 상위 전파하여, "메타 부재(None)" 상황과 진짜 DB 장애를 명확히 구분
+        logger.error(
+            "[PERSONALIZED_INDEX] Redis error executing script for key=%s: %s",
+            key,
+            e,
+        )
+        raise
+
+
+def _hgetall_list_to_dict(
+    masked_uid: str,
+    raw_list: typing.Any,
+) -> Optional[dict[bytes | str, bytes | str]]:
+    if not isinstance(raw_list, list) or len(raw_list) % 2 != 0:
+        actual = len(raw_list) if isinstance(raw_list, list) else type(raw_list).__name__
+        logger.error(
+            "[PERSONALIZED_INDEX] Corrupted Redis metadata response for masked_uid=%s. "
+            "Expected an even-length list from HGETALL, got length/type=%s.",
+            masked_uid[:8],
+            actual,
+        )
+        return None
+    return dict(zip(raw_list[0::2], raw_list[1::2]))
+
+
 async def update_index_after_op(
     hashed_user_id: str,
     vector_delta: int,
@@ -779,41 +831,19 @@ async def update_index_after_op(
     Returns:
         갱신된 IndexMetadata, 또는 대상 메타키가 존재하지 않으면 None
     """
-    global _compiled_lua_script
     await _ensure_redis_connected()
-
-    # 스크립트 로드 최소화 (EVALSHA 사용 캐싱 기법)
-    if _compiled_lua_script is None:
-        _compiled_lua_script = redis_client.redis.register_script(_LUA_UPDATE_META_SCRIPT)
 
     key = _build_meta_key(hashed_user_id)
     now = _now_utc_iso()
 
-    try:
-        # 모듈 레벨에서 호이스팅 및 EVALSHA로 등록된 스크립트 호출
-        raw_list = await _compiled_lua_script(
-            keys=[key],
-            args=[
-                str(vector_delta),  # 안전한 통신을 위해 모든 ARGV 명시적 문자열 타입 캐스팅
-                str(delete_delta),
-                now,
-                str(_META_TTL_SECS),
-            ]
-        )
-    except redis.exceptions.RedisError as e:
-        # [리뷰반영] 광범위한 Exception 캐치 제거 -> 명시적 RedisError 캐치
-        # Redis 연결이 끊기거나 SCRIPT FLUSH로 인해 NOSCRIPT가 발생했을 때 캐시를 무효화하여
-        # 다음 호출 시 새로운 커넥션 컨텍스트로 register_script가 다시 일어나도록 설정
-        _compiled_lua_script = None
-        
-        logger.error(
-            "[PERSONALIZED_INDEX] Failed to execute atomic Lua script for masked_uid=%s (Script Cache invalidated): %s",
-            hashed_user_id[:8],
-            e,
-        )
-        return None
-
-    # 빈 리스트 반환이 아닌, Lua 스크립트의 'return nil' (메타데이터 없음) 상황을 명시적으로 체크
+    # 분리된 Helper를 통해 스크립트 실행 (에러 시 raise되어 제어권 위임됨)
+    raw_list = await _execute_update_meta_script(
+        key=key,
+        vector_delta=vector_delta,
+        delete_delta=delete_delta,
+        now=now,
+    )
+    
     if raw_list is None:
         logger.error(
             "[PERSONALIZED_INDEX] Cannot update metrics: No metadata found for masked_uid=%s",
@@ -821,23 +851,13 @@ async def update_index_after_op(
         )
         return None
 
-    # [리뷰반영] 방어적 프로그래밍(Defensive Validation): Redis 응답 구조 손상 여부 검증
-    # HGETALL 호출 결과는 반드시 짝수 길이를 가진 리스트(키-값 쌍)여야 함
-    if not isinstance(raw_list, list) or len(raw_list) % 2 != 0:
-        actual_len = len(raw_list) if isinstance(raw_list, list) else type(raw_list).__name__
-        logger.error(
-            "[PERSONALIZED_INDEX] Corrupted Redis metadata response for masked_uid=%s. "
-            "Expected an even-length list from HGETALL, got length/type=%s.",
-            hashed_user_id[:8],
-            actual_len,
-        )
+    # 분리된 Helper를 통해 안전하게 파싱
+    raw_dict = _hgetall_list_to_dict(hashed_user_id, raw_list)
+    if raw_dict is None:
         return None
 
-    # Lua HGETALL은 Flat List 형태([k1, v1, k2, v2, ...])를 반환하므로 dict로 변환
-    raw_dict: dict[bytes | str, bytes | str] = dict(zip(raw_list[0::2], raw_list[1::2]))
     metadata = IndexMetadata.from_redis_dict(raw_dict)
 
-    # 컴팩션 여부 확인 로그 추가 (비동기 워커 트리거의 진입점)
     if should_rebuild_index(metadata):
         logger.warning(
             "[PERSONALIZED_INDEX][ASYNC] Index for %s needs REBUILD. "
