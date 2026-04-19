@@ -429,9 +429,9 @@ def _extract_masked_uid_from_key(key: str) -> str:
     명시적(Explicit) ValueError를 발생시킨다.
     """
     expected_prefix = f"{_REDIS_META_PREFIX}:"
+    # [리뷰반영] 두 실패 경로 모두 동일한 메타데이터 형식(type, len)을 사용하여
+    # 로그 상관 분석 및 디버깅 일관성을 보장 (str() 변환 없이 타입 체크 기반 방어)
     if not isinstance(key, str) or not key.startswith(expected_prefix):
-        # [리뷰반영] 보안성을 위해 전체 키를 노출하지 않으면서도, 디버깅을 위한
-        # 짧은 프리뷰(또는 타입) 단서를 제공하여 실패 원인 추적을 용이하게 함
         key_type = type(key).__name__
         key_len = len(key) if isinstance(key, str) else "N/A"
         raise ValueError(
@@ -441,11 +441,15 @@ def _extract_masked_uid_from_key(key: str) -> str:
 
     uid_part = key[len(expected_prefix):]
     if not uid_part:
-        # [리뷰반영] 향후 리팩터링 안전성을 위해 len(str(key)) 방어적 처리 사용
+        # 이 분기는 isinstance(key, str) 통과 후이므로 len(key)가 안전함
+        # len(str(key)) 대신 len(key)를 사용하여 불필요한 str() 호출 방지
+        key_type = type(key).__name__
+        key_len = len(key)
         raise ValueError(
-            f"Empty UID part in Redis key (prefix matched, total length: {len(str(key))})"
+            f"Empty UID part in Redis key (prefix matched — "
+            f"type={key_type}, len={key_len})"
         )
-        
+
     return uid_part[:8]
 
 
