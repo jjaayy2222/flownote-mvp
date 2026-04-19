@@ -136,8 +136,74 @@ def _load_meta_ttl() -> int:
     return value
 
 
-# 모듈 로드 시 1회 파싱 (런타임 보정 완료 후 고정)
+# 컴팩션(재빌드) 임계값 설정
+# - FAISS_COMPACTION_VECTOR_THRESHOLD: 벡터 개수 기반 (기본 500, 최소 100)
+# - FAISS_COMPACTION_DELETE_RATIO: 삭제 비율 기반 (기본 0.15, 범위 0.0~1.0)
+_DEFAULT_COMPACTION_THRESHOLD: int = 500
+_MIN_COMPACTION_THRESHOLD: int = 100
+
+_DEFAULT_DELETE_RATIO: float = 0.15
+_DELETE_RATIO_MIN: float = 0.0
+_DELETE_RATIO_MAX: float = 1.0
+
+# 삭제 비율 기반 컴팩션에서 노이즈 트리거를 방지하기 위한 최소 데이터셋 규모
+_MIN_DATASET_SIZE_FOR_COMPACTION: int = 10
+
+
+def _load_compaction_threshold() -> int:
+    """FAISS_COMPACTION_VECTOR_THRESHOLD 환경 변수를 로드하고 보정(Clamp)한다."""
+    raw = os.environ.get("FAISS_COMPACTION_VECTOR_THRESHOLD")
+    if raw is None:
+        return _DEFAULT_COMPACTION_THRESHOLD
+    try:
+        val = int(raw)
+        if val < _MIN_COMPACTION_THRESHOLD:
+            logger.warning(
+                "[PERSONALIZED_INDEX][CONFIG] 'FAISS_COMPACTION_VECTOR_THRESHOLD'=%d is "
+                "below minimum %d; clamped to %d.",
+                val, _MIN_COMPACTION_THRESHOLD, _MIN_COMPACTION_THRESHOLD
+            )
+            return _MIN_COMPACTION_THRESHOLD
+        return val
+    except (ValueError, TypeError):
+        logger.warning(
+            "[PERSONALIZED_INDEX][CONFIG] 'FAISS_COMPACTION_VECTOR_THRESHOLD'=%r is "
+            "not a valid integer; falling back to %d.",
+            raw, _DEFAULT_COMPACTION_THRESHOLD
+        )
+        return _DEFAULT_COMPACTION_THRESHOLD
+
+
+def _load_delete_ratio() -> float:
+    """FAISS_COMPACTION_DELETE_RATIO 환경 변수를 로드하고 범위 내로 보정한다."""
+    raw = os.environ.get("FAISS_COMPACTION_DELETE_RATIO")
+    if raw is None:
+        return _DEFAULT_DELETE_RATIO
+    try:
+        val = float(raw)
+        if not (_DELETE_RATIO_MIN <= val <= _DELETE_RATIO_MAX):
+            clamped = max(_DELETE_RATIO_MIN, min(_DELETE_RATIO_MAX, val))
+            logger.warning(
+                "[PERSONALIZED_INDEX][CONFIG] 'FAISS_COMPACTION_DELETE_RATIO'=%f is "
+                "outside range [%.1f, %.1f]; clamped to %.2f.",
+                val, _DELETE_RATIO_MIN, _DELETE_RATIO_MAX, clamped
+            )
+            return clamped
+        return val
+    except (ValueError, TypeError):
+        logger.warning(
+            "[PERSONALIZED_INDEX][CONFIG] 'FAISS_COMPACTION_DELETE_RATIO'=%r is "
+            "not a valid float; falling back to %.2f.",
+            raw, _DEFAULT_DELETE_RATIO
+        )
+        return _DEFAULT_DELETE_RATIO
+
+
+# 모듈 로드 시 1회 파싱
 _META_TTL_SECS: int = _load_meta_ttl()
+_COMPACTION_THRESHOLD: int = _load_compaction_threshold()
+_DELETE_RATIO_THRESHOLD: float = _load_delete_ratio()
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -153,7 +219,8 @@ class IndexMetadata:
     Fields:
         created_at   : 인덱스 최초 생성 ISO 8601 UTC 타임스탬프
         updated_at   : 마지막 업데이트 ISO 8601 UTC 타임스탬프
-        vector_count : 현재 저장된 벡터 수 (삭제된 벡터 포함 총계)
+        vector_count : 현재 저장된 유효 벡터 수 (전체 벡터 - 삭제된 벡터)
+        deleted_count: 논리적으로 삭제된 벡터 수 (컴팩션 시 실제 제거 대상)
         index_path   : 파일 시스템 상의 .faiss 파일 절대 경로
                        (hashed_user_id 기반이므로 PII 미포함)
 
@@ -167,6 +234,7 @@ class IndexMetadata:
     created_at: str = ""
     updated_at: str = ""
     vector_count: int = 0
+    deleted_count: int = 0  # 신규: 인덱스 내 삭제된(무효화된) 벡터 수
     index_path: str = ""
 
     def to_redis_dict(self) -> dict[str, str]:
@@ -175,6 +243,7 @@ class IndexMetadata:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "vector_count": str(self.vector_count),
+            "deleted_count": str(self.deleted_count),
             "index_path": self.index_path,
         }
 
@@ -611,3 +680,98 @@ async def initialize_user_index(
         )
 
     return hashed_user_id, index_path
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 비즈니스 로직: 수명 주기 및 컴팩션 정책
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def should_rebuild_index(metadata: IndexMetadata) -> bool:
+    """
+    인덱스 상태를 분석하여 재구축(Compaction)이 필요한지 여부를 판별한다.
+
+    판단 기준:
+      - 무의미한 Rebuild 방어: 삭제된 벡터(deleted_count)가 없으면 Rebuild는 단순 복사본 생성이 되므로 즉시 False 반환.
+      - 기준 1. 물리적 규모 임계값 초과: '유효 벡터(vector_count)'가 아닌 '누적 벡터(total_count)'가 
+                _COMPACTION_THRESHOLD를 초과하는지 검사. FAISS의 물리적 크기 팽창과 메모리 사용량은 total_count에 비례한다.
+      - 기준 2. 삭제 비율 임계값 초과: (deleted_count / total_count)가 _DELETE_RATIO_THRESHOLD를 초과하는가?
+                단, _MIN_DATASET_SIZE_FOR_COMPACTION 이하의 극소량 데이터셋에서는 일시적 변동 노이즈를 방지하기 위해 무시한다.
+
+    Args:
+        metadata: Redis에서 로드한 최신 인덱스 메타데이터
+
+    Returns:
+        True: 재구축 권장, False: 현재 상태 유지 가능
+    """
+    total_count = metadata.vector_count + metadata.deleted_count
+
+    # 무의미한 Rebuild 방어: 치울 쓰레기가 없다면 컴팩션 트리거 불가
+    if metadata.deleted_count == 0:
+        return False
+
+    # 기준 1: FAISS 물리적 규모가 너무 커진 경우 (조회/메모리 성능 최적화 필요)
+    # [리뷰반영] 유효 벡터 수가 아닌 전체/누적 벡터 수(total_count)를 사용해 FAISS의 실제 압력을 가늠함.
+    if total_count >= _COMPACTION_THRESHOLD:
+        logger.info(
+            "[PERSONALIZED_INDEX][POLICY] Compaction suggested: total_count (%d) >= threshold (%d)",
+            total_count,
+            _COMPACTION_THRESHOLD,
+        )
+        return True
+
+    # 기준 2: 삭제된 데이터가 너무 많은 경우 (검색 품질 및 공간 효율성)
+    if total_count > _MIN_DATASET_SIZE_FOR_COMPACTION:
+        delete_ratio = metadata.deleted_count / total_count
+        if delete_ratio >= _DELETE_RATIO_THRESHOLD:
+            logger.info(
+                "[PERSONALIZED_INDEX][POLICY] Compaction suggested: delete_ratio (%.2f) >= threshold (%.2f)",
+                delete_ratio,
+                _DELETE_RATIO_THRESHOLD,
+            )
+            return True
+
+    return False
+
+
+async def update_index_after_op(
+    hashed_user_id: str,
+    vector_delta: int,
+    delete_delta: int,
+) -> Optional[IndexMetadata]:
+    """
+    벡터 추가/삭제 작업 후 메타데이터를 갱신하고, 컴팩션 필요 여부를 확인한다.
+
+    Args:
+        hashed_user_id: 사용자 해시 ID
+        vector_delta: 유효 벡터 수 변화량 (추가 시 +, 삭제 시 -)
+        delete_delta: 무효(삭제 처리된) 벡터 수 변화량 (삭제 시 +)
+
+    Returns:
+        갱신된 IndexMetadata, 또는 실패 시 None
+    """
+    metadata = await load_index_metadata(hashed_user_id)
+    if not metadata:
+        logger.error(
+            "[PERSONALIZED_INDEX] Cannot update metrics: No metadata found for masked_uid=%s",
+            hashed_user_id[:8],
+        )
+        return None
+
+    # 수치 갱신 (음수는 0으로 보정)
+    metadata.vector_count = max(0, metadata.vector_count + vector_delta)
+    metadata.deleted_count = max(0, metadata.deleted_count + delete_delta)
+    metadata.updated_at = _now_utc_iso()
+
+    # Redis 저장
+    await save_index_metadata(hashed_user_id, metadata)
+
+    # 컴팩션 여부 확인 로그 추가 (비동기 워커 트리거의 진입점)
+    if should_rebuild_index(metadata):
+        logger.warning(
+            "[PERSONALIZED_INDEX][ASYNC] Index for %s needs REBUILD. "
+            "Please trigger background compaction worker.",
+            hashed_user_id[:8],
+        )
+
+    return metadata
