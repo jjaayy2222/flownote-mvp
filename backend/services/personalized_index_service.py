@@ -21,11 +21,13 @@ Path 전략:
 from __future__ import annotations
 
 import dataclasses
+import asyncio
 import hashlib
 import logging
 import os
 import types
 import typing
+import redis.asyncio as redis_async
 import redis.exceptions
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -761,11 +763,16 @@ class LuaScriptCache:
     """Lua 스크립트의 EVALSHA 캐시를 캡슐화하고, 연결 유실 시 자율 복구하는 헬퍼 클래스"""
     def __init__(self, script_body: str):
         self.script_body = script_body
-        self._compiled = None
+        self._compiled: Optional["redis.commands.core.AsyncScript"] = None
+        self._lock = asyncio.Lock()
 
-    def get_or_register(self, client: typing.Any) -> typing.Any:
+    async def get_or_register(self, client: "redis_async.Redis") -> "redis.commands.core.AsyncScript":
+        # 다수 코루틴 간 경쟁 상황(Race Condition)으로 인한 스크립트 중복 등록을
+        # 방지하기 위해 비동기 락과 Double-Checked Locking 적용
         if self._compiled is None:
-            self._compiled = client.register_script(self.script_body)
+            async with self._lock:
+                if self._compiled is None:
+                    self._compiled = client.register_script(self.script_body)
         return self._compiled
 
     def invalidate(self) -> None:
@@ -775,14 +782,17 @@ class LuaScriptCache:
 _meta_updater = LuaScriptCache(_LUA_UPDATE_META_SCRIPT)
 
 async def _execute_update_meta_script(
-    client: typing.Any,
+    client: "redis_async.Redis",
     masked_uid: str,
     key: str,
     vector_delta: int,
     delete_delta: int,
     now: str,
+    meta_updater: Optional[LuaScriptCache] = None,
 ) -> Optional[list[typing.Any]]:
-    compiled_script = _meta_updater.get_or_register(client)
+    # 전역 인스턴스에 강제 종속되지 않도록 대체 캐시(DI) 허용
+    updater = meta_updater or _meta_updater
+    compiled_script = await updater.get_or_register(client)
 
     try:
         return await compiled_script(
@@ -791,7 +801,7 @@ async def _execute_update_meta_script(
         )
     except (redis.exceptions.NoScriptError, redis.exceptions.ConnectionError) as e:
         # [리뷰반영] Transient 에러나 스크립트 리셋 상황(NOSCRIPT 등)에서만 캐시 무효화 수행
-        _meta_updater.invalidate()
+        updater.invalidate()
         logger.error(
             "[PERSONALIZED_INDEX] Failed to execute atomic Lua script for masked_uid=%s "
             "(Script Cache invalidated): %s",
