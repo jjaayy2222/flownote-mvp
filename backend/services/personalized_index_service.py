@@ -419,6 +419,15 @@ def _build_meta_key(hashed_user_id: str) -> str:
     return f"{_REDIS_META_PREFIX}:{hashed_user_id}"
 
 
+def _extract_masked_uid_from_key(key: str) -> str:
+    """
+    Redis 메타데이터 키에서 유저 식별자(마스킹용 앞 8자리)를 역추출한다.
+    의도치 않은 타입(None 등)이 전달된 경우 명시적(Explicit) 에러를 발생시키기 위해
+    광범위한 예외 캐치를 수행하지 않습니다.
+    """
+    return key.rsplit(":", 1)[-1][:8]
+
+
 def _now_utc_iso() -> str:
     """현재 UTC 시각을 ISO 8601 문자열로 반환한다."""
     return datetime.now(timezone.utc).isoformat()
@@ -789,11 +798,9 @@ async def _execute_update_meta_script(
     updater = meta_updater or _meta_updater
     compiled_script = updater.get_or_register(client)
 
-    # 파라미터 개수를 줄이고 내부에서 masked uid 추출 (캡슐화)
-    try:
-        masked_uid = key.rsplit(":", 1)[-1][:8]
-    except Exception:
-        masked_uid = "unknown"
+    # [리뷰반영] 예외 삼키기(Swallowing) 안티패턴을 제거하고 단일 헬퍼 사용
+    # key가 문자열이 아닌 경우 명시적(Explicit) 에러가 발생하여 상위 버그를 조기 발견할 수 있음
+    masked_uid = _extract_masked_uid_from_key(key)
 
     try:
         return await compiled_script(
