@@ -764,7 +764,7 @@ async def _execute_update_meta_script(
     vector_delta: int,
     delete_delta: int,
     now: str,
-) -> Optional[typing.Any]:
+) -> Optional[list[typing.Any]]:
     global _compiled_lua_script
 
     if _compiled_lua_script is None:
@@ -773,7 +773,7 @@ async def _execute_update_meta_script(
     try:
         return await _compiled_lua_script(
             keys=[key],
-            args=[str(vector_delta), str(delete_delta), now, str(_META_TTL_SECS)],
+            args=[str(vector_delta), str(delete_delta), str(now), str(_META_TTL_SECS)],
         )
     except (redis.exceptions.NoScriptError, redis.exceptions.ConnectionError) as e:
         # [리뷰반영] Transient 에러나 스크립트 리셋 상황(NOSCRIPT 등)에서만 캐시 무효화 수행
@@ -784,7 +784,7 @@ async def _execute_update_meta_script(
             key,
             e,
         )
-        raise e
+        raise
     except redis.exceptions.RedisError as e:
         # [리뷰반영] 일반적인 Redis 장애는 캐시 무효화 없이 로깅 후 상위 전파하여, "메타 부재(None)" 상황과 진짜 DB 장애를 명확히 구분
         logger.error(
@@ -792,7 +792,7 @@ async def _execute_update_meta_script(
             key,
             e,
         )
-        raise e
+        raise
 
 
 def _hgetall_list_to_dict(
