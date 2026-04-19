@@ -756,6 +756,8 @@ def should_rebuild_index(metadata: IndexMetadata) -> bool:
     return False
 
 
+_compiled_lua_script = None
+
 async def update_index_after_op(
     hashed_user_id: str,
     vector_delta: int,
@@ -776,27 +778,52 @@ async def update_index_after_op(
     Returns:
         갱신된 IndexMetadata, 또는 대상 메타키가 존재하지 않으면 None
     """
+    global _compiled_lua_script
     await _ensure_redis_connected()
+
+    # 스크립트 로드 최소화 (EVALSHA 사용 캐싱 기법)
+    if _compiled_lua_script is None:
+        _compiled_lua_script = redis_client.redis.register_script(_LUA_UPDATE_META_SCRIPT)
 
     key = _build_meta_key(hashed_user_id)
     now = _now_utc_iso()
 
-    # 모듈 레벨에서 호이스팅된 _LUA_UPDATE_META_SCRIPT 사용
-    raw_list = await redis_client.redis.eval(
-        _LUA_UPDATE_META_SCRIPT,
-        1,  # Number of keys
-        key,
-        str(vector_delta),  # 안전한 통신을 위해 모든 ARGV 명시적 문자열 타입 캐스팅
-        str(delete_delta),
-        now,
-        str(_META_TTL_SECS),
-    )
+    try:
+        # 모듈 레벨에서 호이스팅 및 EVALSHA로 등록된 스크립트 호출
+        raw_list = await _compiled_lua_script(
+            keys=[key],
+            args=[
+                str(vector_delta),  # 안전한 통신을 위해 모든 ARGV 명시적 문자열 타입 캐스팅
+                str(delete_delta),
+                now,
+                str(_META_TTL_SECS),
+            ]
+        )
+    except Exception as e:
+        logger.error(
+            "[PERSONALIZED_INDEX] Failed to execute atomic Lua script for masked_uid=%s: %s",
+            hashed_user_id[:8],
+            e,
+        )
+        return None
 
     # 빈 리스트 반환이 아닌, Lua 스크립트의 'return nil' (메타데이터 없음) 상황을 명시적으로 체크
     if raw_list is None:
         logger.error(
             "[PERSONALIZED_INDEX] Cannot update metrics: No metadata found for masked_uid=%s",
             hashed_user_id[:8],
+        )
+        return None
+
+    # [리뷰반영] 방어적 프로그래밍(Defensive Validation): Redis 응답 구조 손상 여부 검증
+    # HGETALL 호출 결과는 반드시 짝수 길이를 가진 리스트(키-값 쌍)여야 함
+    if not isinstance(raw_list, list) or len(raw_list) % 2 != 0:
+        actual_len = len(raw_list) if isinstance(raw_list, list) else type(raw_list).__name__
+        logger.error(
+            "[PERSONALIZED_INDEX] Corrupted Redis metadata response for masked_uid=%s. "
+            "Expected an even-length list from HGETALL, got length/type=%s.",
+            hashed_user_id[:8],
+            actual_len,
         )
         return None
 
