@@ -26,6 +26,7 @@ import logging
 import os
 import types
 import typing
+import redis.exceptions
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -799,9 +800,14 @@ async def update_index_after_op(
                 str(_META_TTL_SECS),
             ]
         )
-    except Exception as e:
+    except redis.exceptions.RedisError as e:
+        # [리뷰반영] 광범위한 Exception 캐치 제거 -> 명시적 RedisError 캐치
+        # Redis 연결이 끊기거나 SCRIPT FLUSH로 인해 NOSCRIPT가 발생했을 때 캐시를 무효화하여
+        # 다음 호출 시 새로운 커넥션 컨텍스트로 register_script가 다시 일어나도록 설정
+        _compiled_lua_script = None
+        
         logger.error(
-            "[PERSONALIZED_INDEX] Failed to execute atomic Lua script for masked_uid=%s: %s",
+            "[PERSONALIZED_INDEX] Failed to execute atomic Lua script for masked_uid=%s (Script Cache invalidated): %s",
             hashed_user_id[:8],
             e,
         )
