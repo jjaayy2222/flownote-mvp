@@ -422,30 +422,33 @@ def _build_meta_key(hashed_user_id: str) -> str:
     return f"{_REDIS_META_PREFIX}:{hashed_user_id}"
 
 
-def _extract_masked_uid_from_key(key: str) -> str:
+def _format_key_meta(key: typing.Any) -> str:
+    """에러 메시지용 키 메타 정보를 PII 안전한 형식으로 포맷한다."""
+    key_type = type(key).__name__
+    key_len = len(key) if isinstance(key, str) else "N/A"
+    return f"type={key_type}, len={key_len}"
+
+
+def _extract_masked_uid_from_key(key: typing.Any) -> str:
     """
     Redis 메타데이터 키에서 유저 식별자(마스킹용 앞 8자리)를 역추출한다.
-    문자열이 아니거나 지정된 Prefix를 따르지 않는 등 의도치 않은 형식이 전달된 경우 
+    문자열이 아니거나 지정된 Prefix를 따르지 않는 등 의도치 않은 형식이 전달된 경우
     명시적(Explicit) ValueError를 발생시킨다.
+    파라미터 타입이 Any인 이유: 비문자열 입력을 의도적으로 감지·ValueError로 처리함.
     """
     expected_prefix = f"{_REDIS_META_PREFIX}:"
     if not isinstance(key, str) or not key.startswith(expected_prefix):
-        # [리뷰반영] 보안성을 위해 전체 키를 노출하지 않으면서도, 디버깅을 위한
-        # 짧은 프리뷰(또는 타입) 단서를 제공하여 실패 원인 추적을 용이하게 함
-        key_type = type(key).__name__
-        key_len = len(key) if isinstance(key, str) else "N/A"
         raise ValueError(
             f"Invalid Redis key format for masked UID extraction "
-            f"(type={key_type}, len={key_len})"
+            f"({_format_key_meta(key)})"
         )
 
     uid_part = key[len(expected_prefix):]
     if not uid_part:
-        # [리뷰반영] 향후 리팩터링 안전성을 위해 len(str(key)) 방어적 처리 사용
         raise ValueError(
-            f"Empty UID part in Redis key (prefix matched, total length: {len(str(key))})"
+            f"Empty UID part in Redis key (prefix matched — {_format_key_meta(key)})"
         )
-        
+
     return uid_part[:8]
 
 
