@@ -204,6 +204,28 @@ _META_TTL_SECS: int = _load_meta_ttl()
 _COMPACTION_THRESHOLD: int = _load_compaction_threshold()
 _DELETE_RATIO_THRESHOLD: float = _load_delete_ratio()
 
+# 메타데이터 원자적 갱신을 위한 Lua 스크립트 (모듈 레벨 컴파일로 파싱 비용 절감)
+# - KEYS[1]: Redis Hash Key
+# - ARGV[1]: vector_delta (추가/삭제 수)
+# - ARGV[2]: delete_delta (무효화 수)
+# - ARGV[3]: updated_at (ISO 시간 문자열)
+# - ARGV[4]: _META_TTL_SECS
+_LUA_UPDATE_META_SCRIPT: str = """
+if redis.call("EXISTS", KEYS[1]) == 0 then
+    return nil
+end
+local v = tonumber(redis.call("HGET", KEYS[1], "vector_count") or "0")
+local d = tonumber(redis.call("HGET", KEYS[1], "deleted_count") or "0")
+
+v = math.max(0, v + tonumber(ARGV[1]))
+d = math.max(0, d + tonumber(ARGV[2]))
+
+redis.call("HSET", KEYS[1], "vector_count", tostring(v), "deleted_count", tostring(d), "updated_at", ARGV[3])
+redis.call("EXPIRE", KEYS[1], tonumber(ARGV[4]))
+
+return redis.call("HGETALL", KEYS[1])
+"""
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -759,34 +781,19 @@ async def update_index_after_op(
     key = _build_meta_key(hashed_user_id)
     now = _now_utc_iso()
 
-    # Lua 스크립트: 키 존재 여부 확인 -> 원자적 증감 -> 최신 HGETALL 반환
-    lua_script = """
-    if redis.call("EXISTS", KEYS[1]) == 0 then
-        return nil
-    end
-    local v = tonumber(redis.call("HGET", KEYS[1], "vector_count") or "0")
-    local d = tonumber(redis.call("HGET", KEYS[1], "deleted_count") or "0")
-    
-    v = math.max(0, v + tonumber(ARGV[1]))
-    d = math.max(0, d + tonumber(ARGV[2]))
-    
-    redis.call("HSET", KEYS[1], "vector_count", tostring(v), "deleted_count", tostring(d), "updated_at", ARGV[3])
-    redis.call("EXPIRE", KEYS[1], tonumber(ARGV[4]))
-    
-    return redis.call("HGETALL", KEYS[1])
-    """
-
+    # 모듈 레벨에서 호이스팅된 _LUA_UPDATE_META_SCRIPT 사용
     raw_list = await redis_client.redis.eval(
-        lua_script,
+        _LUA_UPDATE_META_SCRIPT,
         1,  # Number of keys
         key,
-        vector_delta,
-        delete_delta,
+        str(vector_delta),  # 안전한 통신을 위해 모든 ARGV 명시적 문자열 타입 캐스팅
+        str(delete_delta),
         now,
-        _META_TTL_SECS,
+        str(_META_TTL_SECS),
     )
 
-    if not raw_list:
+    # 빈 리스트 반환이 아닌, Lua 스크립트의 'return nil' (메타데이터 없음) 상황을 명시적으로 체크
+    if raw_list is None:
         logger.error(
             "[PERSONALIZED_INDEX] Cannot update metrics: No metadata found for masked_uid=%s",
             hashed_user_id[:8],
