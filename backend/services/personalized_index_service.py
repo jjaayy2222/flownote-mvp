@@ -757,39 +757,53 @@ def should_rebuild_index(metadata: IndexMetadata) -> bool:
     return False
 
 
-_compiled_lua_script = None
+class LuaScriptCache:
+    """Lua 스크립트의 EVALSHA 캐시를 캡슐화하고, 연결 유실 시 자율 복구하는 헬퍼 클래스"""
+    def __init__(self, script_body: str):
+        self.script_body = script_body
+        self._compiled = None
+
+    def get_or_register(self, client: typing.Any) -> typing.Any:
+        if self._compiled is None:
+            self._compiled = client.register_script(self.script_body)
+        return self._compiled
+
+    def invalidate(self) -> None:
+        self._compiled = None
+
+# 모듈 레벨 캡슐화 객체 (단일 진실 공급원)
+_meta_updater = LuaScriptCache(_LUA_UPDATE_META_SCRIPT)
 
 async def _execute_update_meta_script(
+    client: typing.Any,
+    masked_uid: str,
     key: str,
     vector_delta: int,
     delete_delta: int,
     now: str,
 ) -> Optional[list[typing.Any]]:
-    global _compiled_lua_script
-
-    if _compiled_lua_script is None:
-        _compiled_lua_script = redis_client.redis.register_script(_LUA_UPDATE_META_SCRIPT)
+    compiled_script = _meta_updater.get_or_register(client)
 
     try:
-        return await _compiled_lua_script(
+        return await compiled_script(
             keys=[key],
             args=[str(vector_delta), str(delete_delta), str(now), str(_META_TTL_SECS)],
         )
     except (redis.exceptions.NoScriptError, redis.exceptions.ConnectionError) as e:
         # [리뷰반영] Transient 에러나 스크립트 리셋 상황(NOSCRIPT 등)에서만 캐시 무효화 수행
-        _compiled_lua_script = None
+        _meta_updater.invalidate()
         logger.error(
-            "[PERSONALIZED_INDEX] Failed to execute atomic Lua script for key=%s "
+            "[PERSONALIZED_INDEX] Failed to execute atomic Lua script for masked_uid=%s "
             "(Script Cache invalidated): %s",
-            key,
+            masked_uid,
             e,
         )
         raise
     except redis.exceptions.RedisError as e:
         # [리뷰반영] 일반적인 Redis 장애는 캐시 무효화 없이 로깅 후 상위 전파하여, "메타 부재(None)" 상황과 진짜 DB 장애를 명확히 구분
         logger.error(
-            "[PERSONALIZED_INDEX] Redis error executing script for key=%s: %s",
-            key,
+            "[PERSONALIZED_INDEX] Redis error executing script for masked_uid=%s: %s",
+            masked_uid,
             e,
         )
         raise
@@ -838,6 +852,8 @@ async def update_index_after_op(
 
     # 분리된 Helper를 통해 스크립트 실행 (에러 시 raise되어 제어권 위임됨)
     raw_list = await _execute_update_meta_script(
+        client=redis_client.redis,
+        masked_uid=hashed_user_id[:8],
         key=key,
         vector_delta=vector_delta,
         delete_delta=delete_delta,
