@@ -422,10 +422,18 @@ def _build_meta_key(hashed_user_id: str) -> str:
 def _extract_masked_uid_from_key(key: str) -> str:
     """
     Redis 메타데이터 키에서 유저 식별자(마스킹용 앞 8자리)를 역추출한다.
-    의도치 않은 타입(None 등)이 전달된 경우 명시적(Explicit) 에러를 발생시키기 위해
-    광범위한 예외 캐치를 수행하지 않습니다.
+    문자열이 아니거나 지정된 Prefix를 따르지 않는 등 의도치 않은 형식이 전달된 경우 
+    명시적(Explicit) ValueError를 발생시킨다.
     """
-    return key.rsplit(":", 1)[-1][:8]
+    expected_prefix = f"{_REDIS_META_PREFIX}:"
+    if not isinstance(key, str) or not key.startswith(expected_prefix):
+        raise ValueError(f"Invalid Redis key format for masked UID extraction: {key!r}")
+    
+    uid_part = key[len(expected_prefix):]
+    if not uid_part:
+        raise ValueError(f"Empty UID part in Redis key: {key!r}")
+        
+    return uid_part[:8]
 
 
 def _now_utc_iso() -> str:
@@ -774,8 +782,11 @@ class LuaScriptCache:
         self._compiled: Optional["redis.commands.core.AsyncScript"] = None
 
     def get_or_register(self, client: "redis_async.Redis") -> "redis.commands.core.AsyncScript":
-        # Coroutine 경쟁이 일어나더라도 register_script 의 부하가 미비하므로
-        # 락 없이 단순화하여 인지 부담(Cognitive Load)을 줄임
+        """
+        스크립트 객체를 등록/조회하는 동기(Sync) 인터페이스입니다.
+        (경쟁 상태의 부하가 미비하므로 비동기 Lock 없이 단순 메모리 검사만 수행)
+        반환된 `AsyncScript` 인스턴스 획득 시에는 await를 사용하지 마세요. (실행 시에만 사용)
+        """
         if self._compiled is None:
             self._compiled = client.register_script(self.script_body)
         return self._compiled
