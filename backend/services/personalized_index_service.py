@@ -430,12 +430,18 @@ def _extract_masked_uid_from_key(key: str) -> str:
     """
     expected_prefix = f"{_REDIS_META_PREFIX}:"
     if not isinstance(key, str) or not key.startswith(expected_prefix):
-        # [리뷰반영] 보안성을 위해 오류 메시지에 원본 키 전체 노출 방지(Masking)
-        raise ValueError("Invalid Redis key format for masked UID extraction (raw key masked for security)")
+        # [리뷰반영] 보안성을 위해 전체 키를 노출하지 않으면서도, 디버깅을 위한
+        # 짧은 프리뷰(또는 타입) 단서를 제공하여 실패 원인 추적을 용이하게 함
+        preview = str(key)[:15] + "..." if isinstance(key, str) else type(key).__name__
+        raise ValueError(
+            f"Invalid Redis key format for masked UID extraction (preview: {preview})"
+        )
     
     uid_part = key[len(expected_prefix):]
     if not uid_part:
-        raise ValueError("Empty UID part in Redis key (raw key masked for security)")
+        raise ValueError(
+            f"Empty UID part in Redis key (prefix matched, total length: {len(key)})"
+        )
         
     return uid_part[:8]
 
@@ -814,7 +820,8 @@ async def _execute_update_meta_script(
     compiled_script_handle = updater.get_compiled_script_handle(client)
 
     # [리뷰반영] 예외 삼키기(Swallowing) 안티패턴을 제거하고 단일 헬퍼 사용
-    # key가 문자열이 아닌 경우 명시적(Explicit) 에러가 발생하여 상위 버그를 조기 발견할 수 있음
+    # key가 정상 포맷이 아닌 경우 상위 버그로 간주해 명시적 예외(Fail-fast)를 발생시킴
+    # (추출된 masked_uid 값은 하단 try/except 블록 내에서 장애 로깅 식별자로만 사용됨)
     masked_uid = _extract_masked_uid_from_key(key)
 
     try:
