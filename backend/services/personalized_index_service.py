@@ -29,6 +29,9 @@ import typing
 import redis.asyncio as redis_async
 import redis.exceptions
 from dataclasses import dataclass
+
+# [타입 힌팅 Alias] 동기 함수가 반환하는 스크립트 객체임을 명시하여 await 오용 방지
+CompiledRedisScriptHandle = "redis.commands.core.AsyncScript"
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -422,10 +425,19 @@ def _build_meta_key(hashed_user_id: str) -> str:
 def _extract_masked_uid_from_key(key: str) -> str:
     """
     Redis 메타데이터 키에서 유저 식별자(마스킹용 앞 8자리)를 역추출한다.
-    의도치 않은 타입(None 등)이 전달된 경우 명시적(Explicit) 에러를 발생시키기 위해
-    광범위한 예외 캐치를 수행하지 않습니다.
+    문자열이 아니거나 지정된 Prefix를 따르지 않는 등 의도치 않은 형식이 전달된 경우 
+    명시적(Explicit) ValueError를 발생시킨다.
     """
-    return key.rsplit(":", 1)[-1][:8]
+    expected_prefix = f"{_REDIS_META_PREFIX}:"
+    if not isinstance(key, str) or not key.startswith(expected_prefix):
+        # [리뷰반영] 보안성을 위해 오류 메시지에 원본 키 전체 노출 방지(Masking)
+        raise ValueError("Invalid Redis key format for masked UID extraction (raw key masked for security)")
+    
+    uid_part = key[len(expected_prefix):]
+    if not uid_part:
+        raise ValueError("Empty UID part in Redis key (raw key masked for security)")
+        
+    return uid_part[:8]
 
 
 def _now_utc_iso() -> str:
@@ -771,11 +783,14 @@ class LuaScriptCache:
     """Lua 스크립트의 EVALSHA 캐시를 캡슐화하고, 연결 유실 시 자율 복구하는 헬퍼 클래스"""
     def __init__(self, script_body: str):
         self.script_body = script_body
-        self._compiled: Optional["redis.commands.core.AsyncScript"] = None
+        self._compiled: Optional[CompiledRedisScriptHandle] = None
 
-    def get_or_register(self, client: "redis_async.Redis") -> "redis.commands.core.AsyncScript":
-        # Coroutine 경쟁이 일어나더라도 register_script 의 부하가 미비하므로
-        # 락 없이 단순화하여 인지 부담(Cognitive Load)을 줄임
+    def get_compiled_script_handle(self, client: "redis_async.Redis") -> CompiledRedisScriptHandle:
+        """
+        스크립트 객체의 '참조(Handle)'를 반환하는 동기(Sync) 인터페이스입니다.
+        (경쟁 상태의 부하가 미비하므로 비동기 Lock 없이 단순 메모리 검사만 수행)
+        반환된 인스턴스 획득 시에는 await를 사용하지 마세요. (실행 시에만 체이닝 사용)
+        """
         if self._compiled is None:
             self._compiled = client.register_script(self.script_body)
         return self._compiled
@@ -796,14 +811,15 @@ async def _execute_update_meta_script(
 ) -> Optional[list[typing.Any]]:
     # 전역 인스턴스에 강제 종속되지 않도록 대체 캐시(DI) 허용
     updater = meta_updater or _meta_updater
-    compiled_script = updater.get_or_register(client)
+    compiled_script_handle = updater.get_compiled_script_handle(client)
 
     # [리뷰반영] 예외 삼키기(Swallowing) 안티패턴을 제거하고 단일 헬퍼 사용
     # key가 문자열이 아닌 경우 명시적(Explicit) 에러가 발생하여 상위 버그를 조기 발견할 수 있음
     masked_uid = _extract_masked_uid_from_key(key)
 
     try:
-        return await compiled_script(
+        # 반환받은 '핸들(Handle)'을 비로소 await 하여 스크립트 실행
+        return await compiled_script_handle(
             keys=[key],
             args=[str(vector_delta), str(delete_delta), str(now), str(_META_TTL_SECS)],
         )
