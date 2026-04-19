@@ -721,7 +721,7 @@ def should_rebuild_index(metadata: IndexMetadata) -> bool:
         return True
 
     # 기준 2: 삭제된 데이터가 너무 많은 경우 (검색 품질 및 공간 효율성)
-    if total_count > _MIN_DATASET_SIZE_FOR_COMPACTION:
+    if total_count >= _MIN_DATASET_SIZE_FOR_COMPACTION:
         delete_ratio = metadata.deleted_count / total_count
         if delete_ratio >= _DELETE_RATIO_THRESHOLD:
             logger.info(
@@ -740,7 +740,11 @@ async def update_index_after_op(
     delete_delta: int,
 ) -> Optional[IndexMetadata]:
     """
-    벡터 추가/삭제 작업 후 메타데이터를 갱신하고, 컴팩션 필요 여부를 확인한다.
+    [원자적(Atomic) 연산 기능 업데이트]
+    벡터 추가/삭제 작업 후 메타데이터를 원자적으로 갱신하고, 컴팩션 필요 여부를 판단한다.
+
+    Redis Lua Script를 사용하여 동시성(Race Condition) 환경에서도 'Read-Modify-Write' 시 
+    데이터 갱신이 유실되지 않도록 보장한다. 갱신 후의 카운트는 항상 0 이상으로 유지된다.
 
     Args:
         hashed_user_id: 사용자 해시 ID
@@ -748,23 +752,50 @@ async def update_index_after_op(
         delete_delta: 무효(삭제 처리된) 벡터 수 변화량 (삭제 시 +)
 
     Returns:
-        갱신된 IndexMetadata, 또는 실패 시 None
+        갱신된 IndexMetadata, 또는 대상 메타키가 존재하지 않으면 None
     """
-    metadata = await load_index_metadata(hashed_user_id)
-    if not metadata:
+    await _ensure_redis_connected()
+
+    key = _build_meta_key(hashed_user_id)
+    now = _now_utc_iso()
+
+    # Lua 스크립트: 키 존재 여부 확인 -> 원자적 증감 -> 최신 HGETALL 반환
+    lua_script = """
+    if redis.call("EXISTS", KEYS[1]) == 0 then
+        return nil
+    end
+    local v = tonumber(redis.call("HGET", KEYS[1], "vector_count") or "0")
+    local d = tonumber(redis.call("HGET", KEYS[1], "deleted_count") or "0")
+    
+    v = math.max(0, v + tonumber(ARGV[1]))
+    d = math.max(0, d + tonumber(ARGV[2]))
+    
+    redis.call("HSET", KEYS[1], "vector_count", tostring(v), "deleted_count", tostring(d), "updated_at", ARGV[3])
+    redis.call("EXPIRE", KEYS[1], tonumber(ARGV[4]))
+    
+    return redis.call("HGETALL", KEYS[1])
+    """
+
+    raw_list = await redis_client.redis.eval(
+        lua_script,
+        1,  # Number of keys
+        key,
+        vector_delta,
+        delete_delta,
+        now,
+        _META_TTL_SECS,
+    )
+
+    if not raw_list:
         logger.error(
             "[PERSONALIZED_INDEX] Cannot update metrics: No metadata found for masked_uid=%s",
             hashed_user_id[:8],
         )
         return None
 
-    # 수치 갱신 (음수는 0으로 보정)
-    metadata.vector_count = max(0, metadata.vector_count + vector_delta)
-    metadata.deleted_count = max(0, metadata.deleted_count + delete_delta)
-    metadata.updated_at = _now_utc_iso()
-
-    # Redis 저장
-    await save_index_metadata(hashed_user_id, metadata)
+    # Lua HGETALL은 Flat List 형태([k1, v1, k2, v2, ...])를 반환하므로 dict로 변환
+    raw_dict: dict[bytes | str, bytes | str] = dict(zip(raw_list[0::2], raw_list[1::2]))
+    metadata = IndexMetadata.from_redis_dict(raw_dict)
 
     # 컴팩션 여부 확인 로그 추가 (비동기 워커 트리거의 진입점)
     if should_rebuild_index(metadata):
