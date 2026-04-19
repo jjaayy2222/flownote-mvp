@@ -146,6 +146,9 @@ _DEFAULT_DELETE_RATIO: float = 0.15
 _DELETE_RATIO_MIN: float = 0.0
 _DELETE_RATIO_MAX: float = 1.0
 
+# 삭제 비율 기반 컴팩션에서 노이즈 트리거를 방지하기 위한 최소 데이터셋 규모
+_MIN_DATASET_SIZE_FOR_COMPACTION: int = 10
+
 
 def _load_compaction_threshold() -> int:
     """FAISS_COMPACTION_VECTOR_THRESHOLD 환경 변수를 로드하고 보정(Clamp)한다."""
@@ -689,9 +692,11 @@ def should_rebuild_index(metadata: IndexMetadata) -> bool:
     인덱스 상태를 분석하여 재구축(Compaction)이 필요한지 여부를 판별한다.
 
     판단 기준:
-      1. 총 벡터 수 임계값 초과: 유효 벡터 수가 _COMPACTION_THRESHOLD를 넘었는가?
-      2. 삭제 비율 임계값 초과: (삭제된 수 / 전체 수) 비율이 _DELETE_RATIO_THRESHOLD를 넘었는가?
-         (단, 분모가 너무 작은 경우 노이즈 방지를 위해 무시)
+      - 무의미한 Rebuild 방어: 삭제된 벡터(deleted_count)가 없으면 Rebuild는 단순 복사본 생성이 되므로 즉시 False 반환.
+      - 기준 1. 물리적 규모 임계값 초과: '유효 벡터(vector_count)'가 아닌 '누적 벡터(total_count)'가 
+                _COMPACTION_THRESHOLD를 초과하는지 검사. FAISS의 물리적 크기 팽창과 메모리 사용량은 total_count에 비례한다.
+      - 기준 2. 삭제 비율 임계값 초과: (deleted_count / total_count)가 _DELETE_RATIO_THRESHOLD를 초과하는가?
+                단, _MIN_DATASET_SIZE_FOR_COMPACTION 이하의 극소량 데이터셋에서는 일시적 변동 노이즈를 방지하기 위해 무시한다.
 
     Args:
         metadata: Redis에서 로드한 최신 인덱스 메타데이터
@@ -701,17 +706,22 @@ def should_rebuild_index(metadata: IndexMetadata) -> bool:
     """
     total_count = metadata.vector_count + metadata.deleted_count
 
-    # 기준 1: 규모가 너무 커진 경우 (조회 성능 최적화 필요)
-    if metadata.vector_count >= _COMPACTION_THRESHOLD:
+    # 무의미한 Rebuild 방어: 치울 쓰레기가 없다면 컴팩션 트리거 불가
+    if metadata.deleted_count == 0:
+        return False
+
+    # 기준 1: FAISS 물리적 규모가 너무 커진 경우 (조회/메모리 성능 최적화 필요)
+    # [리뷰반영] 유효 벡터 수가 아닌 전체/누적 벡터 수(total_count)를 사용해 FAISS의 실제 압력을 가늠함.
+    if total_count >= _COMPACTION_THRESHOLD:
         logger.info(
-            "[PERSONALIZED_INDEX][POLICY] Compaction suggested: vector_count (%d) >= threshold (%d)",
-            metadata.vector_count,
+            "[PERSONALIZED_INDEX][POLICY] Compaction suggested: total_count (%d) >= threshold (%d)",
+            total_count,
             _COMPACTION_THRESHOLD,
         )
         return True
 
     # 기준 2: 삭제된 데이터가 너무 많은 경우 (검색 품질 및 공간 효율성)
-    if total_count > 10:  # 최소 데이터셋 규모 보장 (노이즈 방어)
+    if total_count > _MIN_DATASET_SIZE_FOR_COMPACTION:
         delete_ratio = metadata.deleted_count / total_count
         if delete_ratio >= _DELETE_RATIO_THRESHOLD:
             logger.info(
