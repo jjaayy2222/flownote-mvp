@@ -21,7 +21,6 @@ Path 전략:
 from __future__ import annotations
 
 import dataclasses
-import asyncio
 import hashlib
 import logging
 import os
@@ -420,6 +419,15 @@ def _build_meta_key(hashed_user_id: str) -> str:
     return f"{_REDIS_META_PREFIX}:{hashed_user_id}"
 
 
+def _extract_masked_uid_from_key(key: str) -> str:
+    """
+    Redis 메타데이터 키에서 유저 식별자(마스킹용 앞 8자리)를 역추출한다.
+    의도치 않은 타입(None 등)이 전달된 경우 명시적(Explicit) 에러를 발생시키기 위해
+    광범위한 예외 캐치를 수행하지 않습니다.
+    """
+    return key.rsplit(":", 1)[-1][:8]
+
+
 def _now_utc_iso() -> str:
     """현재 UTC 시각을 ISO 8601 문자열로 반환한다."""
     return datetime.now(timezone.utc).isoformat()
@@ -764,15 +772,12 @@ class LuaScriptCache:
     def __init__(self, script_body: str):
         self.script_body = script_body
         self._compiled: Optional["redis.commands.core.AsyncScript"] = None
-        self._lock = asyncio.Lock()
 
-    async def get_or_register(self, client: "redis_async.Redis") -> "redis.commands.core.AsyncScript":
-        # 다수 코루틴 간 경쟁 상황(Race Condition)으로 인한 스크립트 중복 등록을
-        # 방지하기 위해 비동기 락과 Double-Checked Locking 적용
+    def get_or_register(self, client: "redis_async.Redis") -> "redis.commands.core.AsyncScript":
+        # Coroutine 경쟁이 일어나더라도 register_script 의 부하가 미비하므로
+        # 락 없이 단순화하여 인지 부담(Cognitive Load)을 줄임
         if self._compiled is None:
-            async with self._lock:
-                if self._compiled is None:
-                    self._compiled = client.register_script(self.script_body)
+            self._compiled = client.register_script(self.script_body)
         return self._compiled
 
     def invalidate(self) -> None:
@@ -783,7 +788,6 @@ _meta_updater = LuaScriptCache(_LUA_UPDATE_META_SCRIPT)
 
 async def _execute_update_meta_script(
     client: "redis_async.Redis",
-    masked_uid: str,
     key: str,
     vector_delta: int,
     delete_delta: int,
@@ -792,7 +796,11 @@ async def _execute_update_meta_script(
 ) -> Optional[list[typing.Any]]:
     # 전역 인스턴스에 강제 종속되지 않도록 대체 캐시(DI) 허용
     updater = meta_updater or _meta_updater
-    compiled_script = await updater.get_or_register(client)
+    compiled_script = updater.get_or_register(client)
+
+    # [리뷰반영] 예외 삼키기(Swallowing) 안티패턴을 제거하고 단일 헬퍼 사용
+    # key가 문자열이 아닌 경우 명시적(Explicit) 에러가 발생하여 상위 버그를 조기 발견할 수 있음
+    masked_uid = _extract_masked_uid_from_key(key)
 
     try:
         return await compiled_script(
@@ -863,7 +871,6 @@ async def update_index_after_op(
     # 분리된 Helper를 통해 스크립트 실행 (에러 시 raise되어 제어권 위임됨)
     raw_list = await _execute_update_meta_script(
         client=redis_client.redis,
-        masked_uid=hashed_user_id[:8],
         key=key,
         vector_delta=vector_delta,
         delete_delta=delete_delta,
