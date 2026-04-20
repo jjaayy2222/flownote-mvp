@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 import os
 import typing
-from typing import Optional
+from typing import Callable, Optional, TypeVar
 
 import redis.exceptions
 from redis.exceptions import RedisError  # 연결/타임아웃/명령 실패 포괄
@@ -58,67 +58,89 @@ _COLD_START_GLOBAL_WEIGHT_MAX = 1.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 환경 변수 로더 (안전한 파싱 + 보정)
+# 환경 변수 로더 — 공통 헬퍼 SSOT (하드코딩 금지)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _load_cold_start_threshold() -> int:
-    """
-    환경 변수 COLD_START_THRESHOLD를 안전하게 파싱하고 범위를 보정한다.
+_NumT = TypeVar("_NumT", int, float)
 
-    - 미설정(None): 조용히 기본값 사용
-    - 설정됐으나 빈값/공백: 잘못된 설정으로 판단 → WARNING 로그 후 기본값
-    - 정상 범위 초과: Clamp 후 WARNING 로그 출력
-    - 파싱 오류: WARNING 로그 후 기본값
+
+def _parse_bounded_env_number(
+    env_key: str,
+    default: _NumT,
+    min_val: _NumT,
+    max_val: _NumT,
+    parser: Callable[[str], _NumT],
+) -> _NumT:
     """
-    raw = os.environ.get(_COLD_START_THRESHOLD_ENV_KEY)  # None if not set
-    default = _COLD_START_THRESHOLD_DEFAULT
+    환경 변수를 안전하게 파싱하고 [min_val, max_val] 범위로 Clamp하는 SSOT 헬퍼.
+
+    _load_cold_start_threshold와 _load_cold_start_global_weight가 이 헬퍼를
+    공유해 파싱/보정 동작을 단일 지점에서 관리한다.
+    특성상 int 로더는 `parser=int`, float 로더는 `parser=float`를 전달한다.
+
+    동작 우선순위:
+      1) 미설정(None)   → 조용히 기본값 반환
+      2) 빈값/공백    → 운영자 오설정 의심 → WARNING + 기본값
+      3) 파싱 실패    → WARNING + 기본값
+      4) 범위 이탈    → Clamp + WARNING
+      5) 정상         → 파싱된 값 반환
+    """
+    raw = os.environ.get(env_key)
 
     # 1) 아예 미설정: 조용히 기본값 사용
     if raw is None:
         return default
 
-    # 2) 설정됐으나 빈값/공백: 운영자 오설정 경고
+    # 2) 설정됐으나 빈값/공백: 운영자 오설정 의심
     raw_stripped = raw.strip()
     if not raw_stripped:
         logger.warning(
-            "[TOPIC_CLUSTERING] %s 가 설정됐으나 빈값/공백입니다. 기본값 %d로 폴백합니다.",
-            _COLD_START_THRESHOLD_ENV_KEY,
+            "[TOPIC_CLUSTERING] %s 가 설정됐으나 빈값/공백입니다 (운영자 오설정 의심). "
+            "기본값 %r로 폴백합니다.",
+            env_key,
             default,
         )
         return default
 
+    # 3) 파싱 실패
     try:
-        value = int(raw_stripped)
+        value = parser(raw_stripped)
     except (ValueError, TypeError):
         logger.warning(
-            "[TOPIC_CLUSTERING] %s 파싱 실패 (값=%r). 기본값 %d로 폴백합니다.",
-            _COLD_START_THRESHOLD_ENV_KEY,
+            "[TOPIC_CLUSTERING] %s 파싱 실패 (값=%r). 기본값 %r로 폴백합니다.",
+            env_key,
             raw_stripped,
             default,
         )
         return default
 
-    if value < _COLD_START_THRESHOLD_MIN:
+    # 4) 범위 Clamp
+    if value < min_val:
         logger.warning(
-            "[TOPIC_CLUSTERING] %s=%d 가 최솟값(%d) 미만입니다. %d로 보정합니다.",
-            _COLD_START_THRESHOLD_ENV_KEY,
-            value,
-            _COLD_START_THRESHOLD_MIN,
-            _COLD_START_THRESHOLD_MIN,
+            "[TOPIC_CLUSTERING] %s=%r 가 최솟값(%r) 미만입니다. %r로 보정합니다.",
+            env_key, value, min_val, min_val,
         )
-        return _COLD_START_THRESHOLD_MIN
+        return min_val
 
-    if value > _COLD_START_THRESHOLD_MAX:
+    if value > max_val:
         logger.warning(
-            "[TOPIC_CLUSTERING] %s=%d 가 최댓값(%d) 초과입니다. %d로 보정합니다.",
-            _COLD_START_THRESHOLD_ENV_KEY,
-            value,
-            _COLD_START_THRESHOLD_MAX,
-            _COLD_START_THRESHOLD_MAX,
+            "[TOPIC_CLUSTERING] %s=%r 가 최댓값(%r) 초과입니다. %r로 보정합니다.",
+            env_key, value, max_val, max_val,
         )
-        return _COLD_START_THRESHOLD_MAX
+        return max_val
 
     return value
+
+
+def _load_cold_start_threshold() -> int:
+    """COLD_START_THRESHOLD 환경 변수를 안전하게 파싱하고 범위를 보정한다."""
+    return _parse_bounded_env_number(
+        _COLD_START_THRESHOLD_ENV_KEY,
+        _COLD_START_THRESHOLD_DEFAULT,
+        _COLD_START_THRESHOLD_MIN,
+        _COLD_START_THRESHOLD_MAX,
+        int,
+    )
 
 
 # 모듈 로드 시 1회 계산 (런타임 환경 변수 변경은 재시작으로 반영)
@@ -126,68 +148,18 @@ _COLD_START_THRESHOLD: int = _load_cold_start_threshold()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 환경 변수 로더: Cold Start 전역 인덱스 가중치 (하드코딩 금지)
+# 환경 변수 로더: Cold Start 전역 인덱스 가중치
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _load_cold_start_global_weight() -> float:
-    """
-    환경 변수 COLD_START_GLOBAL_INDEX_WEIGHT를 안전하게 파싱하고 범위를 보정한다.
-
-    - 미설정(None): 조용히 기본값 사용
-    - 설정됐으나 빈값/공백: 잘못된 설정으로 판단 → WARNING 로그 후 기본값
-    - 정상 범위 초과: Clamp 후 WARNING 로그 출력
-    - 파싱 오류: WARNING 로그 후 기본값
-    """
-    raw = os.environ.get(_COLD_START_GLOBAL_WEIGHT_ENV_KEY)  # None if not set
-    default = _COLD_START_GLOBAL_WEIGHT_DEFAULT
-
-    # 1) 아예 미설정: 조용히 기본값 사용
-    if raw is None:
-        return default
-
-    # 2) 설정됐으나 빈값/공백: 운영자 오설정 경고
-    raw_stripped = raw.strip()
-    if not raw_stripped:
-        logger.warning(
-            "[TOPIC_CLUSTERING] %s 가 설정됐으나 빈값/공백입니다 (운영자 오설정 의심). "
-            "기본값 %.3f로 폴백합니다.",
-            _COLD_START_GLOBAL_WEIGHT_ENV_KEY,
-            default,
-        )
-        return default
-
-    try:
-        value = float(raw_stripped)
-    except (ValueError, TypeError):
-        logger.warning(
-            "[TOPIC_CLUSTERING] %s 파싱 실패 (값=%r). 기본값 %.1f로 폴백합니다.",
-            _COLD_START_GLOBAL_WEIGHT_ENV_KEY,
-            raw_stripped,
-            default,
-        )
-        return default
-
-    if value < _COLD_START_GLOBAL_WEIGHT_MIN:
-        logger.warning(
-            "[TOPIC_CLUSTERING] %s=%.2f 가 최솟값(%.1f) 미만입니다. %.1f로 보정합니다.",
-            _COLD_START_GLOBAL_WEIGHT_ENV_KEY,
-            value,
-            _COLD_START_GLOBAL_WEIGHT_MIN,
-            _COLD_START_GLOBAL_WEIGHT_MIN,
-        )
-        return _COLD_START_GLOBAL_WEIGHT_MIN
-
-    if value > _COLD_START_GLOBAL_WEIGHT_MAX:
-        logger.warning(
-            "[TOPIC_CLUSTERING] %s=%.2f 가 최댓값(%.1f) 초과입니다. %.1f로 보정합니다.",
-            _COLD_START_GLOBAL_WEIGHT_ENV_KEY,
-            value,
-            _COLD_START_GLOBAL_WEIGHT_MAX,
-            _COLD_START_GLOBAL_WEIGHT_MAX,
-        )
-        return _COLD_START_GLOBAL_WEIGHT_MAX
-
-    return value
+    """COLD_START_GLOBAL_INDEX_WEIGHT 환경 변수를 안전하게 파싱하고 범위를 보정한다."""
+    return _parse_bounded_env_number(
+        _COLD_START_GLOBAL_WEIGHT_ENV_KEY,
+        _COLD_START_GLOBAL_WEIGHT_DEFAULT,
+        _COLD_START_GLOBAL_WEIGHT_MIN,
+        _COLD_START_GLOBAL_WEIGHT_MAX,
+        float,
+    )
 
 
 # 모듈 로드 시 1회 계산
@@ -242,7 +214,13 @@ def _parse_raw_int(raw: object) -> int:
         return 0
     try:
         return int(raw)  # type: ignore[arg-type]
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as exc:
+        # [리뷰반영] 비숫자 값은 Redis 데이터 손상일 수 있으므로 DEBUG 레벨로 가시화
+        logger.debug(
+            "[TOPIC_CLUSTERING] Redis raw 값 파싱 실패 (raw=%r). 0으로 처리합니다. exc=%r",
+            raw,
+            exc,
+        )
         return 0
 
 
@@ -284,7 +262,9 @@ async def _get_two_redis_counts(key1: str, key2: str) -> tuple[int, int]:
     # [리뷰반영] mget이 None이나 길이 부족한 리스트를 반환할 경우를 방어
     if results is None or len(results) < 2:
         logger.warning(
-            "[TOPIC_CLUSTERING] MGET 응답이 예상과 다릅니다 (results=%r). 0으로 처리합니다.",
+            "[TOPIC_CLUSTERING] MGET 응답이 예상과 다릅니다 (keys=%r, %r, results=%r). 0으로 처리합니다.",
+            key1,
+            key2,
             results,
         )
         return 0, 0
