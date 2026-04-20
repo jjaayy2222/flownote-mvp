@@ -80,13 +80,13 @@ def _parse_bounded_env_number(
     특성상 int 로더는 `parser=int`, float 로더는 `parser=float`를 전달한다.
 
     동작 우선순위:
-      1) 미설정(None)    → 조용히 기본값 반환
-      2) 빈값/공백     → 운영자 오설정 의심 → WARNING + 기본값
-      3) 파싱 실패     → WARNING + 기본값
-      4) NaN (float전용) → 유효하지 않은 값 → WARNING + 기본값
-         (NaN은 모든 비교에서 False를 반환하므로 Clamp을 바이패스함)
-      5) 범위 이탈     → Clamp + WARNING
-      6) 정상          → 파싱된 값 반환
+      1) 미설정(None)     → 조용히 기본값 반환
+      2) 빈값/공백      → 운영자 오설정 의심 → WARNING + 기본값
+      3) 파싱 실패      → WARNING + 기본값
+      4) 비유한 값 (float 전용) → NaN / ±inf 유효하지 않은 값 → WARNING + 기본값
+         (math.isfinite()로 NaN와 ±inf를 통합 차단)
+      5) 범위 이탈      → Clamp + WARNING
+      6) 정상           → 파싱된 값 반환
     """
     raw = os.environ.get(env_key)
 
@@ -117,17 +117,20 @@ def _parse_bounded_env_number(
         )
         return default
 
-    # 4) NaN 체크 (float 전용): NaN은 모든 비교에서 False를 반환해 Clamp을 바이패스함
-    #    int('NaN')은 ValueError로 위에서 이미 catch되므로 float에만 해당
-    if isinstance(value, float) and math.isnan(value):
+    # 4) 비유한 값 체크 (float 전용): NaN과 ±inf는 명시적으로 무효 처리
+    #    - NaN: 모든 비교에서 False → Clamp 바이패스
+    #    - ±inf: 실제 운영 수치칠 수 없으므로 안전한 기본값으로 폴백
+    #    int('NaN')은 ValueError로 위에서 이미 catch되어 float에만 해당
+    if isinstance(value, float) and not math.isfinite(value):
         logger.warning(
-            "[TOPIC_CLUSTERING] %s 값이 NaN입니다 (유효하지 않은 값). 기본값 %r로 폴백합니다.",
+            "[TOPIC_CLUSTERING] %s 값이 비유한(NaN 또는 ±inf)입니다 (운영자 오설정 의심). "
+            "기본값 %r로 폴백합니다.",
             env_key,
             default,
         )
         return default
 
-    # 4) 범위 Clamp
+    # 5) 범위 Clamp
     if value < min_val:
         logger.warning(
             "[TOPIC_CLUSTERING] %s=%r 가 최솟값(%r) 미만입니다. %r로 보정합니다.",
