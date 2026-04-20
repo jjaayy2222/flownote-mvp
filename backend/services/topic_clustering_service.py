@@ -49,8 +49,12 @@ _COLD_START_THRESHOLD_DEFAULT = 5
 _COLD_START_THRESHOLD_MIN = 1
 _COLD_START_THRESHOLD_MAX = 100
 
-# 콜드 스타트 시 적용할 전역 인덱스 가중치 (1.0 = 100% 전역 인덱스)
-GLOBAL_INDEX_WEIGHT_COLD_START: float = 1.0
+# 콜드 스타트 시 적용할 전역 인덱스 가중치 (환경 변수로 외부화)
+# COLD_START_GLOBAL_INDEX_WEIGHT: 콜드 스타트 사용자에게 적용할 전역 인덱스 비율
+_COLD_START_GLOBAL_WEIGHT_ENV_KEY = "COLD_START_GLOBAL_INDEX_WEIGHT"
+_COLD_START_GLOBAL_WEIGHT_DEFAULT = 1.0
+_COLD_START_GLOBAL_WEIGHT_MIN = 0.0
+_COLD_START_GLOBAL_WEIGHT_MAX = 1.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -110,6 +114,62 @@ _COLD_START_THRESHOLD: int = _load_cold_start_threshold()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 환경 변수 로더: Cold Start 전역 인덱스 가중치 (하드코딩 금지)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _load_cold_start_global_weight() -> float:
+    """
+    환경 변수 COLD_START_GLOBAL_INDEX_WEIGHT를 안전하게 파싱하고 범위를 보정한다.
+
+    - 정상 범위: [0.0, 1.0]
+    - 범위 초과 시: 경계값으로 Clamp하고 WARNING 로그 출력
+    - 파싱 오류 / 미설정 시: 기본값(1.0)으로 폴백하고 WARNING 로그 출력
+    """
+    raw = os.environ.get(_COLD_START_GLOBAL_WEIGHT_ENV_KEY, "").strip()
+    default = _COLD_START_GLOBAL_WEIGHT_DEFAULT
+
+    if not raw:
+        return default
+
+    try:
+        value = float(raw)
+    except (ValueError, TypeError):
+        logger.warning(
+            "[TOPIC_CLUSTERING] %s 파싱 실패 (값=%r). 기본값 %.1f로 폴백합니다.",
+            _COLD_START_GLOBAL_WEIGHT_ENV_KEY,
+            raw,
+            default,
+        )
+        return default
+
+    if value < _COLD_START_GLOBAL_WEIGHT_MIN:
+        logger.warning(
+            "[TOPIC_CLUSTERING] %s=%.2f 가 최솟값(%.1f) 미만입니다. %.1f로 보정합니다.",
+            _COLD_START_GLOBAL_WEIGHT_ENV_KEY,
+            value,
+            _COLD_START_GLOBAL_WEIGHT_MIN,
+            _COLD_START_GLOBAL_WEIGHT_MIN,
+        )
+        return _COLD_START_GLOBAL_WEIGHT_MIN
+
+    if value > _COLD_START_GLOBAL_WEIGHT_MAX:
+        logger.warning(
+            "[TOPIC_CLUSTERING] %s=%.2f 가 최댓값(%.1f) 초과입니다. %.1f로 보정합니다.",
+            _COLD_START_GLOBAL_WEIGHT_ENV_KEY,
+            value,
+            _COLD_START_GLOBAL_WEIGHT_MAX,
+            _COLD_START_GLOBAL_WEIGHT_MAX,
+        )
+        return _COLD_START_GLOBAL_WEIGHT_MAX
+
+    return value
+
+
+# 모듈 로드 시 1회 계산
+GLOBAL_INDEX_WEIGHT_COLD_START: float = _load_cold_start_global_weight()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Redis 키 빌더 (SSOT — 하드코딩 금지)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -144,7 +204,7 @@ async def _ensure_redis_connected() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Cold Start 카운터 조회 헬퍼
+# Cold Start 카운터 조회 헬퍼 (MGET으로 단일 RTT 최적화)
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def _get_redis_count(key: str) -> int:
@@ -172,6 +232,34 @@ async def _get_redis_count(key: str) -> int:
             exc,
         )
         return 0
+
+
+async def _get_two_redis_counts(key1: str, key2: str) -> tuple[int, int]:
+    """
+    두 Redis 키의 정수 카운터를 MGET으로 단일 왕복(1 RTT)에 가져온다.
+    Hot path에서 2번의 연속 GET 대신 MGET을 사용해 네트워크 지연을 최소화한다.
+    조회 실패 또는 파싱 실패 시 해당 값은 0으로 처리한다 (best-effort).
+    """
+    try:
+        results = await redis_client.redis.mget(key1, key2)
+    except RedisError as exc:
+        logger.warning(
+            "[TOPIC_CLUSTERING] MGET 조회 실패 (keys=%r, %r). 0으로 처리합니다. exc=%r",
+            key1,
+            key2,
+            exc,
+        )
+        return 0, 0
+
+    def _parse(raw: object) -> int:
+        if raw is None:
+            return 0
+        try:
+            return int(raw)
+        except (ValueError, TypeError):
+            return 0
+
+    return _parse(results[0]), _parse(results[1])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -204,8 +292,10 @@ async def is_cold_start_user(
     msg_pair_key = _build_msg_pair_count_key(hashed_user_id)
     rag_search_key = _build_rag_search_count_key(hashed_user_id)
 
-    msg_pair_count = await _get_redis_count(msg_pair_key)
-    rag_search_count = await _get_redis_count(rag_search_key)
+    # [리뷰반영] 두 번의 연속 GET → MGET으로 단일 왕복(1 RTT) 최적화
+    msg_pair_count, rag_search_count = await _get_two_redis_counts(
+        msg_pair_key, rag_search_key
+    )
 
     total_activity = msg_pair_count + rag_search_count
     is_cold = total_activity < _COLD_START_THRESHOLD
