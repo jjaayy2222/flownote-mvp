@@ -65,23 +65,35 @@ def _load_cold_start_threshold() -> int:
     """
     환경 변수 COLD_START_THRESHOLD를 안전하게 파싱하고 범위를 보정한다.
 
-    - 정상 범위: [_COLD_START_THRESHOLD_MIN, _COLD_START_THRESHOLD_MAX]
-    - 범위 초과 시: 경계값으로 Clamp하고 WARNING 로그 출력
-    - 파싱 오류 / 미설정 시: 기본값으로 폴백하고 WARNING 로그 출력
+    - 미설정(None): 조용히 기본값 사용
+    - 설정됐으나 빈값/공백: 잘못된 설정으로 판단 → WARNING 로그 후 기본값
+    - 정상 범위 초과: Clamp 후 WARNING 로그 출력
+    - 파싱 오류: WARNING 로그 후 기본값
     """
-    raw = os.environ.get(_COLD_START_THRESHOLD_ENV_KEY, "").strip()
+    raw = os.environ.get(_COLD_START_THRESHOLD_ENV_KEY)  # None if not set
     default = _COLD_START_THRESHOLD_DEFAULT
 
-    if not raw:
+    # 1) 아예 미설정: 조용히 기본값 사용
+    if raw is None:
+        return default
+
+    # 2) 설정됐으나 빈값/공백: 운영자 오설정 경고
+    raw_stripped = raw.strip()
+    if not raw_stripped:
+        logger.warning(
+            "[TOPIC_CLUSTERING] %s 가 설정됐으나 빈값/공백입니다. 기본값 %d로 폴백합니다.",
+            _COLD_START_THRESHOLD_ENV_KEY,
+            default,
+        )
         return default
 
     try:
-        value = int(raw)
+        value = int(raw_stripped)
     except (ValueError, TypeError):
         logger.warning(
             "[TOPIC_CLUSTERING] %s 파싱 실패 (값=%r). 기본값 %d로 폴백합니다.",
             _COLD_START_THRESHOLD_ENV_KEY,
-            raw,
+            raw_stripped,
             default,
         )
         return default
@@ -121,23 +133,36 @@ def _load_cold_start_global_weight() -> float:
     """
     환경 변수 COLD_START_GLOBAL_INDEX_WEIGHT를 안전하게 파싱하고 범위를 보정한다.
 
-    - 정상 범위: [0.0, 1.0]
-    - 범위 초과 시: 경계값으로 Clamp하고 WARNING 로그 출력
-    - 파싱 오류 / 미설정 시: 기본값(1.0)으로 폴백하고 WARNING 로그 출력
+    - 미설정(None): 조용히 기본값 사용
+    - 설정됐으나 빈값/공백: 잘못된 설정으로 판단 → WARNING 로그 후 기본값
+    - 정상 범위 초과: Clamp 후 WARNING 로그 출력
+    - 파싱 오류: WARNING 로그 후 기본값
     """
-    raw = os.environ.get(_COLD_START_GLOBAL_WEIGHT_ENV_KEY, "").strip()
+    raw = os.environ.get(_COLD_START_GLOBAL_WEIGHT_ENV_KEY)  # None if not set
     default = _COLD_START_GLOBAL_WEIGHT_DEFAULT
 
-    if not raw:
+    # 1) 아예 미설정: 조용히 기본값 사용
+    if raw is None:
+        return default
+
+    # 2) 설정됐으나 빈값/공백: 운영자 오설정 경고
+    raw_stripped = raw.strip()
+    if not raw_stripped:
+        logger.warning(
+            "[TOPIC_CLUSTERING] %s 가 설정됐으나 빈값/공백입니다 (운영자 오설정 의심). "
+            "기본값 %.3f로 폴백합니다.",
+            _COLD_START_GLOBAL_WEIGHT_ENV_KEY,
+            default,
+        )
         return default
 
     try:
-        value = float(raw)
+        value = float(raw_stripped)
     except (ValueError, TypeError):
         logger.warning(
             "[TOPIC_CLUSTERING] %s 파싱 실패 (값=%r). 기본값 %.1f로 폴백합니다.",
             _COLD_START_GLOBAL_WEIGHT_ENV_KEY,
-            raw,
+            raw_stripped,
             default,
         )
         return default
@@ -207,6 +232,20 @@ async def _ensure_redis_connected() -> None:
 # Cold Start 카운터 조회 헬퍼 (MGET으로 단일 RTT 최적화)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _parse_raw_int(raw: object) -> int:
+    """
+    Redis raw 값을 정수로 파싱하는 SSOT 헬퍼.
+    None이거나 파싱에 실패하면 0을 반환한다 (best-effort).
+    _get_redis_count 및 _get_two_redis_counts 양쪽에서 재사용한다.
+    """
+    if raw is None:
+        return 0
+    try:
+        return int(raw)  # type: ignore[arg-type]
+    except (ValueError, TypeError):
+        return 0
+
+
 async def _get_redis_count(key: str) -> int:
     """
     Redis 문자열 키에서 정수 카운터를 읽어 반환한다.
@@ -215,16 +254,7 @@ async def _get_redis_count(key: str) -> int:
     """
     try:
         raw = await redis_client.redis.get(key)
-        if raw is None:
-            return 0
-        return int(raw)
-    except (ValueError, TypeError) as exc:
-        logger.warning(
-            "[TOPIC_CLUSTERING] Redis 카운터 파싱 실패 (key=%r). 0으로 처리합니다. exc=%r",
-            key,
-            exc,
-        )
-        return 0
+        return _parse_raw_int(raw)
     except RedisError as exc:  # 연결/타임아웃/명령 실패 등
         logger.warning(
             "[TOPIC_CLUSTERING] Redis 카운터 조회 실패 (key=%r). 0으로 처리합니다. exc=%r",
@@ -238,7 +268,7 @@ async def _get_two_redis_counts(key1: str, key2: str) -> tuple[int, int]:
     """
     두 Redis 키의 정수 카운터를 MGET으로 단일 왕복(1 RTT)에 가져온다.
     Hot path에서 2번의 연속 GET 대신 MGET을 사용해 네트워크 지연을 최소화한다.
-    조회 실패 또는 파싱 실패 시 해당 값은 0으로 처리한다 (best-effort).
+    조회 실패, 예상 외 응답(None/짧은 리스트), 파싱 실패 시 모두 0으로 처리 (best-effort).
     """
     try:
         results = await redis_client.redis.mget(key1, key2)
@@ -251,15 +281,16 @@ async def _get_two_redis_counts(key1: str, key2: str) -> tuple[int, int]:
         )
         return 0, 0
 
-    def _parse(raw: object) -> int:
-        if raw is None:
-            return 0
-        try:
-            return int(raw)
-        except (ValueError, TypeError):
-            return 0
+    # [리뷰반영] mget이 None이나 길이 부족한 리스트를 반환할 경우를 방어
+    if results is None or len(results) < 2:
+        logger.warning(
+            "[TOPIC_CLUSTERING] MGET 응답이 예상과 다릅니다 (results=%r). 0으로 처리합니다.",
+            results,
+        )
+        return 0, 0
 
-    return _parse(results[0]), _parse(results[1])
+    # [리뷰반영] _parse_raw_int SSOT 헬퍼 재사용 (중복 파싱 로직 제거)
+    return _parse_raw_int(results[0]), _parse_raw_int(results[1])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
