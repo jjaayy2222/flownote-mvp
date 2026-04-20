@@ -84,7 +84,7 @@ def _parse_bounded_env_number(
       2) 빈값/공백       → 운영자 오설정 의심 → WARNING + 기본값
       3) 파싱 실패       → WARNING + 기본값
       4) 비정상 부동소수점 (float 전용) → NaN·±inf 유효하지 않은 값 → WARNING + 기본값
-         (math.isfinite()로 NaN과 ±inf를 통합 차단, int는 TypeVar 제약으로 해당 없음)
+         (이 헬퍼는 현재 int/float만 지원하며, int는 NaN/inf 자체가 불가하므로 해당 없음)
       5) 범위 이탈       → Clamp + WARNING
       6) 정상            → 파싱된 값 반환
     """
@@ -118,12 +118,11 @@ def _parse_bounded_env_number(
         return default
 
     # 4) 비정상 부동소수점 체크 (float 전용)
-    #    NaN과 ±inf는 운영 수치로 사용할 수 없는 바시 측 코드 오설정 활녀 의심
+    #    NaN과 ±inf는 운영 수치로 사용할 수 없는 값으로, 서비스 측 오설정이 의심됨
     #    - NaN:  모든 비교에서 False → Clamp 바이패스 위험
-    #    - ±inf: 실제 운영 수치치 유효하지 않음
-    #    isinstance(value, float) 제약: _NumT = TypeVar("_NumT", int, float)로
-    #    이 헬퍼는 int 또는 float 전용으로 지정되어 있으며, int는 해당 없음
-    #    (Decimal 등 다른 숫자 타입은 TypeVar 확장 시 별도 검토 필요)
+    #    - ±inf: 실제 운영 수치로 유효하지 않음
+    #    이 헬퍼는 현재 int/float만을 지원하며, 다른 수치 타입을 추가하려면
+    #    이 체크 블록도 함께 검토해야 한다 (int는 NaN/inf 불가하므로 해당 없음)
     if isinstance(value, float) and not math.isfinite(value):
         logger.warning(
             "[TOPIC_CLUSTERING] %s 값이 비정상 부동소수점(NaN 또는 ±inf)입니다 (운영자 오설정 의심). "
