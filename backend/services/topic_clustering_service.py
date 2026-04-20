@@ -26,6 +26,9 @@ import os
 import typing
 from typing import Optional
 
+import redis.exceptions
+from redis.exceptions import RedisError  # 연결/타임아웃/명령 실패 포괄
+
 from backend.services.redis_pubsub import redis_client  # type: ignore[import]
 from backend.utils import mask_pii_id                   # type: ignore[import]
 
@@ -125,9 +128,19 @@ def _build_rag_search_count_key(hashed_user_id: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def _ensure_redis_connected() -> None:
-    """Redis 연결이 끊어진 경우 재연결을 시도한다."""
+    """
+    Redis 연결이 끊어진 경우 재연결을 시도한다.
+    일시적인 장애 시 예외를 삼키지 않고 WARNING 로그만 남기며 계속 진행한다.
+    (콜드 스타트 플로우가 Redis 장애로 완전히 멈추지 않도록 Graceful Degradation)
+    """
     if not redis_client.is_connected():
-        await redis_client.connect()
+        try:
+            await redis_client.connect()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[TOPIC_CLUSTERING] Redis 재연결 실패. Cold Start 조회는 기본값(0)으로 폴백합니다. exc=%r",
+                exc,
+            )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -137,17 +150,26 @@ async def _ensure_redis_connected() -> None:
 async def _get_redis_count(key: str) -> int:
     """
     Redis 문자열 키에서 정수 카운터를 읽어 반환한다.
-    키가 없거나 파싱에 실패하면 0을 반환한다.
+    키가 없거나 파싱에 실패하거나 Redis 운영 오류가 발생하면 모두 0을 반환한다.
+    (Cold Start 판별은 best-effort — Redis 장애가 사용자 플로우를 막지 않아야 함)
     """
     try:
         raw = await redis_client.redis.get(key)
         if raw is None:
             return 0
         return int(raw)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as exc:
         logger.warning(
-            "[TOPIC_CLUSTERING] Redis 카운터 파싱 실패 (key=%r). 0으로 처리합니다.",
+            "[TOPIC_CLUSTERING] Redis 카운터 파싱 실패 (key=%r). 0으로 처리합니다. exc=%r",
             key,
+            exc,
+        )
+        return 0
+    except RedisError as exc:  # 연결/타임아웃/명령 실패 등
+        logger.warning(
+            "[TOPIC_CLUSTERING] Redis 카운터 조회 실패 (key=%r). 0으로 처리합니다. exc=%r",
+            key,
+            exc,
         )
         return 0
 
@@ -174,7 +196,8 @@ async def is_cold_start_user(
         True  → 콜드 스타트 (데이터 부족, 전역 인덱스 100% 사용 권장)
         False → 정상 사용자 (클러스터링 파이프라인 진입 가능)
     """
-    log_uid = masked_uid or hashed_user_id[:8]
+    # [리뷰반영] 문서에 명시된 PII 정책과 일치하도록 mask_pii_id() 헬퍼를 사용
+    log_uid = masked_uid or mask_pii_id(hashed_user_id)
 
     await _ensure_redis_connected()
 
@@ -209,20 +232,36 @@ async def increment_msg_pair_count(hashed_user_id: str) -> None:
     """
     사용자의 완료된 메시지 쌍 카운터를 Redis에서 1 증가시킨다.
     챗봇 응답이 정상적으로 완료될 때마다 호출한다.
+
+    Redis 카운터 증분은 best-effort로 처리하며,
+    Redis 에러 발생 시 경고 로그만 남기고 호출자의 플로우는 계속 진행된다.
     """
     await _ensure_redis_connected()
     key = _build_msg_pair_count_key(hashed_user_id)
-    await redis_client.redis.incr(key)
+    try:
+        await redis_client.redis.incr(key)
+    except RedisError as exc:
+        logger.warning(
+            "[TOPIC_CLUSTERING] 메시지 쌍 카운터 증분 실패 (best-effort, 흐름 유지). exc=%r", exc
+        )
 
 
 async def increment_rag_search_count(hashed_user_id: str) -> None:
     """
     사용자의 유효 RAG 검색 수행 카운터를 Redis에서 1 증가시킨다.
     RAG 파이프라인이 실제 결과를 반환할 때만 호출한다.
+
+    Redis 카운터 증분은 best-effort로 처리하며,
+    Redis 에러 발생 시 경고 로그만 남기고 호출자의 플로우는 계속 진행된다.
     """
     await _ensure_redis_connected()
     key = _build_rag_search_count_key(hashed_user_id)
-    await redis_client.redis.incr(key)
+    try:
+        await redis_client.redis.incr(key)
+    except RedisError as exc:
+        logger.warning(
+            "[TOPIC_CLUSTERING] RAG 검색 카운터 증분 실패 (best-effort, 흐름 유지). exc=%r", exc
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
