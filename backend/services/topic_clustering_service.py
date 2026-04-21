@@ -34,6 +34,7 @@ from redis.exceptions import RedisError  # 연결/타임아웃/명령 실패 포
 from backend.services.redis_pubsub import redis_client  # type: ignore[import]
 from backend.utils import mask_pii_id                   # type: ignore[import]
 from backend.embedding import EmbeddingGenerator        # type: ignore[import]
+from fastapi.concurrency import run_in_threadpool       # type: ignore[import]
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +50,11 @@ def _get_embedding_generator() -> EmbeddingGenerator:
 
 
 # [Preprocessing] 텍스트 정규화용 정규식
-_CLEAN_RE = re.compile(r"[^a-zA-Z0-9가-힣\s]")  # 한글, 영문, 숫자, 공백 제외 제거
-_WS_RE = re.compile(r"\s+")                     # 연속 공백 통합
+# [리뷰반영] Unicode-aware 패턴으로 변경: \w (문자·숫자·언더스코어) + \s 이외만 제거.
+# 영문·한글뿐 아니라 일본어·아랍어 등 다국어 스크립트도 보존한다 (글로벌 사용자 대비).
+# re.UNICODE는 Python 3의 기본값이므로 명시적 플래그 없이도 적용된다.
+_CLEAN_RE = re.compile(r"[^\w\s]")  # 구두점·특수기호만 제거, 유니코드 문자 보존
+_WS_RE = re.compile(r"\s+")         # 연속 공백 통합
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 모듈 레벨 상수 (하드코딩 금지 — 모두 여기서 중앙 관리)
@@ -490,7 +494,11 @@ async def vectorize_queries(queries: List[str]) -> List[List[float]]:
     """
     히스토리 쿼리 리스트를 일괄(Batch) 벡터화한다.
     기존 EmbeddingGenerator를 재사용하며, 실패 시 빈 리스트를 반환한다.
-    
+
+    [리뷰반영] generate_embeddings는 동기 CPU/IO 작업으로 이벤트루프를 블로킹할 수 있다.
+    run_in_threadpool로 래핑하여 asyncio 이벤트루프를 즉시 반환하고
+    별도 스레드에서 임베딩 API 호출을 처리한다.
+
     Returns:
         임베딩 벡터 리스트 (성공 시 len(queries)와 동일한 길이)
     """
@@ -499,9 +507,8 @@ async def vectorize_queries(queries: List[str]) -> List[List[float]]:
 
     try:
         generator = _get_embedding_generator()
-        # generator.generate_embeddings는 동기 메서드이므로 필요한 경우 비동기 래핑 고려 가능
-        # 현재는 Data Layer 내부 작업이므로 직접 호출
-        result = generator.generate_embeddings(queries)
+        # [리뷰반영] 동기 메서드를 run_in_threadpool로 래핑 → 이벤트루프 비차단 보장
+        result = await run_in_threadpool(generator.generate_embeddings, queries)
         return result.get("embeddings", [])
     except Exception as exc:  # noqa: BLE001
         logger.error(

@@ -248,11 +248,19 @@ class HybridSearchService:
 
         # 0. 히스토리 로깅 (Best-effort)
         # PII 정책: user_id는 반드시 해싱(mask_pii_id)하여 전달한다.
+        # [리뷰반영] try/except로 격리하여 Redis 지연·오류가 검색 응답에 전파되지 않도록 보장한다.
         if user_info and "id" in user_info:
             user_id_raw = str(user_info["id"])
-            hashed_user_id = mask_pii_id(user_id_raw, truncate_len=0) # 전체 해시 확보
-            # 검색 작업 자체를 방해하지 않도록 비동기 Background 호출
-            await topic_clustering_service.log_search_query(hashed_user_id, query)
+            hashed_user_id = mask_pii_id(user_id_raw, truncate_len=0)  # 전체 해시 확보
+            try:
+                await topic_clustering_service.log_search_query(hashed_user_id, query)
+            except Exception:  # noqa: BLE001
+                # 히스토리 로깅 실패는 검색 응답에 영향을 주지 않는다 (best-effort).
+                # 쿼리 원문은 PII 노출 위험이 있으므로 로그에 포함하지 않는다.
+                logger.warning(
+                    "[HYBRID_SEARCH] 검색 히스토리 로깅 실패 (검색 응답에는 영향 없음).",
+                    exc_info=True,
+                )
 
         # 1. PARA 카테고리 검증 및 필터 병합
         effective_filter = self._build_metadata_filter(category, metadata_filter)
