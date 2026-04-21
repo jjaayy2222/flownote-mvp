@@ -14,7 +14,7 @@ from typing import Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.concurrency import run_in_threadpool
 
-from backend.api.deps import get_locale
+from backend.api.deps import get_locale, get_current_user
 from backend.api.models import (
     SearchResponse,
     HybridSearchRequest,
@@ -76,6 +76,7 @@ async def search_files(
 async def hybrid_search_post(
     request: HybridSearchRequest,
     service: HybridSearchService = Depends(get_hybrid_search_service),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> HybridSearchResponse:
     """JSON Body로 검색 요청을 전달하는 하이브리드 RAG 검색."""
     return await _run_hybrid_search(
@@ -85,6 +86,7 @@ async def hybrid_search_post(
         alpha=request.alpha,
         category=request.category,
         metadata_filter=request.metadata_filter,
+        user_info=current_user,
     )
 
 
@@ -111,6 +113,7 @@ async def hybrid_search_get(
         description="PARA 카테고리 필터 (Projects, Areas, Resources, Archives)",
     ),
     service: HybridSearchService = Depends(get_hybrid_search_service),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> HybridSearchResponse:
     """쿼리 파라미터를 사용하는 간편 하이브리드 RAG 검색."""
     return await _run_hybrid_search(
@@ -120,6 +123,7 @@ async def hybrid_search_get(
         alpha=alpha,
         category=category,
         metadata_filter=None,
+        user_info=current_user,
     )
 
 
@@ -135,6 +139,7 @@ async def _run_hybrid_search(
     alpha: float,
     category: Optional[PARACategory],
     metadata_filter: Optional[Dict[str, Any]],
+    user_info: Optional[Dict[str, Any]] = None,
 ) -> HybridSearchResponse:
     """POST/GET 공통 검색 실행 로직."""
     try:
@@ -146,6 +151,7 @@ async def _run_hybrid_search(
             alpha=alpha,
             category=category,
             metadata_filter=metadata_filter,
+            user_info=user_info,
         )
     except ValueError as exc:
         # PARA 카테고리 유효성 오류 등

@@ -24,16 +24,33 @@ from __future__ import annotations
 import logging
 import math
 import os
+import re
 import typing
-from typing import Callable, Optional, TypeVar
+from typing import Callable, List, Optional, TypeVar
 
 import redis.exceptions
 from redis.exceptions import RedisError  # 연결/타임아웃/명령 실패 포괄
 
 from backend.services.redis_pubsub import redis_client  # type: ignore[import]
 from backend.utils import mask_pii_id                   # type: ignore[import]
+from backend.embedding import EmbeddingGenerator        # type: ignore[import]
 
 logger = logging.getLogger(__name__)
+
+# [Optimization] 임베딩 생성기 싱글톤 관리 (모듈 레벨)
+_embedding_gen: Optional[EmbeddingGenerator] = None
+
+def _get_embedding_generator() -> EmbeddingGenerator:
+    """임베딩 생성기 인스턴스를 지연 로딩(Lazy Loading) 방식으로 반환한다."""
+    global _embedding_gen
+    if _embedding_gen is None:
+        _embedding_gen = EmbeddingGenerator()
+    return _embedding_gen
+
+
+# [Preprocessing] 텍스트 정규화용 정규식
+_CLEAN_RE = re.compile(r"[^a-zA-Z0-9가-힣\s]")  # 한글, 영문, 숫자, 공백 제외 제거
+_WS_RE = re.compile(r"\s+")                     # 연속 공백 통합
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 모듈 레벨 상수 (하드코딩 금지 — 모두 여기서 중앙 관리)
@@ -42,6 +59,7 @@ logger = logging.getLogger(__name__)
 # Redis 키 접두사
 _MSG_PAIR_COUNT_PREFIX: str = "cls:msg_pair_count"
 _RAG_SEARCH_COUNT_PREFIX: str = "cls:rag_search_count"
+_QUERY_HISTORY_PREFIX: str = "cls:query_history"  # 사용자 검색어 히스토리 (List)
 
 # 콜드 스타트 판별 임계값 (환경 변수로 외부화)
 # COLD_START_THRESHOLD: 누적 활동 수가 이 값 미만이면 콜드 스타트로 간주
@@ -56,6 +74,14 @@ _COLD_START_GLOBAL_WEIGHT_ENV_KEY = "COLD_START_GLOBAL_INDEX_WEIGHT"
 _COLD_START_GLOBAL_WEIGHT_DEFAULT = 1.0
 _COLD_START_GLOBAL_WEIGHT_MIN = 0.0
 _COLD_START_GLOBAL_WEIGHT_MAX = 1.0
+
+
+# 검색 히스토리 관리 설정
+# SEARCH_HISTORY_MAX_LEN: 사용자별로 유지할 최근 검색어 최대 개수
+_SEARCH_HISTORY_MAX_LEN_ENV_KEY = "SEARCH_HISTORY_MAX_LEN"
+_SEARCH_HISTORY_MAX_LEN_DEFAULT = 50
+_SEARCH_HISTORY_MAX_LEN_MIN = 10
+_SEARCH_HISTORY_MAX_LEN_MAX = 200
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -184,6 +210,21 @@ def _load_cold_start_global_weight() -> float:
 GLOBAL_INDEX_WEIGHT_COLD_START: float = _load_cold_start_global_weight()
 
 
+def _load_search_history_max_len() -> int:
+    """SEARCH_HISTORY_MAX_LEN 환경 변수를 안전하게 파싱하고 범위를 보정한다."""
+    return _parse_bounded_env_number(
+        _SEARCH_HISTORY_MAX_LEN_ENV_KEY,
+        _SEARCH_HISTORY_MAX_LEN_DEFAULT,
+        _SEARCH_HISTORY_MAX_LEN_MIN,
+        _SEARCH_HISTORY_MAX_LEN_MAX,
+        int,
+    )
+
+
+# 모듈 로드 시 1회 계산
+_SEARCH_HISTORY_MAX_LEN: int = _load_search_history_max_len()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Redis 키 빌더 (SSOT — 하드코딩 금지)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -196,6 +237,11 @@ def _build_msg_pair_count_key(hashed_user_id: str) -> str:
 def _build_rag_search_count_key(hashed_user_id: str) -> str:
     """RAG 검색 카운터 Redis 키를 생성한다. (변경 시 이 함수만 수정)"""
     return f"{_RAG_SEARCH_COUNT_PREFIX}:{hashed_user_id}"
+
+
+def _build_query_history_key(hashed_user_id: str) -> str:
+    """검색어 히스토리 Redis 키를 생성한다. (변경 시 이 함수만 수정)"""
+    return f"{_QUERY_HISTORY_PREFIX}:{hashed_user_id}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -381,6 +427,115 @@ async def increment_rag_search_count(hashed_user_id: str) -> None:
         logger.warning(
             "[TOPIC_CLUSTERING] RAG 검색 카운터 증분 실패 (best-effort, 흐름 유지). exc=%r", exc
         )
+
+
+def _preprocess_query(query: str) -> str:
+    """
+    검색어 전처리 파이프라인.
+    - 소문자화 (영문)
+    - 특수문자 제거
+    - 연속 공백 정규화 (단일 공백)
+    - 양끝 공백 제거
+    """
+    if not query:
+        return ""
+    
+    # 1. 소문자화
+    text = query.lower()
+    
+    # 2. 특수문자 제거 (안전한 문자열 확보)
+    text = _CLEAN_RE.sub(" ", text)
+    
+    # 3. 연속 공백 통합 및 Trim
+    text = _WS_RE.sub(" ", text).strip()
+    
+    return text
+
+
+async def log_search_query(hashed_user_id: str, query: str) -> None:
+    """
+    사용자의 검색 쿼리를 히스토리에 기록하고, 카운터를 1 증가시킨다.
+    - 쿼리 전처리 수행 (_preprocess_query)
+    - Redis List의 머리에 추가 (LPUSH)
+    - 최대 길이 제한 유지 (LTRIM)
+
+    이 모든 과정은 best-effort로 처리되며, 개별 단계의 실패가 전체 검색 흐름을 방해하지 않는다.
+    """
+    # 1. 전처리 (로그 기록 전 정제)
+    clean_query = _preprocess_query(query)
+    if not clean_query:
+        return
+
+    await _ensure_redis_connected()
+    
+    # 2. 카운터 증가 (기존 로직 재사용)
+    await increment_rag_search_count(hashed_user_id)
+
+    # 3. 히스토리 리스트 추가
+    history_key = _build_query_history_key(hashed_user_id)
+    
+    try:
+        # LPUSH(최신 쿼리가 맨 앞) + LTRIM(최대 길이 유지) 수행
+        await redis_client.redis.lpush(history_key, clean_query)
+        await redis_client.redis.ltrim(history_key, 0, _SEARCH_HISTORY_MAX_LEN - 1)
+    except RedisError as exc:
+        logger.warning(
+            "[TOPIC_CLUSTERING] 검색 히스토리 기록 실패 (masked_uid=%s). exc=%r",
+            mask_pii_id(hashed_user_id),
+            exc,
+        )
+
+
+async def vectorize_queries(queries: List[str]) -> List[List[float]]:
+    """
+    히스토리 쿼리 리스트를 일괄(Batch) 벡터화한다.
+    기존 EmbeddingGenerator를 재사용하며, 실패 시 빈 리스트를 반환한다.
+    
+    Returns:
+        임베딩 벡터 리스트 (성공 시 len(queries)와 동일한 길이)
+    """
+    if not queries:
+        return []
+
+    try:
+        generator = _get_embedding_generator()
+        # generator.generate_embeddings는 동기 메서드이므로 필요한 경우 비동기 래핑 고려 가능
+        # 현재는 Data Layer 내부 작업이므로 직접 호출
+        result = generator.generate_embeddings(queries)
+        return result.get("embeddings", [])
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "[TOPIC_CLUSTERING] 검색 히스토리 벡터화 실패 (count=%d). exc=%r",
+            len(queries),
+            exc,
+        )
+        return []
+
+
+async def get_search_history(hashed_user_id: str) -> List[str]:
+    """
+    사용자의 최근 검색어 히스토리를 반환한다. (최신순)
+    
+    Returns:
+        검색어 리스트 (비어있을 수 있음)
+    """
+    await _ensure_redis_connected()
+    history_key = _build_query_history_key(hashed_user_id)
+    
+    try:
+        raw_list = await redis_client.redis.lrange(history_key, 0, -1)
+        if not raw_list:
+            return []
+        
+        # Redis 응답은 bytes일 수 있으므로 디코딩
+        return [q.decode("utf-8") if isinstance(q, bytes) else str(q) for q in raw_list]
+    except (RedisError, UnicodeDecodeError) as exc:
+        logger.warning(
+            "[TOPIC_CLUSTERING] 검색 히스토리 조회 실패 (masked_uid=%s). exc=%r",
+            mask_pii_id(hashed_user_id),
+            exc,
+        )
+        return []
 
 
 # ─────────────────────────────────────────────────────────────────────────────
