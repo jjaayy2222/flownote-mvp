@@ -525,9 +525,23 @@ async def vectorize_queries(queries: List[str]) -> List[List[float]]:
             )
             return []
 
-        embeddings = result.get("embeddings") or []
+        embeddings_raw = result.get("embeddings")
 
-        # [리뷰반영] 길이 검증: 부분 실패로 인한 쿼리-벡터 인덱스 불일치 방지
+        # [리뷰반영] or [] 적용 전에 원본 값으로 타입 검증:
+        # 이전: result.get("embeddings") 에 or fallback이 먼저 적용되어
+        #        None·""·{} 등 falsy 계약 위반이 []로 덮여 감지 불가.
+        # 수정: 원본 raw 값에서 isinstance 검사 후 → 이상 없을 때만 사용.
+        if not isinstance(embeddings_raw, list):
+            logger.warning(
+                "[TOPIC_CLUSTERING] generate_embeddings 'embeddings' 필드가 list가 아닙니다 "
+                "(type=%s). 빈 리스트를 반환합니다.",
+                type(embeddings_raw).__name__,
+            )
+            return []
+
+        embeddings = embeddings_raw  # 이미 list임이 보장됨 (or [] 불필요)
+
+        # 길이 검증: 부분 실패로 인한 쿼리-벡터 인덱스 불일치 방지
         if len(embeddings) != len(queries):
             logger.warning(
                 "[TOPIC_CLUSTERING] 벡터화 결과 길이 불일치 "
@@ -554,8 +568,8 @@ async def get_search_history(hashed_user_id: str) -> List[str]:
     오류 발생 시 빈 리스트를 반환한다 (best-effort).
 
     [리뷰반영] except 범위를 Exception으로 확장하여 docstring과 동작을 일치시킨다.
-    RedisError · UnicodeDecodeError 외에도 OSError 등 예상치 못한 예외가 말 수 있으므로,
-    모두 빈 리스트로 폐백 처리한다.
+    RedisError · UnicodeDecodeError 외에도 OSError 등 예상치 못한 예외가 발생할 수 있으므로,
+    모두 빈 리스트로 폐기 처리한다.
 
     Returns:
         검색어 리스트 (비어있을 수 있음)
@@ -573,7 +587,7 @@ async def get_search_history(hashed_user_id: str) -> List[str]:
         # Redis 응답은 bytes일 수 있으므로 디코딩
         return [q.decode("utf-8") if isinstance(q, bytes) else str(q) for q in raw_list]
     except Exception as exc:  # noqa: BLE001
-        # RedisError · UnicodeDecodeError 외의 예상치 못한 예외도 조용히 폐백한다.
+        # RedisError · UnicodeDecodeError 외의 예상치 못한 예외도 조용히 폐기한다.
         logger.warning(
             "[TOPIC_CLUSTERING] 검색 히스토리 조회 실패 (masked_uid=%s). exc=%r",
             mask_pii_id(hashed_user_id),

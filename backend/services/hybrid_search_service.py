@@ -26,6 +26,29 @@ from fastapi.concurrency import run_in_threadpool
 
 logger = logging.getLogger(__name__)
 
+
+async def _log_search_history_bg(hashed_user_id: str, query: str) -> None:
+    """
+    검색 히스토리 로깅 백그라운드 태스크 (Fire-and-Forget 전용).
+
+    asyncio.create_task와 함께 사용하며, 검색 흐름과 분리된 코루틴에서
+    Redis 로깅을 best-effort로 수행한다.
+    실패 시에도 검색 응답에는 영향을 주지 않는다.
+
+    [리뷰반영] search() 내부 클로저 대신 모듈 레벨 함수로 분리:
+    - 매 호출마다 클로저 객체 재생성 없음 → 퍼-요청 오버헤드 최소화.
+    - 독립적으로 테스트 가능한 순수 함수.
+    """
+    try:
+        await topic_clustering_service.log_search_query(hashed_user_id, query)
+    except Exception:  # noqa: BLE001
+        # 히스토리 로깅 실패는 검색 응답에 영향을 주지 않는다 (best-effort).
+        # 쿼리 원문은 PII 노출 위험이 있으므로 로그에 포함하지 않는다.
+        logger.warning(
+            "[HYBRID_SEARCH] 검색 히스토리 로깅 실패 (검색 응답에는 영향 없음).",
+            exc_info=True,
+        )
+
 # [Optimization] 질의 분석용 정규식 패턴 (미리 컴파일하여 부하가 큰 런타임 성능 확보)
 _SEMANTIC_PATTERN = re.compile(
     r"(어떻게|방법|이유|왜|설명|알려|정리|해줘|뭐야|란|무엇|인가요|나요|있나요|의미|뜻|차이|비교|특징)"
@@ -249,25 +272,13 @@ class HybridSearchService:
 
         # 0. 히스토리 로깅 (Best-effort, Fire-and-Forget)
         # PII 정책: user_id는 반드시 해싱(mask_pii_id)하여 전달한다.
-        # [리뷰반영] asyncio.create_task로 완전한 비동기 분리:
-        #   - await가 아니므로 Redis 지연이 검색 응답 시간에 전혀 영향을 주지 않음.
-        #   - Task 내부에서 예외를 처리하여 'Task exception was never retrieved' 경고를 방지.
+        # [리뷰반영] 모듈 레벨 _log_search_history_bg로 분리:
+        #   - 클로저 재생성 없음 → 퍼 요청 오버헤드 최소화.
+        #   - 실패 인식/예외 체인이 함수 내부에서 완결되어 테스트 용이.
         if user_info and "id" in user_info:
             user_id_raw = str(user_info["id"])
             hashed_user_id = mask_pii_id(user_id_raw, truncate_len=0)  # 전체 해시 확보
-
-            async def _log_history_task() -> None:
-                try:
-                    await topic_clustering_service.log_search_query(hashed_user_id, query)
-                except Exception:  # noqa: BLE001
-                    # 히스토리 로깅 실패는 검색 응답에 영향을 주지 않는다 (best-effort).
-                    # 쿼리 원문은 PII 노출 위험이 있으므로 로그에 포함하지 않는다.
-                    logger.warning(
-                        "[HYBRID_SEARCH] 검색 히스토리 로깅 실패 (검색 응답에는 영향 없음).",
-                        exc_info=True,
-                    )
-
-            asyncio.create_task(_log_history_task())
+            asyncio.create_task(_log_search_history_bg(hashed_user_id, query))
 
         # 1. PARA 카테고리 검증 및 필터 병합
         effective_filter = self._build_metadata_filter(category, metadata_filter)
