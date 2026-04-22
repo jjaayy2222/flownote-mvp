@@ -539,21 +539,22 @@ async def vectorize_queries(queries: List[str]) -> List[List[float]]:
             )
             return []
 
-        # [리뷰반영] 벡터 요소 타입 정밀 검증 (List[List[float]]):
+        # [리뷰반영] 벡터 요소 타입 정밀 검증 (List[List[float | int]]):
         # 껍데기만 list이고 내부 요소가 dict나 문자열 등인 잘못된 API 응답을 조기 차단한다.
-        # 루프 오버헤드 방어를 위해, 전체 배열을 순회하되 각 행의 타입과 0번 원소만 샘플링 검증한다.
+        # 배열 데이터가 포함된 경우 부분적인 악성/잘못된 값이 섞여 들어오는 것을 막기 위해 모든 요소를 검증한다.
         is_valid_structure = True
         for row in embeddings_raw:
             if not isinstance(row, list):
                 is_valid_structure = False
                 break
-            if row and not isinstance(row[0], (int, float)):
+            # 일부 데이터만 훼손된 경우의 silent failure 방지를 위해 전체 요소 순회 검사
+            if not all(isinstance(x, (int, float)) for x in row):
                 is_valid_structure = False
                 break
 
         if not is_valid_structure:
             logger.warning(
-                "[TOPIC_CLUSTERING] generate_embeddings 벡터 반환 형식이 유효한 숫자 배열(List[List[float]])이 아닙니다. 빈 리스트를 반환합니다."
+                "[TOPIC_CLUSTERING] generate_embeddings 벡터 반환 형식이 유효한 숫자 배열(List[List[float | int]])이 아닙니다. 빈 리스트를 반환합니다."
             )
             return []
 
