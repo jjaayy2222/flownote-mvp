@@ -40,12 +40,19 @@ async def _log_search_history_bg(hashed_user_id: str, query: str) -> None:
     - 독립적으로 테스트 가능한 순수 함수.
     """
     try:
-        await topic_clustering_service.log_search_query(hashed_user_id, query)
+        # [리뷰반영] 백그라운드 태스크 무한 대기 방지:
+        # Redis 연결 지연이나 블로킹으로 인해 백그라운드 태스크가 쌓이는 것을 막기 위해 명시적 타임아웃 적용
+        await asyncio.wait_for(
+            topic_clustering_service.log_search_query(hashed_user_id, query),
+            timeout=3.0,
+        )
     except Exception:  # noqa: BLE001
         # 히스토리 로깅 실패는 검색 응답에 영향을 주지 않는다 (best-effort).
         # 쿼리 원문은 PII 노출 위험이 있으므로 로그에 포함하지 않는다.
+        # [리뷰반영] PII 정책: 비-PII 식별자인 hashed_user_id를 로그에 포함하여 장애 연관성 추적 강화
         logger.warning(
-            "[HYBRID_SEARCH] 검색 히스토리 로깅 실패 (검색 응답에는 영향 없음).",
+            "[HYBRID_SEARCH] 검색 히스토리 로깅 실패 (검색 응답에는 영향 없음, hashed_user_id=%s).",
+            hashed_user_id,
             exc_info=True,
         )
 
