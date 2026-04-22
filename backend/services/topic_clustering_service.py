@@ -525,17 +525,21 @@ async def vectorize_queries(queries: List[str]) -> List[List[float]]:
             )
             return []
 
-        embeddings = result.get("embeddings") or []
+        embeddings_raw = result.get("embeddings")
 
-        # [리뷰반영] embeddings 타입 검증:
-        # API 오류 시 embeddings가 list가 아닌 타입을 반환하는 경우를 조기에 감지한다.
-        if not isinstance(embeddings, list):
+        # [리뷰반영] or [] 적용 전에 원본 값으로 타입 검증:
+        # 이전: result.get("embeddings") 에 or fallback이 먼저 적용되어
+        #        None·""·{} 등 falsy 계약 위반이 []로 덮여 감지 불가.
+        # 수정: 원본 raw 값에서 isinstance 검사 후 → 이상 없을 때만 사용.
+        if not isinstance(embeddings_raw, list):
             logger.warning(
                 "[TOPIC_CLUSTERING] generate_embeddings 'embeddings' 필드가 list가 아닙니다 "
                 "(type=%s). 빈 리스트를 반환합니다.",
-                type(embeddings).__name__,
+                type(embeddings_raw).__name__,
             )
             return []
+
+        embeddings = embeddings_raw  # 이미 list임이 보장됨 (or [] 불필요)
 
         # 길이 검증: 부분 실패로 인한 쿼리-벡터 인덱스 불일치 방지
         if len(embeddings) != len(queries):
