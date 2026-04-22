@@ -470,14 +470,14 @@ async def log_search_query(hashed_user_id: str, query: str) -> None:
     if not clean_query:
         return
 
-    await _ensure_redis_connected()
-    
+    # [리뷰반영] _ensure_redis_connected 중복 호출 제거:
+    # increment_rag_search_count 내부에서 이미 호출하므로 여기서는 불필요하다.
     # 2. 카운터 증가 (기존 로직 재사용)
     await increment_rag_search_count(hashed_user_id)
 
     # 3. 히스토리 리스트 추가
     history_key = _build_query_history_key(hashed_user_id)
-    
+
     try:
         # LPUSH(최신 쿼리가 맨 앞) + LTRIM(최대 길이 유지) 수행
         await redis_client.redis.lpush(history_key, clean_query)
@@ -499,8 +499,13 @@ async def vectorize_queries(queries: List[str]) -> List[List[float]]:
     run_in_threadpool로 래핑하여 asyncio 이벤트루프를 즉시 반환하고
     별도 스레드에서 임베딩 API 호출을 처리한다.
 
+    반환 정책 (보수적):
+    - generate_embeddings가 dict가 아니거나 None을 반환하면 [] 반환
+    - 임베딩 수가 요청한 쿼리 수와 다르면 [] 반환 (쿼리-벡터 인덱스 불일치 방지)
+    - 부분 결과는 silent bug로 이어질 수 있으므로 전부 버린다.
+
     Returns:
-        임베딩 벡터 리스트 (성공 시 len(queries)와 동일한 길이)
+        임베딩 벡터 리스트 (성공 시 len(queries)와 동일한 길이, 실패 시 [])
     """
     if not queries:
         return []
@@ -509,7 +514,30 @@ async def vectorize_queries(queries: List[str]) -> List[List[float]]:
         generator = _get_embedding_generator()
         # [리뷰반영] 동기 메서드를 run_in_threadpool로 래핑 → 이벤트루프 비차단 보장
         result = await run_in_threadpool(generator.generate_embeddings, queries)
-        return result.get("embeddings", [])
+
+        # [리뷰반영] result 타입 검증:
+        # generate_embeddings가 예외 대신 None이나 비-dict를 반환할 경우 AttributeError를 예방한다.
+        if not isinstance(result, dict):
+            logger.warning(
+                "[TOPIC_CLUSTERING] generate_embeddings 반환값이 dict가 아닙니다 "
+                "(type=%s). 빈 리스트를 반환합니다.",
+                type(result).__name__,
+            )
+            return []
+
+        embeddings = result.get("embeddings") or []
+
+        # [리뷰반영] 길이 검증: 부분 실패로 인한 쿼리-벡터 인덱스 불일치 방지
+        if len(embeddings) != len(queries):
+            logger.warning(
+                "[TOPIC_CLUSTERING] 벡터화 결과 길이 불일치 "
+                "(queries=%d, embeddings=%d). 부분 결과는 무시합니다.",
+                len(queries),
+                len(embeddings),
+            )
+            return []
+
+        return embeddings
     except Exception as exc:  # noqa: BLE001
         logger.error(
             "[TOPIC_CLUSTERING] 검색 히스토리 벡터화 실패 (count=%d). exc=%r",
@@ -522,21 +550,30 @@ async def vectorize_queries(queries: List[str]) -> List[List[float]]:
 async def get_search_history(hashed_user_id: str) -> List[str]:
     """
     사용자의 최근 검색어 히스토리를 반환한다. (최신순)
-    
+    Redis 연결 실패를 포함하여 모든 예외를 내부에서 처리하며,
+    오류 발생 시 빈 리스트를 반환한다 (best-effort).
+
+    [리뷰반영] except 범위를 Exception으로 확장하여 docstring과 동작을 일치시킨다.
+    RedisError · UnicodeDecodeError 외에도 OSError 등 예상치 못한 예외가 말 수 있으므로,
+    모두 빈 리스트로 폐백 처리한다.
+
     Returns:
         검색어 리스트 (비어있을 수 있음)
     """
-    await _ensure_redis_connected()
     history_key = _build_query_history_key(hashed_user_id)
-    
+
     try:
+        # [리뷰반영] _ensure_redis_connected를 try 블록 안으로 이동:
+        # 연결 오류 발생 시에도 docstring대로 빈 리스트를 반환한다.
+        await _ensure_redis_connected()
         raw_list = await redis_client.redis.lrange(history_key, 0, -1)
         if not raw_list:
             return []
-        
+
         # Redis 응답은 bytes일 수 있으므로 디코딩
         return [q.decode("utf-8") if isinstance(q, bytes) else str(q) for q in raw_list]
-    except (RedisError, UnicodeDecodeError) as exc:
+    except Exception as exc:  # noqa: BLE001
+        # RedisError · UnicodeDecodeError 외의 예상치 못한 예외도 조용히 폐백한다.
         logger.warning(
             "[TOPIC_CLUSTERING] 검색 히스토리 조회 실패 (masked_uid=%s). exc=%r",
             mask_pii_id(hashed_user_id),
