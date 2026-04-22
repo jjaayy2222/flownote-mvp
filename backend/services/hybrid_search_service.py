@@ -19,6 +19,8 @@ from backend.bm25_search import BM25Retriever
 from backend.hybrid_search import HybridSearcher, Retriever
 from backend.api.models import PARACategory
 from backend.services.search_cache_service import search_cache_service
+from backend.services import topic_clustering_service  # type: ignore[import]
+from backend.utils.common import mask_pii_id            # type: ignore[import]
 from fastapi.concurrency import run_in_threadpool
 
 logger = logging.getLogger(__name__)
@@ -228,14 +230,15 @@ class HybridSearchService:
         category: Optional[PARACategory] = None,
         metadata_filter: Optional[Dict[str, Any]] = None,
         filter_expansion_factor: int = 2,
+        user_info: Optional[Dict[str, Any]] = None,
     ) -> HybridSearchResult:
         """
-        하이브리드 검색 수행 (캐싱 레이어 포함).
+        하이브리드 검색 수행 (캐싱 및 로깅 포함).
+        - 사용자 히스토리를 기록 (비로그인/Mock 포함).
         - Redis 캐시를 먼저 확인하고, 미스 시 실제 검색 수행.
         - 실제 검색은 CPU-bound 이므로 threadpool에서 실행.
 
         [Fail Fast 정책] 파라미터 검증은 이 public 진입점에서만 수행합니다.
-        _execute_search는 이 메서드를 통해서만 호출되므로 중복 검증이 불필요합니다.
         """
         # [Fail Fast] 캐시 접근 전 파라미터 유효 범위 검증 (단일 검증 지점)
         if not (0.0 <= alpha <= 1.0):
@@ -243,7 +246,23 @@ class HybridSearchService:
         if k < 1:
             raise ValueError(f"k must be greater than or equal to 1, got {k}")
 
-        # 0. PARA 카테고리 검증 및 필터 병합
+        # 0. 히스토리 로깅 (Best-effort)
+        # PII 정책: user_id는 반드시 해싱(mask_pii_id)하여 전달한다.
+        # [리뷰반영] try/except로 격리하여 Redis 지연·오류가 검색 응답에 전파되지 않도록 보장한다.
+        if user_info and "id" in user_info:
+            user_id_raw = str(user_info["id"])
+            hashed_user_id = mask_pii_id(user_id_raw, truncate_len=0)  # 전체 해시 확보
+            try:
+                await topic_clustering_service.log_search_query(hashed_user_id, query)
+            except Exception:  # noqa: BLE001
+                # 히스토리 로깅 실패는 검색 응답에 영향을 주지 않는다 (best-effort).
+                # 쿼리 원문은 PII 노출 위험이 있으므로 로그에 포함하지 않는다.
+                logger.warning(
+                    "[HYBRID_SEARCH] 검색 히스토리 로깅 실패 (검색 응답에는 영향 없음).",
+                    exc_info=True,
+                )
+
+        # 1. PARA 카테고리 검증 및 필터 병합
         effective_filter = self._build_metadata_filter(category, metadata_filter)
 
         # 1. Redis 캐시 확인 (Async)
