@@ -500,6 +500,7 @@ async def vectorize_queries(queries: List[str]) -> List[List[float]]:
     별도 스레드에서 임베딩 API 호출을 처리한다.
 
     반환 정책 (보수적):
+    - generate_embeddings가 dict가 아니거나 None을 반환하면 [] 반환
     - 임베딩 수가 요청한 쿼리 수와 다르면 [] 반환 (쿼리-벡터 인덱스 불일치 방지)
     - 부분 결과는 silent bug로 이어질 수 있으므로 전부 버린다.
 
@@ -513,6 +514,17 @@ async def vectorize_queries(queries: List[str]) -> List[List[float]]:
         generator = _get_embedding_generator()
         # [리뷰반영] 동기 메서드를 run_in_threadpool로 래핑 → 이벤트루프 비차단 보장
         result = await run_in_threadpool(generator.generate_embeddings, queries)
+
+        # [리뷰반영] result 타입 검증:
+        # generate_embeddings가 예외 대신 None이나 비-dict를 반환할 경우 AttributeError를 예방한다.
+        if not isinstance(result, dict):
+            logger.warning(
+                "[TOPIC_CLUSTERING] generate_embeddings 반환값이 dict가 아닙니다 "
+                "(type=%s). 빈 리스트를 반환합니다.",
+                type(result).__name__,
+            )
+            return []
+
         embeddings = result.get("embeddings") or []
 
         # [리뷰반영] 길이 검증: 부분 실패로 인한 쿼리-벡터 인덱스 불일치 방지
@@ -541,6 +553,10 @@ async def get_search_history(hashed_user_id: str) -> List[str]:
     Redis 연결 실패를 포함하여 모든 예외를 내부에서 처리하며,
     오류 발생 시 빈 리스트를 반환한다 (best-effort).
 
+    [리뷰반영] except 범위를 Exception으로 확장하여 docstring과 동작을 일치시킨다.
+    RedisError · UnicodeDecodeError 외에도 OSError 등 예상치 못한 예외가 말 수 있으므로,
+    모두 빈 리스트로 폐백 처리한다.
+
     Returns:
         검색어 리스트 (비어있을 수 있음)
     """
@@ -556,7 +572,8 @@ async def get_search_history(hashed_user_id: str) -> List[str]:
 
         # Redis 응답은 bytes일 수 있으므로 디코딩
         return [q.decode("utf-8") if isinstance(q, bytes) else str(q) for q in raw_list]
-    except (RedisError, UnicodeDecodeError) as exc:
+    except Exception as exc:  # noqa: BLE001
+        # RedisError · UnicodeDecodeError 외의 예상치 못한 예외도 조용히 폐백한다.
         logger.warning(
             "[TOPIC_CLUSTERING] 검색 히스토리 조회 실패 (masked_uid=%s). exc=%r",
             mask_pii_id(hashed_user_id),
