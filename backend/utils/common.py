@@ -34,8 +34,7 @@ def safe_parse_env_int(
         parsed = int(val)
         if min_val is not None and parsed < min_val:
             logger.warning(
-                "[%s] 환경 변수 '%s'의 값(%s)은 최소 %s 이상이어야 합니다. 기본값 %s을(를) 사용합니다.",
-                __name__,
+                "환경 변수 '%s'의 값(%s)은 최소 %s 이상이어야 합니다. 기본값 %s을(를) 사용합니다.",
                 env_var_name,
                 val,
                 min_val,
@@ -45,8 +44,7 @@ def safe_parse_env_int(
         return parsed
     except ValueError:
         logger.warning(
-            "[%s] 환경 변수 '%s'의 값(%s)을 int로 파싱할 수 없습니다. 기본값 %s을(를) 사용합니다.",
-            __name__,
+            "환경 변수 '%s'의 값(%s)을 int로 파싱할 수 없습니다. 기본값 %s을(를) 사용합니다.",
             env_var_name,
             val,
             default,
@@ -65,8 +63,7 @@ def safe_parse_env_float(
         parsed = float(val)
         if min_val is not None and parsed < min_val:
             logger.warning(
-                "[%s] 환경 변수 '%s'의 값(%s)은 최소 %s 이상이어야 합니다. 기본값 %s을(를) 사용합니다.",
-                __name__,
+                "환경 변수 '%s'의 값(%s)은 최소 %s 이상이어야 합니다. 기본값 %s을(를) 사용합니다.",
                 env_var_name,
                 val,
                 min_val,
@@ -76,8 +73,7 @@ def safe_parse_env_float(
         return parsed
     except ValueError:
         logger.warning(
-            "[%s] 환경 변수 '%s'의 값(%s)을 float으로 파싱할 수 없습니다. 기본값 %s을(를) 사용합니다.",
-            __name__,
+            "환경 변수 '%s'의 값(%s)을 float으로 파싱할 수 없습니다. 기본값 %s을(를) 사용합니다.",
             env_var_name,
             val,
             default,
