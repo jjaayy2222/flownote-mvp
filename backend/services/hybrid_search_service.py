@@ -22,13 +22,14 @@ from backend.hybrid_search import HybridSearcher, Retriever
 from backend.api.models import PARACategory
 from backend.services.search_cache_service import search_cache_service
 from backend.services import topic_clustering_service  # type: ignore[import]
-from backend.utils.common import mask_pii_id            # type: ignore[import]
+from backend.utils.common import mask_pii_id, safe_parse_env_float  # type: ignore[import]
 from fastapi.concurrency import run_in_threadpool
 
 logger = logging.getLogger(__name__)
 
 # [리뷰반영] 하드코딩 제거: 로깅 타임아웃을 환경 변수에서 가져오도록 설정 (기본값 3.0초)
-_LOG_SEARCH_HISTORY_TIMEOUT = float(os.getenv("SEARCH_HISTORY_LOG_TIMEOUT", "3.0"))
+# [리뷰반영] import 시점 크래시 방지: safe_parse_env_float 헬퍼를 사용하여 비정상 값 방어 및 0.1초 이상 강제
+_LOG_SEARCH_HISTORY_TIMEOUT = safe_parse_env_float("SEARCH_HISTORY_LOG_TIMEOUT", 3.0, min_val=0.1)
 
 
 async def _log_search_history_bg(hashed_user_id: str, query: str) -> None:

@@ -7,23 +7,89 @@ FlowNote MVP - 유틸리티 함수
 """
 
 import os
+import logging
 import tiktoken  # type: ignore[import]
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Union
 from datetime import datetime
 import hashlib
 
+logger = logging.getLogger(__name__)
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 💙 새로 추가하는 함수들
+# 새로 추가하는 함수들
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 INVALID_PII_SENTINEL = "<INVALID_PII>"
 
+
+def safe_parse_env_int(
+    env_var_name: str, default: int, min_val: Optional[int] = None
+) -> int:
+    """환경 변수를 int로 안전하게 파싱합니다. 실패 시 로그를 남기고 기본값을 반환합니다."""
+    val = os.getenv(env_var_name)
+    if val is None:
+        return default
+    try:
+        parsed = int(val)
+        if min_val is not None and parsed < min_val:
+            logger.warning(
+                "[%s] 환경 변수 '%s'의 값(%s)은 최소 %s 이상이어야 합니다. 기본값 %s을(를) 사용합니다.",
+                __name__,
+                env_var_name,
+                val,
+                min_val,
+                default,
+            )
+            return default
+        return parsed
+    except ValueError:
+        logger.warning(
+            "[%s] 환경 변수 '%s'의 값(%s)을 int로 파싱할 수 없습니다. 기본값 %s을(를) 사용합니다.",
+            __name__,
+            env_var_name,
+            val,
+            default,
+        )
+        return default
+
+
+def safe_parse_env_float(
+    env_var_name: str, default: float, min_val: Optional[float] = None
+) -> float:
+    """환경 변수를 float으로 안전하게 파싱합니다. 실패 시 로그를 남기고 기본값을 반환합니다."""
+    val = os.getenv(env_var_name)
+    if val is None:
+        return default
+    try:
+        parsed = float(val)
+        if min_val is not None and parsed < min_val:
+            logger.warning(
+                "[%s] 환경 변수 '%s'의 값(%s)은 최소 %s 이상이어야 합니다. 기본값 %s을(를) 사용합니다.",
+                __name__,
+                env_var_name,
+                val,
+                min_val,
+                default,
+            )
+            return default
+        return parsed
+    except ValueError:
+        logger.warning(
+            "[%s] 환경 변수 '%s'의 값(%s)을 float으로 파싱할 수 없습니다. 기본값 %s을(를) 사용합니다.",
+            __name__,
+            env_var_name,
+            val,
+            default,
+        )
+        return default
+
+
 def mask_pii_id(value: Optional[str], truncate_len: int = 12) -> str:
     """
-    민감 문자열(user_id, session_id 등)을 SHA-256 해시화하여 
+    민감 문자열(user_id, session_id 등)을 SHA-256 해시화하여
     로그에 안전하게 기록하기 위한 중앙 유틸리티.
-    
+
     Args:
         value: 마스킹할 원본 문자열
         truncate_len: 반환할 해시 문자열의 최대 길이
@@ -33,11 +99,11 @@ def mask_pii_id(value: Optional[str], truncate_len: int = 12) -> str:
     """
     if not value or not isinstance(value, str):
         return INVALID_PII_SENTINEL
-    
+
     # [Security Validation] 음수 방어(Safe Wrapper)
     safe_len = max(0, truncate_len)
-    
-    hashed = str(hashlib.sha256(value.encode('utf-8')).hexdigest())
+
+    hashed = str(hashlib.sha256(value.encode("utf-8")).hexdigest())
     if safe_len > 0:
         return hashed[:safe_len]  # type: ignore[index]
     return hashed
