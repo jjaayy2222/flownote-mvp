@@ -23,7 +23,6 @@ from openai import OpenAI, APIError, APIConnectionError
 from backend.config import ModelConfig  # type: ignore[import]
 from backend.services.redis_pubsub import redis_client  # type: ignore[import]
 from backend.utils import mask_pii_id  # type: ignore[import]
-from backend.utils.common import safe_parse_env_int
 from backend.utils.observability import ObsEvent, ObsMetaTag  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
@@ -52,14 +51,20 @@ _FINETUNE_DATA_DIR: Path = Path(
     )
 )
 
-# Job 상태 폴링 간격(초) — 환경 변수로 오버라이드 가능 (기본 30초, 최소 5초)
-_FINETUNE_POLL_INTERVAL_SECS: int = safe_parse_env_int("FINETUNE_POLL_INTERVAL_SECS", 30, min_val=5)
+# Job 상태 폴링 간격(초) — 환경 변수로 오버라이드 가능
+_FINETUNE_POLL_INTERVAL_SECS: int = int(
+    os.getenv("FINETUNE_POLL_INTERVAL_SECS", "30")
+)
 
-# Job 완료 대기 최대 시간(초) — 기본 2시간, 최소 600초 (환경 변수로 오버라이드 가능)
-_FINETUNE_POLL_TIMEOUT_SECS: int = safe_parse_env_int("FINETUNE_POLL_TIMEOUT_SECS", 2 * 60 * 60, min_val=600)
+# Job 완료 대기 최대 시간(초) — 기본 2시간 (환경 변수로 오버라이드 가능)
+_FINETUNE_POLL_TIMEOUT_SECS: int = int(
+    os.getenv("FINETUNE_POLL_TIMEOUT_SECS", str(2 * 60 * 60))
+)
 
-# Redis에 Job 상태를 보관하는 TTL (기본 7일, 최소 1일)
-_FINETUNE_REDIS_TTL_SECS: int = safe_parse_env_int("FINETUNE_REDIS_TTL_SECS", 7 * 24 * 60 * 60, min_val=86400)
+# Redis에 Job 상태를 보관하는 TTL (기본 7일)
+_FINETUNE_REDIS_TTL_SECS: int = int(
+    os.getenv("FINETUNE_REDIS_TTL_SECS", str(7 * 24 * 60 * 60))
+)
 
 # 파인튜닝 Job 생성 시 사용할 기반 모델 (환경 변수로 오버라이드 가능)
 _FINETUNE_BASE_MODEL: str = os.getenv("FINETUNE_BASE_MODEL", "gpt-4o-mini-2024-07-18")

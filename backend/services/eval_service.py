@@ -41,7 +41,6 @@ from backend.services.chat_history_service import (  # type: ignore[import]
 )
 from backend.services.redis_pubsub import redis_client  # type: ignore[import]
 from backend.utils import mask_pii_id  # type: ignore[import]
-from backend.utils.common import safe_parse_env_int  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
 
@@ -920,10 +919,10 @@ async def run_negative_feedback_eval_pipeline(
 
 # [Step 2-3] 관리자 보고서용 Redis SCAN 상한 (요청당 최대 반복 횟수)
 # 환경변수 EVAL_REPORT_MAX_SCAN_ITERATIONS 로 조정 가능
-_EVAL_REPORT_MAX_SCAN_ITERATIONS = max(1, safe_parse_env_int("EVAL_REPORT_MAX_SCAN_ITERATIONS", 100))
+_EVAL_REPORT_MAX_SCAN_ITERATIONS = max(1, int(os.getenv("EVAL_REPORT_MAX_SCAN_ITERATIONS", "100")))
 
 # [Step 2-3] Redis SCAN 1회당 조회할 키 개수 (기본 500, 최소 1 이상 보장)
-_EVAL_REPORT_SCAN_BATCH_SIZE = max(1, safe_parse_env_int("EVAL_REPORT_SCAN_BATCH_SIZE", 500))
+_EVAL_REPORT_SCAN_BATCH_SIZE = max(1, int(os.getenv("EVAL_REPORT_SCAN_BATCH_SIZE", "500")))
 
 # [Step 2-3] 조사 제거 및 TF 계산을 위한 경량화된 한국어 불용어
 _KOREAN_STOPWORDS = {

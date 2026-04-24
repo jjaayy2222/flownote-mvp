@@ -10,7 +10,6 @@
 
 import asyncio
 import logging
-import os
 import re
 from dataclasses import dataclass
 from functools import lru_cache
@@ -22,14 +21,10 @@ from backend.hybrid_search import HybridSearcher, Retriever
 from backend.api.models import PARACategory
 from backend.services.search_cache_service import search_cache_service
 from backend.services import topic_clustering_service  # type: ignore[import]
-from backend.utils.common import mask_pii_id, safe_parse_env_float  # type: ignore[import]
+from backend.utils.common import mask_pii_id            # type: ignore[import]
 from fastapi.concurrency import run_in_threadpool
 
 logger = logging.getLogger(__name__)
-
-# [리뷰반영] 하드코딩 제거: 로깅 타임아웃을 환경 변수에서 가져오도록 설정 (기본값 3.0초)
-# [리뷰반영] import 시점 크래시 방지: safe_parse_env_float 헬퍼를 사용하여 비정상 값 방어 및 0.1초 이상 강제
-_LOG_SEARCH_HISTORY_TIMEOUT = safe_parse_env_float("SEARCH_HISTORY_LOG_TIMEOUT", 3.0, min_val=0.1)
 
 
 async def _log_search_history_bg(hashed_user_id: str, query: str) -> None:
@@ -46,25 +41,17 @@ async def _log_search_history_bg(hashed_user_id: str, query: str) -> None:
     """
     try:
         # [리뷰반영] 백그라운드 태스크 무한 대기 방지:
-        # Redis 연결 지연이나 블로킹으로 인해 백그라운드 태스크가 쌓이는 것을 막기 위해 환경 변수로 설정 가능한 타임아웃 적용
+        # Redis 연결 지연이나 블로킹으로 인해 백그라운드 태스크가 쌓이는 것을 막기 위해 명시적 타임아웃 적용
         await asyncio.wait_for(
             topic_clustering_service.log_search_query(hashed_user_id, query),
-            timeout=_LOG_SEARCH_HISTORY_TIMEOUT,
-        )
-    except asyncio.TimeoutError:
-        # [리뷰반영] TimeoutError 분리:
-        # 일시적인 지연(latency) 문제와 기능적 오류를 분리하여 장애 원인 분석의 정확도 향상
-        logger.warning(
-            "[HYBRID_SEARCH] 검색 히스토리 로깅 시간 초과 (timeout=%.1fs, hashed_user_id=%s).",
-            _LOG_SEARCH_HISTORY_TIMEOUT,
-            hashed_user_id,
+            timeout=3.0,
         )
     except Exception:  # noqa: BLE001
         # 히스토리 로깅 실패는 검색 응답에 영향을 주지 않는다 (best-effort).
         # 쿼리 원문은 PII 노출 위험이 있으므로 로그에 포함하지 않는다.
         # [리뷰반영] PII 정책: 비-PII 식별자인 hashed_user_id를 로그에 포함하여 장애 연관성 추적 강화
         logger.warning(
-            "[HYBRID_SEARCH] 검색 히스토리 로깅 실패 (기능적 오류, 검색 응답에는 영향 없음, hashed_user_id=%s).",
+            "[HYBRID_SEARCH] 검색 히스토리 로깅 실패 (검색 응답에는 영향 없음, hashed_user_id=%s).",
             hashed_user_id,
             exc_info=True,
         )
