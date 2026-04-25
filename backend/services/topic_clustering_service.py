@@ -313,6 +313,18 @@ class ClusteringConfigError(ValueError):
             return f"{base_msg} ({', '.join(details)})"
         return base_msg
 
+    def get_log_extra(self) -> dict[str, Any]:
+        """
+        [리뷰반영] 구조화된 로깅(Structured Logging)을 위한 페이로드 생성.
+        값이 None인 필드는 생략하여 불필요한 로그 인덱싱 자원 낭비를 방지한다.
+        """
+        extra: dict[str, Any] = {}
+        if self.param is not None:
+            extra["param"] = self.param
+        if self.value is not None:
+            extra["value"] = self.value
+        return extra
+
 
 def _assert_valid_clustering_config(
     min_k_flatten: int, min_consecutive_steps: int
@@ -329,8 +341,8 @@ def _assert_valid_clustering_config(
             param="_MIN_K_FOR_INERTIA_FLATTEN",
             value=min_k_flatten,
         )
-        # [리뷰반영] 로그 수집기에서 쿼리 가능하도록 구조화된 로깅(extra kwargs) 사용
-        logger.critical(str(err), extra={"param": err.param, "value": err.value})
+        # [리뷰반영] 예외 객체 내부에 캡슐화된 메서드를 호출하여 extra kwargs 제공 (DRY)
+        logger.critical(str(err), extra=err.get_log_extra())
         raise err
     
     if min_consecutive_steps < 1:
@@ -339,8 +351,8 @@ def _assert_valid_clustering_config(
             param="_MIN_FLATTEN_CONSECUTIVE_STEPS",
             value=min_consecutive_steps,
         )
-        # [리뷰반영] 로그 수집기에서 쿼리 가능하도록 구조화된 로깅(extra kwargs) 사용
-        logger.critical(str(err), extra={"param": err.param, "value": err.value})
+        # [리뷰반영] 예외 객체 내부에 캡슐화된 메서드를 호출하여 extra kwargs 제공 (DRY)
+        logger.critical(str(err), extra=err.get_log_extra())
         raise err
 
 
