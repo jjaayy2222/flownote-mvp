@@ -26,10 +26,13 @@ import math
 import os
 import re
 import typing
-from typing import Callable, List, Optional, TypeVar
+from typing import Any, Callable, Dict, List, Optional, TypeVar
 
+import numpy as np
 import redis.exceptions
 from redis.exceptions import RedisError  # 연결/타임아웃/명령 실패 포괄
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
 
 from backend.services.redis_pubsub import redis_client  # type: ignore[import]
 from backend.utils import mask_pii_id                   # type: ignore[import]
@@ -627,3 +630,168 @@ def get_cold_start_index_weight() -> float:
         1.0 (GLOBAL_INDEX_WEIGHT=1.0, 개인화 완전 비활성화)
     """
     return GLOBAL_INDEX_WEIGHT_COLD_START
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [Step 2-3 / Phase 2] Core ML: k-means 클러스터링 알고리즘 구현
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _find_elbow_point(inertias: List[float], k_range: List[int]) -> int:
+    """
+    관성(Inertia) 배열에서 엘보우 포인트(곡률이 최대인 지점)를 찾는다.
+    시작점과 끝점을 이은 직선에서 가장 멀리 떨어진 점을 선택한다.
+    """
+    if len(inertias) < 3:
+        return k_range[0]
+    
+    p1 = np.array([k_range[0], inertias[0]])
+    p2 = np.array([k_range[-1], inertias[-1]])
+    
+    distances = []
+    for i, k in enumerate(k_range):
+        p3 = np.array([k, inertias[i]])
+        # 점 p3와 직선 p1-p2 사이의 거리 계산
+        # np.cross는 2D 벡터에서 평행사변형 면적을 반환함
+        dist = float(np.abs(np.cross(p2 - p1, p1 - p3)) / np.linalg.norm(p2 - p1))
+        distances.append(dist)
+        
+    return int(k_range[np.argmax(distances)])
+
+
+def _determine_optimal_k(embeddings: np.ndarray, max_k: int = 5) -> int:
+    """
+    엘보우 메서드(1차)와 사일루엣 계수(2차)를 활용하여 최적의 K(클러스터 수)를 결정한다.
+    """
+    n_samples = embeddings.shape[0]
+    if n_samples <= 3:
+        return 1 if n_samples > 0 else 0
+        
+    limit_k = min(n_samples - 1, max_k)
+    if limit_k < 2:
+        return 1
+        
+    inertias = []
+    sil_scores = []
+    k_range = list(range(2, limit_k + 1))
+    
+    for k in k_range:
+        kmeans = KMeans(n_clusters=k, random_state=42, n_init="auto")
+        labels = kmeans.fit_predict(embeddings)
+        inertias.append(float(kmeans.inertia_))
+        sil_scores.append(float(silhouette_score(embeddings, labels)))
+        
+    elbow_k = _find_elbow_point(inertias, k_range)
+    best_sil_idx = int(np.argmax(sil_scores))
+    best_sil_k = k_range[best_sil_idx]
+    
+    # 1차 엘보우를 기본으로 하되, 사일루엣 점수가 현저히 좋은 K가 있다면 그걸 채택
+    elbow_idx = k_range.index(elbow_k)
+    
+    if sil_scores[best_sil_idx] - sil_scores[elbow_idx] > 0.1:
+        optimal_k = best_sil_k
+    else:
+        optimal_k = elbow_k
+        
+    logger.info(
+        "[TOPIC_CLUSTERING] 최적 K 탐색 (samples=%d): elbow_k=%d, best_sil_k=%d -> optimal_k=%d",
+        n_samples, elbow_k, best_sil_k, optimal_k
+    )
+    return optimal_k
+
+
+def _extract_cluster_labels(kmeans: KMeans, embeddings: np.ndarray, queries: List[str]) -> List[str]:
+    """
+    각 클러스터의 센트로이드(centroid)와 가장 가까운 쿼리를 찾아 클러스터의 대표 레이블로 사용한다.
+    """
+    labels = []
+    for i in range(kmeans.n_clusters):
+        centroid = kmeans.cluster_centers_[i]
+        # 클러스터 i에 할당된 데이터 인덱스들
+        cluster_indices = np.where(kmeans.labels_ == i)[0]
+        
+        if len(cluster_indices) == 0:
+            labels.append("Unknown Topic")
+            continue
+            
+        cluster_embeddings = embeddings[cluster_indices]
+        # L2 norm 거리 계산
+        distances = np.linalg.norm(cluster_embeddings - centroid, axis=1)
+        closest_idx_in_cluster = int(np.argmin(distances))
+        closest_idx_in_original = int(cluster_indices[closest_idx_in_cluster])
+        
+        labels.append(queries[closest_idx_in_original])
+        
+    return labels
+
+
+async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
+    """
+    [Step 2-3] 검색 히스토리를 기반으로 관심 토픽 클러스터링(k-means)을 수행한다.
+    
+    절차:
+      1) 사용자 검색 히스토리 조회
+      2) 쿼리 임베딩 변환
+      3) 최적 K값 산출 (Elbow + Silhouette)
+      4) 클러스터링 수행 및 대표 레이블(쿼리) 추출
+      5) 클러스터별 가중치(크기 비율) 계산 및 내림차순 정렬 반환
+      
+    Returns:
+        [{"label": "대표 쿼리", "weight": 0.5, "size": 10}, ...]
+    """
+    # 1) 히스토리 조회
+    history = await get_search_history(hashed_user_id)
+    if not history:
+        return []
+        
+    # 2) 임베딩 생성 (일괄)
+    embeddings_list = await vectorize_queries(history)
+    if not embeddings_list or len(embeddings_list) != len(history):
+        return []
+        
+    # 이벤트 루프 블로킹 방지를 위해 threadpool 사용
+    def _run_clustering() -> List[Dict[str, Any]]:
+        embeddings = np.array(embeddings_list)
+        n_samples = embeddings.shape[0]
+        
+        if n_samples < 3:
+            return [{"label": history[0], "weight": 1.0, "size": n_samples}]
+            
+        # 최대 클러스터 개수는 샘플 수에 비례하되 최대 10개로 제한
+        optimal_k = _determine_optimal_k(embeddings, max_k=min(10, n_samples - 1))
+        
+        kmeans = KMeans(n_clusters=optimal_k, random_state=42, n_init="auto")
+        cluster_ids = kmeans.fit_predict(embeddings)
+        
+        labels = _extract_cluster_labels(kmeans, embeddings, history)
+        
+        cluster_sizes = np.bincount(cluster_ids, minlength=optimal_k)
+        
+        clusters_info = []
+        for i in range(optimal_k):
+            size = int(cluster_sizes[i])
+            if size == 0:
+                continue
+                
+            clusters_info.append({
+                "label": labels[i],
+                "weight": round(size / n_samples, 4),
+                "size": size
+            })
+            
+        clusters_info.sort(key=lambda x: x["weight"], reverse=True)
+        return clusters_info
+
+    try:
+        clusters_info = await run_in_threadpool(_run_clustering)
+        
+        logger.info(
+            "[TOPIC_CLUSTERING] 클러스터링 완료 (masked_uid=%s, queries=%d, clusters=%d)",
+            mask_pii_id(hashed_user_id), len(history), len(clusters_info)
+        )
+        return clusters_info
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "[TOPIC_CLUSTERING] 클러스터링 실행 실패 (masked_uid=%s). exc=%r",
+            mask_pii_id(hashed_user_id), exc
+        )
+        return []
