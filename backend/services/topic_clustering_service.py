@@ -295,29 +295,44 @@ _MIN_FLATTEN_CONSECUTIVE_STEPS: int = 2
 
 class ClusteringConfigError(ValueError):
     """클러스터링 알고리즘 설정값 오류 시 발생하는 도메인 특화 예외"""
-    pass
+    def __init__(self, message: str, param: str, value: Any):
+        super().__init__(message)
+        self.param = param
+        self.value = value
 
 
-def _assert_valid_clustering_config() -> None:
+def _assert_valid_clustering_config(
+    min_k_flatten: int, min_consecutive_steps: int
+) -> None:
     """
-    [리뷰반영] 클러스터링 관련 설정값을 검증하고, 잘못된 경우 로그를 남긴 후 커스텀 예외를 발생시킨다.
-    전역 상태(Shared Mutable State)를 제거하여 비동기 환경에서의 동시성 이슈를 차단하고 멱등성을 보장한다.
+    [리뷰반영] 클러스터링 관련 설정값을 단일 진입점에서 검증하고, 잘못된 경우 커스텀 예외를 발생시킨다.
+
+    이 함수는 모듈 레벨의 설정 상수를 인자로 주입받아 유효성을 검사하며,
+    전역 상태에 직접 의존하지 않아 테스트 용이성(Testability)이 높다.
     """
-    if _MIN_K_FOR_INERTIA_FLATTEN < 2:
+    if min_k_flatten < 2:
         logger.critical(
             "[TOPIC_CLUSTERING] Misconfiguration: _MIN_K_FOR_INERTIA_FLATTEN must be >= 2. "
             "Current value: %s",
-            _MIN_K_FOR_INERTIA_FLATTEN,
+            min_k_flatten,
         )
-        raise ClusteringConfigError("[TOPIC_CLUSTERING] Misconfiguration: _MIN_K_FOR_INERTIA_FLATTEN must be >= 2.")
+        raise ClusteringConfigError(
+            "[TOPIC_CLUSTERING] Misconfiguration: _MIN_K_FOR_INERTIA_FLATTEN must be >= 2.",
+            param="_MIN_K_FOR_INERTIA_FLATTEN",
+            value=min_k_flatten,
+        )
     
-    if _MIN_FLATTEN_CONSECUTIVE_STEPS < 1:
+    if min_consecutive_steps < 1:
         logger.critical(
             "[TOPIC_CLUSTERING] Misconfiguration: _MIN_FLATTEN_CONSECUTIVE_STEPS must be >= 1. "
             "Current value: %s",
-            _MIN_FLATTEN_CONSECUTIVE_STEPS,
+            min_consecutive_steps,
         )
-        raise ClusteringConfigError("[TOPIC_CLUSTERING] Misconfiguration: _MIN_FLATTEN_CONSECUTIVE_STEPS must be >= 1.")
+        raise ClusteringConfigError(
+            "[TOPIC_CLUSTERING] Misconfiguration: _MIN_FLATTEN_CONSECUTIVE_STEPS must be >= 1.",
+            param="_MIN_FLATTEN_CONSECUTIVE_STEPS",
+            value=min_consecutive_steps,
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -948,7 +963,11 @@ async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
         [{"label": "대표 쿼리", "weight": 0.5, "size": 10}, ...]
     """
     # [리뷰반영] 런타임에 설정값 정합성을 검증하고, 잘못된 경우 명시적 커스텀 예외를 발생시킴
-    _assert_valid_clustering_config()
+    # (상위 라우터 또는 예외 핸들러에서 ClusteringConfigError를 적절히 처리해야 함)
+    _assert_valid_clustering_config(
+        _MIN_K_FOR_INERTIA_FLATTEN,
+        _MIN_FLATTEN_CONSECUTIVE_STEPS,
+    )
 
     # 1) 히스토리 조회
     history = await get_search_history(hashed_user_id)
