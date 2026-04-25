@@ -35,14 +35,15 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 
 from backend.services.redis_pubsub import redis_client  # type: ignore[import]
-from backend.utils import mask_pii_id                   # type: ignore[import]
-from backend.embedding import EmbeddingGenerator        # type: ignore[import]
-from fastapi.concurrency import run_in_threadpool       # type: ignore[import]
+from backend.utils import mask_pii_id  # type: ignore[import]
+from backend.embedding import EmbeddingGenerator  # type: ignore[import]
+from fastapi.concurrency import run_in_threadpool  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
 
 # [Optimization] 임베딩 생성기 싱글톤 관리 (모듈 레벨)
 _embedding_gen: Optional[EmbeddingGenerator] = None
+
 
 def _get_embedding_generator() -> EmbeddingGenerator:
     """임베딩 생성기 인스턴스를 지연 로딩(Lazy Loading) 방식으로 반환한다."""
@@ -57,7 +58,7 @@ def _get_embedding_generator() -> EmbeddingGenerator:
 # 영문·한글뿐 아니라 일본어·아랍어 등 다국어 스크립트도 보존한다 (글로벌 사용자 대비).
 # re.UNICODE는 Python 3의 기본값이므로 명시적 플래그 없이도 적용된다.
 _CLEAN_RE = re.compile(r"[^\w\s]")  # 구두점·특수기호만 제거, 유니코드 문자 보존
-_WS_RE = re.compile(r"\s+")         # 연속 공백 통합
+_WS_RE = re.compile(r"\s+")  # 연속 공백 통합
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 모듈 레벨 상수 (하드코딩 금지 — 모두 여기서 중앙 관리)
@@ -169,14 +170,20 @@ def _parse_bounded_env_number(
     if value < min_val:
         logger.warning(
             "[TOPIC_CLUSTERING] %s=%r 가 최솟값(%r) 미만입니다. %r로 보정합니다.",
-            env_key, value, min_val, min_val,
+            env_key,
+            value,
+            min_val,
+            min_val,
         )
         return min_val
 
     if value > max_val:
         logger.warning(
             "[TOPIC_CLUSTERING] %s=%r 가 최댓값(%r) 초과입니다. %r로 보정합니다.",
-            env_key, value, max_val, max_val,
+            env_key,
+            value,
+            max_val,
+            max_val,
         )
         return max_val
 
@@ -201,6 +208,7 @@ _COLD_START_THRESHOLD: int = _load_cold_start_threshold()
 # ─────────────────────────────────────────────────────────────────────────────
 # 환경 변수 로더: Cold Start 전역 인덱스 가중치
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _load_cold_start_global_weight() -> float:
     """COLD_START_GLOBAL_INDEX_WEIGHT 환경 변수를 안전하게 파싱하고 범위를 보정한다."""
@@ -232,7 +240,7 @@ def _load_search_history_max_len() -> int:
 _SEARCH_HISTORY_MAX_LEN: int = _load_search_history_max_len()
 
 
-# 사일루엣 점수 향상분 임계값 (환경 변수로 외부화)
+# 실루엣 점수 향상분 임계값 (환경 변수로 외부화)
 _SIL_THRESHOLD_ENV_KEY = "SILHOUETTE_IMPROVEMENT_THRESHOLD"
 _SIL_THRESHOLD_DEFAULT = 0.1
 _SIL_THRESHOLD_MIN = 0.0
@@ -254,9 +262,35 @@ def _load_sil_threshold() -> float:
 _SILHOUETTE_IMPROVEMENT_THRESHOLD: float = _load_sil_threshold()
 
 
+# 실루엣 점수 샘플 상한 (환경 변수로 외부화)
+_SIL_SAMPLE_SIZE_ENV_KEY = "SILHOUETTE_SAMPLE_SIZE"
+_SIL_SAMPLE_SIZE_DEFAULT = 100
+_SIL_SAMPLE_SIZE_MIN = 50
+_SIL_SAMPLE_SIZE_MAX = 1000
+
+
+def _load_sil_sample_size() -> int:
+    """SILHOUETTE_SAMPLE_SIZE 환경 변수를 안전하게 파싱하고 범위를 보정한다."""
+    return _parse_bounded_env_number(
+        _SIL_SAMPLE_SIZE_ENV_KEY,
+        _SIL_SAMPLE_SIZE_DEFAULT,
+        _SIL_SAMPLE_SIZE_MIN,
+        _SIL_SAMPLE_SIZE_MAX,
+        int,
+    )
+
+
+# 모듈 로드 시 1회 계산
+_SILHOUETTE_SAMPLE_SIZE: int = _load_sil_sample_size()
+
+# ML 재현성(Idempotency) 보장을 위한 전역 시드 상수
+_ML_RANDOM_STATE: int = 42
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Redis 키 빌더 (SSOT — 하드코딩 금지)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _build_msg_pair_count_key(hashed_user_id: str) -> str:
     """메시지 쌍 카운터 Redis 키를 생성한다. (변경 시 이 함수만 수정)"""
@@ -277,6 +311,7 @@ def _build_query_history_key(hashed_user_id: str) -> str:
 # Redis 연결 보장 헬퍼
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def _ensure_redis_connected() -> None:
     """
     Redis 연결이 끊어진 경우 재연결을 시도한다.
@@ -296,6 +331,7 @@ async def _ensure_redis_connected() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # Cold Start 카운터 조회 헬퍼 (MGET으로 단일 RTT 최적화)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _parse_raw_int(raw: object) -> int:
     """
@@ -370,6 +406,7 @@ async def _get_two_redis_counts(key1: str, key2: str) -> tuple[int, int]:
 # Public API: Cold Start 판별
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def is_cold_start_user(
     hashed_user_id: str,
     masked_uid: Optional[str] = None,
@@ -422,6 +459,7 @@ async def is_cold_start_user(
 # Public API: Cold Start 카운터 증가 (호출자가 활동 발생 시 증분)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def increment_msg_pair_count(hashed_user_id: str) -> None:
     """
     사용자의 완료된 메시지 쌍 카운터를 Redis에서 1 증가시킨다.
@@ -436,7 +474,8 @@ async def increment_msg_pair_count(hashed_user_id: str) -> None:
         await redis_client.redis.incr(key)
     except RedisError as exc:
         logger.warning(
-            "[TOPIC_CLUSTERING] 메시지 쌍 카운터 증분 실패 (best-effort, 흐름 유지). exc=%r", exc
+            "[TOPIC_CLUSTERING] 메시지 쌍 카운터 증분 실패 (best-effort, 흐름 유지). exc=%r",
+            exc,
         )
 
 
@@ -454,7 +493,8 @@ async def increment_rag_search_count(hashed_user_id: str) -> None:
         await redis_client.redis.incr(key)
     except RedisError as exc:
         logger.warning(
-            "[TOPIC_CLUSTERING] RAG 검색 카운터 증분 실패 (best-effort, 흐름 유지). exc=%r", exc
+            "[TOPIC_CLUSTERING] RAG 검색 카운터 증분 실패 (best-effort, 흐름 유지). exc=%r",
+            exc,
         )
 
 
@@ -468,16 +508,16 @@ def _preprocess_query(query: str) -> str:
     """
     if not query:
         return ""
-    
+
     # 1. 소문자화
     text = query.lower()
-    
+
     # 2. 특수문자 제거 (안전한 문자열 확보)
     text = _CLEAN_RE.sub(" ", text)
-    
+
     # 3. 연속 공백 통합 및 Trim
     text = _WS_RE.sub(" ", text).strip()
-    
+
     return text
 
 
@@ -644,6 +684,7 @@ async def get_search_history(hashed_user_id: str) -> List[str]:
 # Public API: Cold Start 폴백 가중치 반환
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def get_cold_start_index_weight() -> float:
     """
     콜드 스타트 상태일 때 적용할 전역 인덱스 가중치를 반환한다.
@@ -658,6 +699,7 @@ def get_cold_start_index_weight() -> float:
 # [Step 2-3 / Phase 2] Core ML: k-means 클러스터링 알고리즘 구현
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _find_elbow_point(inertias: List[float], k_range: List[int]) -> int:
     """
     관성(Inertia) 배열에서 엘보우 포인트(곡률이 최대인 지점)를 찾는다.
@@ -665,10 +707,10 @@ def _find_elbow_point(inertias: List[float], k_range: List[int]) -> int:
     """
     if len(inertias) < 3:
         return k_range[0]
-    
+
     p1 = np.array([k_range[0], inertias[0]])
     p2 = np.array([k_range[-1], inertias[-1]])
-    
+
     distances = []
     for i, k in enumerate(k_range):
         p3 = np.array([k, inertias[i]])
@@ -676,60 +718,87 @@ def _find_elbow_point(inertias: List[float], k_range: List[int]) -> int:
         # np.cross는 2D 벡터에서 평행사변형 면적을 반환함
         dist = float(np.abs(np.cross(p2 - p1, p1 - p3)) / np.linalg.norm(p2 - p1))
         distances.append(dist)
-        
+
     return int(k_range[np.argmax(distances)])
+
+
+def _create_kmeans(n_clusters: int) -> KMeans:
+    """
+    KMeans 인스턴스 생성을 위한 중앙 집중식 팩토리 헬퍼.
+    매직 넘버(random_state 등)를 한 곳에서 관리하여 일관성 및 재현성을 보장한다.
+    """
+    return KMeans(n_clusters=n_clusters, random_state=_ML_RANDOM_STATE, n_init="auto")
 
 
 def _determine_optimal_k(embeddings: np.ndarray, max_k: int = 5) -> int:
     """
-    엘보우 메서드(1차)와 사일루엣 계수(2차)를 활용하여 최적의 K(클러스터 수)를 결정한다.
+    엘보우 메서드(1차)와 실루엣 계수(2차)를 활용하여 최적의 K(클러스터 수)를 결정한다.
     """
     n_samples = embeddings.shape[0]
     if n_samples <= 3:
         return 1 if n_samples > 0 else 0
-        
+
     limit_k = min(n_samples - 1, max_k)
     if limit_k < 2:
         return 1
-        
+
     inertias = []
     sil_scores = []
     k_range = list(range(2, limit_k + 1))
-    
+
     for k in k_range:
-        kmeans = KMeans(n_clusters=k, random_state=42, n_init="auto")
+        kmeans = _create_kmeans(k)
         labels = kmeans.fit_predict(embeddings)
         inertias.append(float(kmeans.inertia_))
-        
+
         # [리뷰반영] 모든 샘플이 동일한 클러스터로 할당되는 붕괴 현상 방어
         # silhouette_score는 고유 라벨이 2개 이상일 때만 동작하므로,
         # 1개일 때는 최하점(-1.0)을 부여하여 optimal K 후보에서 배제한다.
         if len(np.unique(labels)) > 1:
-            sil_scores.append(float(silhouette_score(embeddings, labels)))
+            # [리뷰반영] 히스토리가 매우 긴 사용자를 위한 실루엣 다운샘플링 적용 (O(N^2) 방어)
+            # 샘플 수가 상한선을 초과할 때만 sample_size를 적용하며, 재현성을 위해 random_state를 고정한다.
+            sample_size = (
+                _SILHOUETTE_SAMPLE_SIZE if n_samples > _SILHOUETTE_SAMPLE_SIZE else None
+            )
+            sil_scores.append(
+                float(
+                    silhouette_score(
+                        embeddings, labels, sample_size=sample_size, random_state=_ML_RANDOM_STATE
+                    )
+                )
+            )
         else:
             sil_scores.append(-1.0)
-        
+
     elbow_k = _find_elbow_point(inertias, k_range)
     best_sil_idx = int(np.argmax(sil_scores))
     best_sil_k = k_range[best_sil_idx]
-    
-    # 1차 엘보우를 기본으로 하되, 사일루엣 점수가 현저히 좋은 K가 있다면 그걸 채택
+
+    # 1차 엘보우를 기본으로 하되, 실루엣 점수가 현저히 좋은 K가 있다면 그걸 채택
     elbow_idx = k_range.index(elbow_k)
-    
+
     # [리뷰반영] 0.1 하드코딩 제거 (환경 변수 상수 참조)
-    if sil_scores[best_sil_idx] - sil_scores[elbow_idx] > _SILHOUETTE_IMPROVEMENT_THRESHOLD:
+    if (
+        sil_scores[best_sil_idx] - sil_scores[elbow_idx]
+        > _SILHOUETTE_IMPROVEMENT_THRESHOLD
+    ):
         optimal_k = best_sil_k
     else:
         optimal_k = elbow_k
-        
+
     logger.info(
         "[TOPIC_CLUSTERING] 최적 K 탐색 (samples=%d): elbow_k=%d, best_sil_k=%d -> optimal_k=%d",
-        n_samples, elbow_k, best_sil_k, optimal_k
+        n_samples,
+        elbow_k,
+        best_sil_k,
+        optimal_k,
     )
     return optimal_k
 
 
-def _extract_cluster_labels(kmeans: KMeans, embeddings: np.ndarray, queries: List[str]) -> List[Optional[str]]:
+def _extract_cluster_labels(
+    kmeans: KMeans, embeddings: np.ndarray, queries: List[str]
+) -> List[Optional[str]]:
     """
     각 클러스터의 센트로이드(centroid)와 가장 가까운 쿼리를 찾아 클러스터의 대표 레이블로 사용한다.
     """
@@ -738,35 +807,35 @@ def _extract_cluster_labels(kmeans: KMeans, embeddings: np.ndarray, queries: Lis
         centroid = kmeans.cluster_centers_[i]
         # 클러스터 i에 할당된 데이터 인덱스들
         cluster_indices = np.where(kmeans.labels_ == i)[0]
-        
+
         if len(cluster_indices) == 0:
             # [리뷰반영] 하드코딩된 "Unknown Topic" 문자열 제거.
             # 빈 클러스터는 None을 반환하고 상위 레이어에서 필터링하도록 위임한다.
             labels.append(None)
             continue
-            
+
         cluster_embeddings = embeddings[cluster_indices]
         # L2 norm 거리 계산
         distances = np.linalg.norm(cluster_embeddings - centroid, axis=1)
         closest_idx_in_cluster = int(np.argmin(distances))
         closest_idx_in_original = int(cluster_indices[closest_idx_in_cluster])
-        
+
         labels.append(queries[closest_idx_in_original])
-        
+
     return labels
 
 
 async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
     """
     [Step 2-3] 검색 히스토리를 기반으로 관심 토픽 클러스터링(k-means)을 수행한다.
-    
+
     절차:
       1) 사용자 검색 히스토리 조회
       2) 쿼리 임베딩 변환
       3) 최적 K값 산출 (Elbow + Silhouette)
       4) 클러스터링 수행 및 대표 레이블(쿼리) 추출
       5) 클러스터별 가중치(크기 비율) 계산 및 내림차순 정렬 반환
-      
+
     Returns:
         [{"label": "대표 쿼리", "weight": 0.5, "size": 10}, ...]
     """
@@ -774,61 +843,67 @@ async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
     history = await get_search_history(hashed_user_id)
     if not history:
         return []
-        
+
     # 2) 임베딩 생성 (일괄)
     embeddings_list = await vectorize_queries(history)
     if not embeddings_list or len(embeddings_list) != len(history):
         return []
-        
+
     # 이벤트 루프 블로킹 방지를 위해 threadpool 사용
     def _run_clustering() -> List[Dict[str, Any]]:
         embeddings = np.array(embeddings_list)
         n_samples = embeddings.shape[0]
-        
+
         if n_samples < 3:
             # [리뷰반영] 쿼리가 1~2개로 매우 적은 경우 클러스터링 알고리즘의 실익이 없으므로,
             # 첫 번째 쿼리(가장 최근 검색어)를 해당 사용자의 대표(canonical) 토픽으로 간주한다.
             return [{"label": history[0], "weight": 1.0, "size": n_samples}]
-            
+
         # 최대 클러스터 개수는 샘플 수에 비례하되 최대 10개로 제한
         optimal_k = _determine_optimal_k(embeddings, max_k=min(10, n_samples - 1))
-        
-        kmeans = KMeans(n_clusters=optimal_k, random_state=42, n_init="auto")
+
+        # [리뷰반영] 공통 팩토리 헬퍼를 사용하여 KMeans 초기화 (매직넘버 제거)
+        kmeans = _create_kmeans(optimal_k)
         cluster_ids = kmeans.fit_predict(embeddings)
-        
+
         labels = _extract_cluster_labels(kmeans, embeddings, history)
-        
+
         cluster_sizes = np.bincount(cluster_ids, minlength=optimal_k)
-        
+
         clusters_info = []
         for i in range(optimal_k):
             size = int(cluster_sizes[i])
             label_text = labels[i]
-            
+
             # [리뷰반영] None 레이블(빈 클러스터)은 결과에서 누락시킴
             if size == 0 or label_text is None:
                 continue
-                
-            clusters_info.append({
-                "label": label_text,
-                "weight": round(size / n_samples, 4),
-                "size": size
-            })
-            
+
+            clusters_info.append(
+                {
+                    "label": label_text,
+                    "weight": round(size / n_samples, 4),
+                    "size": size,
+                }
+            )
+
         clusters_info.sort(key=lambda x: x["weight"], reverse=True)
         return clusters_info
 
     try:
         clusters_info = await run_in_threadpool(_run_clustering)
-        
+
         logger.info(
             "[TOPIC_CLUSTERING] 클러스터링 완료 (masked_uid=%s, queries=%d, clusters=%d)",
-            mask_pii_id(hashed_user_id), len(history), len(clusters_info)
+            mask_pii_id(hashed_user_id),
+            len(history),
+            len(clusters_info),
         )
         return clusters_info
     except Exception as exc:  # noqa: BLE001
         logger.error(
             "[TOPIC_CLUSTERING] 클러스터링 실행 실패 (masked_uid=%s). exc=%r",
-            mask_pii_id(hashed_user_id), exc
+            mask_pii_id(hashed_user_id),
+            exc,
         )
         return []
