@@ -763,17 +763,14 @@ def _compute_silhouette_safe(
 
 
 def _update_inertia_flatten_state(
-    inertias: List[float],
+    prev_inertia: float,
+    current_inertia: float,
     current_k: int,
     flatten_count: int,
 ) -> typing.Tuple[int, bool]:
     """
     [리뷰반영] 관성 평탄화 검사 로직을 순수 헬퍼 함수로 추출.
     """
-    if len(inertias) < _MIN_K_FOR_INERTIA_FLATTEN:
-        return 0, False
-
-    prev_inertia, current_inertia = inertias[-2], inertias[-1]
     if prev_inertia <= 0:
         return 0, False
 
@@ -810,6 +807,7 @@ def _determine_optimal_k(embeddings: np.ndarray, max_k: int = _MAX_CLUSTERS_LIMI
     inertias: List[float] = []
     sil_scores: List[float] = []
     k_values: List[int] = []
+    sil_k_values: List[int] = []  # 실제로 실루엣이 계산된 K만 담는 전용 리스트
     inertia_flatten_count = 0
 
     for k in range(2, limit_k + 1):
@@ -820,40 +818,44 @@ def _determine_optimal_k(embeddings: np.ndarray, max_k: int = _MAX_CLUSTERS_LIMI
         inertias.append(current_inertia)
         k_values.append(k)
 
-        # [리뷰반영] 헬퍼 함수를 통한 조기 종료 검사 (current_k 명시적 전달)
-        inertia_flatten_count, should_stop = _update_inertia_flatten_state(
-            inertias, k, inertia_flatten_count
-        )
+        # [리뷰반영] 헬퍼 함수의 배열 의존성을 제거하고, 조기 종료 여부를 바깥에서 검증
+        if len(inertias) >= _MIN_K_FOR_INERTIA_FLATTEN:
+            # _MIN_K_FOR_INERTIA_FLATTEN은 최소 2 이상임을 보장해야 함
+            prev_inertia, cur_inertia = inertias[-2], inertias[-1]
+            inertia_flatten_count, should_stop = _update_inertia_flatten_state(
+                prev_inertia, cur_inertia, k, inertia_flatten_count
+            )
+        else:
+            should_stop = False
+
         if should_stop:
-            # 실루엣 연산을 생략하여 O(N^2) 비용 절감 (-1.0 버퍼값 없이 즉시 탈출)
+            # 실루엣 연산을 생략하여 O(N^2) 비용 절감
             break
 
-        # [리뷰반영] 실루엣 계산을 헬퍼 함수로 분리하여 복잡도 감소 (n_samples 파라미터 제거)
+        # [리뷰반영] 실루엣 점수가 존재하는 K만 별도 관리하여 슬라이싱/마법 인덱싱 완전 제거
         sil_scores.append(_compute_silhouette_safe(embeddings, labels))
+        sil_k_values.append(k)
 
     elbow_k = _find_elbow_point(inertias, k_values)
 
-    # [방어 로직] 조기 종료가 너무 일찍 터져서 sil_scores가 아예 비어버린 극단적 엣지 케이스 방어
+    # 조기 종료가 너무 일찍 터져서 sil_scores가 아예 비어버린 극단적 엣지 케이스 방어
     if not sil_scores:
         return elbow_k
 
-    # [리뷰반영] 실제로 실루엣을 계산한 K 들만 잘라내어 배열 간 불일치(IndexError) 원천 차단
-    sil_k_values = k_values[: len(sil_scores)]
     best_sil_idx = int(np.argmax(sil_scores))
     best_sil_k = sil_k_values[best_sil_idx]
 
-    elbow_idx = k_values.index(elbow_k)
-
     # 1차 엘보우를 기본으로 하되, 실루엣 점수가 현저히 좋은 K가 있다면 그걸 채택
-    # [방어 로직] elbow_k가 조기 종료로 인해 sil_scores에 없는 K값일 경우를 대비한 안전망
-    if elbow_idx >= len(sil_scores):
-        optimal_k = elbow_k
-    elif (
-        sil_scores[best_sil_idx] - sil_scores[elbow_idx]
-        > _SILHOUETTE_IMPROVEMENT_THRESHOLD
-    ):
-        optimal_k = best_sil_k
+    if elbow_k in sil_k_values:
+        elbow_sil_idx = sil_k_values.index(elbow_k)
+        elbow_sil = sil_scores[elbow_sil_idx]
+
+        if (sil_scores[best_sil_idx] - elbow_sil) > _SILHOUETTE_IMPROVEMENT_THRESHOLD:
+            optimal_k = best_sil_k
+        else:
+            optimal_k = elbow_k
     else:
+        # elbow_k가 조기 종료로 인해 실루엣 계산에서 제외된 경우
         optimal_k = elbow_k
 
     logger.info(
