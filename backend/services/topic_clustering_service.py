@@ -736,6 +736,66 @@ def _create_kmeans(n_clusters: int) -> KMeans:
     return KMeans(n_clusters=n_clusters, random_state=_ML_RANDOM_STATE, n_init="auto")
 
 
+import typing
+
+def _compute_silhouette_safe(
+    embeddings: np.ndarray, labels: np.ndarray, n_samples: int
+) -> float:
+    """
+    [리뷰반영] 실루엣 점수 계산을 안전하게 수행하는 헬퍼 함수.
+    단일 클러스터 붕괴 시 예외를 방지하고 다운샘플링을 적용한다.
+    """
+    if len(np.unique(labels)) <= 1:
+        return -1.0
+
+    sample_size = (
+        _SILHOUETTE_SAMPLE_SIZE if n_samples > _SILHOUETTE_SAMPLE_SIZE else None
+    )
+    return float(
+        silhouette_score(
+            embeddings,
+            labels,
+            sample_size=sample_size,
+            random_state=_ML_RANDOM_STATE,
+        )
+    )
+
+
+def _update_inertia_flatten_state(
+    inertias: List[float],
+    current_inertia: float,
+    current_k: int,
+    flatten_count: int,
+) -> typing.Tuple[int, bool]:
+    """
+    [리뷰반영] 관성 평탄화 검사 로직을 순수 헬퍼 함수로 추출.
+    """
+    if not inertias:
+        return flatten_count, False
+
+    prev_inertia = inertias[-1]
+
+    if current_k < _MIN_K_FOR_INERTIA_FLATTEN or prev_inertia <= 0:
+        return 0, False
+
+    improvement = (prev_inertia - current_inertia) / prev_inertia
+
+    if improvement < _INERTIA_FLATTEN_THRESHOLD:
+        flatten_count += 1
+    else:
+        flatten_count = 0
+
+    if flatten_count >= _MIN_FLATTEN_CONSECUTIVE_STEPS:
+        logger.debug(
+            "[TOPIC_CLUSTERING] Inertia flattened at k=%d over %d consecutive steps, short-circuiting.",
+            current_k,
+            flatten_count,
+        )
+        return flatten_count, True
+
+    return flatten_count, False
+
+
 def _determine_optimal_k(embeddings: np.ndarray, max_k: int = _MAX_CLUSTERS_LIMIT) -> int:
     """
     엘보우 메서드(1차)와 실루엣 계수(2차)를 활용하여 최적의 K(클러스터 수)를 결정한다.
@@ -748,9 +808,9 @@ def _determine_optimal_k(embeddings: np.ndarray, max_k: int = _MAX_CLUSTERS_LIMI
     if limit_k < 2:
         return 1
 
-    inertias = []
-    sil_scores = []
-    actual_k_range = []
+    inertias: List[float] = []
+    sil_scores: List[float] = []
+    k_values: List[int] = []
     inertia_flatten_count = 0
 
     for k in range(2, limit_k + 1):
@@ -758,55 +818,25 @@ def _determine_optimal_k(embeddings: np.ndarray, max_k: int = _MAX_CLUSTERS_LIMI
         labels = kmeans.fit_predict(embeddings)
         current_inertia = float(kmeans.inertia_)
         
-        inertias.append(current_inertia)
-        actual_k_range.append(k)
-
-        # [리뷰반영] 모든 샘플이 동일한 클러스터로 할당되는 붕괴 현상 방어
-        # silhouette_score는 고유 라벨이 2개 이상일 때만 동작하므로,
-        # 1개일 때는 최하점(-1.0)을 부여하여 optimal K 후보에서 배제한다.
-        if len(np.unique(labels)) > 1:
-            # [리뷰반영] 히스토리가 매우 긴 사용자를 위한 실루엣 다운샘플링 적용 (O(N^2) 방어)
-            # 샘플 수가 상한선을 초과할 때만 sample_size를 적용하며, 재현성을 위해 random_state를 고정한다.
-            sample_size = (
-                _SILHOUETTE_SAMPLE_SIZE if n_samples > _SILHOUETTE_SAMPLE_SIZE else None
-            )
-            sil_scores.append(
-                float(
-                    silhouette_score(
-                        embeddings, labels, sample_size=sample_size, random_state=_ML_RANDOM_STATE
-                    )
-                )
-            )
-        else:
-            sil_scores.append(-1.0)
+        # [리뷰반영] 헬퍼 함수를 통한 조기 종료 검사 (실루엣 연산 전 수행하여 O(N^2) 비용 절감)
+        inertia_flatten_count, should_stop = _update_inertia_flatten_state(
+            inertias, current_inertia, k, inertia_flatten_count
+        )
+        if should_stop:
+            break
             
-        # [리뷰반영] 관성(Inertia) 평탄화 시 조기 종료 (Early Stopping)
-        # 비용이 큰 실루엣 연산을 줄이기 위해, Inertia 감소율이 5% 미만인 상태가
-        # 일정 k 이상에서 연속적으로 관찰되면 탐색을 조기 종료한다.
-        if len(inertias) >= _MIN_K_FOR_INERTIA_FLATTEN:
-            prev_inertia = inertias[-2]
-            if prev_inertia > 0:
-                improvement = (prev_inertia - current_inertia) / prev_inertia
+        inertias.append(current_inertia)
+        k_values.append(k)
 
-                if improvement < _INERTIA_FLATTEN_THRESHOLD:
-                    inertia_flatten_count += 1
-                else:
-                    inertia_flatten_count = 0
+        # [리뷰반영] 실루엣 계산을 헬퍼 함수로 분리하여 복잡도 감소
+        sil_scores.append(_compute_silhouette_safe(embeddings, labels, n_samples))
 
-                if inertia_flatten_count >= _MIN_FLATTEN_CONSECUTIVE_STEPS:
-                    logger.debug(
-                        "[TOPIC_CLUSTERING] Inertia flattened at k=%d over %d consecutive steps, short-circuiting.",
-                        k,
-                        inertia_flatten_count,
-                    )
-                    break
-
-    elbow_k = _find_elbow_point(inertias, actual_k_range)
+    elbow_k = _find_elbow_point(inertias, k_values)
     best_sil_idx = int(np.argmax(sil_scores))
-    best_sil_k = actual_k_range[best_sil_idx]
+    best_sil_k = k_values[best_sil_idx]
 
     # 1차 엘보우를 기본으로 하되, 실루엣 점수가 현저히 좋은 K가 있다면 그걸 채택
-    elbow_idx = actual_k_range.index(elbow_k)
+    elbow_idx = k_values.index(elbow_k)
 
     # [리뷰반영] 0.1 하드코딩 제거 (환경 변수 상수 참조)
     if (
