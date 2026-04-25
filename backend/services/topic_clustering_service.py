@@ -739,7 +739,7 @@ def _create_kmeans(n_clusters: int) -> KMeans:
 import typing
 
 def _compute_silhouette_safe(
-    embeddings: np.ndarray, labels: np.ndarray, n_samples: int
+    embeddings: np.ndarray, labels: np.ndarray
 ) -> float:
     """
     [리뷰반영] 실루엣 점수 계산을 안전하게 수행하는 헬퍼 함수.
@@ -748,6 +748,7 @@ def _compute_silhouette_safe(
     if len(np.unique(labels)) <= 1:
         return -1.0
 
+    n_samples = embeddings.shape[0]
     sample_size = (
         _SILHOUETTE_SAMPLE_SIZE if n_samples > _SILHOUETTE_SAMPLE_SIZE else None
     )
@@ -775,7 +776,9 @@ def _update_inertia_flatten_state(
 
     prev_inertia = inertias[-1]
 
-    if current_k < _MIN_K_FOR_INERTIA_FLATTEN or prev_inertia <= 0:
+    # [리뷰반영] 조기 종료의 신뢰도를 보장하기 위해 데이터(배열 길이) 기반 가드 복원
+    # inertias는 아직 현재 관성이 추가되지 않은 과거 상태이므로 길이에 1을 더해 검사
+    if (len(inertias) + 1) < _MIN_K_FOR_INERTIA_FLATTEN or prev_inertia <= 0:
         return 0, False
 
     improvement = (prev_inertia - current_inertia) / prev_inertia
@@ -822,14 +825,18 @@ def _determine_optimal_k(embeddings: np.ndarray, max_k: int = _MAX_CLUSTERS_LIMI
         inertia_flatten_count, should_stop = _update_inertia_flatten_state(
             inertias, current_inertia, k, inertia_flatten_count
         )
-        if should_stop:
-            break
-            
+        
+        # [리뷰반영] 조기 종료 시에도 메트릭에 추가하여 이전 로직과 엘보우/실루엣 배열 일관성 유지
         inertias.append(current_inertia)
         k_values.append(k)
 
-        # [리뷰반영] 실루엣 계산을 헬퍼 함수로 분리하여 복잡도 감소
-        sil_scores.append(_compute_silhouette_safe(embeddings, labels, n_samples))
+        if should_stop:
+            # 실루엣 연산을 생략하여 비용을 숏서킷(Short-circuit) 하되, 배열 길이를 맞추기 위해 버퍼값(-1.0) 추가
+            sil_scores.append(-1.0)
+            break
+
+        # [리뷰반영] 실루엣 계산을 헬퍼 함수로 분리하여 복잡도 감소 (n_samples 파라미터 제거)
+        sil_scores.append(_compute_silhouette_safe(embeddings, labels))
 
     elbow_k = _find_elbow_point(inertias, k_values)
     best_sil_idx = int(np.argmax(sil_scores))
