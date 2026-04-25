@@ -293,6 +293,33 @@ _MIN_K_FOR_INERTIA_FLATTEN: int = 3
 _MIN_FLATTEN_CONSECUTIVE_STEPS: int = 2
 
 
+class ClusteringConfigError(ValueError):
+    """클러스터링 알고리즘 설정값 오류 시 발생하는 도메인 특화 예외"""
+    pass
+
+
+def _assert_valid_clustering_config() -> None:
+    """
+    [리뷰반영] 클러스터링 관련 설정값을 검증하고, 잘못된 경우 로그를 남긴 후 커스텀 예외를 발생시킨다.
+    전역 상태(Shared Mutable State)를 제거하여 비동기 환경에서의 동시성 이슈를 차단하고 멱등성을 보장한다.
+    """
+    if _MIN_K_FOR_INERTIA_FLATTEN < 2:
+        logger.critical(
+            "[TOPIC_CLUSTERING] Misconfiguration: _MIN_K_FOR_INERTIA_FLATTEN must be >= 2. "
+            "Current value: %s",
+            _MIN_K_FOR_INERTIA_FLATTEN,
+        )
+        raise ClusteringConfigError("[TOPIC_CLUSTERING] Misconfiguration: _MIN_K_FOR_INERTIA_FLATTEN must be >= 2.")
+    
+    if _MIN_FLATTEN_CONSECUTIVE_STEPS < 1:
+        logger.critical(
+            "[TOPIC_CLUSTERING] Misconfiguration: _MIN_FLATTEN_CONSECUTIVE_STEPS must be >= 1. "
+            "Current value: %s",
+            _MIN_FLATTEN_CONSECUTIVE_STEPS,
+        )
+        raise ClusteringConfigError("[TOPIC_CLUSTERING] Misconfiguration: _MIN_FLATTEN_CONSECUTIVE_STEPS must be >= 1.")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Redis 키 빌더 (SSOT — 하드코딩 금지)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -920,13 +947,8 @@ async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
     Returns:
         [{"label": "대표 쿼리", "weight": 0.5, "size": 10}, ...]
     """
-    # [리뷰반영] 동적 환경변수 오설정으로 인한 import-time 크래시를 방지하기 위해 서비스 호출 시점에 1회 검증
-    if _MIN_K_FOR_INERTIA_FLATTEN < 2:
-        logger.error("[TOPIC_CLUSTERING] Misconfiguration: _MIN_K_FOR_INERTIA_FLATTEN must be >= 2.")
-        return []
-    if _MIN_FLATTEN_CONSECUTIVE_STEPS < 1:
-        logger.error("[TOPIC_CLUSTERING] Misconfiguration: _MIN_FLATTEN_CONSECUTIVE_STEPS must be >= 1.")
-        return []
+    # [리뷰반영] 런타임에 설정값 정합성을 검증하고, 잘못된 경우 명시적 커스텀 예외를 발생시킴
+    _assert_valid_clustering_config()
 
     # 1) 히스토리 조회
     history = await get_search_history(hashed_user_id)
