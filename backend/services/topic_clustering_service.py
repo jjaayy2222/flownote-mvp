@@ -292,24 +292,32 @@ _INERTIA_FLATTEN_THRESHOLD: float = 0.05
 _MIN_K_FOR_INERTIA_FLATTEN: int = 3
 _MIN_FLATTEN_CONSECUTIVE_STEPS: int = 2
 
-_is_config_validated: bool = False
 
-def validate_clustering_config() -> None:
-    """
-    [리뷰반영] 서비스 설정값 정합성 검증 훅.
-    서버 구동 직후 최초의 서비스 호출 시점에 단 1회만 실행되어 오설정을 검증한다.
-    Import-time 크래시를 방지하면서도 잘못된 빈 결과 반환(Silent Failure)을 예방한다.
-    """
-    global _is_config_validated
-    if _is_config_validated:
-        return
+class ClusteringConfigError(ValueError):
+    """클러스터링 알고리즘 설정값 오류 시 발생하는 도메인 특화 예외"""
+    pass
 
+
+def _assert_valid_clustering_config() -> None:
+    """
+    [리뷰반영] 클러스터링 관련 설정값을 검증하고, 잘못된 경우 로그를 남긴 후 커스텀 예외를 발생시킨다.
+    전역 상태(Shared Mutable State)를 제거하여 비동기 환경에서의 동시성 이슈를 차단하고 멱등성을 보장한다.
+    """
     if _MIN_K_FOR_INERTIA_FLATTEN < 2:
-        raise ValueError("[TOPIC_CLUSTERING] Misconfiguration: _MIN_K_FOR_INERTIA_FLATTEN must be >= 2.")
+        logger.critical(
+            "[TOPIC_CLUSTERING] Misconfiguration: _MIN_K_FOR_INERTIA_FLATTEN must be >= 2. "
+            "Current value: %s",
+            _MIN_K_FOR_INERTIA_FLATTEN,
+        )
+        raise ClusteringConfigError("[TOPIC_CLUSTERING] Misconfiguration: _MIN_K_FOR_INERTIA_FLATTEN must be >= 2.")
+    
     if _MIN_FLATTEN_CONSECUTIVE_STEPS < 1:
-        raise ValueError("[TOPIC_CLUSTERING] Misconfiguration: _MIN_FLATTEN_CONSECUTIVE_STEPS must be >= 1.")
-
-    _is_config_validated = True
+        logger.critical(
+            "[TOPIC_CLUSTERING] Misconfiguration: _MIN_FLATTEN_CONSECUTIVE_STEPS must be >= 1. "
+            "Current value: %s",
+            _MIN_FLATTEN_CONSECUTIVE_STEPS,
+        )
+        raise ClusteringConfigError("[TOPIC_CLUSTERING] Misconfiguration: _MIN_FLATTEN_CONSECUTIVE_STEPS must be >= 1.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -939,8 +947,8 @@ async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
     Returns:
         [{"label": "대표 쿼리", "weight": 0.5, "size": 10}, ...]
     """
-    # [리뷰반영] 런타임에 1회 검증 훅을 호출하여 Import-time 크래시를 방지하고 명시적 예외(ValueError)를 발생시킴
-    validate_clustering_config()
+    # [리뷰반영] 런타임에 설정값 정합성을 검증하고, 잘못된 경우 명시적 커스텀 예외를 발생시킴
+    _assert_valid_clustering_config()
 
     # 1) 히스토리 조회
     history = await get_search_history(hashed_user_id)
