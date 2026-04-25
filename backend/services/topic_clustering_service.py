@@ -292,6 +292,11 @@ _INERTIA_FLATTEN_THRESHOLD: float = 0.05
 _MIN_K_FOR_INERTIA_FLATTEN: int = 3
 _MIN_FLATTEN_CONSECUTIVE_STEPS: int = 2
 
+# [리뷰반영] 조기 종료 방어 로직의 상수는 모듈 스코프에서 한 번만 평가하여 루프 내 오버헤드(O(N)) 제거
+# Python 최적화 모드(-O)에서도 안전성을 100% 보장하기 위해 assert 대신 명시적 예외 발생
+if _MIN_K_FOR_INERTIA_FLATTEN < 2:
+    raise ValueError("Inertia flatten threshold must be at least 2 to prevent IndexError.")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Redis 키 빌더 (SSOT — 하드코딩 금지)
@@ -801,10 +806,9 @@ def _maybe_update_inertia_flatten_state(
     [리뷰반영] 관성(inertia) 리스트 길이 확인 및 순수 헬퍼 호출을 감싸는 래퍼.
     메인 루프에서 분기 처리를 제거하여 선형성을 유지한다.
     """
-    assert _MIN_K_FOR_INERTIA_FLATTEN >= 2, "Inertia flatten threshold must be at least 2."
-    
     if len(inertias) < _MIN_K_FOR_INERTIA_FLATTEN:
-        return flatten_count, False
+        # [리뷰반영] 임계값 도달 전에는 평탄화 카운트를 0으로 리셋하여 기존 순수 로직과의 동작 일관성 보장
+        return 0, False
 
     prev_inertia, current_inertia = inertias[-2], inertias[-1]
     return _update_inertia_flatten_state(
