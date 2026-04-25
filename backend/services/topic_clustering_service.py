@@ -289,6 +289,8 @@ _ML_RANDOM_STATE: int = 42
 _MIN_SAMPLES_FOR_CLUSTERING: int = 3
 _MAX_CLUSTERS_LIMIT: int = 10
 _INERTIA_FLATTEN_THRESHOLD: float = 0.05
+_MIN_K_FOR_INERTIA_FLATTEN: int = 3
+_MIN_FLATTEN_CONSECUTIVE_STEPS: int = 2
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -749,6 +751,7 @@ def _determine_optimal_k(embeddings: np.ndarray, max_k: int = _MAX_CLUSTERS_LIMI
     inertias = []
     sil_scores = []
     actual_k_range = []
+    inertia_flatten_count = 0
 
     for k in range(2, limit_k + 1):
         kmeans = _create_kmeans(k)
@@ -777,14 +780,25 @@ def _determine_optimal_k(embeddings: np.ndarray, max_k: int = _MAX_CLUSTERS_LIMI
         else:
             sil_scores.append(-1.0)
             
-        # [리뷰반영] 관성(Inertia) 평탄화 시 Short-circuit
-        # 비용이 큰 실루엣 연산을 줄이기 위해, Inertia 감소율이 5% 미만이면 탐색을 조기 종료한다.
-        if len(inertias) >= 2:
+        # [리뷰반영] 관성(Inertia) 평탄화 시 조기 종료 (Early Stopping)
+        # 비용이 큰 실루엣 연산을 줄이기 위해, Inertia 감소율이 5% 미만인 상태가
+        # 일정 k 이상에서 연속적으로 관찰되면 탐색을 조기 종료한다.
+        if len(inertias) >= _MIN_K_FOR_INERTIA_FLATTEN:
             prev_inertia = inertias[-2]
             if prev_inertia > 0:
                 improvement = (prev_inertia - current_inertia) / prev_inertia
+
                 if improvement < _INERTIA_FLATTEN_THRESHOLD:
-                    logger.debug("[TOPIC_CLUSTERING] Inertia flattened at k=%d, short-circuiting.", k)
+                    inertia_flatten_count += 1
+                else:
+                    inertia_flatten_count = 0
+
+                if inertia_flatten_count >= _MIN_FLATTEN_CONSECUTIVE_STEPS:
+                    logger.debug(
+                        "[TOPIC_CLUSTERING] Inertia flattened at k=%d over %d consecutive steps, short-circuiting.",
+                        k,
+                        inertia_flatten_count,
+                    )
                     break
 
     elbow_k = _find_elbow_point(inertias, actual_k_range)
