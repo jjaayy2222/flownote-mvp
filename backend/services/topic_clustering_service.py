@@ -801,10 +801,9 @@ def _maybe_update_inertia_flatten_state(
     [리뷰반영] 관성(inertia) 리스트 길이 확인 및 순수 헬퍼 호출을 감싸는 래퍼.
     메인 루프에서 분기 처리를 제거하여 선형성을 유지한다.
     """
-    assert _MIN_K_FOR_INERTIA_FLATTEN >= 2, "Inertia flatten threshold must be at least 2."
-    
     if len(inertias) < _MIN_K_FOR_INERTIA_FLATTEN:
-        return flatten_count, False
+        # [리뷰반영] 임계값 도달 전에는 평탄화 카운트를 0으로 리셋하여 기존 순수 로직과의 동작 일관성 보장
+        return 0, False
 
     prev_inertia, current_inertia = inertias[-2], inertias[-1]
     return _update_inertia_flatten_state(
@@ -921,6 +920,14 @@ async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
     Returns:
         [{"label": "대표 쿼리", "weight": 0.5, "size": 10}, ...]
     """
+    # [리뷰반영] 동적 환경변수 오설정으로 인한 import-time 크래시를 방지하기 위해 서비스 호출 시점에 1회 검증
+    if _MIN_K_FOR_INERTIA_FLATTEN < 2:
+        logger.error("[TOPIC_CLUSTERING] Misconfiguration: _MIN_K_FOR_INERTIA_FLATTEN must be >= 2.")
+        return []
+    if _MIN_FLATTEN_CONSECUTIVE_STEPS < 1:
+        logger.error("[TOPIC_CLUSTERING] Misconfiguration: _MIN_FLATTEN_CONSECUTIVE_STEPS must be >= 1.")
+        return []
+
     # 1) 히스토리 조회
     history = await get_search_history(hashed_user_id)
     if not history:
