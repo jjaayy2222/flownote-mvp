@@ -301,11 +301,23 @@ class ClusteringConfigError(ValueError):
         self.value = value
 
     def __str__(self) -> str:
-        # [리뷰반영] 파라미터가 없는 범용 에러인 경우를 우아하게 처리
+        # [리뷰반영] 파라미터/값 유무에 따라 부분적인 정보 유실 없이 유연하게 에러 메시지 구성
         base_msg = super().__str__()
-        if self.param is not None:
-            return f"{base_msg} (param={self.param}, value={self.value})"
-        return base_msg
+        
+        # (1) param, value 둘 다 없는 범용 에러
+        if self.param is None and self.value is None:
+            return base_msg
+
+        # (2) value만 있는 경우
+        if self.param is None:
+            return f"{base_msg} (value={self.value})"
+
+        # (3) param만 있는 경우
+        if self.value is None:
+            return f"{base_msg} (param={self.param})"
+
+        # (4) param과 value가 모두 있는 경우
+        return f"{base_msg} (param={self.param}, value={self.value})"
 
 
 def _assert_valid_clustering_config(
