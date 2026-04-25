@@ -301,23 +301,17 @@ class ClusteringConfigError(ValueError):
         self.value = value
 
     def __str__(self) -> str:
-        # [리뷰반영] 파라미터/값 유무에 따라 부분적인 정보 유실 없이 유연하게 에러 메시지 구성
+        # [리뷰반영] 확장성을 고려하여 요소들의 리스트를 조건부로 생성 후 조인(join)
         base_msg = super().__str__()
+        details = []
+        if self.param is not None:
+            details.append(f"param={self.param}")
+        if self.value is not None:
+            details.append(f"value={self.value}")
         
-        # (1) param, value 둘 다 없는 범용 에러
-        if self.param is None and self.value is None:
-            return base_msg
-
-        # (2) value만 있는 경우
-        if self.param is None:
-            return f"{base_msg} (value={self.value})"
-
-        # (3) param만 있는 경우
-        if self.value is None:
-            return f"{base_msg} (param={self.param})"
-
-        # (4) param과 value가 모두 있는 경우
-        return f"{base_msg} (param={self.param}, value={self.value})"
+        if details:
+            return f"{base_msg} ({', '.join(details)})"
+        return base_msg
 
 
 def _assert_valid_clustering_config(
@@ -335,7 +329,8 @@ def _assert_valid_clustering_config(
             param="_MIN_K_FOR_INERTIA_FLATTEN",
             value=min_k_flatten,
         )
-        logger.critical(str(err))
+        # [리뷰반영] 로그 수집기에서 쿼리 가능하도록 구조화된 로깅(extra kwargs) 사용
+        logger.critical(str(err), extra={"param": err.param, "value": err.value})
         raise err
     
     if min_consecutive_steps < 1:
@@ -344,7 +339,8 @@ def _assert_valid_clustering_config(
             param="_MIN_FLATTEN_CONSECUTIVE_STEPS",
             value=min_consecutive_steps,
         )
-        logger.critical(str(err))
+        # [리뷰반영] 로그 수집기에서 쿼리 가능하도록 구조화된 로깅(extra kwargs) 사용
+        logger.critical(str(err), extra={"param": err.param, "value": err.value})
         raise err
 
 
