@@ -282,9 +282,13 @@ def _load_sil_sample_size() -> int:
 
 # 모듈 로드 시 1회 계산
 _SILHOUETTE_SAMPLE_SIZE: int = _load_sil_sample_size()
-
 # ML 재현성(Idempotency) 보장을 위한 전역 시드 상수
 _ML_RANDOM_STATE: int = 42
+
+# 클러스터링 알고리즘 하이퍼파라미터 (SSOT)
+_MIN_SAMPLES_FOR_CLUSTERING: int = 3
+_MAX_CLUSTERS_LIMIT: int = 10
+_INERTIA_FLATTEN_THRESHOLD: float = 0.05
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -730,12 +734,12 @@ def _create_kmeans(n_clusters: int) -> KMeans:
     return KMeans(n_clusters=n_clusters, random_state=_ML_RANDOM_STATE, n_init="auto")
 
 
-def _determine_optimal_k(embeddings: np.ndarray, max_k: int = 5) -> int:
+def _determine_optimal_k(embeddings: np.ndarray, max_k: int = _MAX_CLUSTERS_LIMIT) -> int:
     """
     엘보우 메서드(1차)와 실루엣 계수(2차)를 활용하여 최적의 K(클러스터 수)를 결정한다.
     """
     n_samples = embeddings.shape[0]
-    if n_samples <= 3:
+    if n_samples < _MIN_SAMPLES_FOR_CLUSTERING:
         return 1 if n_samples > 0 else 0
 
     limit_k = min(n_samples - 1, max_k)
@@ -744,12 +748,15 @@ def _determine_optimal_k(embeddings: np.ndarray, max_k: int = 5) -> int:
 
     inertias = []
     sil_scores = []
-    k_range = list(range(2, limit_k + 1))
+    actual_k_range = []
 
-    for k in k_range:
+    for k in range(2, limit_k + 1):
         kmeans = _create_kmeans(k)
         labels = kmeans.fit_predict(embeddings)
-        inertias.append(float(kmeans.inertia_))
+        current_inertia = float(kmeans.inertia_)
+        
+        inertias.append(current_inertia)
+        actual_k_range.append(k)
 
         # [리뷰반영] 모든 샘플이 동일한 클러스터로 할당되는 붕괴 현상 방어
         # silhouette_score는 고유 라벨이 2개 이상일 때만 동작하므로,
@@ -769,13 +776,23 @@ def _determine_optimal_k(embeddings: np.ndarray, max_k: int = 5) -> int:
             )
         else:
             sil_scores.append(-1.0)
+            
+        # [리뷰반영] 관성(Inertia) 평탄화 시 Short-circuit
+        # 비용이 큰 실루엣 연산을 줄이기 위해, Inertia 감소율이 5% 미만이면 탐색을 조기 종료한다.
+        if len(inertias) >= 2:
+            prev_inertia = inertias[-2]
+            if prev_inertia > 0:
+                improvement = (prev_inertia - current_inertia) / prev_inertia
+                if improvement < _INERTIA_FLATTEN_THRESHOLD:
+                    logger.debug("[TOPIC_CLUSTERING] Inertia flattened at k=%d, short-circuiting.", k)
+                    break
 
-    elbow_k = _find_elbow_point(inertias, k_range)
+    elbow_k = _find_elbow_point(inertias, actual_k_range)
     best_sil_idx = int(np.argmax(sil_scores))
-    best_sil_k = k_range[best_sil_idx]
+    best_sil_k = actual_k_range[best_sil_idx]
 
     # 1차 엘보우를 기본으로 하되, 실루엣 점수가 현저히 좋은 K가 있다면 그걸 채택
-    elbow_idx = k_range.index(elbow_k)
+    elbow_idx = actual_k_range.index(elbow_k)
 
     # [리뷰반영] 0.1 하드코딩 제거 (환경 변수 상수 참조)
     if (
@@ -854,13 +871,13 @@ async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
         embeddings = np.array(embeddings_list)
         n_samples = embeddings.shape[0]
 
-        if n_samples < 3:
-            # [리뷰반영] 쿼리가 1~2개로 매우 적은 경우 클러스터링 알고리즘의 실익이 없으므로,
+        if n_samples < _MIN_SAMPLES_FOR_CLUSTERING:
+            # [리뷰반영] 쿼리가 매우 적은 경우 클러스터링 알고리즘의 실익이 없으므로,
             # 첫 번째 쿼리(가장 최근 검색어)를 해당 사용자의 대표(canonical) 토픽으로 간주한다.
             return [{"label": history[0], "weight": 1.0, "size": n_samples}]
 
-        # 최대 클러스터 개수는 샘플 수에 비례하되 최대 10개로 제한
-        optimal_k = _determine_optimal_k(embeddings, max_k=min(10, n_samples - 1))
+        # 최대 클러스터 개수는 샘플 수에 비례하되 전역 상한으로 제한
+        optimal_k = _determine_optimal_k(embeddings, max_k=min(_MAX_CLUSTERS_LIMIT, n_samples - 1))
 
         # [리뷰반영] 공통 팩토리 헬퍼를 사용하여 KMeans 초기화 (매직넘버 제거)
         kmeans = _create_kmeans(optimal_k)
