@@ -232,6 +232,28 @@ def _load_search_history_max_len() -> int:
 _SEARCH_HISTORY_MAX_LEN: int = _load_search_history_max_len()
 
 
+# 사일루엣 점수 향상분 임계값 (환경 변수로 외부화)
+_SIL_THRESHOLD_ENV_KEY = "SILHOUETTE_IMPROVEMENT_THRESHOLD"
+_SIL_THRESHOLD_DEFAULT = 0.1
+_SIL_THRESHOLD_MIN = 0.0
+_SIL_THRESHOLD_MAX = 1.0
+
+
+def _load_sil_threshold() -> float:
+    """SILHOUETTE_IMPROVEMENT_THRESHOLD 환경 변수를 안전하게 파싱하고 범위를 보정한다."""
+    return _parse_bounded_env_number(
+        _SIL_THRESHOLD_ENV_KEY,
+        _SIL_THRESHOLD_DEFAULT,
+        _SIL_THRESHOLD_MIN,
+        _SIL_THRESHOLD_MAX,
+        float,
+    )
+
+
+# 모듈 로드 시 1회 계산
+_SILHOUETTE_IMPROVEMENT_THRESHOLD: float = _load_sil_threshold()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Redis 키 빌더 (SSOT — 하드코딩 금지)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -678,7 +700,14 @@ def _determine_optimal_k(embeddings: np.ndarray, max_k: int = 5) -> int:
         kmeans = KMeans(n_clusters=k, random_state=42, n_init="auto")
         labels = kmeans.fit_predict(embeddings)
         inertias.append(float(kmeans.inertia_))
-        sil_scores.append(float(silhouette_score(embeddings, labels)))
+        
+        # [리뷰반영] 모든 샘플이 동일한 클러스터로 할당되는 붕괴 현상 방어
+        # silhouette_score는 고유 라벨이 2개 이상일 때만 동작하므로,
+        # 1개일 때는 최하점(-1.0)을 부여하여 optimal K 후보에서 배제한다.
+        if len(np.unique(labels)) > 1:
+            sil_scores.append(float(silhouette_score(embeddings, labels)))
+        else:
+            sil_scores.append(-1.0)
         
     elbow_k = _find_elbow_point(inertias, k_range)
     best_sil_idx = int(np.argmax(sil_scores))
@@ -687,7 +716,8 @@ def _determine_optimal_k(embeddings: np.ndarray, max_k: int = 5) -> int:
     # 1차 엘보우를 기본으로 하되, 사일루엣 점수가 현저히 좋은 K가 있다면 그걸 채택
     elbow_idx = k_range.index(elbow_k)
     
-    if sil_scores[best_sil_idx] - sil_scores[elbow_idx] > 0.1:
+    # [리뷰반영] 0.1 하드코딩 제거 (환경 변수 상수 참조)
+    if sil_scores[best_sil_idx] - sil_scores[elbow_idx] > _SILHOUETTE_IMPROVEMENT_THRESHOLD:
         optimal_k = best_sil_k
     else:
         optimal_k = elbow_k
@@ -699,18 +729,20 @@ def _determine_optimal_k(embeddings: np.ndarray, max_k: int = 5) -> int:
     return optimal_k
 
 
-def _extract_cluster_labels(kmeans: KMeans, embeddings: np.ndarray, queries: List[str]) -> List[str]:
+def _extract_cluster_labels(kmeans: KMeans, embeddings: np.ndarray, queries: List[str]) -> List[Optional[str]]:
     """
     각 클러스터의 센트로이드(centroid)와 가장 가까운 쿼리를 찾아 클러스터의 대표 레이블로 사용한다.
     """
-    labels = []
+    labels: List[Optional[str]] = []
     for i in range(kmeans.n_clusters):
         centroid = kmeans.cluster_centers_[i]
         # 클러스터 i에 할당된 데이터 인덱스들
         cluster_indices = np.where(kmeans.labels_ == i)[0]
         
         if len(cluster_indices) == 0:
-            labels.append("Unknown Topic")
+            # [리뷰반영] 하드코딩된 "Unknown Topic" 문자열 제거.
+            # 빈 클러스터는 None을 반환하고 상위 레이어에서 필터링하도록 위임한다.
+            labels.append(None)
             continue
             
         cluster_embeddings = embeddings[cluster_indices]
@@ -754,6 +786,8 @@ async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
         n_samples = embeddings.shape[0]
         
         if n_samples < 3:
+            # [리뷰반영] 쿼리가 1~2개로 매우 적은 경우 클러스터링 알고리즘의 실익이 없으므로,
+            # 첫 번째 쿼리(가장 최근 검색어)를 해당 사용자의 대표(canonical) 토픽으로 간주한다.
             return [{"label": history[0], "weight": 1.0, "size": n_samples}]
             
         # 최대 클러스터 개수는 샘플 수에 비례하되 최대 10개로 제한
@@ -769,11 +803,14 @@ async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
         clusters_info = []
         for i in range(optimal_k):
             size = int(cluster_sizes[i])
-            if size == 0:
+            label_text = labels[i]
+            
+            # [리뷰반영] None 레이블(빈 클러스터)은 결과에서 누락시킴
+            if size == 0 or label_text is None:
                 continue
                 
             clusters_info.append({
-                "label": labels[i],
+                "label": label_text,
                 "weight": round(size / n_samples, 4),
                 "size": size
             })
