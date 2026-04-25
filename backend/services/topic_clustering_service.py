@@ -283,6 +283,9 @@ def _load_sil_sample_size() -> int:
 # 모듈 로드 시 1회 계산
 _SILHOUETTE_SAMPLE_SIZE: int = _load_sil_sample_size()
 
+# ML 재현성(Idempotency) 보장을 위한 전역 시드 상수
+_ML_RANDOM_STATE: int = 42
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Redis 키 빌더 (SSOT — 하드코딩 금지)
@@ -724,7 +727,7 @@ def _create_kmeans(n_clusters: int) -> KMeans:
     KMeans 인스턴스 생성을 위한 중앙 집중식 팩토리 헬퍼.
     매직 넘버(random_state 등)를 한 곳에서 관리하여 일관성 및 재현성을 보장한다.
     """
-    return KMeans(n_clusters=n_clusters, random_state=42, n_init="auto")
+    return KMeans(n_clusters=n_clusters, random_state=_ML_RANDOM_STATE, n_init="auto")
 
 
 def _determine_optimal_k(embeddings: np.ndarray, max_k: int = 5) -> int:
@@ -760,7 +763,7 @@ def _determine_optimal_k(embeddings: np.ndarray, max_k: int = 5) -> int:
             sil_scores.append(
                 float(
                     silhouette_score(
-                        embeddings, labels, sample_size=sample_size, random_state=42
+                        embeddings, labels, sample_size=sample_size, random_state=_ML_RANDOM_STATE
                     )
                 )
             )
