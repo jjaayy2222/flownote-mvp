@@ -764,6 +764,7 @@ def _compute_silhouette_safe(
 
 def _update_inertia_flatten_state(
     inertias: List[float],
+    current_k: int,
     flatten_count: int,
 ) -> typing.Tuple[int, bool]:
     """
@@ -785,7 +786,6 @@ def _update_inertia_flatten_state(
 
     should_stop = flatten_count >= _MIN_FLATTEN_CONSECUTIVE_STEPS
     if should_stop:
-        current_k = 2 + (len(inertias) - 1)
         logger.debug(
             "[TOPIC_CLUSTERING] Inertia flattened at k=%d over %d consecutive steps, short-circuiting.",
             current_k,
@@ -820,9 +820,9 @@ def _determine_optimal_k(embeddings: np.ndarray, max_k: int = _MAX_CLUSTERS_LIMI
         inertias.append(current_inertia)
         k_values.append(k)
 
-        # [리뷰반영] 헬퍼 함수를 통한 조기 종료 검사
+        # [리뷰반영] 헬퍼 함수를 통한 조기 종료 검사 (current_k 명시적 전달)
         inertia_flatten_count, should_stop = _update_inertia_flatten_state(
-            inertias, inertia_flatten_count
+            inertias, k, inertia_flatten_count
         )
         if should_stop:
             # 실루엣 연산을 생략하여 O(N^2) 비용 절감 (-1.0 버퍼값 없이 즉시 탈출)
@@ -831,12 +831,17 @@ def _determine_optimal_k(embeddings: np.ndarray, max_k: int = _MAX_CLUSTERS_LIMI
         # [리뷰반영] 실루엣 계산을 헬퍼 함수로 분리하여 복잡도 감소 (n_samples 파라미터 제거)
         sil_scores.append(_compute_silhouette_safe(embeddings, labels))
 
+    elbow_k = _find_elbow_point(inertias, k_values)
+
+    # [방어 로직] 조기 종료가 너무 일찍 터져서 sil_scores가 아예 비어버린 극단적 엣지 케이스 방어
+    if not sil_scores:
+        return elbow_k
+
     # [리뷰반영] 실제로 실루엣을 계산한 K 들만 잘라내어 배열 간 불일치(IndexError) 원천 차단
     sil_k_values = k_values[: len(sil_scores)]
     best_sil_idx = int(np.argmax(sil_scores))
     best_sil_k = sil_k_values[best_sil_idx]
 
-    elbow_k = _find_elbow_point(inertias, k_values)
     elbow_idx = k_values.index(elbow_k)
 
     # 1차 엘보우를 기본으로 하되, 실루엣 점수가 현저히 좋은 K가 있다면 그걸 채택
