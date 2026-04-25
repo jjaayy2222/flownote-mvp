@@ -292,11 +292,6 @@ _INERTIA_FLATTEN_THRESHOLD: float = 0.05
 _MIN_K_FOR_INERTIA_FLATTEN: int = 3
 _MIN_FLATTEN_CONSECUTIVE_STEPS: int = 2
 
-# [리뷰반영] 조기 종료 방어 로직의 상수는 모듈 스코프에서 한 번만 평가하여 루프 내 오버헤드(O(N)) 제거
-# Python 최적화 모드(-O)에서도 안전성을 100% 보장하기 위해 assert 대신 명시적 예외 발생
-if _MIN_K_FOR_INERTIA_FLATTEN < 2:
-    raise ValueError("Inertia flatten threshold must be at least 2 to prevent IndexError.")
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Redis 키 빌더 (SSOT — 하드코딩 금지)
@@ -925,6 +920,14 @@ async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
     Returns:
         [{"label": "대표 쿼리", "weight": 0.5, "size": 10}, ...]
     """
+    # [리뷰반영] 동적 환경변수 오설정으로 인한 import-time 크래시를 방지하기 위해 서비스 호출 시점에 1회 검증
+    if _MIN_K_FOR_INERTIA_FLATTEN < 2:
+        logger.error("[TOPIC_CLUSTERING] Misconfiguration: _MIN_K_FOR_INERTIA_FLATTEN must be >= 2.")
+        return []
+    if _MIN_FLATTEN_CONSECUTIVE_STEPS < 1:
+        logger.error("[TOPIC_CLUSTERING] Misconfiguration: _MIN_FLATTEN_CONSECUTIVE_STEPS must be >= 1.")
+        return []
+
     # 1) 히스토리 조회
     history = await get_search_history(hashed_user_id)
     if not history:
