@@ -295,15 +295,17 @@ _MIN_FLATTEN_CONSECUTIVE_STEPS: int = 2
 
 class ClusteringConfigError(ValueError):
     """클러스터링 알고리즘 설정값 오류 시 발생하는 도메인 특화 예외"""
-    def __init__(self, message: str, param: str, value: Any):
+    def __init__(self, message: str, param: Optional[str] = None, value: Optional[Any] = None):
         super().__init__(message)
         self.param = param
         self.value = value
 
     def __str__(self) -> str:
-        # [리뷰반영] 예외를 문자열로 출력할 때 속성값들이 명확히 보이도록 오버라이드
+        # [리뷰반영] 파라미터가 없는 범용 에러인 경우를 우아하게 처리
         base_msg = super().__str__()
-        return f"{base_msg} (param={self.param}, value={self.value})"
+        if self.param is not None:
+            return f"{base_msg} (param={self.param}, value={self.value})"
+        return base_msg
 
 
 def _assert_valid_clustering_config(
@@ -316,22 +318,22 @@ def _assert_valid_clustering_config(
     전역 상태에 직접 의존하지 않아 테스트 용이성(Testability)이 높다.
     """
     if min_k_flatten < 2:
-        msg = "[TOPIC_CLUSTERING] Misconfiguration: _MIN_K_FOR_INERTIA_FLATTEN must be >= 2."
-        logger.critical("%s Current value: %s", msg, min_k_flatten)
-        raise ClusteringConfigError(
-            msg,
+        err = ClusteringConfigError(
+            "[TOPIC_CLUSTERING] Misconfiguration: _MIN_K_FOR_INERTIA_FLATTEN must be >= 2.",
             param="_MIN_K_FOR_INERTIA_FLATTEN",
             value=min_k_flatten,
         )
+        logger.critical(str(err))
+        raise err
     
     if min_consecutive_steps < 1:
-        msg = "[TOPIC_CLUSTERING] Misconfiguration: _MIN_FLATTEN_CONSECUTIVE_STEPS must be >= 1."
-        logger.critical("%s Current value: %s", msg, min_consecutive_steps)
-        raise ClusteringConfigError(
-            msg,
+        err = ClusteringConfigError(
+            "[TOPIC_CLUSTERING] Misconfiguration: _MIN_FLATTEN_CONSECUTIVE_STEPS must be >= 1.",
             param="_MIN_FLATTEN_CONSECUTIVE_STEPS",
             value=min_consecutive_steps,
         )
+        logger.critical(str(err))
+        raise err
 
 
 # ─────────────────────────────────────────────────────────────────────────────
