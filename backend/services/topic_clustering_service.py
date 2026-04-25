@@ -301,23 +301,29 @@ class ClusteringConfigError(ValueError):
         self.value = value
 
     def __str__(self) -> str:
-        # [리뷰반영] 파라미터/값 유무에 따라 부분적인 정보 유실 없이 유연하게 에러 메시지 구성
+        # [리뷰반영] 확장성을 고려하여 요소들의 리스트를 조건부로 생성 후 조인(join)
         base_msg = super().__str__()
+        details = []
+        if self.param is not None:
+            details.append(f"param={self.param}")
+        if self.value is not None:
+            details.append(f"value={self.value}")
         
-        # (1) param, value 둘 다 없는 범용 에러
-        if self.param is None and self.value is None:
-            return base_msg
+        if details:
+            return f"{base_msg} ({', '.join(details)})"
+        return base_msg
 
-        # (2) value만 있는 경우
-        if self.param is None:
-            return f"{base_msg} (value={self.value})"
-
-        # (3) param만 있는 경우
-        if self.value is None:
-            return f"{base_msg} (param={self.param})"
-
-        # (4) param과 value가 모두 있는 경우
-        return f"{base_msg} (param={self.param}, value={self.value})"
+    def get_log_extra(self) -> dict[str, Any]:
+        """
+        [리뷰반영] 구조화된 로깅(Structured Logging)을 위한 페이로드 생성.
+        값이 None인 필드는 생략하여 불필요한 로그 인덱싱 자원 낭비를 방지한다.
+        """
+        extra: dict[str, Any] = {}
+        if self.param is not None:
+            extra["param"] = self.param
+        if self.value is not None:
+            extra["value"] = self.value
+        return extra
 
 
 def _assert_valid_clustering_config(
@@ -335,7 +341,8 @@ def _assert_valid_clustering_config(
             param="_MIN_K_FOR_INERTIA_FLATTEN",
             value=min_k_flatten,
         )
-        logger.critical(str(err))
+        # [리뷰반영] 예외 객체 내부에 캡슐화된 메서드를 호출하여 extra kwargs 제공 (DRY)
+        logger.critical(str(err), extra=err.get_log_extra())
         raise err
     
     if min_consecutive_steps < 1:
@@ -344,7 +351,8 @@ def _assert_valid_clustering_config(
             param="_MIN_FLATTEN_CONSECUTIVE_STEPS",
             value=min_consecutive_steps,
         )
-        logger.critical(str(err))
+        # [리뷰반영] 예외 객체 내부에 캡슐화된 메서드를 호출하여 extra kwargs 제공 (DRY)
+        logger.critical(str(err), extra=err.get_log_extra())
         raise err
 
 
