@@ -123,14 +123,16 @@ def _get_cluster_cache_version() -> str:
         운영 환경에서 프로세스 재시작 없이 새 버전을 반영할 때 호출한다.
 
         이 메서드는 get_version에 @lru_cache가 적용되어 있음을 전제로 한다.
-        cache_clear 속성이 없을 경우 AssertionError를 발생시켜 조기 실패를 유도한다.
+        cache_clear가 존재하지 않거나 호출 불가능할 경우 RuntimeError로 조기 실패한다.
+        (functools._lru_cache_wrapper 같은 비공개 타입 직접 검사는 버전 호환성 문제로 사용하지 않는다.)
         """
-        if not hasattr(self.get_version, "cache_clear"):
-            raise AssertionError(
+        cache_clear_fn = getattr(self.get_version, "cache_clear", None)
+        if not callable(cache_clear_fn):
+            raise RuntimeError(
                 "get_version에 @lru_cache 데코레이터가 적용되어 있어야 합니다. "
                 "리팩터링 시 데코레이터를 제거하지 마십시오."
             )
-        self.get_version.cache_clear()
+        cache_clear_fn()
 
 # 모듈 레벨 싱글톤 인스턴스 (테스트 시 의존성 주입(DI)에 유리함)
 cluster_cache_config = ClusterCacheConfig()
