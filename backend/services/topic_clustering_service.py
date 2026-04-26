@@ -70,6 +70,7 @@ _MSG_PAIR_COUNT_PREFIX: str = "cls:msg_pair_count"
 _RAG_SEARCH_COUNT_PREFIX: str = "cls:rag_search_count"
 _QUERY_HISTORY_PREFIX: str = "cls:query_history"  # 사용자 검색어 히스토리 (List)
 _CLUSTER_CACHE_PREFIX: str = "cls:result"         # 클러스터링 결과 캐시 (JSON String)
+_CLUSTER_CACHE_VERSION: str = "v1"                # 데이터 스키마 버전 (버전 업 시 구버전 캐시 자동 무효화)
 
 # 콜드 스타트 판별 임계값 (환경 변수로 외부화)
 # COLD_START_THRESHOLD: 누적 활동 수가 이 값 미만이면 콜드 스타트로 간주
@@ -401,8 +402,8 @@ def _build_query_history_key(hashed_user_id: str) -> str:
 
 
 def _build_cluster_cache_key(hashed_user_id: str) -> str:
-    """클러스터링 결과 캐시 Redis 키를 생성한다. (변경 시 이 함수만 수정)"""
-    return f"{_CLUSTER_CACHE_PREFIX}:{hashed_user_id}"
+    """클러스터링 결과 캐시 Redis 키를 생성한다. (데이터 스키마 버전 포함)"""
+    return f"{_CLUSTER_CACHE_PREFIX}:{_CLUSTER_CACHE_VERSION}:{hashed_user_id}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -619,6 +620,21 @@ def _preprocess_query(query: str) -> str:
     return text
 
 
+async def _invalidate_cluster_cache(hashed_user_id: str) -> None:
+    """
+    [리뷰반영] 캐시 무효화 책임을 분리한 내부 헬퍼.
+    """
+    cache_key = _build_cluster_cache_key(hashed_user_id)
+    try:
+        await redis_client.redis.delete(cache_key)
+    except RedisError as exc:
+        logger.warning(
+            "[TOPIC_CLUSTERING] 검색 히스토리 추가에 따른 캐시 무효화 실패 (masked_uid=%s). exc=%r",
+            mask_pii_id(hashed_user_id),
+            exc,
+        )
+
+
 async def log_search_query(hashed_user_id: str, query: str) -> None:
     """
     사용자의 검색 쿼리를 히스토리에 기록하고, 카운터를 1 증가시킨다.
@@ -651,19 +667,10 @@ async def log_search_query(hashed_user_id: str, query: str) -> None:
             mask_pii_id(hashed_user_id),
             exc,
         )
-        return  # 히스토리 기록 실패 시 이후 로직 스킵
-
-    # [리뷰반영] 캐시 무효화와 히스토리 쓰기를 분리하여 독립적인 에러 로깅 보장
-    try:
-        # 캐시 무효화(Invalidation): 새로운 쿼리가 추가되었으므로 기존 클러스터링 결과 캐시 만료
-        cache_key = _build_cluster_cache_key(hashed_user_id)
-        await redis_client.redis.delete(cache_key)
-    except RedisError as exc:
-        logger.warning(
-            "[TOPIC_CLUSTERING] 검색 히스토리 추가에 따른 캐시 무효화 실패 (masked_uid=%s). exc=%r",
-            mask_pii_id(hashed_user_id),
-            exc,
-        )
+    finally:
+        # [리뷰반영] 부분적인 쓰기 성공이나 네트워크 오류 상황에서도
+        # 히스토리가 변경되었을 수 있으므로 캐시 무효화는 항상 시도한다.
+        await _invalidate_cluster_cache(hashed_user_id)
 
 
 async def vectorize_queries(queries: List[str]) -> List[List[float]]:
@@ -1011,6 +1018,74 @@ def _extract_cluster_labels(
     return labels
 
 
+async def _get_cached_cluster_result(hashed_user_id: str) -> Optional[List[Dict[str, Any]]]:
+    """
+    [리뷰반영] 캐시 조회를 처리하는 내부 헬퍼.
+    바이트 디코딩 이슈 방어 및 PII 마스킹 로그 일관성을 보장한다.
+    """
+    cache_key = _build_cluster_cache_key(hashed_user_id)
+    try:
+        await _ensure_redis_connected()
+        cached_data = await redis_client.redis.get(cache_key)
+        if not cached_data:
+            return None
+
+        # [리뷰반영] redis client가 bytes를 반환할 수 있으므로 명시적 디코딩 처리
+        if isinstance(cached_data, bytes):
+            cached_data = cached_data.decode("utf-8")
+
+        logger.debug(
+            "[TOPIC_CLUSTERING] 캐시 히트 (masked_uid=%s)", mask_pii_id(hashed_user_id)
+        )
+        return json.loads(cached_data)  # type: ignore[no-any-return]
+    except json.JSONDecodeError as exc:
+        logger.warning(
+            "[TOPIC_CLUSTERING] 캐시 JSON 디코딩 실패. 손상된 캐시 삭제 진행 (masked_uid=%s). exc=%r",
+            mask_pii_id(hashed_user_id),
+            exc,
+        )
+        try:
+            await redis_client.redis.delete(cache_key)
+        except RedisError as del_exc:
+            logger.warning(
+                "[TOPIC_CLUSTERING] 손상된 캐시 삭제 실패 (masked_uid=%s). exc=%r",
+                mask_pii_id(hashed_user_id),
+                del_exc,
+            )
+        return None
+    except RedisError as exc:
+        logger.warning(
+            "[TOPIC_CLUSTERING] 캐시 읽기 실패 (best-effort 무시) (masked_uid=%s). exc=%r",
+            mask_pii_id(hashed_user_id),
+            exc,
+        )
+        return None
+
+
+async def _set_cluster_result_cache(
+    hashed_user_id: str, clusters_info: List[Dict[str, Any]]
+) -> None:
+    """
+    [리뷰반영] 캐시 저장을 처리하는 내부 헬퍼.
+    """
+    if not clusters_info:
+        return
+
+    cache_key = _build_cluster_cache_key(hashed_user_id)
+    try:
+        await redis_client.redis.setex(
+            cache_key,
+            _TOPIC_CLUSTER_CACHE_TTL,
+            json.dumps(clusters_info, ensure_ascii=False),
+        )
+    except RedisError as exc:
+        logger.warning(
+            "[TOPIC_CLUSTERING] 캐시 쓰기 실패 (best-effort 무시) (masked_uid=%s). exc=%r",
+            mask_pii_id(hashed_user_id),
+            exc,
+        )
+
+
 async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
     """
     [Step 2-3] 검색 히스토리를 기반으로 관심 토픽 클러스터링(k-means)을 수행한다.
@@ -1025,36 +1100,16 @@ async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
     Returns:
         [{"label": "대표 쿼리", "weight": 0.5, "size": 10}, ...]
     """
-    # [리뷰반영] 런타임에 설정값 정합성을 검증하고, 잘못된 경우 명시적 커스텀 예외를 발생시킴
-    # (상위 라우터 또는 예외 핸들러에서 ClusteringConfigError를 적절히 처리해야 함)
+    # 런타임에 설정값 정합성을 검증하고, 잘못된 경우 명시적 커스텀 예외를 발생시킴
     _assert_valid_clustering_config(
         _MIN_K_FOR_INERTIA_FLATTEN,
         _MIN_FLATTEN_CONSECUTIVE_STEPS,
     )
 
-    # 0) 캐시 확인 (Performance)
-    cache_key = _build_cluster_cache_key(hashed_user_id)
-    try:
-        await _ensure_redis_connected()
-        cached_data = await redis_client.redis.get(cache_key)
-        if cached_data:
-            logger.debug("[TOPIC_CLUSTERING] 캐시 히트 (masked_uid=%s)", mask_pii_id(hashed_user_id))
-            return json.loads(cached_data)  # type: ignore[no-any-return]
-    except RedisError as exc:
-        logger.warning(
-            "[TOPIC_CLUSTERING] 캐시 읽기 실패 (best-effort 무시). exc=%r", exc
-        )
-    except json.JSONDecodeError as exc:
-        logger.warning(
-            "[TOPIC_CLUSTERING] 캐시 JSON 디코딩 실패. 손상된 캐시 삭제 진행. exc=%r", exc
-        )
-        try:
-            # [리뷰반영] 손상된 값이 계속 읽히지 않도록 명시적 삭제 수행
-            await redis_client.redis.delete(cache_key)
-        except RedisError as del_exc:
-            logger.warning(
-                "[TOPIC_CLUSTERING] 손상된 캐시 삭제 실패. exc=%r", del_exc
-            )
+    # 0) 캐시 확인 (Performance) - [리뷰반영] 단일 헬퍼 호출로 응집도 향상
+    cached = await _get_cached_cluster_result(hashed_user_id)
+    if cached is not None:
+        return cached
 
     # 1) 히스토리 조회
     history = await get_search_history(hashed_user_id)
@@ -1072,14 +1127,13 @@ async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
         n_samples = embeddings.shape[0]
 
         if n_samples < _MIN_SAMPLES_FOR_CLUSTERING:
-            # [리뷰반영] 쿼리가 매우 적은 경우 클러스터링 알고리즘의 실익이 없으므로,
-            # 첫 번째 쿼리(가장 최근 검색어)를 해당 사용자의 대표(canonical) 토픽으로 간주한다.
+            # 쿼리가 매우 적은 경우 첫 번째 쿼리를 대표 토픽으로 간주
             return [{"label": history[0], "weight": 1.0, "size": n_samples}]
 
         # 최대 클러스터 개수는 샘플 수에 비례하되 전역 상한으로 제한
         optimal_k = _determine_optimal_k(embeddings, max_k=min(_MAX_CLUSTERS_LIMIT, n_samples - 1))
 
-        # [리뷰반영] 공통 팩토리 헬퍼를 사용하여 KMeans 초기화 (매직넘버 제거)
+        # 공통 팩토리 헬퍼를 사용하여 KMeans 초기화
         kmeans = _create_kmeans(optimal_k)
         cluster_ids = kmeans.fit_predict(embeddings)
 
@@ -1092,7 +1146,7 @@ async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
             size = int(cluster_sizes[i])
             label_text = labels[i]
 
-            # [리뷰반영] None 레이블(빈 클러스터)은 결과에서 누락시킴
+            # None 레이블(빈 클러스터)은 결과에서 누락시킴
             if size == 0 or label_text is None:
                 continue
 
@@ -1117,18 +1171,8 @@ async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
             len(clusters_info),
         )
 
-        # 6) 캐시 저장 (직렬화 및 TTL 적용)
-        if clusters_info:
-            try:
-                await redis_client.redis.setex(
-                    cache_key,
-                    _TOPIC_CLUSTER_CACHE_TTL,
-                    json.dumps(clusters_info, ensure_ascii=False),
-                )
-            except RedisError as exc:
-                logger.warning(
-                    "[TOPIC_CLUSTERING] 캐시 쓰기 실패 (best-effort 무시). exc=%r", exc
-                )
+        # 6) 캐시 저장 (직렬화 및 TTL 적용) - [리뷰반영] 헬퍼 호출로 추상화
+        await _set_cluster_result_cache(hashed_user_id, clusters_info)
 
         return clusters_info
     except Exception as exc:  # noqa: BLE001
