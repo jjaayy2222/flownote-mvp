@@ -645,13 +645,22 @@ async def log_search_query(hashed_user_id: str, query: str) -> None:
         # LPUSH(최신 쿼리가 맨 앞) + LTRIM(최대 길이 유지) 수행
         await redis_client.redis.lpush(history_key, clean_query)
         await redis_client.redis.ltrim(history_key, 0, _SEARCH_HISTORY_MAX_LEN - 1)
-        
+    except RedisError as exc:
+        logger.warning(
+            "[TOPIC_CLUSTERING] 검색 히스토리 기록 실패 (masked_uid=%s). exc=%r",
+            mask_pii_id(hashed_user_id),
+            exc,
+        )
+        return  # 히스토리 기록 실패 시 이후 로직 스킵
+
+    # [리뷰반영] 캐시 무효화와 히스토리 쓰기를 분리하여 독립적인 에러 로깅 보장
+    try:
         # 캐시 무효화(Invalidation): 새로운 쿼리가 추가되었으므로 기존 클러스터링 결과 캐시 만료
         cache_key = _build_cluster_cache_key(hashed_user_id)
         await redis_client.redis.delete(cache_key)
     except RedisError as exc:
         logger.warning(
-            "[TOPIC_CLUSTERING] 검색 히스토리 기록 실패 (masked_uid=%s). exc=%r",
+            "[TOPIC_CLUSTERING] 검색 히스토리 추가에 따른 캐시 무효화 실패 (masked_uid=%s). exc=%r",
             mask_pii_id(hashed_user_id),
             exc,
         )
@@ -1037,8 +1046,15 @@ async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
         )
     except json.JSONDecodeError as exc:
         logger.warning(
-            "[TOPIC_CLUSTERING] 캐시 JSON 디코딩 실패. 데이터 무효화. exc=%r", exc
+            "[TOPIC_CLUSTERING] 캐시 JSON 디코딩 실패. 손상된 캐시 삭제 진행. exc=%r", exc
         )
+        try:
+            # [리뷰반영] 손상된 값이 계속 읽히지 않도록 명시적 삭제 수행
+            await redis_client.redis.delete(cache_key)
+        except RedisError as del_exc:
+            logger.warning(
+                "[TOPIC_CLUSTERING] 손상된 캐시 삭제 실패. exc=%r", del_exc
+            )
 
     # 1) 히스토리 조회
     history = await get_search_history(hashed_user_id)
