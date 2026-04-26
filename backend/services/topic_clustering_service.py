@@ -115,13 +115,17 @@ def _get_cluster_cache_version() -> str:
     _cluster_cache_version_singleton = val
     return _cluster_cache_version_singleton
 
-def clear_cluster_cache_version() -> None:
-    """
-    [리뷰반영] 핫 리로드(Hot Reload) 지원을 위한 명시적 캐시 초기화 함수.
-    운영 환경에서 CLUSTER_CACHE_VERSION 환경 변수가 변경되었을 때 
-    프로세스 재시작 없이 새 값을 반영하기 위해 사용할 수 있다.
-    """
-    _get_cluster_cache_version.cache_clear()
+        return val
+
+    def clear_cache(self) -> None:
+        """
+        핫 리로드(Hot Reload) 지원을 위한 명시적 캐시 초기화 함수.
+        운영 환경에서 프로세스 재시작 없이 새 버전을 반영할 때 호출한다.
+        """
+        self.get_version.cache_clear()
+
+# 모듈 레벨 싱글톤 인스턴스 (테스트 시 의존성 주입(DI)에 유리함)
+cluster_cache_config = ClusterCacheConfig()
 
 # 콜드 스타트 판별 임계값 (환경 변수로 외부화)
 # COLD_START_THRESHOLD: 누적 활동 수가 이 값 미만이면 콜드 스타트로 간주
@@ -454,7 +458,7 @@ def _build_query_history_key(hashed_user_id: str) -> str:
 
 def _build_cluster_cache_key(hashed_user_id: str) -> str:
     """클러스터링 결과 캐시 Redis 키를 생성한다. (데이터 스키마 버전 포함)"""
-    version = _get_cluster_cache_version()
+    version = cluster_cache_config.get_version()
     return f"{_CLUSTER_CACHE_PREFIX}:{version}:{hashed_user_id}"
 
 
