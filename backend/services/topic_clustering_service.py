@@ -626,6 +626,7 @@ async def _invalidate_cluster_cache(hashed_user_id: str) -> None:
     """
     cache_key = _build_cluster_cache_key(hashed_user_id)
     try:
+        await _ensure_redis_connected()  # [리뷰반영] 캐시 조작 전 일관된 연결 보장
         await redis_client.redis.delete(cache_key)
     except RedisError as exc:
         logger.warning(
@@ -1034,10 +1035,13 @@ async def _get_cached_cluster_result(hashed_user_id: str) -> Optional[List[Dict[
         if isinstance(cached_data, bytes):
             cached_data = cached_data.decode("utf-8")
 
+        parsed_data = json.loads(cached_data)
+
+        # [리뷰반영] JSON 디코딩이 완전히 성공해야만 '진짜' 캐시 히트로 인정
         logger.debug(
             "[TOPIC_CLUSTERING] 캐시 히트 (masked_uid=%s)", mask_pii_id(hashed_user_id)
         )
-        return json.loads(cached_data)  # type: ignore[no-any-return]
+        return parsed_data  # type: ignore[no-any-return]
     except json.JSONDecodeError as exc:
         logger.warning(
             "[TOPIC_CLUSTERING] 캐시 JSON 디코딩 실패. 손상된 캐시 삭제 진행 (masked_uid=%s). exc=%r",
@@ -1073,6 +1077,7 @@ async def _set_cluster_result_cache(
 
     cache_key = _build_cluster_cache_key(hashed_user_id)
     try:
+        await _ensure_redis_connected()  # [리뷰반영] 캐시 조작 전 일관된 연결 보장
         await redis_client.redis.setex(
             cache_key,
             _TOPIC_CLUSTER_CACHE_TTL,
