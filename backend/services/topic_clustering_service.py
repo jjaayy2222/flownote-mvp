@@ -70,7 +70,17 @@ _MSG_PAIR_COUNT_PREFIX: str = "cls:msg_pair_count"
 _RAG_SEARCH_COUNT_PREFIX: str = "cls:rag_search_count"
 _QUERY_HISTORY_PREFIX: str = "cls:query_history"  # 사용자 검색어 히스토리 (List)
 _CLUSTER_CACHE_PREFIX: str = "cls:result"         # 클러스터링 결과 캐시 (JSON String)
-_CLUSTER_CACHE_VERSION: str = "v1"                # 데이터 스키마 버전 (버전 업 시 구버전 캐시 자동 무효화)
+
+# 데이터 스키마 버전 (버전 업 시 구버전 캐시 자동 무효화, 환경 변수로 외부화)
+_CLUSTER_CACHE_VERSION_ENV_KEY = "CLUSTER_CACHE_VERSION"
+_CLUSTER_CACHE_VERSION_DEFAULT = "v1"
+
+def _load_cluster_cache_version() -> str:
+    """CLUSTER_CACHE_VERSION 환경 변수를 로드한다."""
+    val = os.environ.get(_CLUSTER_CACHE_VERSION_ENV_KEY, "").strip()
+    return val if val else _CLUSTER_CACHE_VERSION_DEFAULT
+
+_CLUSTER_CACHE_VERSION: str = _load_cluster_cache_version()
 
 # 콜드 스타트 판별 임계값 (환경 변수로 외부화)
 # COLD_START_THRESHOLD: 누적 활동 수가 이 값 미만이면 콜드 스타트로 간주
@@ -1048,14 +1058,8 @@ async def _get_cached_cluster_result(hashed_user_id: str) -> Optional[List[Dict[
             mask_pii_id(hashed_user_id),
             exc,
         )
-        try:
-            await redis_client.redis.delete(cache_key)
-        except RedisError as del_exc:
-            logger.warning(
-                "[TOPIC_CLUSTERING] 손상된 캐시 삭제 실패 (masked_uid=%s). exc=%r",
-                mask_pii_id(hashed_user_id),
-                del_exc,
-            )
+        # [리뷰반영] 파손된 캐시 삭제 로직을 _invalidate_cluster_cache 헬퍼 호출로 대체 (DRY 및 연결 보장)
+        await _invalidate_cluster_cache(hashed_user_id)
         return None
     except RedisError as exc:
         logger.warning(
