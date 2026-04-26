@@ -82,10 +82,14 @@ class ClusterCacheConfig:
         self.env_key = "CLUSTER_CACHE_VERSION"
         self.default_version = "v1"
 
+    # [리뷰반영] @lru_cache(maxsize=1) 데코레이터는 의도적으로 유지되어야 한다.
+    # clear_cache()가 self.get_version.cache_clear()를 호출하므로,
+    # 이 데코레이터를 제거하면 AttributeError가 발생한다.
     @lru_cache(maxsize=1)
     def get_version(self) -> str:
+        """환경 변수에서 캐시 버전을 로드한다. 최초 1회만 실행되며 이후 캐시에서 반환된다."""
         raw_val = os.environ.get(self.env_key)
-        
+
         if raw_val is None:
             logger.info(
                 "[TOPIC_CLUSTERING] %s 환경 변수가 미설정되었습니다. 기본값 %r을 사용합니다.",
@@ -110,6 +114,9 @@ class ClusterCacheConfig:
         """
         핫 리로드(Hot Reload) 지원을 위한 명시적 캐시 초기화 함수.
         운영 환경에서 프로세스 재시작 없이 새 버전을 반영할 때 호출한다.
+
+        [리뷰반영] 이 메서드는 get_version에 @lru_cache가 적용되어 있음을 전제한다.
+        상단의 @lru_cache 주석을 참조할 것.
         """
         self.get_version.cache_clear()
 
