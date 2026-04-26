@@ -115,6 +115,14 @@ def _get_cluster_cache_version() -> str:
     _cluster_cache_version_singleton = val
     return _cluster_cache_version_singleton
 
+def clear_cluster_cache_version() -> None:
+    """
+    [리뷰반영] 핫 리로드(Hot Reload) 지원을 위한 명시적 캐시 초기화 함수.
+    운영 환경에서 CLUSTER_CACHE_VERSION 환경 변수가 변경되었을 때 
+    프로세스 재시작 없이 새 값을 반영하기 위해 사용할 수 있다.
+    """
+    _get_cluster_cache_version.cache_clear()
+
 # 콜드 스타트 판별 임계값 (환경 변수로 외부화)
 # COLD_START_THRESHOLD: 누적 활동 수가 이 값 미만이면 콜드 스타트로 간주
 _COLD_START_THRESHOLD_ENV_KEY = "COLD_START_THRESHOLD"
