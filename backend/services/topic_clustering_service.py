@@ -28,6 +28,7 @@ import os
 import re
 import typing
 from typing import Any, Callable, Dict, List, Optional, TypeVar
+from functools import lru_cache
 
 import numpy as np
 import redis.exceptions
