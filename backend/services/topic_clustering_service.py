@@ -77,8 +77,28 @@ _CLUSTER_CACHE_VERSION_DEFAULT = "v1"
 
 def _load_cluster_cache_version() -> str:
     """CLUSTER_CACHE_VERSION 환경 변수를 로드한다."""
-    val = os.environ.get(_CLUSTER_CACHE_VERSION_ENV_KEY, "").strip()
-    return val if val else _CLUSTER_CACHE_VERSION_DEFAULT
+    raw_val = os.environ.get(_CLUSTER_CACHE_VERSION_ENV_KEY)
+    
+    # 1) 미설정 시 조용히 기본값 사용하되, 설정 로딩 시점에 INFO 로그로 남겨 관측성 향상
+    if raw_val is None:
+        logger.info(
+            "[TOPIC_CLUSTERING] %s 환경 변수가 미설정되었습니다. 기본값 %r을 사용합니다.",
+            _CLUSTER_CACHE_VERSION_ENV_KEY,
+            _CLUSTER_CACHE_VERSION_DEFAULT,
+        )
+        return _CLUSTER_CACHE_VERSION_DEFAULT
+
+    val = raw_val.strip()
+    # 2) 설정되었으나 공백인 경우 운영자 실수로 간주하여 WARNING 로그
+    if not val:
+        logger.warning(
+            "[TOPIC_CLUSTERING] %s 환경 변수가 공백입니다 (운영자 오설정 의심). 기본값 %r로 폴백합니다.",
+            _CLUSTER_CACHE_VERSION_ENV_KEY,
+            _CLUSTER_CACHE_VERSION_DEFAULT,
+        )
+        return _CLUSTER_CACHE_VERSION_DEFAULT
+
+    return val
 
 _CLUSTER_CACHE_VERSION: str = _load_cluster_cache_version()
 
@@ -639,8 +659,9 @@ async def _invalidate_cluster_cache(hashed_user_id: str) -> None:
         await _ensure_redis_connected()  # [리뷰반영] 캐시 조작 전 일관된 연결 보장
         await redis_client.redis.delete(cache_key)
     except RedisError as exc:
+        # [리뷰반영] 여러 경로(검색, 디코딩 실패 등)에서 호출되므로 범용적인 로그 메시지 사용
         logger.warning(
-            "[TOPIC_CLUSTERING] 검색 히스토리 추가에 따른 캐시 무효화 실패 (masked_uid=%s). exc=%r",
+            "[TOPIC_CLUSTERING] 캐시 무효화(삭제) 실패 (best-effort 무시) (masked_uid=%s). exc=%r",
             mask_pii_id(hashed_user_id),
             exc,
         )
