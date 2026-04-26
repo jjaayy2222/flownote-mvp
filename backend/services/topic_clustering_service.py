@@ -21,6 +21,7 @@ Redis 스키마:
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import os
@@ -68,6 +69,7 @@ _WS_RE = re.compile(r"\s+")  # 연속 공백 통합
 _MSG_PAIR_COUNT_PREFIX: str = "cls:msg_pair_count"
 _RAG_SEARCH_COUNT_PREFIX: str = "cls:rag_search_count"
 _QUERY_HISTORY_PREFIX: str = "cls:query_history"  # 사용자 검색어 히스토리 (List)
+_CLUSTER_CACHE_PREFIX: str = "cls:result"         # 클러스터링 결과 캐시 (JSON String)
 
 # 콜드 스타트 판별 임계값 (환경 변수로 외부화)
 # COLD_START_THRESHOLD: 누적 활동 수가 이 값 미만이면 콜드 스타트로 간주
@@ -240,6 +242,28 @@ def _load_search_history_max_len() -> int:
 _SEARCH_HISTORY_MAX_LEN: int = _load_search_history_max_len()
 
 
+# 클러스터링 캐시 TTL 설정 (환경 변수로 외부화, 기본 24시간 = 86400초)
+_CLUSTER_CACHE_TTL_ENV_KEY = "TOPIC_CLUSTER_CACHE_TTL"
+_CLUSTER_CACHE_TTL_DEFAULT = 86400
+_CLUSTER_CACHE_TTL_MIN = 3600
+_CLUSTER_CACHE_TTL_MAX = 604800  # 최대 7일
+
+
+def _load_cluster_cache_ttl() -> int:
+    """TOPIC_CLUSTER_CACHE_TTL 환경 변수를 파싱하고 범위를 보정한다."""
+    return _parse_bounded_env_number(
+        _CLUSTER_CACHE_TTL_ENV_KEY,
+        _CLUSTER_CACHE_TTL_DEFAULT,
+        _CLUSTER_CACHE_TTL_MIN,
+        _CLUSTER_CACHE_TTL_MAX,
+        int,
+    )
+
+
+# 모듈 로드 시 1회 계산
+_TOPIC_CLUSTER_CACHE_TTL: int = _load_cluster_cache_ttl()
+
+
 # 실루엣 점수 향상분 임계값 (환경 변수로 외부화)
 _SIL_THRESHOLD_ENV_KEY = "SILHOUETTE_IMPROVEMENT_THRESHOLD"
 _SIL_THRESHOLD_DEFAULT = 0.1
@@ -374,6 +398,11 @@ def _build_rag_search_count_key(hashed_user_id: str) -> str:
 def _build_query_history_key(hashed_user_id: str) -> str:
     """검색어 히스토리 Redis 키를 생성한다. (변경 시 이 함수만 수정)"""
     return f"{_QUERY_HISTORY_PREFIX}:{hashed_user_id}"
+
+
+def _build_cluster_cache_key(hashed_user_id: str) -> str:
+    """클러스터링 결과 캐시 Redis 키를 생성한다. (변경 시 이 함수만 수정)"""
+    return f"{_CLUSTER_CACHE_PREFIX}:{hashed_user_id}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -619,6 +648,19 @@ async def log_search_query(hashed_user_id: str, query: str) -> None:
     except RedisError as exc:
         logger.warning(
             "[TOPIC_CLUSTERING] 검색 히스토리 기록 실패 (masked_uid=%s). exc=%r",
+            mask_pii_id(hashed_user_id),
+            exc,
+        )
+        return  # 히스토리 기록 실패 시 이후 로직 스킵
+
+    # [리뷰반영] 캐시 무효화와 히스토리 쓰기를 분리하여 독립적인 에러 로깅 보장
+    try:
+        # 캐시 무효화(Invalidation): 새로운 쿼리가 추가되었으므로 기존 클러스터링 결과 캐시 만료
+        cache_key = _build_cluster_cache_key(hashed_user_id)
+        await redis_client.redis.delete(cache_key)
+    except RedisError as exc:
+        logger.warning(
+            "[TOPIC_CLUSTERING] 검색 히스토리 추가에 따른 캐시 무효화 실패 (masked_uid=%s). exc=%r",
             mask_pii_id(hashed_user_id),
             exc,
         )
@@ -990,6 +1032,30 @@ async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
         _MIN_FLATTEN_CONSECUTIVE_STEPS,
     )
 
+    # 0) 캐시 확인 (Performance)
+    cache_key = _build_cluster_cache_key(hashed_user_id)
+    try:
+        await _ensure_redis_connected()
+        cached_data = await redis_client.redis.get(cache_key)
+        if cached_data:
+            logger.debug("[TOPIC_CLUSTERING] 캐시 히트 (masked_uid=%s)", mask_pii_id(hashed_user_id))
+            return json.loads(cached_data)  # type: ignore[no-any-return]
+    except RedisError as exc:
+        logger.warning(
+            "[TOPIC_CLUSTERING] 캐시 읽기 실패 (best-effort 무시). exc=%r", exc
+        )
+    except json.JSONDecodeError as exc:
+        logger.warning(
+            "[TOPIC_CLUSTERING] 캐시 JSON 디코딩 실패. 손상된 캐시 삭제 진행. exc=%r", exc
+        )
+        try:
+            # [리뷰반영] 손상된 값이 계속 읽히지 않도록 명시적 삭제 수행
+            await redis_client.redis.delete(cache_key)
+        except RedisError as del_exc:
+            logger.warning(
+                "[TOPIC_CLUSTERING] 손상된 캐시 삭제 실패. exc=%r", del_exc
+            )
+
     # 1) 히스토리 조회
     history = await get_search_history(hashed_user_id)
     if not history:
@@ -1050,6 +1116,20 @@ async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
             len(history),
             len(clusters_info),
         )
+
+        # 6) 캐시 저장 (직렬화 및 TTL 적용)
+        if clusters_info:
+            try:
+                await redis_client.redis.setex(
+                    cache_key,
+                    _TOPIC_CLUSTER_CACHE_TTL,
+                    json.dumps(clusters_info, ensure_ascii=False),
+                )
+            except RedisError as exc:
+                logger.warning(
+                    "[TOPIC_CLUSTERING] 캐시 쓰기 실패 (best-effort 무시). exc=%r", exc
+                )
+
         return clusters_info
     except Exception as exc:  # noqa: BLE001
         logger.error(
