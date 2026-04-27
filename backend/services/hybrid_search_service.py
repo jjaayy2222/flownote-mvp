@@ -66,6 +66,10 @@ _COLD_START_GLOBAL_WEIGHT = 1.0
 # 합산 보정 수치 상수 (하드코딩 금지 — 이곳에서만 수정)
 # 합계가 이 값 미만이면 ZeroDivision 위험으로 간주하여 기본값으로 폴백
 _WEIGHT_SUM_ZERO_EPSILON: float = 1e-9
+# 합계가 1.0과 이 절댓값 이상 차이나면 재정규화를 수행한다.
+# rel_tol(_WEIGHT_SUM_ZERO_EPSILON)과 달리 abs_tol을 사용하여
+# "1.0 근처에서 얼마나 벗어났는가"를 예측 가능하게 판단한다.
+_WEIGHT_SUM_NORMALIZATION_TOLERANCE: float = 1e-6
 # 재정규화된 가중치를 반올림할 소수점 자리수 (6자리 ≈ 마이크로 단위 정밀도)
 _WEIGHT_NORMALIZATION_PRECISION: int = 6
 
@@ -175,7 +179,9 @@ def _load_index_weights() -> Tuple[float, float]:
         return _PERSONALIZED_WEIGHT_DEFAULT, _GLOBAL_WEIGHT_DEFAULT
 
     # 합계가 1.0이 아닌 경우 재정규화
-    if not math.isclose(total, 1.0, rel_tol=_WEIGHT_SUM_ZERO_EPSILON):
+    # abs_tol 사용: "1.0 근처에서 절대 오차로 판단"이 rel_tol보다 예측 가능
+    # (rel_tol=_WEIGHT_SUM_ZERO_EPSILON은 ZeroDivision 가드 전용 개념과 분리)
+    if not math.isclose(total, 1.0, abs_tol=_WEIGHT_SUM_NORMALIZATION_TOLERANCE):
         normalized_p = round(personalized / total, _WEIGHT_NORMALIZATION_PRECISION)
         normalized_g = round(global_w / total, _WEIGHT_NORMALIZATION_PRECISION)
         logger.warning(
@@ -254,7 +260,7 @@ async def get_index_weights(hashed_user_id: str) -> Tuple[float, float]:
         )
         return _COLD_START_PERSONALIZED_WEIGHT, _COLD_START_GLOBAL_WEIGHT
 
-    logger.info(
+    logger.debug(
         "[HYBRID_SEARCH][WEIGHT] 정상 사용자 가중치 적용 "
         "(masked_uid=%s, personalized=%.4f, global=%.4f)",
         masked_uid,
