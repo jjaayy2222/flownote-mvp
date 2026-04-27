@@ -6,15 +6,26 @@
 리뷰 피드백 반영:
 1. lru_cache를 이용한 Thread-safe 싱글톤 패턴 적용
 2. PARACategory Enum 및 DTO(HybridSearchResult) 도입으로 타입 안전성 강화
+
+[Step 2-3 - Phase 2.3] 개인화 컨텍스트 가중치 라우팅
+  - 1단계: 가중치 설정 레이어 (Configuration Layer)
+    - 환경 변수 기반 개인화/전역 인덱스 혼합 비율 설정 (하드코딩 금지)
+    - Cold Start 연동 단락(Short-circuit) 가중치 결정 함수 제공
+    - PII-마스킹 로그 및 범위 Clamp(0.0~1.0) 포함
+
+설계 원칙 (개인정보 보호 우선):
+  - user_id는 절대 로그에 평문으로 기록하지 않는다.
+  - 로그에 user_id를 출력해야 하는 경우 반드시 mask_pii_id() 헬퍼를 사용한다.
 """
 
 import asyncio
 import logging
+import math
 import os
 import re
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 from backend.faiss_search import FAISSRetriever
 from backend.bm25_search import BM25Retriever
@@ -30,6 +41,196 @@ logger = logging.getLogger(__name__)
 # [리뷰반영] 하드코딩 제거: 로깅 타임아웃을 환경 변수에서 가져오도록 설정 (기본값 3.0초)
 # [리뷰반영] import 시점 크래시 방지: safe_parse_env_float 헬퍼를 사용하여 비정상 값 방어 및 0.1초 이상 강제
 _LOG_SEARCH_HISTORY_TIMEOUT = safe_parse_env_float("SEARCH_HISTORY_LOG_TIMEOUT", 3.0, min_val=0.1)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [Step 2-3 / Phase 2.3] 1단계: 가중치 설정 레이어 (Configuration Layer)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 개인화 인덱스 가중치 환경 변수 (하드코딩 금지 — 모두 여기서 중앙 관리)
+_PERSONALIZED_WEIGHT_ENV_KEY = "PERSONALIZED_INDEX_WEIGHT"
+_PERSONALIZED_WEIGHT_DEFAULT = 0.6
+_PERSONALIZED_WEIGHT_MIN = 0.0
+_PERSONALIZED_WEIGHT_MAX = 1.0
+
+# 전역 인덱스 가중치 환경 변수
+_GLOBAL_WEIGHT_ENV_KEY = "GLOBAL_INDEX_WEIGHT"
+_GLOBAL_WEIGHT_DEFAULT = 0.4
+_GLOBAL_WEIGHT_MIN = 0.0
+_GLOBAL_WEIGHT_MAX = 1.0
+
+# Cold Start 시 전역 인덱스 100% 편향
+_COLD_START_PERSONALIZED_WEIGHT = 0.0
+_COLD_START_GLOBAL_WEIGHT = 1.0
+
+
+def _parse_bounded_weight(env_key: str, default: float, min_val: float, max_val: float) -> float:
+    """
+    가중치 환경 변수를 안전하게 파싱하고 [min_val, max_val] 범위로 Clamp하는 헬퍼.
+
+    동작 우선순위:
+      1) 미설정(None)       → 조용히 기본값 반환
+      2) 빈값/공백         → 운영자 오설정 의심 → WARNING + 기본값
+      3) 파싱 실패         → WARNING + 기본값
+      4) 비정상 부동소수점  → NaN·±inf → WARNING + 기본값
+      5) 범위 이탈         → Clamp + WARNING
+      6) 정상             → 파싱된 값 반환
+    """
+    raw = os.environ.get(env_key)
+
+    # 1) 미설정: 조용히 기본값 사용
+    if raw is None:
+        return default
+
+    # 2) 빈값/공백: 운영자 오설정 의심
+    stripped = raw.strip()
+    if not stripped:
+        logger.warning(
+            "[HYBRID_SEARCH] %s 가 설정됐으나 빈값/공백입니다 (운영자 오설정 의심). "
+            "기본값 %r로 폴백합니다.",
+            env_key,
+            default,
+        )
+        return default
+
+    # 3) 파싱 실패
+    try:
+        value = float(stripped)
+    except (ValueError, TypeError):
+        logger.warning(
+            "[HYBRID_SEARCH] %s 파싱 실패 (값=%r). 기본값 %r로 폴백합니다.",
+            env_key,
+            stripped,
+            default,
+        )
+        return default
+
+    # 4) 비정상 부동소수점 (NaN·±inf)
+    if not math.isfinite(value):
+        logger.warning(
+            "[HYBRID_SEARCH] %s 값이 비정상 부동소수점(NaN 또는 ±inf)입니다 (운영자 오설정 의심). "
+            "기본값 %r로 폴백합니다.",
+            env_key,
+            default,
+        )
+        return default
+
+    # 5) 범위 Clamp
+    if value < min_val:
+        logger.warning(
+            "[HYBRID_SEARCH] %s=%r 가 최솟값(%r) 미만입니다. %r로 보정합니다.",
+            env_key, value, min_val, min_val,
+        )
+        return min_val
+
+    if value > max_val:
+        logger.warning(
+            "[HYBRID_SEARCH] %s=%r 가 최댓값(%r) 초과입니다. %r로 보정합니다.",
+            env_key, value, max_val, max_val,
+        )
+        return max_val
+
+    return value
+
+
+def _load_index_weights() -> Tuple[float, float]:
+    """
+    환경 변수에서 개인화/전역 인덱스 가중치를 로드하고 합산 보정(재정규화)을 수행한다.
+
+    합산 보정 정책:
+      - 두 가중치의 합이 0에 가까운 경우: 기본값(0.6 / 0.4)으로 폴백 (ZeroDivision 방지)
+      - 두 가중치의 합이 1.0이 아닌 경우: 합계로 나눠 재정규화하고 WARNING 로그 기록
+    """
+    personalized = _parse_bounded_weight(
+        _PERSONALIZED_WEIGHT_ENV_KEY,
+        _PERSONALIZED_WEIGHT_DEFAULT,
+        _PERSONALIZED_WEIGHT_MIN,
+        _PERSONALIZED_WEIGHT_MAX,
+    )
+    global_w = _parse_bounded_weight(
+        _GLOBAL_WEIGHT_ENV_KEY,
+        _GLOBAL_WEIGHT_DEFAULT,
+        _GLOBAL_WEIGHT_MIN,
+        _GLOBAL_WEIGHT_MAX,
+    )
+
+    total = personalized + global_w
+
+    # 합산이 0에 가까운 경우 (ZeroDivision 방지): 기본값으로 폴백
+    if total < 1e-9:
+        logger.warning(
+            "[HYBRID_SEARCH] %s + %s 의 합계가 0에 가깝습니다 (운영자 오설정 의심). "
+            "기본값 (%.1f / %.1f)으로 폴백합니다.",
+            _PERSONALIZED_WEIGHT_ENV_KEY,
+            _GLOBAL_WEIGHT_ENV_KEY,
+            _PERSONALIZED_WEIGHT_DEFAULT,
+            _GLOBAL_WEIGHT_DEFAULT,
+        )
+        return _PERSONALIZED_WEIGHT_DEFAULT, _GLOBAL_WEIGHT_DEFAULT
+
+    # 합계가 1.0이 아닌 경우 재정규화
+    if not math.isclose(total, 1.0, rel_tol=1e-9):
+        normalized_p = round(personalized / total, 6)
+        normalized_g = round(global_w / total, 6)
+        logger.warning(
+            "[HYBRID_SEARCH] %s=%.4f + %s=%.4f 의 합계가 1.0이 아닙니다 (합계=%.4f). "
+            "재정규화합니다: personalized=%.4f, global=%.4f.",
+            _PERSONALIZED_WEIGHT_ENV_KEY, personalized,
+            _GLOBAL_WEIGHT_ENV_KEY, global_w,
+            total,
+            normalized_p, normalized_g,
+        )
+        return normalized_p, normalized_g
+
+    return personalized, global_w
+
+
+# 모듈 로드 시 1회 계산 (런타임 환경 변수 변경은 재시작으로 반영)
+_PERSONALIZED_INDEX_WEIGHT: float
+_GLOBAL_INDEX_WEIGHT: float
+_PERSONALIZED_INDEX_WEIGHT, _GLOBAL_INDEX_WEIGHT = _load_index_weights()
+
+
+async def get_index_weights(hashed_user_id: str) -> Tuple[float, float]:
+    """
+    현재 사용자에게 적용할 (개인화 가중치, 전역 가중치) 튜플을 반환한다.
+
+    Cold Start 판별 결과에 따라 즉시 전역 100% 편향으로 단락(Short-circuit)한다.
+    이 함수는 2단계 라우터와 3단계 RRF 병합의 SSOT(Single Source of Truth)이다.
+
+    Args:
+        hashed_user_id: SHA-256 해시된 사용자 식별자 (평문 user_id 금지)
+
+    Returns:
+        (personalized_weight, global_weight) 튜플
+        - Cold Start: (0.0, 1.0)
+        - 정상 사용자: (_PERSONALIZED_INDEX_WEIGHT, _GLOBAL_INDEX_WEIGHT)
+    """
+    masked_uid = mask_pii_id(hashed_user_id)
+
+    # Cold Start 판별 (topic_clustering_service SSOT 참조)
+    is_cold = await topic_clustering_service.is_cold_start_user(
+        hashed_user_id, masked_uid=masked_uid
+    )
+
+    if is_cold:
+        logger.info(
+            "[HYBRID_SEARCH][WEIGHT] Cold Start 감지 → 전역 100%% 편향 적용 "
+            "(masked_uid=%s, personalized=%.1f, global=%.1f)",
+            masked_uid,
+            _COLD_START_PERSONALIZED_WEIGHT,
+            _COLD_START_GLOBAL_WEIGHT,
+        )
+        return _COLD_START_PERSONALIZED_WEIGHT, _COLD_START_GLOBAL_WEIGHT
+
+    logger.info(
+        "[HYBRID_SEARCH][WEIGHT] 정상 사용자 가중치 적용 "
+        "(masked_uid=%s, personalized=%.4f, global=%.4f)",
+        masked_uid,
+        _PERSONALIZED_INDEX_WEIGHT,
+        _GLOBAL_INDEX_WEIGHT,
+    )
+    return _PERSONALIZED_INDEX_WEIGHT, _GLOBAL_INDEX_WEIGHT
 
 
 async def _log_search_history_bg(hashed_user_id: str, query: str) -> None:
