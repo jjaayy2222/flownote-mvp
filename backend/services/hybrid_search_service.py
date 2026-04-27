@@ -63,14 +63,28 @@ _GLOBAL_WEIGHT_MAX = 1.0
 _COLD_START_PERSONALIZED_WEIGHT = 0.0
 _COLD_START_GLOBAL_WEIGHT = 1.0
 
-# 합산 보정 수치 상수 (하드코딩 금지 — 이곳에서만 수정)
-# 합계가 이 값 미만이면 ZeroDivision 위험으로 간주하여 기본값으로 폴백
+# ── [그룹 A] ZeroDivision 가드 ──────────────────────────────────────────────
+# 두 가중치 합이 이 값 미만이면 나눗셈 자체가 불가능(ZeroDivision 위험)하므로
+# 정규화 대신 기본값으로 즉시 폴백한다.
+# 역할: "합이 사실상 0인가?" 판단 (정규화 허용치와 개념 분리)
 _WEIGHT_SUM_ZERO_EPSILON: float = 1e-9
-# 합계가 1.0과 이 절댓값 이상 차이나면 재정규화를 수행한다.
-# rel_tol(_WEIGHT_SUM_ZERO_EPSILON)과 달리 abs_tol을 사용하여
-# "1.0 근처에서 얼마나 벗어났는가"를 예측 가능하게 판단한다.
+
+# ── [그룹 B] 재정규화 허용치 & 반올림 정밀도 ────────────────────────────────
+# 두 상수는 함께 설계된 쌍이다.
+#
+# _WEIGHT_SUM_NORMALIZATION_TOLERANCE = 1e-6
+#   합계가 1.0과 이 절댓값(abs_tol) 이상 차이나면 재정규화를 수행한다.
+#   역할: "합이 1.0에서 유의미하게 벗어났는가?" 판단
+#
+# _WEIGHT_NORMALIZATION_PRECISION = 6
+#   재정규화 후 round(..., 6) 을 적용한다.
+#
+# [수학적 일관성 근거]
+#   round(..., 6) 의 최대 반올림 오차는 값 1개당 5e-7 이다.
+#   두 값을 각각 반올림하면 합산 최대 오차 = 2 × 5e-7 = 1e-6 = TOLERANCE.
+#   따라서 정규화 직후 합이 다시 허용치를 벗어날 수 없어 oscillation 위험이 없다.
+#   또한 _load_index_weights()는 재귀 없이 1회만 실행되므로 구조적으로 진동 불가.
 _WEIGHT_SUM_NORMALIZATION_TOLERANCE: float = 1e-6
-# 재정규화된 가중치를 반올림할 소수점 자리수 (6자리 ≈ 마이크로 단위 정밀도)
 _WEIGHT_NORMALIZATION_PRECISION: int = 6
 
 
