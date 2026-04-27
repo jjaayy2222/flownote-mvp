@@ -63,6 +63,12 @@ _GLOBAL_WEIGHT_MAX = 1.0
 _COLD_START_PERSONALIZED_WEIGHT = 0.0
 _COLD_START_GLOBAL_WEIGHT = 1.0
 
+# 합산 보정 수치 상수 (하드코딩 금지 — 이곳에서만 수정)
+# 합계가 이 값 미만이면 ZeroDivision 위험으로 간주하여 기본값으로 폴백
+_WEIGHT_SUM_ZERO_EPSILON: float = 1e-9
+# 재정규화된 가중치를 반올림할 소수점 자리수 (6자리 ≈ 마이크로 단위 정밀도)
+_WEIGHT_NORMALIZATION_PRECISION: int = 6
+
 
 def _parse_bounded_weight(env_key: str, default: float, min_val: float, max_val: float) -> float:
     """
@@ -157,7 +163,7 @@ def _load_index_weights() -> Tuple[float, float]:
     total = personalized + global_w
 
     # 합산이 0에 가까운 경우 (ZeroDivision 방지): 기본값으로 폴백
-    if total < 1e-9:
+    if total < _WEIGHT_SUM_ZERO_EPSILON:
         logger.warning(
             "[HYBRID_SEARCH] %s + %s 의 합계가 0에 가깝습니다 (운영자 오설정 의심). "
             "기본값 (%.1f / %.1f)으로 폴백합니다.",
@@ -169,9 +175,9 @@ def _load_index_weights() -> Tuple[float, float]:
         return _PERSONALIZED_WEIGHT_DEFAULT, _GLOBAL_WEIGHT_DEFAULT
 
     # 합계가 1.0이 아닌 경우 재정규화
-    if not math.isclose(total, 1.0, rel_tol=1e-9):
-        normalized_p = round(personalized / total, 6)
-        normalized_g = round(global_w / total, 6)
+    if not math.isclose(total, 1.0, rel_tol=_WEIGHT_SUM_ZERO_EPSILON):
+        normalized_p = round(personalized / total, _WEIGHT_NORMALIZATION_PRECISION)
+        normalized_g = round(global_w / total, _WEIGHT_NORMALIZATION_PRECISION)
         logger.warning(
             "[HYBRID_SEARCH] %s=%.4f + %s=%.4f 의 합계가 1.0이 아닙니다 (합계=%.4f). "
             "재정규화합니다: personalized=%.4f, global=%.4f.",
@@ -185,10 +191,35 @@ def _load_index_weights() -> Tuple[float, float]:
     return personalized, global_w
 
 
-# 모듈 로드 시 1회 계산 (런타임 환경 변수 변경은 재시작으로 반영)
+# 모듈 로드 시 1회 계산 (런타임 환경 변수 변경은 재시작 또는 reload_index_weights() 호출로 반영)
 _PERSONALIZED_INDEX_WEIGHT: float
 _GLOBAL_INDEX_WEIGHT: float
 _PERSONALIZED_INDEX_WEIGHT, _GLOBAL_INDEX_WEIGHT = _load_index_weights()
+
+
+def reload_index_weights() -> Tuple[float, float]:
+    """
+    환경 변수에서 가중치를 다시 로드하여 모듈 레벨 싱글톤을 갱신한다.
+
+    주주의 대상: 장수명 워커(Celery, 초로드 프로세스) 또는 운영 중 실험(A/B 테스트)에서
+    프로세스 재시작 없이 약치를 적용할 때.
+
+    동작 계약:
+      - PERSONALIZED_INDEX_WEIGHT / GLOBAL_INDEX_WEIGHT 환경 변수를 읽어 Clamp + 합산 보정 수행
+      - 모듈 레벨 _PERSONALIZED_INDEX_WEIGHT, _GLOBAL_INDEX_WEIGHT를 원자적으로 덧써 쓰기(global)
+      - 갱신된 값을 튜플로 반환하여 호출자가 증거 로깅 가능
+
+    Returns:
+        갱신 후 (personalized_weight, global_weight) 튜플
+    """
+    global _PERSONALIZED_INDEX_WEIGHT, _GLOBAL_INDEX_WEIGHT
+    _PERSONALIZED_INDEX_WEIGHT, _GLOBAL_INDEX_WEIGHT = _load_index_weights()
+    logger.info(
+        "[HYBRID_SEARCH][WEIGHT] 가중치 통신(reload) 완료: personalized=%.4f, global=%.4f",
+        _PERSONALIZED_INDEX_WEIGHT,
+        _GLOBAL_INDEX_WEIGHT,
+    )
+    return _PERSONALIZED_INDEX_WEIGHT, _GLOBAL_INDEX_WEIGHT
 
 
 async def get_index_weights(hashed_user_id: str) -> Tuple[float, float]:
