@@ -178,10 +178,10 @@ def _load_index_weights() -> Tuple[float, float]:
         )
         return _PERSONALIZED_WEIGHT_DEFAULT, _GLOBAL_WEIGHT_DEFAULT
 
-    # 합계가 1.0이 아닌 경우 재정규화
-    # abs_tol 사용: "1.0 근처에서 절대 오차로 판단"이 rel_tol보다 예측 가능
+    # abs_tol 전용 판단: "1.0 근처에서 절대 오차만으로 판단"
+    # rel_tol=0.0 명시로 기본값(1e-9)의 암묵적 적용을 차단 → 주석과 코드 완전 일치
     # (rel_tol=_WEIGHT_SUM_ZERO_EPSILON은 ZeroDivision 가드 전용 개념과 분리)
-    if not math.isclose(total, 1.0, abs_tol=_WEIGHT_SUM_NORMALIZATION_TOLERANCE):
+    if not math.isclose(total, 1.0, rel_tol=0.0, abs_tol=_WEIGHT_SUM_NORMALIZATION_TOLERANCE):
         normalized_p = round(personalized / total, _WEIGHT_NORMALIZATION_PRECISION)
         normalized_g = round(global_w / total, _WEIGHT_NORMALIZATION_PRECISION)
         logger.warning(
