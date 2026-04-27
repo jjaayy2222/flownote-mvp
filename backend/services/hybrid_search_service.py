@@ -16,6 +16,13 @@
 설계 원칙 (개인정보 보호 우선):
   - user_id는 절대 로그에 평문으로 기록하지 않는다.
   - 로그에 user_id를 출력해야 하는 경우 반드시 mask_pii_id() 헬퍼를 사용한다.
+
+[설계 노트: 가중치 재정규화 허용치와 정밀도]
+  _WEIGHT_SUM_NORMALIZATION_TOLERANCE와 _WEIGHT_NORMALIZATION_PRECISION은
+  항상 수학적 일관성을 유지해야 한다.
+  (근거) round(..., p) 2개의 합산 시 최대 오차는 10**(-p) 이며, 
+  재정규화 직후 다시 허용치를 벗어나 무한 진동(oscillation)하는 것을 방지하려면
+  TOLERANCE >= 10**(-PRECISION) 이어야 한다.
 """
 
 import asyncio
@@ -70,22 +77,18 @@ _COLD_START_GLOBAL_WEIGHT = 1.0
 _WEIGHT_SUM_ZERO_EPSILON: float = 1e-9
 
 # ── [그룹 B] 재정규화 허용치 & 반올림 정밀도 ────────────────────────────────
-# 두 상수는 함께 설계된 쌍이다.
-#
-# _WEIGHT_SUM_NORMALIZATION_TOLERANCE = 1e-6
-#   합계가 1.0과 이 절댓값(abs_tol) 이상 차이나면 재정규화를 수행한다.
-#   역할: "합이 1.0에서 유의미하게 벗어났는가?" 판단
-#
-# _WEIGHT_NORMALIZATION_PRECISION = 6
-#   재정규화 후 round(..., 6) 을 적용한다.
-#
-# [수학적 일관성 근거]
-#   round(..., 6) 의 최대 반올림 오차는 값 1개당 5e-7 이다.
-#   두 값을 각각 반올림하면 합산 최대 오차 = 2 × 5e-7 = 1e-6 = TOLERANCE.
-#   따라서 정규화 직후 합이 다시 허용치를 벗어날 수 없어 oscillation 위험이 없다.
-#   또한 _load_index_weights()는 재귀 없이 1회만 실행되므로 구조적으로 진동 불가.
+# 두 상수는 쌍으로 작동하며, 정밀도(PRECISION)에 따른 최대 오차가 허용치(TOLERANCE)를 
+# 넘지 않도록 런타임에 강제된다 (모듈 레벨 주석의 [설계 노트] 참조).
 _WEIGHT_SUM_NORMALIZATION_TOLERANCE: float = 1e-6
 _WEIGHT_NORMALIZATION_PRECISION: int = 6
+
+_MAX_WEIGHT_SUM_ROUNDING_ERROR = 10 ** (-_WEIGHT_NORMALIZATION_PRECISION)
+if _MAX_WEIGHT_SUM_ROUNDING_ERROR > _WEIGHT_SUM_NORMALIZATION_TOLERANCE:
+    raise RuntimeError(
+        f"Invariant violated: _WEIGHT_SUM_NORMALIZATION_TOLERANCE({_WEIGHT_SUM_NORMALIZATION_TOLERANCE}) "
+        f"must be >= max rounding error({_MAX_WEIGHT_SUM_ROUNDING_ERROR}) "
+        f"implied by _WEIGHT_NORMALIZATION_PRECISION({_WEIGHT_NORMALIZATION_PRECISION})."
+    )
 
 
 def _parse_bounded_weight(env_key: str, default: float, min_val: float, max_val: float) -> float:
