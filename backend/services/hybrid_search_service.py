@@ -297,9 +297,6 @@ _PERSONALIZED_SEARCH_TIMEOUT_ENV_KEY = "PERSONALIZED_INDEX_SEARCH_TIMEOUT"
 _PERSONALIZED_SEARCH_TIMEOUT_DEFAULT = 2.0
 _PERSONALIZED_SEARCH_TIMEOUT_MIN = 0.1
 
-# 라우터 Graceful Degradation 시 사용할 빈 결과 (불변 참조, 매 요청 재할당 방지)
-_EMPTY_SEARCH_RESULTS: List[Dict[str, Any]] = []
-
 
 def _load_personalized_search_timeout() -> float:
     """
@@ -768,7 +765,7 @@ class HybridSearchService:
                 filter_expansion_factor=filter_expansion_factor,
             )
             return IndexSearchResults(
-                personalized_results=list(_EMPTY_SEARCH_RESULTS),
+                personalized_results=[],
                 global_results=global_results.results,
                 personalized_weight=personalized_weight,
                 global_weight=global_weight,
@@ -815,7 +812,7 @@ class HybridSearchService:
                     masked_uid,
                     _PERSONALIZED_SEARCH_TIMEOUT,
                 )
-                return list(_EMPTY_SEARCH_RESULTS)
+                return []
             except Exception:  # noqa: BLE001
                 logger.warning(
                     "[HYBRID_SEARCH][ROUTER] 개인화 인덱스 조회 실패 (masked_uid=%s) "
@@ -823,19 +820,38 @@ class HybridSearchService:
                     masked_uid,
                     exc_info=True,
                 )
-                return list(_EMPTY_SEARCH_RESULTS)
+                return []
 
         async def _search_global() -> List[Dict[str, Any]]:
-            """전역 인덱스 조회 코루틴."""
-            result = await run_in_threadpool(
-                self._execute_search,
-                query=query,
-                k=k,
-                alpha=alpha,
-                metadata_filter=metadata_filter,
-                filter_expansion_factor=filter_expansion_factor,
-            )
-            return result.results
+            """
+            전역 인덱스 조회 코루틴.
+
+            정책: 전역 인덱스는 필수 질의 소스다.
+              - 성공: 결과 목록 반환
+              - 실패: ERROR 로그 후 예외를 상위로 전파하여 요청 전체를 실패시킨다.
+              - (개인화 인덱스와의 차이) 개인화 인덱스는 부가적(Optional)이라
+                실패 시 빈 결과로 Graceful Degradation하지만,
+                전역 인덱스는 폴백이 없으므로 예외를 전파한다.
+            """
+            try:
+                result = await run_in_threadpool(
+                    self._execute_search,
+                    query=query,
+                    k=k,
+                    alpha=alpha,
+                    metadata_filter=metadata_filter,
+                    filter_expansion_factor=filter_expansion_factor,
+                )
+                return result.results
+            except Exception:  # noqa: BLE001
+                logger.error(
+                    "[HYBRID_SEARCH][ROUTER] 전역 인덱스 조회 실패 (masked_uid=%s) "
+                    "→ 요청 전체를 실패시킵니다. "
+                    "(전역 인덱스 실패는 Graceful Degradation 대상이 아닙니다.)",
+                    masked_uid,
+                    exc_info=True,
+                )
+                raise
 
         personalized_results, global_results = await asyncio.gather(
             _search_personalized(),
