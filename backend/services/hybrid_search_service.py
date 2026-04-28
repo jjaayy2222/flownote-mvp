@@ -26,6 +26,8 @@
 """
 
 import asyncio
+import hashlib
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -294,6 +296,118 @@ async def get_index_weights(hashed_user_id: str) -> Tuple[float, float]:
 _PERSONALIZED_SEARCH_TIMEOUT_ENV_KEY = "PERSONALIZED_INDEX_SEARCH_TIMEOUT"
 _PERSONALIZED_SEARCH_TIMEOUT_DEFAULT = 2.0
 _PERSONALIZED_SEARCH_TIMEOUT_MIN = 0.1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [Step 2-3 / Phase 2.3] 3단계: RRF 병합 레이어 (Merge Layer) — 모듈 레벨 상수
+# ─────────────────────────────────────────────────────────────────────────────
+
+# RRF 평활 상수 k: score(d) = Σ weight_i / (k + rank_i)
+# RRF_K [int, 기본값: 60, 유효 범위: 1~1000] — 값이 클수록 순위 편중 완화
+_RRF_K_ENV_KEY = "RRF_K"
+_RRF_K_DEFAULT = 60
+_RRF_K_MIN = 1
+_RRF_K_MAX = 1000
+
+# 최종 반환 결과 수: RRF 스코어 내림차순 정렬 후 상위 N개
+# RRF_TOP_K [int, 기본값: 5, 유효 범위: 1~100]
+_RRF_TOP_K_ENV_KEY = "RRF_TOP_K"
+_RRF_TOP_K_DEFAULT = 5
+_RRF_TOP_K_MIN = 1
+_RRF_TOP_K_MAX = 100
+
+
+def _load_int_env(
+    env_key: str,
+    default: int,
+    min_v: int,
+    max_v: int,
+) -> int:
+    """
+    정수형 환경 변수를 안전하게 파싱하고 [min_v, max_v] 범위로 Clamp하는 범용 헬퍼.
+
+    동작 우선순위:
+      1) 미설정(None)       → 조용히 기본값 반환
+      2) 빈값/공백         → WARNING + 기본값
+      3) 비정수            → WARNING + 기본값
+      4) 범위 이탈          → Clamp + WARNING
+    """
+    raw = os.environ.get(env_key)
+    if raw is None:
+        return default
+
+    stripped = raw.strip()
+    if not stripped:
+        logger.warning(
+            "[HYBRID_SEARCH][RRF] %s 가 설정됐으나 빈값/공백입니다. 기본값 %d으로 폴백합니다.",
+            env_key,
+            default,
+        )
+        return default
+
+    try:
+        value = int(stripped)
+    except (ValueError, TypeError):
+        logger.warning(
+            "[HYBRID_SEARCH][RRF] %s 파싱 실패 (값=%r). 기본값 %d으로 폴백합니다.",
+            env_key,
+            stripped,
+            default,
+        )
+        return default
+
+    if value < min_v:
+        logger.warning(
+            "[HYBRID_SEARCH][RRF] %s=%d 가 최솟값(%d) 미만입니다. %d으로 보정합니다.",
+            env_key, value, min_v, min_v,
+        )
+        return min_v
+
+    if value > max_v:
+        logger.warning(
+            "[HYBRID_SEARCH][RRF] %s=%d 가 최댓값(%d) 초과입니다. %d으로 보정합니다.",
+            env_key, value, max_v, max_v,
+        )
+        return max_v
+
+    return value
+
+
+def _load_rrf_k() -> int:
+    """RRF_K 환경 변수를 파싱한다. 상세 동작은 _load_int_env 참조."""
+    return _load_int_env(_RRF_K_ENV_KEY, _RRF_K_DEFAULT, _RRF_K_MIN, _RRF_K_MAX)
+
+
+def _load_rrf_top_k() -> int:
+    """RRF_TOP_K 환경 변수를 파싱한다. 상세 동작은 _load_int_env 참조."""
+    return _load_int_env(
+        _RRF_TOP_K_ENV_KEY, _RRF_TOP_K_DEFAULT, _RRF_TOP_K_MIN, _RRF_TOP_K_MAX
+    )
+
+
+# 모듈 로드 시 1회 파싱 (변경 시 재시작 필요)
+_RRF_K: int = _load_rrf_k()
+_RRF_TOP_K: int = _load_rrf_top_k()
+
+
+@dataclass
+class RRFResult:
+    """
+    3단계 RRF 병합 결과 DTO.
+
+    merge_with_rrf()의 반환값으로, LangGraph retrieve_node(4단계)에 전달된다.
+
+    Fields:
+        results          : RRF 스코어 내림차순으로 정렬된 상위 N개 검색 결과
+        applied_rrf_k    : 실제 적용된 RRF 평활 상수 k
+        applied_top_k    : 실제 적용된 반환 결과 수
+        is_cold_start    : Cold Start 경로 사용 여부 (2단계에서 전달)
+    """
+
+    results: List[Dict[str, Any]]
+    applied_rrf_k: int
+    applied_top_k: int
+    is_cold_start: bool
 
 
 def _load_personalized_search_timeout() -> float:
@@ -871,7 +985,129 @@ class HybridSearchService:
             is_cold_start=False,
         )
 
+    # ------------------------------------------------------------------
+    # [Step 2-3 / Phase 2.3] 3단계: RRF 병합 로직 (Merge Layer)
+    # ------------------------------------------------------------------
 
+    @staticmethod
+    def merge_with_rrf(
+        router_result: IndexSearchResults,
+        rrf_k: int = _RRF_K,
+        top_k: int = _RRF_TOP_K,
+    ) -> RRFResult:
+        """
+        2단계 라우터 결과(IndexSearchResults)를 입력받아
+        가중 Reciprocal Rank Fusion으로 두 인덱스 결과를 병합하여 반환한다.
+
+        알고리즘:
+          score(d) = Σ_i  weight_i / (rrf_k + rank_i(d))
+          여기서 rank는 1-indexed, weight_i는 1단계 SSOT에서 결정된 가중치.
+
+        설계 원칙:
+          - Cold Start 시: personalized_results가 빈 리스트이므로
+            전역 결과만으로 RRF를 수행한다(자연스러운 단락 처리).
+          - 동일 문서 중복: 두 인덱스에 같은 doc_id가 있으면 스코어를 누산(합산)한다.
+          - doc_id 추출 전략: 결과 딕셔너리에서 'doc_id' > 'id' > 'chunk_id' 순으로
+            키를 탐색하고, 모두 없으면 해당 항목의 직렬화 문자열을 fallback key로 사용한다.
+          - 하드코딩 없음: rrf_k와 top_k는 모두 모듈 레벨 상수(_RRF_K, _RRF_TOP_K)를
+            기본값으로 사용하며 호출 시점에 오버라이드 가능하다.
+
+        Args:
+            router_result : 2단계 route_weighted_search()의 반환 DTO
+            rrf_k         : RRF 평활 상수 (기본값: _RRF_K 환경 변수)
+            top_k         : 최종 반환 결과 수 (기본값: _RRF_TOP_K 환경 변수)
+
+        Returns:
+            RRFResult — 병합된 결과와 적용 파라미터를 담은 DTO.
+        """
+        def _extract_doc_id(item: Dict[str, Any]) -> str:
+            """결과 딕셔너리에서 문서 식별자를 일관되게 추출하는 내부 헬퍼.
+
+            fallback 전략: doc_id/id/chunk_id 키가 모두 없을 때
+            JSON 직렬화 후 SHA-256 앞 16자(hex)를 사용하여
+            키 길이를 제한하고 결정적 중복 제거를 보장한다.
+            """
+            for key in ("doc_id", "id", "chunk_id"):
+                if key in item and item[key] is not None:
+                    return str(item[key])
+            # 안정적·짧은 fallback key: SHA-256(JSON직렬화)[:16]
+            payload = json.dumps(item, sort_keys=True, ensure_ascii=False, default=str)
+            return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+        # ── 진입부 방어 검증 ────────────────────────────────────────────────
+        # merge_with_rrf는 @staticmethod 공개 API이므로,
+        # 환경 변수 로더를 우회하는 직접 호출에도 안전해야 한다.
+        #
+        # rrf_k: rrf_k + rank(최솟값=1) == 0이 되면 ZeroDivisionError 발생.
+        #        _RRF_K_MIN(=1) 이상을 강제한다.
+        if rrf_k < _RRF_K_MIN:
+            logger.warning(
+                "[HYBRID_SEARCH][RRF] rrf_k=%d 가 최솟값(%d) 미만입니다. %d으로 보정합니다.",
+                rrf_k, _RRF_K_MIN, _RRF_K_MIN,
+            )
+            rrf_k = _RRF_K_MIN
+
+        # top_k: 음수 시 Python 리스트 슬라이싱이 끝에서 역방향으로 동작하여
+        #        "상위 N개" 의미와 완전히 달라진다. max(0, top_k)로 안전하게 보정한다.
+        effective_top_k = top_k
+        if top_k < 0:
+            logger.warning(
+                "[HYBRID_SEARCH][RRF] top_k=%d 가 음수입니다. 0으로 보정합니다. "
+                "(음수 슬라이싱은 'top_k' 의미와 다릅니다.)",
+                top_k,
+            )
+            effective_top_k = 0
+
+        # ── 스코어 누산 테이블 ──────────────────────────────────────────────
+        # {doc_id: {"score": float, "item": Dict}} 구조
+        score_table: Dict[str, Dict[str, Any]] = {}
+
+        def _accumulate(
+            results: List[Dict[str, Any]],
+            weight: float,
+        ) -> None:
+            """단일 인덱스 결과 목록의 RRF 스코어를 score_table에 누산한다."""
+            for rank, item in enumerate(results, start=1):  # rank는 1-indexed
+                doc_id = _extract_doc_id(item)
+                contribution = weight / (rrf_k + rank)
+                if doc_id in score_table:
+                    score_table[doc_id]["score"] += contribution
+                else:
+                    score_table[doc_id] = {"score": contribution, "item": item}
+
+        # ── Cold Start 단락: personalized_results가 비어 있으면 자동으로 전역만 처리 ──
+        _accumulate(router_result.personalized_results, router_result.personalized_weight)
+        _accumulate(router_result.global_results, router_result.global_weight)
+
+        # ── 정렬 및 상위 N개 슬라이싱 ──────────────────────────────────────
+        sorted_items = sorted(
+            score_table.values(),
+            key=lambda entry: entry["score"],
+            reverse=True,
+        )
+        merged = [entry["item"] for entry in sorted_items[:effective_top_k]]
+
+        logger.debug(
+            "[HYBRID_SEARCH][RRF] 병합 완료 "
+            "(personalized=%d건, global=%d건, merged=%d건, "
+            "rrf_k=%d, top_k=%d, effective_top_k=%d, cold_start=%s)",
+            len(router_result.personalized_results),
+            len(router_result.global_results),
+            len(merged),
+            rrf_k,
+            top_k,
+            effective_top_k,
+            router_result.is_cold_start,
+        )
+
+        return RRFResult(
+            results=merged,
+            applied_rrf_k=rrf_k,
+            applied_top_k=effective_top_k,
+            is_cold_start=router_result.is_cold_start,
+        )
+
+    def save_indices(self):
         """FAISS와 BM25 인덱스를 디스크에 저장"""
         from backend.config import PathConfig
 
