@@ -792,17 +792,12 @@ class HybridSearchService:
             현재는 동일한 HybridSearcher를 사용하며, 향후 사용자별 FAISS 서브-인덱스가
             실제로 분리되면 이 내부 함수에서 personalized_index_service 조회로 교체한다.
 
-            [타임아웃 설계 노트: Best-effort 방식]
-              asyncio.wait_for + run_in_threadpool 조합의 한계:
-              - asyncio.wait_for가 타임아웃 시 해당 Task(코루틴)를 cancel하지만,
-                이미 스레드풀에 제출된 동기 작업(_execute_search)은 계속 실행된다.
-              - _execute_search는 FAISS/BM25 동기 라이브러리를 호출하므로
-                협조적 취소(Cooperative Cancellation)가 구조적으로 불가능하다.
-              - 따라서 이 타임아웃은 "이 코루틴이 더 기다리지 않는다"는 Best-effort
-                보호이며, 스레드풀 작업 자체를 중단하지는 않는다.
-              - 타임아웃이 빈번하게 발생하는 경우 스레드풀 점유가 누적될 수 있으며,
-                이는 PERSONALIZED_INDEX_SEARCH_TIMEOUT 값 조정 또는 별도 스레드풀
-                분리를 통해 운영자가 제어해야 한다.
+            [타임아웃: Best-effort 방식]
+              asyncio.wait_for는 코루틴만 취소하며, 스레드풀의 _execute_search는
+              계속 실행된다 (FAISS/BM25가 협조적 취소를 지원하지 않으므로 의도된 동작).
+              타임아웃 빈발 시: 이 모듈 상단의 _PERSONALIZED_SEARCH_TIMEOUT_ENV_KEY
+              (env: PERSONALIZED_INDEX_SEARCH_TIMEOUT)로 값을 조정하거나,
+              run_in_threadpool의 executor를 별도 스레드풀로 교체한다.
             """
             try:
                 result = await asyncio.wait_for(
