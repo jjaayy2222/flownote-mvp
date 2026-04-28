@@ -26,6 +26,8 @@
 """
 
 import asyncio
+import hashlib
+import json
 import logging
 import math
 import os
@@ -317,104 +319,72 @@ _RRF_TOP_K_MIN = 1
 _RRF_TOP_K_MAX = 100
 
 
-def _load_rrf_k() -> int:
+def _load_int_env(
+    env_key: str,
+    default: int,
+    min_v: int,
+    max_v: int,
+) -> int:
     """
-    RRF_K 환경 변수를 안전하게 파싱한다.
+    정수형 환경 변수를 안전하게 파싱하고 [min_v, max_v] 범위로 Clamp하는 범용 헬퍼.
 
     동작 우선순위:
       1) 미설정(None)       → 조용히 기본값 반환
-      2) 빈값/공백/비정수  → WARNING + 기본값
-      3) 범위 이탈          → Clamp + WARNING
+      2) 빈값/공백         → WARNING + 기본값
+      3) 비정수            → WARNING + 기본값
+      4) 범위 이탈          → Clamp + WARNING
     """
-    raw = os.environ.get(_RRF_K_ENV_KEY)
+    raw = os.environ.get(env_key)
     if raw is None:
-        return _RRF_K_DEFAULT
+        return default
 
     stripped = raw.strip()
     if not stripped:
         logger.warning(
             "[HYBRID_SEARCH][RRF] %s 가 설정됐으나 빈값/공백입니다. 기본값 %d으로 폴백합니다.",
-            _RRF_K_ENV_KEY,
-            _RRF_K_DEFAULT,
+            env_key,
+            default,
         )
-        return _RRF_K_DEFAULT
+        return default
 
     try:
         value = int(stripped)
     except (ValueError, TypeError):
         logger.warning(
             "[HYBRID_SEARCH][RRF] %s 파싱 실패 (값=%r). 기본값 %d으로 폴백합니다.",
-            _RRF_K_ENV_KEY,
+            env_key,
             stripped,
-            _RRF_K_DEFAULT,
+            default,
         )
-        return _RRF_K_DEFAULT
+        return default
 
-    if value < _RRF_K_MIN:
+    if value < min_v:
         logger.warning(
             "[HYBRID_SEARCH][RRF] %s=%d 가 최솟값(%d) 미만입니다. %d으로 보정합니다.",
-            _RRF_K_ENV_KEY, value, _RRF_K_MIN, _RRF_K_MIN,
+            env_key, value, min_v, min_v,
         )
-        return _RRF_K_MIN
+        return min_v
 
-    if value > _RRF_K_MAX:
+    if value > max_v:
         logger.warning(
             "[HYBRID_SEARCH][RRF] %s=%d 가 최댓값(%d) 초과입니다. %d으로 보정합니다.",
-            _RRF_K_ENV_KEY, value, _RRF_K_MAX, _RRF_K_MAX,
+            env_key, value, max_v, max_v,
         )
-        return _RRF_K_MAX
+        return max_v
 
     return value
+
+
+def _load_rrf_k() -> int:
+    """RRF_K 환경 변수를 파싱한다. 상세 동작은 _load_int_env 참조."""
+    return _load_int_env(_RRF_K_ENV_KEY, _RRF_K_DEFAULT, _RRF_K_MIN, _RRF_K_MAX)
 
 
 def _load_rrf_top_k() -> int:
-    """
-    RRF_TOP_K 환경 변수를 안전하게 파싱한다.
-
-    동작 우선순위:
-      1) 미설정(None)       → 조용히 기본값 반환
-      2) 빈값/공백/비정수  → WARNING + 기본값
-      3) 범위 이탈          → Clamp + WARNING
-    """
-    raw = os.environ.get(_RRF_TOP_K_ENV_KEY)
-    if raw is None:
-        return _RRF_TOP_K_DEFAULT
-
-    stripped = raw.strip()
-    if not stripped:
-        logger.warning(
-            "[HYBRID_SEARCH][RRF] %s 가 설정됐으나 빈값/공백입니다. 기본값 %d으로 폴백합니다.",
-            _RRF_TOP_K_ENV_KEY,
-            _RRF_TOP_K_DEFAULT,
-        )
-        return _RRF_TOP_K_DEFAULT
-
-    try:
-        value = int(stripped)
-    except (ValueError, TypeError):
-        logger.warning(
-            "[HYBRID_SEARCH][RRF] %s 파싱 실패 (값=%r). 기본값 %d으로 폴백합니다.",
-            _RRF_TOP_K_ENV_KEY,
-            stripped,
-            _RRF_TOP_K_DEFAULT,
-        )
-        return _RRF_TOP_K_DEFAULT
-
-    if value < _RRF_TOP_K_MIN:
-        logger.warning(
-            "[HYBRID_SEARCH][RRF] %s=%d 가 최솟값(%d) 미만입니다. %d으로 보정합니다.",
-            _RRF_TOP_K_ENV_KEY, value, _RRF_TOP_K_MIN, _RRF_TOP_K_MIN,
-        )
-        return _RRF_TOP_K_MIN
-
-    if value > _RRF_TOP_K_MAX:
-        logger.warning(
-            "[HYBRID_SEARCH][RRF] %s=%d 가 최댓값(%d) 초과입니다. %d으로 보정합니다.",
-            _RRF_TOP_K_ENV_KEY, value, _RRF_TOP_K_MAX, _RRF_TOP_K_MAX,
-        )
-        return _RRF_TOP_K_MAX
-
-    return value
+    """RRF_TOP_K 환경 변수를 파싱한다. 상세 동작은 _load_int_env 참조."""
+    return _load_int_env(
+        _RRF_TOP_K_ENV_KEY, _RRF_TOP_K_DEFAULT, _RRF_TOP_K_MIN, _RRF_TOP_K_MAX
+    )
 
 
 # 모듈 로드 시 1회 파싱 (변경 시 재시작 필요)
@@ -1061,12 +1031,42 @@ class HybridSearchService:
             RRFResult — 병합된 결과와 적용 파라미터를 담은 DTO.
         """
         def _extract_doc_id(item: Dict[str, Any]) -> str:
-            """결과 딕셔너리에서 문서 식별자를 일관되게 추출하는 내부 헬퍼."""
+            """결과 딕셔너리에서 문서 식별자를 일관되게 추출하는 내부 헬퍼.
+
+            fallback 전략: doc_id/id/chunk_id 키가 모두 없을 때
+            JSON 직렬화 후 SHA-256 앞 16자(hex)를 사용하여
+            키 길이를 제한하고 결정적 중복 제거를 보장한다.
+            """
             for key in ("doc_id", "id", "chunk_id"):
                 if key in item and item[key] is not None:
                     return str(item[key])
-            # 모든 키가 없으면 항목 전체를 직렬화하여 fallback key 사용
-            return str(sorted(item.items()))
+            # 안정적·짧은 fallback key: SHA-256(JSON직렬화)[:16]
+            payload = json.dumps(item, sort_keys=True, ensure_ascii=False, default=str)
+            return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+        # ── 진입부 방어 검증 ────────────────────────────────────────────────
+        # merge_with_rrf는 @staticmethod 공개 API이므로,
+        # 환경 변수 로더를 우회하는 직접 호출에도 안전해야 한다.
+        #
+        # rrf_k: rrf_k + rank(최솟값=1) == 0이 되면 ZeroDivisionError 발생.
+        #        _RRF_K_MIN(=1) 이상을 강제한다.
+        if rrf_k < _RRF_K_MIN:
+            logger.warning(
+                "[HYBRID_SEARCH][RRF] rrf_k=%d 가 최솟값(%d) 미만입니다. %d으로 보정합니다.",
+                rrf_k, _RRF_K_MIN, _RRF_K_MIN,
+            )
+            rrf_k = _RRF_K_MIN
+
+        # top_k: 음수 시 Python 리스트 슬라이싱이 끝에서 역방향으로 동작하여
+        #        "상위 N개" 의미와 완전히 달라진다. max(0, top_k)로 안전하게 보정한다.
+        effective_top_k = top_k
+        if top_k < 0:
+            logger.warning(
+                "[HYBRID_SEARCH][RRF] top_k=%d 가 음수입니다. 0으로 보정합니다. "
+                "(음수 슬라이싱은 'top_k' 의미와 다릅니다.)",
+                top_k,
+            )
+            effective_top_k = 0
 
         # ── 스코어 누산 테이블 ──────────────────────────────────────────────
         # {doc_id: {"score": float, "item": Dict}} 구조
@@ -1095,23 +1095,25 @@ class HybridSearchService:
             key=lambda entry: entry["score"],
             reverse=True,
         )
-        merged = [entry["item"] for entry in sorted_items[:top_k]]
+        merged = [entry["item"] for entry in sorted_items[:effective_top_k]]
 
         logger.debug(
             "[HYBRID_SEARCH][RRF] 병합 완료 "
-            "(personalized=%d건, global=%d건, merged=%d건, rrf_k=%d, top_k=%d, cold_start=%s)",
+            "(personalized=%d건, global=%d건, merged=%d건, "
+            "rrf_k=%d, top_k=%d, effective_top_k=%d, cold_start=%s)",
             len(router_result.personalized_results),
             len(router_result.global_results),
             len(merged),
             rrf_k,
             top_k,
+            effective_top_k,
             router_result.is_cold_start,
         )
 
         return RRFResult(
             results=merged,
             applied_rrf_k=rrf_k,
-            applied_top_k=top_k,
+            applied_top_k=effective_top_k,
             is_cold_start=router_result.is_cold_start,
         )
 
