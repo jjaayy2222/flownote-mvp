@@ -285,6 +285,90 @@ async def get_index_weights(hashed_user_id: str) -> Tuple[float, float]:
     return _PERSONALIZED_INDEX_WEIGHT, _GLOBAL_INDEX_WEIGHT
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# [Step 2-3 / Phase 2.3] 2단계: 혼합 검색 라우터 (Router Layer)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 개인화 인덱스 조회 타임아웃 환경 변수 (하드코딩 금지)
+# PERSONALIZED_INDEX_SEARCH_TIMEOUT [float, 기본값: 2.0초, 최소: 0.1초]
+_PERSONALIZED_SEARCH_TIMEOUT_ENV_KEY = "PERSONALIZED_INDEX_SEARCH_TIMEOUT"
+_PERSONALIZED_SEARCH_TIMEOUT_DEFAULT = 2.0
+_PERSONALIZED_SEARCH_TIMEOUT_MIN = 0.1
+
+
+def _load_personalized_search_timeout() -> float:
+    """
+    PERSONALIZED_INDEX_SEARCH_TIMEOUT 환경 변수를 안전하게 파싱한다.
+
+    동작 우선순위:
+      1) 미설정(None)  → 조용히 기본값 반환
+      2) 빈값/공백    → WARNING + 기본값
+      3) 파싱 실패    → WARNING + 기본값
+      4) 최솟값 미만  → Clamp + WARNING
+    """
+    raw = os.environ.get(_PERSONALIZED_SEARCH_TIMEOUT_ENV_KEY)
+    if raw is None:
+        return _PERSONALIZED_SEARCH_TIMEOUT_DEFAULT
+
+    stripped = raw.strip()
+    if not stripped:
+        logger.warning(
+            "[HYBRID_SEARCH][ROUTER] %s 가 설정됐으나 빈값/공백입니다. 기본값 %.1f초로 폴백합니다.",
+            _PERSONALIZED_SEARCH_TIMEOUT_ENV_KEY,
+            _PERSONALIZED_SEARCH_TIMEOUT_DEFAULT,
+        )
+        return _PERSONALIZED_SEARCH_TIMEOUT_DEFAULT
+
+    try:
+        value = float(stripped)
+    except (ValueError, TypeError):
+        logger.warning(
+            "[HYBRID_SEARCH][ROUTER] %s 파싱 실패 (값=%r). 기본값 %.1f초로 폴백합니다.",
+            _PERSONALIZED_SEARCH_TIMEOUT_ENV_KEY,
+            stripped,
+            _PERSONALIZED_SEARCH_TIMEOUT_DEFAULT,
+        )
+        return _PERSONALIZED_SEARCH_TIMEOUT_DEFAULT
+
+    if value < _PERSONALIZED_SEARCH_TIMEOUT_MIN:
+        logger.warning(
+            "[HYBRID_SEARCH][ROUTER] %s=%.3f 가 최솟값(%.1f) 미만입니다. %.1f초로 보정합니다.",
+            _PERSONALIZED_SEARCH_TIMEOUT_ENV_KEY,
+            value,
+            _PERSONALIZED_SEARCH_TIMEOUT_MIN,
+            _PERSONALIZED_SEARCH_TIMEOUT_MIN,
+        )
+        return _PERSONALIZED_SEARCH_TIMEOUT_MIN
+
+    return value
+
+
+# 모듈 로드 시 1회 파싱 (변경 시 재시작 필요)
+_PERSONALIZED_SEARCH_TIMEOUT: float = _load_personalized_search_timeout()
+
+
+@dataclass
+class IndexSearchResults:
+    """
+    2단계 라우터의 병렬 조회 결과 DTO.
+
+    두 인덱스의 결과를 함께 전달하여 3단계 RRF 병합의 타입 계약을 명확히 한다.
+
+    Fields:
+        personalized_results : 개인화 인덱스 조회 결과 (Cold Start 시 빈 리스트)
+        global_results       : 전역 인덱스 조회 결과
+        personalized_weight  : 실제 적용된 개인화 가중치 (1단계 SSOT에서 결정)
+        global_weight        : 실제 적용된 전역 가중치 (1단계 SSOT에서 결정)
+        is_cold_start        : Cold Start 경로 사용 여부 (3단계 RRF 로직 분기용)
+    """
+
+    personalized_results: List[Dict[str, Any]]
+    global_results: List[Dict[str, Any]]
+    personalized_weight: float
+    global_weight: float
+    is_cold_start: bool
+
+
 async def _log_search_history_bg(hashed_user_id: str, query: str) -> None:
     """
     검색 히스토리 로깅 백그라운드 태스크 (Fire-and-Forget 전용).
@@ -609,7 +693,178 @@ class HybridSearchService:
 
         return HybridSearchResult(results=raw_results, applied_filter=metadata_filter)
 
-    def save_indices(self):
+    # ------------------------------------------------------------------
+    # [Step 2-3 / Phase 2.3] 2단계: 혼합 검색 라우터 (Router Layer)
+    # ------------------------------------------------------------------
+
+    async def route_weighted_search(
+        self,
+        hashed_user_id: str,
+        query: str,
+        k: int = 5,
+        alpha: float = 0.5,
+        metadata_filter: Optional[Dict[str, Any]] = None,
+        filter_expansion_factor: int = 2,
+    ) -> IndexSearchResults:
+        """
+        1단계 가중치 결정 함수(get_index_weights)를 SSOT로 참조하여
+        개인화 인덱스와 전역 인덱스를 병렬로 조회하는 혼합 검색 라우터.
+
+        설계 원칙:
+          - PII 보호: hashed_user_id를 mask_pii_id()로 마스킹한 masked_uid만 로그에 사용
+          - Cold Start 단락(Short-circuit): personalized_weight == 0.0이면 전역 단독 실행
+          - 병렬 조회: 정상 사용자는 asyncio.gather로 두 인덱스를 동시에 조회하여 지연 최소화
+          - Graceful Degradation: 개인화 인덱스 조회 실패(타임아웃·예외) 시 빈 결과로 폴백,
+            전역 인덱스 결과만으로 계속 진행 (서비스 연속성 우선)
+
+        Args:
+            hashed_user_id       : SHA-256 해시된 사용자 식별자 (평문 user_id 금지)
+            query                : 검색 쿼리 문자열
+            k                    : 각 인덱스에서 조회할 최대 결과 수
+            alpha                : 하이브리드 검색 FAISS/BM25 혼합 비율 (0.0~1.0)
+            metadata_filter      : 메타데이터 필터 (선택)
+            filter_expansion_factor: 필터 확장 계수 (선택)
+
+        Returns:
+            IndexSearchResults — 두 인덱스 결과, 적용된 가중치, Cold Start 여부를 담은 DTO.
+            3단계 RRF 병합 로직의 직접 입력으로 사용된다.
+        """
+        masked_uid = mask_pii_id(hashed_user_id)
+
+        # ── 1단계 SSOT에서 가중치 확정 ────────────────────────────────────────
+        personalized_weight, global_weight = await get_index_weights(hashed_user_id)
+
+        # ── Cold Start 단락(Short-circuit) 경로 ───────────────────────────────
+        # personalized_weight == _COLD_START_PERSONALIZED_WEIGHT(0.0) 이면
+        # 개인화 인덱스 조회를 아예 건너뛰어 불필요한 I/O를 차단한다.
+        if math.isclose(personalized_weight, _COLD_START_PERSONALIZED_WEIGHT,
+                        rel_tol=0.0, abs_tol=_WEIGHT_SUM_ZERO_EPSILON):
+            logger.info(
+                "[HYBRID_SEARCH][ROUTER] Cold Start 단락 경로 → 전역 인덱스 단독 조회 "
+                "(masked_uid=%s, personalized=%.1f, global=%.1f)",
+                masked_uid,
+                personalized_weight,
+                global_weight,
+            )
+            global_results = await run_in_threadpool(
+                self._execute_search,
+                query=query,
+                k=k,
+                alpha=alpha,
+                metadata_filter=metadata_filter,
+                filter_expansion_factor=filter_expansion_factor,
+            )
+            return IndexSearchResults(
+                personalized_results=[],
+                global_results=global_results.results,
+                personalized_weight=personalized_weight,
+                global_weight=global_weight,
+                is_cold_start=True,
+            )
+
+        # ── 정상 사용자: 병렬 조회 경로 ───────────────────────────────────────
+        # 개인화 인덱스와 전역 인덱스를 asyncio.gather로 동시 실행한다.
+        # 개인화 인덱스 조회에만 타임아웃을 적용하여 느린 서브-인덱스가
+        # 전체 응답을 블로킹하지 않도록 방어한다.
+        logger.debug(
+            "[HYBRID_SEARCH][ROUTER] 병렬 조회 시작 "
+            "(masked_uid=%s, personalized=%.4f, global=%.4f, timeout=%.1fs)",
+            masked_uid,
+            personalized_weight,
+            global_weight,
+            _PERSONALIZED_SEARCH_TIMEOUT,
+        )
+
+        async def _search_personalized() -> List[Dict[str, Any]]:
+            """
+            개인화 인덱스 조회 코루틴 (타임아웃 + Graceful Degradation 내장).
+
+            현재는 동일한 HybridSearcher를 사용하며, 향후 사용자별 FAISS 서브-인덱스가
+            실제로 분리되면 이 내부 함수에서 personalized_index_service 조회로 교체한다.
+            """
+            try:
+                result = await asyncio.wait_for(
+                    run_in_threadpool(
+                        self._execute_search,
+                        query=query,
+                        k=k,
+                        alpha=alpha,
+                        metadata_filter=metadata_filter,
+                        filter_expansion_factor=filter_expansion_factor,
+                    ),
+                    timeout=_PERSONALIZED_SEARCH_TIMEOUT,
+                )
+                return result.results
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "[HYBRID_SEARCH][ROUTER] 개인화 인덱스 조회 타임아웃 "
+                    "(masked_uid=%s, timeout=%.1fs) → 빈 결과로 폴백.",
+                    masked_uid,
+                    _PERSONALIZED_SEARCH_TIMEOUT,
+                )
+                return []
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "[HYBRID_SEARCH][ROUTER] 개인화 인덱스 조회 실패 (masked_uid=%s) "
+                    "→ 빈 결과로 폴백. 전역 인덱스 결과만으로 계속 진행합니다.",
+                    masked_uid,
+                    exc_info=True,
+                )
+                return []
+
+        async def _search_global() -> List[Dict[str, Any]]:
+            """
+            전역 인덱스 조회 코루틴.
+
+            정책: 전역 인덱스는 필수 질의 소스다.
+              - 성공: 결과 목록 반환
+              - 실패: ERROR 로그 후 예외를 상위로 전파하여 요청 전체를 실패시킨다.
+              - (개인화 인덱스와의 차이) 개인화 인덱스는 부가적(Optional)이라
+                실패 시 빈 결과로 Graceful Degradation하지만,
+                전역 인덱스는 폴백이 없으므로 예외를 전파한다.
+            """
+            try:
+                result = await run_in_threadpool(
+                    self._execute_search,
+                    query=query,
+                    k=k,
+                    alpha=alpha,
+                    metadata_filter=metadata_filter,
+                    filter_expansion_factor=filter_expansion_factor,
+                )
+                return result.results
+            except Exception:  # noqa: BLE001
+                logger.error(
+                    "[HYBRID_SEARCH][ROUTER] 전역 인덱스 조회 실패 (masked_uid=%s) "
+                    "→ 요청 전체를 실패시킵니다. "
+                    "(전역 인덱스 실패는 Graceful Degradation 대상이 아닙니다.)",
+                    masked_uid,
+                    exc_info=True,
+                )
+                raise
+
+        personalized_results, global_results = await asyncio.gather(
+            _search_personalized(),
+            _search_global(),
+        )
+
+        logger.debug(
+            "[HYBRID_SEARCH][ROUTER] 병렬 조회 완료 "
+            "(masked_uid=%s, personalized_hits=%d, global_hits=%d)",
+            masked_uid,
+            len(personalized_results),
+            len(global_results),
+        )
+
+        return IndexSearchResults(
+            personalized_results=personalized_results,
+            global_results=global_results,
+            personalized_weight=personalized_weight,
+            global_weight=global_weight,
+            is_cold_start=False,
+        )
+
+
         """FAISS와 BM25 인덱스를 디스크에 저장"""
         from backend.config import PathConfig
 
