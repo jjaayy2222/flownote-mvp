@@ -1047,11 +1047,22 @@ class HybridSearchService:
             )
             rrf_k = _RRF_K_MIN
 
-        # top_k 타입 검증: 직접 호출 시 None 또는 비정수 타입이 전달될 경우 비교 연산에서 TypeError 발생.
-        # isinstance 사전 검증으로 명확한 오류 메시지를 보장한다.
-        if not isinstance(top_k, int):
+        # top_k 타입 검증: 직접 호출 시 비정수 타입이 전달될 경우 비교 연산에서 TypeError 발생.
+        #
+        # [bool 명시 거부]
+        # Python에서 bool은 int의 서브클래스이므로 numbers.Integral 코주를
+        # 통과한다. top_k=True(=1)나 top_k=False(=0)은 거의 확실히 프로그래밍
+        # 오류이므로 명시적으로 거부한다.
+        if isinstance(top_k, bool):
             raise TypeError(
-                f"[HYBRID_SEARCH][RRF] top_k는 int 타입이어야 합니다. "
+                f"[HYBRID_SEARCH][RRF] top_k는 bool 타입을 허용하지 않습니다. "
+                f"정수 값을 명시적으로 전달해 주세요. 값: {top_k!r}"
+            )
+        # [numbers.Integral 광의 정수 검증]
+        # bool 제외 후 numpy int64 등 서드파티 정수 유사 타입도 수용한다.
+        if not isinstance(top_k, numbers.Integral):
+            raise TypeError(
+                f"[HYBRID_SEARCH][RRF] top_k는 정수 타입(numbers.Integral)이어야 합니다. "
                 f"수신된 타입: {type(top_k).__name__!r}, 값: {top_k!r}"
             )
 
@@ -1092,11 +1103,27 @@ class HybridSearchService:
               - weight < 0.0: 가중치 계산 버그 등 비정상 경로.
                 음수 기여값이 score_table에 누산되면 의도치 않은 역순위를
                 유발하므로 WARNING 발생 후 즉시 스킵한다.
+
+            [float 비교 설계 근거]
+              weight == 0.0 정확 비교: IndexSearchResults를 생성하는 상위
+              레이어는 다음 계약(contract)을 준수한다 — Cold Start로
+              판단된 경우 personalized_weight에 상수 0.0을 리터럴로
+              저장하며, 판단 자체는 math.isclose로 epsilon을 적용한다.
+              따라서 여기서 추가 epsilon을 적용하면 정상 소수
+              가중치(e.g. 1e-10)를 0으로 오판하는 버그를 유발할 수 있다.
+
+            [WARNING 로그 rate limiting 불필요 근거]
+              _accumulate는 merge_with_rrf 호출당 2회(개인화 1회 + 전역 1회)만
+              실행된다. WARNING 경로(weight<0, 불변식 위반)는 버그 상황을
+              표시하므로 노이즈가 아니라 신호다. rate limiting으로 억제하면
+              오히려 운영 중 버그 시그널을 놓칠 수 있다.
             """
             if weight == 0.0:
+                # [float 정확 비교 사용 이유]
+                # IndexSearchResults 생성 레이어가 Cold Start를
+                # math.isclose로 판단한 후 상수 0.0을 리터럴로 DTO에 저장하므로
+                # 여기서의 정확 비교는 계약 준수 시 안전하다.
                 # 설계 불변식: weight==0.0이면 results도 비어 있어야 한다.
-                # (route_weighted_search는 Cold Start 시 personalized_results=[]를 보장)
-                # 비어 있지 않으면 불변식 위반 — WARNING으로 표면시킨다.
                 if results:
                     logger.warning(
                         "[HYBRID_SEARCH][RRF] weight=0.0인데 results가 비어 있지 않습니다 "
