@@ -30,6 +30,7 @@ import hashlib
 import json
 import logging
 import math
+import numbers
 import os
 import re
 from dataclasses import dataclass
@@ -1058,10 +1059,11 @@ class HybridSearchService:
             rrf_k = _RRF_K_MIN
 
         # top_k 타입 검증: 직접 호출 시 None 또는 비정수 타입이 전달될 경우 비교 연산에서 TypeError 발생.
-        # isinstance 사전 검증으로 명확한 오류 메시지를 보장한다.
-        if not isinstance(top_k, int):
+        # numbers.Integral을 사용하여 int 서브클래스(bool, numpy int64 등)를
+        # 포함한 모든 정수 유사 타입을 수용하며 명확한 오류 메시지를 보장한다.
+        if not isinstance(top_k, numbers.Integral):
             raise TypeError(
-                f"[HYBRID_SEARCH][RRF] top_k는 int 타입이어야 합니다. "
+                f"[HYBRID_SEARCH][RRF] top_k는 정수 타입(numbers.Integral)이어야 합니다. "
                 f"수신된 타입: {type(top_k).__name__!r}, 값: {top_k!r}"
             )
 
@@ -1102,11 +1104,25 @@ class HybridSearchService:
               - weight < 0.0: 가중치 계산 버그 등 비정상 경로.
                 음수 기여값이 score_table에 누산되면 의도치 않은 역순위를
                 유발하므로 WARNING 발생 후 즉시 스킵한다.
+
+            [float 비교 설계 근거]
+              weight == 0.0 정확 비교: route_weighted_search(L864)에서
+              math.isclose(..., abs_tol=_WEIGHT_SUM_ZERO_EPSILON)로 이미 epsilon을
+              적용하여 Cold Start 여부를 판단한 뒤 personalized_weight=0.0(리터럴)을
+              DTO에 저장한다. 따라서 여기서 추가 epsilon을 적용하면 오히려
+              정상 소수 가중치(e.g. 1e-10)를 0으로 오판하는 버그를 유발할 수 있다.
+
+            [WARNING 로그 rate limiting 불필요 근거]
+              _accumulate는 merge_with_rrf 호출당 2회(개인화 1회 + 전역 1회)만
+              실행된다. WARNING 경로(weight<0, 불변식 위반)는 버그 상황을
+              표시하므로 노이즈가 아니라 신호다. rate limiting으로 억제하면
+              오히려 운영 중 버그 시그널을 놓칠 수 있다.
             """
             if weight == 0.0:
+                # [float 정확 비교 사용 이유]
+                # 상위 route_weighted_search가 math.isclose로 epsilon 전처리 후
+                # 정확한 0.0 리터럴을 DTO에 담아주므로 정확 비교가 안전하다.
                 # 설계 불변식: weight==0.0이면 results도 비어 있어야 한다.
-                # (route_weighted_search는 Cold Start 시 personalized_results=[]를 보장)
-                # 비어 있지 않으면 불변식 위반 — WARNING으로 표면시킨다.
                 if results:
                     logger.warning(
                         "[HYBRID_SEARCH][RRF] weight=0.0인데 results가 비어 있지 않습니다 "
