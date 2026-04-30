@@ -1058,9 +1058,19 @@ class HybridSearchService:
             )
             rrf_k = _RRF_K_MIN
 
-        # top_k 타입 검증: 직접 호출 시 None 또는 비정수 타입이 전달될 경우 비교 연산에서 TypeError 발생.
-        # numbers.Integral을 사용하여 int 서브클래스(bool, numpy int64 등)를
-        # 포함한 모든 정수 유사 타입을 수용하며 명확한 오류 메시지를 보장한다.
+        # top_k 타입 검증: 직접 호출 시 비정수 타입이 전달될 경우 비교 연산에서 TypeError 발생.
+        #
+        # [bool 명시 거부]
+        # Python에서 bool은 int의 서브클래스이므로 numbers.Integral 코주를
+        # 통과한다. top_k=True(=1)나 top_k=False(=0)은 거의 확실히 프로그래밍
+        # 오류이므로 명시적으로 거부한다.
+        if isinstance(top_k, bool):
+            raise TypeError(
+                f"[HYBRID_SEARCH][RRF] top_k는 bool 타입을 허용하지 않습니다. "
+                f"정수 값을 명시적으로 전달해 주세요. 값: {top_k!r}"
+            )
+        # [numbers.Integral 광의 정수 검증]
+        # bool 제외 후 numpy int64 등 서드파티 정수 유사 타입도 수용한다.
         if not isinstance(top_k, numbers.Integral):
             raise TypeError(
                 f"[HYBRID_SEARCH][RRF] top_k는 정수 타입(numbers.Integral)이어야 합니다. "
@@ -1106,11 +1116,12 @@ class HybridSearchService:
                 유발하므로 WARNING 발생 후 즉시 스킵한다.
 
             [float 비교 설계 근거]
-              weight == 0.0 정확 비교: route_weighted_search(L864)에서
-              math.isclose(..., abs_tol=_WEIGHT_SUM_ZERO_EPSILON)로 이미 epsilon을
-              적용하여 Cold Start 여부를 판단한 뒤 personalized_weight=0.0(리터럴)을
-              DTO에 저장한다. 따라서 여기서 추가 epsilon을 적용하면 오히려
-              정상 소수 가중치(e.g. 1e-10)를 0으로 오판하는 버그를 유발할 수 있다.
+              weight == 0.0 정확 비교: IndexSearchResults를 생성하는 상위
+              레이어는 다음 계약(contract)을 준수한다 — Cold Start로
+              판단된 경우 personalized_weight에 상수 0.0을 리터럴로
+              저장하며, 판단 자체는 math.isclose로 epsilon을 적용한다.
+              따라서 여기서 추가 epsilon을 적용하면 정상 소수
+              가중치(e.g. 1e-10)를 0으로 오판하는 버그를 유발할 수 있다.
 
             [WARNING 로그 rate limiting 불필요 근거]
               _accumulate는 merge_with_rrf 호출당 2회(개인화 1회 + 전역 1회)만
@@ -1120,8 +1131,9 @@ class HybridSearchService:
             """
             if weight == 0.0:
                 # [float 정확 비교 사용 이유]
-                # 상위 route_weighted_search가 math.isclose로 epsilon 전처리 후
-                # 정확한 0.0 리터럴을 DTO에 담아주므로 정확 비교가 안전하다.
+                # IndexSearchResults 생성 레이어가 Cold Start를
+                # math.isclose로 판단한 후 상수 0.0을 리터럴로 DTO에 저장하므로
+                # 여기서의 정확 비교는 계약 준수 시 안전하다.
                 # 설계 불변식: weight==0.0이면 results도 비어 있어야 한다.
                 if results:
                     logger.warning(
