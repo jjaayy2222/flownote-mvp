@@ -1059,6 +1059,8 @@ class HybridSearchService:
 
         # top_k: 음수 시 Python 리스트 슬라이싱이 끝에서 역방향으로 동작하여
         #        "상위 N개" 의미와 완전히 달라진다. max(0, top_k)로 안전하게 보정한다.
+        # top_k 상한: env 로더(_load_int_env)와 동일한 _RRF_TOP_K_MAX 기준을 직접
+        #             호출 경로에도 적용하여, 예상치 못하게 큰 결과 집합을 방지한다.
         effective_top_k = top_k
         if top_k < 0:
             logger.warning(
@@ -1067,6 +1069,12 @@ class HybridSearchService:
                 top_k,
             )
             effective_top_k = 0
+        elif top_k > _RRF_TOP_K_MAX:
+            logger.warning(
+                "[HYBRID_SEARCH][RRF] top_k=%d 가 상한값(%d) 초과입니다. %d으로 보정합니다.",
+                top_k, _RRF_TOP_K_MAX, _RRF_TOP_K_MAX,
+            )
+            effective_top_k = _RRF_TOP_K_MAX
 
         # ── 스코어 누산 테이블 ──────────────────────────────────────────────
         # {doc_id: {"score": float, "item": Dict}} 구조
@@ -1076,7 +1084,22 @@ class HybridSearchService:
             results: List[Dict[str, Any]],
             weight: float,
         ) -> None:
-            """단일 인덱스 결과 목록의 RRF 스코어를 score_table에 누산한다."""
+            """단일 인덱스 결과 목록의 RRF 스코어를 score_table에 누산한다.
+
+            weight <= 0.0 인 경우:
+              - weight == 0.0: Cold Start 등 정상적인 빈 기여 경로.
+                이 경우 전체 results가 비어 있으므로(route_weighted_search 설계)
+                루프 자체가 실행되지 않아 자연스럽게 스킵된다.
+              - weight < 0.0: 가중치 계산 버그 등 비정상 경로.
+                기여값이 음수가 되어 의도치 않은 역순위를 유발하므로 즉시 스킵한다.
+            """
+            if weight <= 0.0:
+                logger.debug(
+                    "[HYBRID_SEARCH][RRF] weight=%.6f <= 0 인 인덱스를 스킵합니다. "
+                    "(weight==0.0: Cold Start 정상 경로, weight<0: 비정상 경로)",
+                    weight,
+                )
+                return
             for rank, item in enumerate(results, start=1):  # rank는 1-indexed
                 doc_id = _extract_doc_id(item)
                 contribution = weight / (rrf_k + rank)
