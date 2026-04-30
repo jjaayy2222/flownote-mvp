@@ -1050,7 +1050,7 @@ class HybridSearchService:
         # top_k 타입 검증: 직접 호출 시 비정수 타입이 전달될 경우 비교 연산에서 TypeError 발생.
         #
         # [bool 명시 거부]
-        # Python에서 bool은 int의 서브클래스이므로 numbers.Integral 코주를
+        # Python에서 bool은 int의 서브클래스이므로 numbers.Integral 코드를
         # 통과한다. top_k=True(=1)나 top_k=False(=0)은 거의 확실히 프로그래밍
         # 오류이므로 명시적으로 거부한다.
         if isinstance(top_k, bool):
@@ -1119,11 +1119,7 @@ class HybridSearchService:
               오히려 운영 중 버그 시그널을 놓칠 수 있다.
             """
             if weight == 0.0:
-                # [float 정확 비교 사용 이유]
-                # IndexSearchResults 생성 레이어가 Cold Start를
-                # math.isclose로 판단한 후 상수 0.0을 리터럴로 DTO에 저장하므로
-                # 여기서의 정확 비교는 계약 준수 시 안전하다.
-                # 설계 불변식: weight==0.0이면 results도 비어 있어야 한다.
+                # Cold Start 정상 경로. 설계 불변식: weight==0.0이면 results도 비어 있어야 한다.
                 if results:
                     logger.warning(
                         "[HYBRID_SEARCH][RRF] weight=0.0인데 results가 비어 있지 않습니다 "
