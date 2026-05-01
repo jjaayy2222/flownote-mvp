@@ -3,7 +3,7 @@ import logging
 from functools import lru_cache
 from contextlib import asynccontextmanager
 from backend.agent.state import AgentState
-from backend.agent.utils import get_llm, extract_keywords, search_similar_docs, resolve_active_model
+from backend.agent.utils import get_llm, extract_keywords, search_similar_docs, resolve_active_model, EMPTY_RETRIEVED_CONTEXT
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
@@ -32,10 +32,6 @@ logger = logging.getLogger(__name__)
 # Used in conditional edges (should_retry) logic
 CONFIDENCE_THRESHOLD = 0.7
 MAX_RETRY_COUNT = 3
-
-# 하이브리드 검색에서 빈 결과를 명확히 표현하는 공용 상수 (매직 스트링 제거)
-EMPTY_RETRIEVED_CONTEXT: str = ""
-
 
 # =================================================================
 # Pydantic Models for Output Parsing
@@ -78,7 +74,7 @@ def cleanup_hybrid_search_service() -> None:
 
 
 @asynccontextmanager
-async def managed_hybrid_search_async(app: Any = None) -> AsyncGenerator[None, None]:
+async def managed_hybrid_search_async(app: Any | None = None, **_kwargs: Any) -> AsyncGenerator[None, None]:
     """
     FastAPI lifespan 등 장기 실행 애플리케이션에 주입하여 하이브리드 검색 싱글톤의 수명 주기를 
     코드 레벨에서 안전하게 보장하는 비동기 컨텍스트 매니저 헬퍼입니다.
