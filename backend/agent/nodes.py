@@ -74,7 +74,7 @@ def cleanup_hybrid_search_service() -> None:
 
 
 @asynccontextmanager
-async def managed_hybrid_search_async(*args: Any, **kwargs: Any) -> AsyncGenerator[None, None]:
+async def managed_hybrid_search_async(app: Any | None = None, **_kwargs: Any) -> AsyncGenerator[None, None]:
     """
     FastAPI lifespan 등 장기 실행 애플리케이션에 주입하여 하이브리드 검색 싱글톤의 수명 주기를 
     코드 레벨에서 안전하게 보장하는 비동기 컨텍스트 매니저 헬퍼입니다.

@@ -20,6 +20,10 @@ load_dotenv()
 DEFAULT_MODEL_NAME: str = os.getenv("GPT4O_MODEL", "gpt-4o")
 
 # 하이브리드 검색에서 빈 결과를 명확히 표현하는 공용 상수 (매직 스트링 제거)
+# [주요 참조처 (Consumers)]
+# 1. backend.agent.nodes.retrieve_node: 빈 키워드에 대한 단락 평가(Short-circuit) 시 즉시 반환
+# 2. backend.agent.utils.search_similar_docs: 빈 키워드 폴백 로직 내 반환
+# ※ 향후 "검색 결과 없음"의 표현 형식이 바뀔 경우, 파편화 방지를 위해 반드시 이 상수만을 수정해야 합니다.
 EMPTY_RETRIEVED_CONTEXT: str = ""
 
 # Hot-swap 활성 모델을 저장하는 Redis 키 (finetune_service._FINETUNE_ACTIVE_MODEL_KEY와 동일한 환경 변수 참조)
