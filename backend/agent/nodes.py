@@ -1,5 +1,6 @@
 from typing import Literal, Dict, Any, List, Optional
 import logging
+from functools import lru_cache
 from backend.agent.state import AgentState
 from backend.agent.utils import get_llm, extract_keywords, search_similar_docs, resolve_active_model
 
@@ -59,6 +60,21 @@ def analyze_node(state: AgentState) -> Dict[str, Any]:
     return {"extracted_keywords": keywords}
 
 
+@lru_cache(maxsize=1)
+def _get_hybrid_search_service() -> HybridSearchService:
+    """HybridSearchService의 싱글톤 인스턴스를 반환합니다."""
+    return HybridSearchService()
+
+
+def cleanup_hybrid_search_service() -> None:
+    """
+    싱글톤 HybridSearchService 인스턴스를 초기화(캐시 해제)합니다.
+    장시간 실행되는 애플리케이션 또는 테스트 환경에서 커넥션 등 리소스 누수를 방지하고 
+    명시적인 수명 주기 관리(Teardown)를 가능하게 합니다.
+    """
+    _get_hybrid_search_service.cache_clear()
+
+
 def _build_query_from_keywords(keywords: list[str]) -> str:
     return " ".join(keywords)
 
@@ -71,23 +87,67 @@ def _inject_topics_into_query(query: str, clusters: list[dict[str, Any]]) -> str
     return f"[{topics_str}] {query}"
 
 
+_MAX_ITEMS = 5
+_MAX_CHARS_PER_ITEM = 500
+_MAX_TOTAL_CHARS = 4000
+
 def _format_rrf_results(rrf_result) -> str:
-    results = rrf_result.results
+    """
+    RRF 결과를 LLM 입력에 적합한 간결한 컨텍스트 문자열로 포맷팅합니다.
+    """
+    # 제너레이터/이터러블 1회 소진 및 len() 호출 시 TypeError 방지를 위해 명시적으로 리스트화합니다.
+    raw_results = getattr(rrf_result, "results", None) or []
+    results = list(raw_results)
+    
     if not results:
         return "No relevant documents found."
-    docs = []
-    for res in results:
-        item = res.get("item", {})
-        content = item.get("content", str(item))
-        docs.append(f"- {content}")
-    return "Retrieved Context:\n" + "\n".join(docs)
+
+    formatted_docs: list[str] = []
+    total_len = len("Retrieved Context:\n")
+
+    for idx, res in enumerate(results):
+        if idx >= _MAX_ITEMS:
+            break
+
+        item = res.get("item", {}) if isinstance(res, dict) else getattr(res, "item", {})
+        if not isinstance(item, dict):
+            content = str(item)
+        else:
+            content = item.get("content") or str(item)
+
+        if len(content) > _MAX_CHARS_PER_ITEM:
+            content = content[: _MAX_CHARS_PER_ITEM - 3] + "..."
+
+        line = f"- {content}"
+        
+        if total_len + len(line) + 1 > _MAX_TOTAL_CHARS:
+            break
+
+        formatted_docs.append(line)
+        total_len += len(line) + 1
+
+    if not formatted_docs:
+        return "No relevant documents found."
+
+    result_str = "Retrieved Context:\n" + "\n".join(formatted_docs)
+
+    omitted_count = len(results) - len(formatted_docs)
+    if omitted_count > 0:
+        notice = f"\n- [{omitted_count} additional retrieved documents omitted for brevity]"
+        if len(result_str) + len(notice) <= _MAX_TOTAL_CHARS:
+            result_str += notice
+        else:
+            # 예산이 부족해도 관측성 확보를 위해 최소한의 알림 추가
+            short_notice = f"\n- [...{omitted_count} more]"
+            result_str += short_notice
+
+    return result_str
 
 
-async def _run_hybrid_search(hashed_user_id: str, query: str) -> str:
-    clusters = await cluster_user_topics(hashed_user_id)
-    query_with_topics = _inject_topics_into_query(query, clusters or [])
+async def _run_hybrid_search(hashed_user_id: str, query: str, clusters: list[dict[str, Any]]) -> str:
+    query_with_topics = _inject_topics_into_query(query, clusters)
 
-    hybrid_service = HybridSearchService()
+    hybrid_service = _get_hybrid_search_service()
     router_result = await hybrid_service.route_weighted_search(
         hashed_user_id=hashed_user_id,
         query=query_with_topics,
@@ -101,6 +161,11 @@ async def retrieve_node(state: AgentState) -> Dict[str, Any]:
     맥락 검색 노드: 키워드 기반 유사 문서 검색 (RAG)
     """
     keywords = state.get("extracted_keywords", [])
+    
+    if not keywords:
+        logger.debug("[HYBRID_SEARCH] 키워드가 없어 빈 검색 결과를 반환합니다.")
+        return {"retrieved_context": search_similar_docs(keywords)}
+        
     query = _build_query_from_keywords(keywords)
     hashed_user_id = state.get("hashed_user_id")
 
@@ -109,8 +174,21 @@ async def retrieve_node(state: AgentState) -> Dict[str, Any]:
         context = search_similar_docs(keywords)
         return {"retrieved_context": context}
 
+    # 1. 클러스터링 시도
+    clusters = []
     try:
-        context = await _run_hybrid_search(hashed_user_id, query)
+        clusters_res = await cluster_user_topics(hashed_user_id)
+        if clusters_res:
+            clusters = clusters_res
+    except Exception:
+        logger.warning(
+            "[HYBRID_SEARCH] 토픽 클러스터링 실패. 개인화 컨텍스트 없이 하이브리드 검색을 계속합니다.",
+            exc_info=True,
+        )
+
+    # 2. 하이브리드 검색 시도
+    try:
+        context = await _run_hybrid_search(hashed_user_id, query, clusters)
     except Exception:
         logger.error(
             "[HYBRID_SEARCH] 라우터 호출 실패. 전역 인덱스 검색으로 Graceful Degradation 처리합니다.",
