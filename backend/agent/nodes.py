@@ -7,6 +7,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 
+from backend.services.hybrid_search_service import HybridSearchService
+from backend.services.topic_clustering_service import cluster_user_topics
+
 # Try importing specific exceptions for better error handling
 try:
     from langchain_core.exceptions import OutputParserException
@@ -56,16 +59,65 @@ def analyze_node(state: AgentState) -> Dict[str, Any]:
     return {"extracted_keywords": keywords}
 
 
-def retrieve_node(state: AgentState) -> Dict[str, Any]:
+def _build_query_from_keywords(keywords: list[str]) -> str:
+    return " ".join(keywords)
+
+
+def _inject_topics_into_query(query: str, clusters: list[dict[str, Any]]) -> str:
+    topic_labels = [c["label"] for c in clusters if "label" in c]
+    if not topic_labels:
+        return query
+    topics_str = ", ".join(topic_labels)
+    return f"[{topics_str}] {query}"
+
+
+def _format_rrf_results(rrf_result) -> str:
+    results = rrf_result.results
+    if not results:
+        return "No relevant documents found."
+    docs = []
+    for res in results:
+        item = res.get("item", {})
+        content = item.get("content", str(item))
+        docs.append(f"- {content}")
+    return "Retrieved Context:\n" + "\n".join(docs)
+
+
+async def _run_hybrid_search(hashed_user_id: str, query: str) -> str:
+    clusters = await cluster_user_topics(hashed_user_id)
+    query_with_topics = _inject_topics_into_query(query, clusters or [])
+
+    hybrid_service = HybridSearchService()
+    router_result = await hybrid_service.route_weighted_search(
+        hashed_user_id=hashed_user_id,
+        query=query_with_topics,
+    )
+    rrf_result = hybrid_service.merge_with_rrf(router_result)
+    return _format_rrf_results(rrf_result)
+
+
+async def retrieve_node(state: AgentState) -> Dict[str, Any]:
     """
     맥락 검색 노드: 키워드 기반 유사 문서 검색 (RAG)
     """
-    # NotRequired 필드 안전한 접근
     keywords = state.get("extracted_keywords", [])
+    query = _build_query_from_keywords(keywords)
+    hashed_user_id = state.get("hashed_user_id")
 
-    # 헬퍼 함수 호출 (Stub -> Mock)
-    context = search_similar_docs(keywords)
-    # State 업데이트: retrieved_context
+    if not hashed_user_id:
+        logger.info("[HYBRID_SEARCH] hashed_user_id 누락. 전역 검색으로 폴백합니다.")
+        context = search_similar_docs(keywords)
+        return {"retrieved_context": context}
+
+    try:
+        context = await _run_hybrid_search(hashed_user_id, query)
+    except Exception:
+        logger.error(
+            "[HYBRID_SEARCH] 라우터 호출 실패. 전역 인덱스 검색으로 Graceful Degradation 처리합니다.",
+            exc_info=True,
+        )
+        context = search_similar_docs(keywords)
+
     return {"retrieved_context": context}
 
 
