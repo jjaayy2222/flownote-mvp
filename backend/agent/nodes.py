@@ -69,8 +69,12 @@ def _get_hybrid_search_service() -> HybridSearchService:
 def cleanup_hybrid_search_service() -> None:
     """
     싱글톤 HybridSearchService 인스턴스를 초기화(캐시 해제)합니다.
-    장시간 실행되는 애플리케이션 또는 테스트 환경에서 커넥션 등 리소스 누수를 방지하고 
-    명시적인 수명 주기 관리(Teardown)를 가능하게 합니다.
+    
+    [수명 주기 관리 가드레일 (Lifecycle Guardrails)]
+    장기 실행되는 프로세스에서 커넥션 누수를 방지하려면 반드시 애플리케이션 종료 훅에 이 함수를 등록해야 합니다:
+    - FastAPI 환경: 메인 애플리케이션의 `lifespan` 컨텍스트 매니저 (yield 이후 블록)
+    - 백그라운드 워커: Celery `worker_process_shutdown` 또는 `atexit` 훅
+    - 테스트 환경: pytest의 `teardown` 픽스처
     """
     _get_hybrid_search_service.cache_clear()
 
@@ -162,9 +166,10 @@ async def retrieve_node(state: AgentState) -> Dict[str, Any]:
     """
     keywords = state.get("extracted_keywords", [])
     
+    # 불필요한 함수 호출(search_similar_docs)을 방지하고 중립적인 빈 문자열을 즉시 반환(단락 평가)
     if not keywords:
         logger.debug("[HYBRID_SEARCH] 키워드가 없어 빈 검색 결과를 반환합니다.")
-        return {"retrieved_context": search_similar_docs(keywords)}
+        return {"retrieved_context": ""}
         
     query = _build_query_from_keywords(keywords)
     hashed_user_id = state.get("hashed_user_id")
