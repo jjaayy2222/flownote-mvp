@@ -56,16 +56,58 @@ def analyze_node(state: AgentState) -> Dict[str, Any]:
     return {"extracted_keywords": keywords}
 
 
-def retrieve_node(state: AgentState) -> Dict[str, Any]:
+async def retrieve_node(state: AgentState) -> Dict[str, Any]:
     """
     맥락 검색 노드: 키워드 기반 유사 문서 검색 (RAG)
     """
-    # NotRequired 필드 안전한 접근
     keywords = state.get("extracted_keywords", [])
+    query = " ".join(keywords)
 
-    # 헬퍼 함수 호출 (Stub -> Mock)
-    context = search_similar_docs(keywords)
-    # State 업데이트: retrieved_context
+    hashed_user_id = state.get("hashed_user_id")
+
+    if not hashed_user_id:
+        logger.info("[HYBRID_SEARCH] hashed_user_id 누락. 전역 검색으로 폴백합니다.")
+        context = search_similar_docs(keywords)
+        return {"retrieved_context": context}
+
+    try:
+        from backend.services.hybrid_search_service import HybridSearchService
+        from backend.services.topic_clustering_service import cluster_user_topics
+
+        # 1. 클러스터 토픽 주입 (개인화 서브-인덱스 우선 참조 유도)
+        clusters = await cluster_user_topics(hashed_user_id)
+        if clusters:
+            topic_labels = [c["label"] for c in clusters if "label" in c]
+            if topic_labels:
+                topics_str = ", ".join(topic_labels)
+                query = f"[{topics_str}] {query}"
+
+        # 2. 혼합 검색 라우터 호출
+        hybrid_service = HybridSearchService()
+        router_result = await hybrid_service.route_weighted_search(
+            hashed_user_id=hashed_user_id,
+            query=query
+        )
+        
+        # 3. RRF 병합
+        rrf_result = hybrid_service.merge_with_rrf(router_result)
+        
+        # 4. 컨텍스트 포맷팅
+        results = rrf_result.results
+        if not results:
+            context = "No relevant documents found."
+        else:
+            docs = []
+            for res in results:
+                item = res.get("item", {})
+                content = item.get("content", str(item))
+                docs.append(f"- {content}")
+            context = "Retrieved Context:\n" + "\n".join(docs)
+
+    except Exception as e:
+        logger.error("[HYBRID_SEARCH] 라우터 호출 실패. 전역 인덱스 검색으로 Graceful Degradation 처리합니다.", exc_info=True)
+        context = search_similar_docs(keywords)
+
     return {"retrieved_context": context}
 
 
