@@ -66,6 +66,15 @@ def _get_hybrid_search_service() -> HybridSearchService:
     return HybridSearchService()
 
 
+def cleanup_hybrid_search_service() -> None:
+    """
+    싱글톤 HybridSearchService 인스턴스를 초기화(캐시 해제)합니다.
+    장시간 실행되는 애플리케이션 또는 테스트 환경에서 커넥션 등 리소스 누수를 방지하고 
+    명시적인 수명 주기 관리(Teardown)를 가능하게 합니다.
+    """
+    _get_hybrid_search_service.cache_clear()
+
+
 def _build_query_from_keywords(keywords: list[str]) -> str:
     return " ".join(keywords)
 
@@ -86,7 +95,10 @@ def _format_rrf_results(rrf_result) -> str:
     """
     RRF 결과를 LLM 입력에 적합한 간결한 컨텍스트 문자열로 포맷팅합니다.
     """
-    results = getattr(rrf_result, "results", None) or []
+    # 제너레이터/이터러블 1회 소진 및 len() 호출 시 TypeError 방지를 위해 명시적으로 리스트화합니다.
+    raw_results = getattr(rrf_result, "results", None) or []
+    results = list(raw_results)
+    
     if not results:
         return "No relevant documents found."
 
@@ -119,10 +131,15 @@ def _format_rrf_results(rrf_result) -> str:
 
     result_str = "Retrieved Context:\n" + "\n".join(formatted_docs)
 
-    if len(results) > len(formatted_docs):
-        notice = "\n- [Additional retrieved documents omitted for brevity]"
+    omitted_count = len(results) - len(formatted_docs)
+    if omitted_count > 0:
+        notice = f"\n- [{omitted_count} additional retrieved documents omitted for brevity]"
         if len(result_str) + len(notice) <= _MAX_TOTAL_CHARS:
             result_str += notice
+        else:
+            # 예산이 부족해도 관측성 확보를 위해 최소한의 알림 추가
+            short_notice = f"\n- [...{omitted_count} more]"
+            result_str += short_notice
 
     return result_str
 
