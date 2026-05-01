@@ -1,6 +1,7 @@
-from typing import Literal, Dict, Any, List, Optional
+from typing import Literal, Dict, Any, List, Optional, AsyncGenerator
 import logging
 from functools import lru_cache
+from contextlib import asynccontextmanager
 from backend.agent.state import AgentState
 from backend.agent.utils import get_llm, extract_keywords, search_similar_docs, resolve_active_model
 
@@ -31,6 +32,9 @@ logger = logging.getLogger(__name__)
 # Used in conditional edges (should_retry) logic
 CONFIDENCE_THRESHOLD = 0.7
 MAX_RETRY_COUNT = 3
+
+# 하이브리드 검색에서 빈 결과를 명확히 표현하는 공용 상수 (매직 스트링 제거)
+EMPTY_RETRIEVED_CONTEXT: str = ""
 
 
 # =================================================================
@@ -69,10 +73,30 @@ def _get_hybrid_search_service() -> HybridSearchService:
 def cleanup_hybrid_search_service() -> None:
     """
     싱글톤 HybridSearchService 인스턴스를 초기화(캐시 해제)합니다.
-    장시간 실행되는 애플리케이션 또는 테스트 환경에서 커넥션 등 리소스 누수를 방지하고 
-    명시적인 수명 주기 관리(Teardown)를 가능하게 합니다.
     """
     _get_hybrid_search_service.cache_clear()
+
+
+@asynccontextmanager
+async def managed_hybrid_search_async(app: Any = None) -> AsyncGenerator[None, None]:
+    """
+    FastAPI lifespan 등 장기 실행 애플리케이션에 주입하여 하이브리드 검색 싱글톤의 수명 주기를 
+    코드 레벨에서 안전하게 보장하는 비동기 컨텍스트 매니저 헬퍼입니다.
+    
+    사용 예시:
+    ```python
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        async with managed_hybrid_search_async():
+            # 시스템 기동
+            yield
+        # 시스템 종료 시 자동으로 cleanup_hybrid_search_service 호출
+    ```
+    """
+    try:
+        yield
+    finally:
+        cleanup_hybrid_search_service()
 
 
 def _build_query_from_keywords(keywords: list[str]) -> str:
@@ -162,9 +186,10 @@ async def retrieve_node(state: AgentState) -> Dict[str, Any]:
     """
     keywords = state.get("extracted_keywords", [])
     
+    # 불필요한 함수 호출(search_similar_docs)을 방지하고 중립적인 빈 문자열을 즉시 반환(단락 평가)
     if not keywords:
         logger.debug("[HYBRID_SEARCH] 키워드가 없어 빈 검색 결과를 반환합니다.")
-        return {"retrieved_context": search_similar_docs(keywords)}
+        return {"retrieved_context": EMPTY_RETRIEVED_CONTEXT}
         
     query = _build_query_from_keywords(keywords)
     hashed_user_id = state.get("hashed_user_id")
