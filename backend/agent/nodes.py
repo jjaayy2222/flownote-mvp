@@ -84,14 +84,15 @@ class LifespanApp(Protocol):
 
 
 @asynccontextmanager
-async def managed_hybrid_search_async(app: LifespanApp | None = None, **_kwargs: Any) -> AsyncGenerator[None, None]:
+async def managed_hybrid_search_async(_app: LifespanApp | None = None, **_kwargs: Any) -> AsyncGenerator[None, None]:
     """
     FastAPI lifespan 등 장기 실행 애플리케이션에 주입하여 하이브리드 검색 싱글톤의 수명 주기를 
     코드 레벨에서 안전하게 보장하는 비동기 컨텍스트 매니저 헬퍼입니다.
     
     [매개변수 설계 안내]
-    - `app: LifespanApp | None`: IDE 자동완성 및 정적 타입 힌팅을 제공하기 위한 주 매개변수 명시.
-      (Any 대신 빈 Protocol을 사용하여 프레임워크 종속성 없이 타입 안정성 확보)
+    - `_app: LifespanApp | None`: IDE 자동완성 및 정적 타입 힌팅을 제공하기 위한 주 매개변수 명시.
+      (사용하지 않는 인자임을 명확히 하기 위해 `_` 접두사를 사용하였으며, Any 대신 빈 Protocol을 
+       사용하여 프레임워크 종속성 없이 타입 안정성 확보)
     - `**_kwargs: Any`: FastAPI lifespan 등 외부 프레임워크가 임의로 주입할 수 있는 
       추가 인자를 에러 없이 수용(Tolerant)하기 위한 안전장치입니다. (제거하지 마세요)
     
