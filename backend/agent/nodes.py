@@ -3,7 +3,8 @@ import logging
 from functools import lru_cache
 from contextlib import asynccontextmanager
 from backend.agent.state import AgentState
-from backend.agent.utils import get_llm, extract_keywords, search_similar_docs, resolve_active_model, EMPTY_RETRIEVED_CONTEXT
+from backend.agent.utils import get_llm, extract_keywords, search_similar_docs, resolve_active_model
+from backend.agent.constants import EMPTY_RETRIEVED_CONTEXT
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
@@ -78,6 +79,12 @@ async def managed_hybrid_search_async(app: Any | None = None, **_kwargs: Any) ->
     """
     FastAPI lifespan 등 장기 실행 애플리케이션에 주입하여 하이브리드 검색 싱글톤의 수명 주기를 
     코드 레벨에서 안전하게 보장하는 비동기 컨텍스트 매니저 헬퍼입니다.
+    
+    [매개변수 설계 안내]
+    - `app: Any | None`: IDE 자동완성 및 정적 타입 힌팅을 제공하기 위한 주 매개변수 명시.
+    - `**_kwargs: Any`: FastAPI lifespan 등 외부 프레임워크가 임의로 주입할 수 있는 
+      추가 인자를 에러 없이 수용(Tolerant)하기 위한 안전장치입니다. (제거하지 마세요)
+    
     
     사용 예시:
     ```python
