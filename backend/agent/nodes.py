@@ -85,7 +85,6 @@ async def managed_hybrid_search_async(app: Any | None = None, **_kwargs: Any) ->
     - `**_kwargs: Any`: FastAPI lifespan 등 외부 프레임워크가 임의로 주입할 수 있는 
       추가 인자를 에러 없이 수용(Tolerant)하기 위한 안전장치입니다. (제거하지 마세요)
     
-    
     사용 예시:
     ```python
     @asynccontextmanager
