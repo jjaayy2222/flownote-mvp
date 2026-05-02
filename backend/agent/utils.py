@@ -8,6 +8,7 @@ from functools import lru_cache
 
 from dotenv import load_dotenv
 
+from backend.agent.constants import EMPTY_RETRIEVED_CONTEXT
 from backend.services.finetune_service import get_active_finetune_model
 
 # 로컬 환경 변수 로드 (.env 파일이 없으면 무시됨)
@@ -18,13 +19,6 @@ load_dotenv()
 # (참고: ModelConfig.GPT4O_MODEL 과 동일한 패턴을 따릅니다.)
 # 이 상수를 수정하면 resolve_active_model() 폴백, get_llm() 기본값이 모두 함께 바뀝니다.
 DEFAULT_MODEL_NAME: str = os.getenv("GPT4O_MODEL", "gpt-4o")
-
-# 하이브리드 검색에서 빈 결과를 명확히 표현하는 공용 상수 (매직 스트링 제거)
-# [주요 참조처 (Consumers)]
-# 1. backend.agent.nodes.retrieve_node: 빈 키워드에 대한 단락 평가(Short-circuit) 시 즉시 반환
-# 2. backend.agent.utils.search_similar_docs: 빈 키워드 폴백 로직 내 반환
-# ※ 향후 "검색 결과 없음"의 표현 형식이 바뀔 경우, 파편화 방지를 위해 반드시 이 상수만을 수정해야 합니다.
-EMPTY_RETRIEVED_CONTEXT: str = ""
 
 # Hot-swap 활성 모델을 저장하는 Redis 키 (finetune_service._FINETUNE_ACTIVE_MODEL_KEY와 동일한 환경 변수 참조)
 # finetune_service의 상수가 모듈-프라이빗(_)이므로 직접 임포트 대신 동일한 환경 변수를 공유 진실 공급원으로 사용합니다.
