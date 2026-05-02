@@ -282,8 +282,8 @@ def _write_to_file(record: dict[str, Any]) -> None:
     감사 로그 레코드를 파일에 JSON Lines 형식으로 기록합니다.
     디렉토리가 없을 경우 자동 생성합니다.
     """
+    log_path = get_audit_log_file_path()
     try:
-        log_path = get_audit_log_file_path()
         log_dir = os.path.dirname(log_path)
         if log_dir:
             os.makedirs(log_dir, exist_ok=True)
@@ -291,10 +291,11 @@ def _write_to_file(record: dict[str, Any]) -> None:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
     except OSError as e:
         # 파일 I/O 실패 시 표준 로거로 폴백 (관측성 유지, 프로세스 중단 방지)
+        # log_path는 try 진입 전에 한 번만 계산하여 try/except 양쪽에서 일관되게 참조
         logger.error(
             "[OBS][AUDIT] Failed to write audit log to file '%s': %s. "
             "Falling back to logger output. record=%s",
-            get_audit_log_file_path(),
+            log_path,
             type(e).__name__,
             json.dumps(record, ensure_ascii=False),
         )
