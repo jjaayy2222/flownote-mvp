@@ -130,6 +130,34 @@ MASKED_UID_PREFIX_LEN: int = _parsed_prefix_len
 
 
 # =============================================================================
+# 런타임 설정 엑세서 (Getter Functions)
+# =============================================================================
+# import 시점에 확정되는 모듈 레벨 상수 대신, getter 함수를 통해 간접 주입하면
+# pytest monkeypatch 등 테스트 환경에서 동적 교체가 가능합니다.
+# 운영 환경에서는 프로세스 시작 전 환경 변수를 설정하므로 실질적인 차이 없습니다.
+
+
+def get_audit_log_backend() -> str:
+    """AUDIT_LOG_BACKEND 모듈 변수를 반환합니다. 테스트에서 monkeypatch 대상으로 활용 가능."""
+    return AUDIT_LOG_BACKEND
+
+
+def get_audit_log_file_path() -> str:
+    """AUDIT_LOG_FILE_PATH 모듈 변수를 반환합니다."""
+    return AUDIT_LOG_FILE_PATH
+
+
+def get_audit_log_retention_days() -> int:
+    """AUDIT_LOG_RETENTION_DAYS 모듈 변수를 반환합니다."""
+    return AUDIT_LOG_RETENTION_DAYS
+
+
+def get_masked_uid_prefix_len() -> int:
+    """MASKED_UID_PREFIX_LEN 모듈 변수를 반환합니다."""
+    return MASKED_UID_PREFIX_LEN
+
+
+# =============================================================================
 # 감사 이벤트 타입
 # =============================================================================
 
@@ -226,25 +254,24 @@ def write_audit_log(
         extra:       추가 컨텍스트 (PII 금지).
     """
     record = _build_audit_record(event_type, masked_uid, result, extra)
+    backend = get_audit_log_backend()
 
-    if AUDIT_LOG_BACKEND == "file":
+    if backend == "file":
         _write_to_file(record)
-    elif AUDIT_LOG_BACKEND in ("db", "cloudwatch"):
-        # 향후 구현 예정: 현재는 표준 로거로 대체하여 관측성 유지
+    elif backend in ("db", "cloudwatch"):
+        # 향후 구현 예정: 현재는 전체 record(extra 포함)를 JSON으로 로거에 출력하여 관측성 유지
         logger.info(
-            "[OBS][AUDIT] event_type=%s masked_uid=%s result=%s backend=%s (not yet implemented)",
-            event_type.value,
-            masked_uid,
-            result,
-            AUDIT_LOG_BACKEND,
+            "[OBS][AUDIT] backend=%s (not yet implemented) record=%s",
+            backend,
+            json.dumps(record, ensure_ascii=False),
         )
     else:
-        # 방어적 처리: 유효하지 않은 백엔드는 모듈 로딩 시 이미 경고되므로 여기서는 로거만 사용
-        logger.warning(
-            "[OBS][AUDIT] Unknown backend '%s'. Falling back to logger output.",
-            AUDIT_LOG_BACKEND,
+        # AUDIT_LOG_BACKEND는 import 시점에 _VALID_BACKENDS로 이미 정규화되므로 이 분기는 도달 불가능
+        # 값이 잘못 삽입되는 렬타임 오염을 즉시 탐지하기 위해 assert로 불변식 명시
+        assert False, (
+            f"[OBS][AUDIT] Invariant violated: backend='{backend}' is not in {sorted(_VALID_BACKENDS)}. "
+            "This path must never be reached. Check module initialization."
         )
-        logger.info("[OBS][AUDIT] %s", json.dumps(record, ensure_ascii=False))
 
 
 def _write_to_file(record: dict[str, Any]) -> None:
