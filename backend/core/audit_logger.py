@@ -32,6 +32,22 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# 이 모듈의 공개 API를 명시적으로 선언합니다.
+# 외부 모듈(예: privacy_service)에서 AuditConfigError를 안정적으로 import하고
+# `except AuditConfigError`로 포착할 수 있도록 공개 계약을 보장합니다.
+__all__ = [
+    "AuditConfigError",
+    "AuditEventType",
+    "mask_uid",
+    "write_audit_log",
+    "schedule_audit_log_cleanup",
+    "get_audit_log_cutoff_datetime",
+    "get_audit_log_backend",
+    "get_audit_log_file_path",
+    "get_audit_log_retention_days",
+    "get_masked_uid_prefix_len",
+]
+
 # =============================================================================
 # 모듈 레벨 상수 (환경 변수 우선, 미설정 시 안전한 기본값)
 # =============================================================================
