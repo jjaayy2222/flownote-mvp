@@ -1,4 +1,4 @@
-from typing import Literal, Dict, Any, List, Optional, AsyncGenerator
+from typing import Literal, Dict, Any, List, Optional, AsyncGenerator, Protocol
 import logging
 from functools import lru_cache
 from contextlib import asynccontextmanager
@@ -74,14 +74,24 @@ def cleanup_hybrid_search_service() -> None:
     _get_hybrid_search_service.cache_clear()
 
 
+class LifespanApp(Protocol):
+    """
+    FastAPI 등 수명 주기 매니저를 호출하는 애플리케이션 프레임워크의 최소 요구 인터페이스입니다.
+    현재 `managed_hybrid_search_async` 내부에서는 애플리케이션의 특정 속성을 참조하지 않으므로 
+    비어있는 상태(빈 프로토콜)로 정의되어 결합도를 최소화합니다.
+    """
+    pass
+
+
 @asynccontextmanager
-async def managed_hybrid_search_async(app: Any | None = None, **_kwargs: Any) -> AsyncGenerator[None, None]:
+async def managed_hybrid_search_async(app: LifespanApp | None = None, **_kwargs: Any) -> AsyncGenerator[None, None]:
     """
     FastAPI lifespan 등 장기 실행 애플리케이션에 주입하여 하이브리드 검색 싱글톤의 수명 주기를 
     코드 레벨에서 안전하게 보장하는 비동기 컨텍스트 매니저 헬퍼입니다.
     
     [매개변수 설계 안내]
-    - `app: Any | None`: IDE 자동완성 및 정적 타입 힌팅을 제공하기 위한 주 매개변수 명시.
+    - `app: LifespanApp | None`: IDE 자동완성 및 정적 타입 힌팅을 제공하기 위한 주 매개변수 명시.
+      (Any 대신 빈 Protocol을 사용하여 프레임워크 종속성 없이 타입 안정성 확보)
     - `**_kwargs: Any`: FastAPI lifespan 등 외부 프레임워크가 임의로 주입할 수 있는 
       추가 인자를 에러 없이 수용(Tolerant)하기 위한 안전장치입니다. (제거하지 마세요)
     
