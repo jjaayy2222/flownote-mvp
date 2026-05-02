@@ -32,6 +32,22 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# 이 모듈의 공개 API를 명시적으로 선언합니다.
+# 외부 모듈(예: privacy_service)에서 AuditConfigError를 안정적으로 import하고
+# `except AuditConfigError`로 포착할 수 있도록 공개 계약을 보장합니다.
+__all__ = [
+    "AuditConfigError",
+    "AuditEventType",
+    "mask_uid",
+    "write_audit_log",
+    "schedule_audit_log_cleanup",
+    "get_audit_log_cutoff_datetime",
+    "get_audit_log_backend",
+    "get_audit_log_file_path",
+    "get_audit_log_retention_days",
+    "get_masked_uid_prefix_len",
+]
+
 # =============================================================================
 # 모듈 레벨 상수 (환경 변수 우선, 미설정 시 안전한 기본값)
 # =============================================================================
@@ -127,6 +143,21 @@ except (ValueError, TypeError):
     _parsed_prefix_len = _DEFAULT_MASKED_UID_PREFIX_LEN
 
 MASKED_UID_PREFIX_LEN: int = _parsed_prefix_len
+
+
+# =============================================================================
+# 커스텀 예외 (Custom Exceptions)
+# =============================================================================
+
+class AuditConfigError(RuntimeError):
+    """
+    감사 로그 모듈의 설정 불변식(Invariant) 위반 시 발생하는 커스텀 예외입니다.
+
+    일반 RuntimeError가 아닌 이 예외를 사용하면:
+    - 상위 에러 핸들러가 `except AuditConfigError`로 정확히 포착 가능
+    - APM/SIEM 시스템에서 감사 모듈 고유 설정 오류로 분류 및 알림 가능
+    - 코드를 보는 동료나 행위자가 어떤 시스템에서 발생한 문제인지 즉시 파악 가능
+    """
 
 
 # =============================================================================
@@ -274,7 +305,7 @@ def write_audit_log(
             "This path must never be reached. Check module initialization."
         )
         logger.error(message)
-        raise RuntimeError(message)
+        raise AuditConfigError(message)
 
 
 def _write_to_file(record: dict[str, Any]) -> None:
@@ -328,16 +359,18 @@ def schedule_audit_log_cleanup() -> None:
     현재는 트리거 의도를 INFO 로그로 기록하며, 실제 삭제 구현은 각 백엔드 통합 단계에서 완성합니다.
     """
     cutoff = get_audit_log_cutoff_datetime()
+    retention_days = get_audit_log_retention_days()
+    backend = get_audit_log_backend()
     logger.info(
         "[OBS][AUDIT] Audit log cleanup scheduled. "
         "Records older than %s (retention=%d days) will be purged. backend=%s",
         cutoff.isoformat(),
-        get_audit_log_retention_days(),
-        get_audit_log_backend(),
+        retention_days,
+        backend,
     )
     write_audit_log(
         event_type=AuditEventType.AUDIT_LOG_CLEANUP,
         masked_uid="system",
         result=f"cleanup_triggered: cutoff={cutoff.isoformat()}",
-        extra={"retention_days": get_audit_log_retention_days(), "backend": get_audit_log_backend()},
+        extra={"retention_days": retention_days, "backend": backend},
     )
