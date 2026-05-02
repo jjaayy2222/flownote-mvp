@@ -196,7 +196,7 @@ def mask_uid(hashed_user_id: str) -> str:
     """
     if not hashed_user_id:
         return "****"
-    prefix = hashed_user_id[:MASKED_UID_PREFIX_LEN]
+    prefix = hashed_user_id[:get_masked_uid_prefix_len()]
     return f"{prefix}****"
 
 
@@ -267,11 +267,14 @@ def write_audit_log(
         )
     else:
         # AUDIT_LOG_BACKEND는 import 시점에 _VALID_BACKENDS로 이미 정규화되므로 이 분기는 도달 불가능
-        # 값이 잘못 삽입되는 렬타임 오염을 즉시 탐지하기 위해 assert로 불변식 명시
-        assert False, (
+        # 값이 잘못 삽입되는 런타임 오염을 즉시 탐지하기 위해 예외를 발생시켜 불변식을 보장합니다.
+        # 주의: assert는 -O 플래그로 제거되므로, 프로덕션에서도 동작해야 하는 불변식에는 사용 금지
+        message = (
             f"[OBS][AUDIT] Invariant violated: backend='{backend}' is not in {sorted(_VALID_BACKENDS)}. "
             "This path must never be reached. Check module initialization."
         )
+        logger.error(message)
+        raise RuntimeError(message)
 
 
 def _write_to_file(record: dict[str, Any]) -> None:
@@ -279,8 +282,8 @@ def _write_to_file(record: dict[str, Any]) -> None:
     감사 로그 레코드를 파일에 JSON Lines 형식으로 기록합니다.
     디렉토리가 없을 경우 자동 생성합니다.
     """
+    log_path = get_audit_log_file_path()
     try:
-        log_path = AUDIT_LOG_FILE_PATH
         log_dir = os.path.dirname(log_path)
         if log_dir:
             os.makedirs(log_dir, exist_ok=True)
@@ -288,10 +291,11 @@ def _write_to_file(record: dict[str, Any]) -> None:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
     except OSError as e:
         # 파일 I/O 실패 시 표준 로거로 폴백 (관측성 유지, 프로세스 중단 방지)
+        # log_path는 try 진입 전에 한 번만 계산하여 try/except 양쪽에서 일관되게 참조
         logger.error(
             "[OBS][AUDIT] Failed to write audit log to file '%s': %s. "
             "Falling back to logger output. record=%s",
-            AUDIT_LOG_FILE_PATH,
+            log_path,
             type(e).__name__,
             json.dumps(record, ensure_ascii=False),
         )
@@ -309,7 +313,7 @@ def get_audit_log_cutoff_datetime() -> datetime:
     Returns:
         보관 만료 기준 datetime (UTC).
     """
-    return datetime.now(tz=timezone.utc) - timedelta(days=AUDIT_LOG_RETENTION_DAYS)
+    return datetime.now(tz=timezone.utc) - timedelta(days=get_audit_log_retention_days())
 
 
 def schedule_audit_log_cleanup() -> None:
@@ -328,12 +332,12 @@ def schedule_audit_log_cleanup() -> None:
         "[OBS][AUDIT] Audit log cleanup scheduled. "
         "Records older than %s (retention=%d days) will be purged. backend=%s",
         cutoff.isoformat(),
-        AUDIT_LOG_RETENTION_DAYS,
-        AUDIT_LOG_BACKEND,
+        get_audit_log_retention_days(),
+        get_audit_log_backend(),
     )
     write_audit_log(
         event_type=AuditEventType.AUDIT_LOG_CLEANUP,
         masked_uid="system",
         result=f"cleanup_triggered: cutoff={cutoff.isoformat()}",
-        extra={"retention_days": AUDIT_LOG_RETENTION_DAYS, "backend": AUDIT_LOG_BACKEND},
+        extra={"retention_days": get_audit_log_retention_days(), "backend": get_audit_log_backend()},
     )
