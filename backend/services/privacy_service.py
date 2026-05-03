@@ -151,9 +151,15 @@ class DeletionResult(Mapping[str, Any]):
         return self.db_rows_deleted > 0
 
     @classmethod
+    def _extra_allowed_keys(cls) -> tuple[str, ...]:
+        """서브클래스에서 노출할 추가 파생 필드(property)를 정의하는 확장 훅."""
+        return ("db_deleted",)
+
+    @classmethod
     @functools.lru_cache(maxsize=None)
     def _allowed_keys(cls) -> tuple[str, ...]:
-        return tuple(f.name for f in dataclasses.fields(cls)) + ("db_deleted",)
+        """데이터클래스 필드와 추가 허용 필드(훅)를 결합하여 캐싱합니다."""
+        return tuple(f.name for f in dataclasses.fields(cls)) + cls._extra_allowed_keys()
 
     @classmethod
     @functools.lru_cache(maxsize=None)
@@ -175,10 +181,6 @@ class DeletionResult(Mapping[str, Any]):
     def __len__(self) -> int:
         """Mapping 프로토콜 완성을 위한 데이터 길이 반환."""
         return len(self.__class__._allowed_keys())
-
-    def keys(self) -> tuple[str, ...]:  # type: ignore[override]
-        """기존 TypedDict 호환성을 위한 엄격한 튜플 반환형의 keys 메서드."""
-        return self.__class__._allowed_keys()
 
     @classmethod
     def create(
