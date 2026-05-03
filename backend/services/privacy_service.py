@@ -244,10 +244,11 @@ def _remove_faiss_index_file(index_path: Path) -> bool:
         return True
     except OSError as e:
         logger.exception(
-            "[OBS][PRIVACY] Failed to remove FAISS index file at path=%s, error=%s. "
+            "[OBS][PRIVACY] Failed to remove FAISS index file at path=%s, error_type=%s, error_msg=%s. "
             "Manual cleanup may be required.",
             index_path,
             type(e).__name__,
+            str(e),
         )
         return False
 
@@ -314,7 +315,6 @@ async def delete_user_data(
     try:
         rows_deleted: int = await db_delete_fn(hashed_user_id)
         result["db_rows_deleted"] = rows_deleted
-        result["db_deleted"] = rows_deleted > 0
         if rows_deleted == 0:
             logger.info(
                 "[OBS][PRIVACY] DB records already deleted (idempotent): rows=%d, masked_uid=%s",
@@ -339,6 +339,7 @@ async def delete_user_data(
             masked_uid=masked,
             result=f"db_deletion_failed: {type(e).__name__}",
         )
+        result["db_deleted"] = result["db_rows_deleted"] > 0
         return result
 
     # ── 2. 누적 카운터 및 VACUUM 트리거 판단 ──────────────────────────────
@@ -442,4 +443,9 @@ async def delete_user_data(
             redis_meta_deleted,
         )
 
+    # ── 최종 파생 필드 계산 및 반환 ──
+    # db_deleted는 개별 로직에서 변형되지 않고, 오직 최종 결과 반환 직전에
+    # db_rows_deleted로부터 파생되어 데이터 불일치(divergence)를 원천 차단합니다.
+    result["db_deleted"] = result["db_rows_deleted"] > 0
+    
     return result
