@@ -339,7 +339,6 @@ async def delete_user_data(
             masked_uid=masked,
             result=f"db_deletion_failed: {type(e).__name__}",
         )
-        result["db_deleted"] = result["db_rows_deleted"] > 0
         return result
 
     # ── 2. 누적 카운터 및 VACUUM 트리거 판단 ──────────────────────────────
@@ -444,8 +443,9 @@ async def delete_user_data(
         )
 
     # ── 최종 파생 필드 계산 및 반환 ──
-    # db_deleted는 개별 로직에서 변형되지 않고, 오직 최종 결과 반환 직전에
+    # db_deleted는 개별 로직에서 변형되지 않고, 오직 정상 종료 반환 직전에
     # db_rows_deleted로부터 파생되어 데이터 불일치(divergence)를 원천 차단합니다.
+    # (에러 조기 리턴 시에는 _init_deletion_result의 초기값 False가 안전하게 유지됩니다.)
     result["db_deleted"] = result["db_rows_deleted"] > 0
     
     return result
