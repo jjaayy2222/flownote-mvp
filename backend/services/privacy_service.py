@@ -134,11 +134,27 @@ class DeletionResult(TypedDict):
     masked_user_id: str        # 마스킹된 UID (masked_uid, 원문 PII 미사용)
     hashed_user_id: str        # [DEPRECATED] 이전 API 호환성을 위해 유지 (masked_user_id와 동일)
     db_rows_deleted: int       # DB 레코드 실제 삭제 행 수
+    db_deleted: bool           # DB 레코드가 1건 이상 삭제되었는지 여부 (계약 명확화)
     faiss_file_removed: bool   # FAISS 인덱스 파일 물리 삭제 성공 여부
     redis_meta_deleted: bool   # Redis 메타데이터 삭제 성공 여부
     compaction_recommended: bool  # FAISS Compaction 권장 여부
     vacuum_triggered: bool     # VACUUM 즉시 실행 권장 여부
     success: bool              # FAISS 파일 + Redis 메타 삭제 전체 성공 여부 (DB 0행은 멱등 성공으로 허용)
+
+
+def _init_deletion_result(masked_uid: str) -> DeletionResult:
+    """초기 결과 객체를 생성하여 masked_user_id와 hashed_user_id가 항상 동일함을 보장합니다."""
+    return {
+        "masked_user_id": masked_uid,
+        "hashed_user_id": masked_uid,
+        "db_rows_deleted": 0,
+        "db_deleted": False,
+        "faiss_file_removed": False,
+        "redis_meta_deleted": False,
+        "compaction_recommended": False,
+        "vacuum_triggered": False,
+        "success": False,
+    }
 
 
 # =============================================================================
@@ -228,9 +244,11 @@ def _remove_faiss_index_file(index_path: Path) -> bool:
         return True
     except OSError as e:
         logger.exception(
-            "[OBS][PRIVACY] Failed to remove FAISS index file at path=%s. "
+            "[OBS][PRIVACY] Failed to remove FAISS index file at path=%s, error_type=%s, error_msg=%s. "
             "Manual cleanup may be required.",
             index_path,
+            type(e).__name__,
+            str(e),
         )
         return False
 
@@ -285,16 +303,7 @@ async def delete_user_data(
         raise ValueError("delete_user_data: 'storage_base_path' must not be empty.")
 
     masked = mask_uid(hashed_user_id)
-    result: DeletionResult = {
-        "masked_user_id": masked,
-        "hashed_user_id": masked,
-        "db_rows_deleted": 0,
-        "faiss_file_removed": False,
-        "redis_meta_deleted": False,
-        "compaction_recommended": False,
-        "vacuum_triggered": False,
-        "success": False,
-    }
+    result: DeletionResult = _init_deletion_result(masked)
 
     # ── 1. DB 레코드 물리적 삭제 ──────────────────────────────────────────
     write_audit_log(
@@ -330,6 +339,7 @@ async def delete_user_data(
             masked_uid=masked,
             result=f"db_deletion_failed: {type(e).__name__}",
         )
+        result["db_deleted"] = result["db_rows_deleted"] > 0
         return result
 
     # ── 2. 누적 카운터 및 VACUUM 트리거 판단 ──────────────────────────────
@@ -433,4 +443,9 @@ async def delete_user_data(
             redis_meta_deleted,
         )
 
+    # ── 최종 파생 필드 계산 및 반환 ──
+    # db_deleted는 개별 로직에서 변형되지 않고, 오직 최종 결과 반환 직전에
+    # db_rows_deleted로부터 파생되어 데이터 불일치(divergence)를 원천 차단합니다.
+    result["db_deleted"] = result["db_rows_deleted"] > 0
+    
     return result
