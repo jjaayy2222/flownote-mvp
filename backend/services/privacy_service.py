@@ -161,10 +161,12 @@ def _finalize_deletion_result(result: DeletionResult) -> DeletionResult:
     """결과 객체의 불변식(invariant)을 검증하고, 파생 필드를 계산하여 최종 반환합니다."""
     # db_deleted가 파이프라인 중간에 임의로 변경되지 않았는지(초기값 False인지) 검증
     # Python -O 옵션에 의해 무시될 수 있는 assert 대신 명시적 예외를 발생시킵니다.
-    if result.get("db_deleted") is not False:
+    # 키가 존재하지 않으면 KeyError를 그대로 발생시켜 구조 자체의 불변식 위반을 드러냅니다.
+    if result["db_deleted"] is not False:
         raise ValueError("db_deleted must not be modified directly. It is a derived field.")
     
     # 원본 객체를 직접 변조(mutate)하지 않고 얕은 복사본을 생성하여 반환 (Immutability)
+    # DeletionResult는 모든 필드가 원시 타입(primitive)이므로 얕은 복사로 충분히 불변성이 보장됩니다.
     final_result = result.copy()
     final_result["db_deleted"] = final_result["db_rows_deleted"] > 0
     return final_result
