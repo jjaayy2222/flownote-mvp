@@ -33,8 +33,9 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
 from backend.core.audit_logger import (
     AuditEventType,
@@ -122,10 +123,29 @@ def get_vacuum_batch_threshold() -> int:
 
 
 # =============================================================================
+# 결과 타입 정의 (TypedDict)
+# =============================================================================
+
+class DeletionResult(TypedDict):
+    """
+    delete_user_data() 반환값의 타입 계약.
+    모든 필드는 항상 존재하며, 타입 검사기가 호출측에서 올바른 쯤크를 수행할 수 있도록 보장합니다.
+    """
+    hashed_user_id: str        # 마스킹된 masked_uid (원문 PII 미사용)
+    db_rows_deleted: int       # DB 레코드 실제 삭제 행 수
+    faiss_file_removed: bool   # FAISS 인덱스 파일 물리 삭제 성공 여부
+    redis_meta_deleted: bool   # Redis 메타데이터 삭제 성공 여부
+    compaction_recommended: bool  # FAISS Compaction 권장 여부
+    vacuum_triggered: bool     # VACUUM 즉시 실행 권장 여부
+    success: bool              # DB 행 + FAISS 파일 + Redis 메타 삭제 전체 성공 여부
+
+
+# =============================================================================
 # 공개 API
 # =============================================================================
 
 __all__ = [
+    "DeletionResult",
     "delete_user_data",
     "trigger_vacuum_if_needed",
     "get_vacuum_schedule_cron",
@@ -152,12 +172,12 @@ def _increment_deletion_counter() -> int:
 
 def trigger_vacuum_if_needed(current_count: int) -> bool:
     """
-    누적 삭제 건수가 VACUUM_BATCH_THRESHOLD를 초과하면 VACUUM 트리거 신호를 반환합니다.
+    누적 삭제 건수가 VACUUM_BATCH_THRESHOLD 이상이면 VACUUM 트리거 신호를 반환합니다.
     실제 VACUUM 실행은 호출자(스케줄러 or API 레이어)가 수행합니다.
 
     [트리거 조건]
       1. 정기 스케줄(VACUUM_SCHEDULE_CRON): 스케줄러가 직접 호출
-      2. 누적 임계값 초과: 이 함수가 True를 반환할 때 즉시 실행
+      2. 누적 임계값 이상(>=): 이 함수가 True를 반환할 때 즉시 실행 권장
 
     Args:
         current_count: 현재까지의 누적 삭제 건수
@@ -185,30 +205,28 @@ def _remove_faiss_index_file(index_path: Path) -> bool:
     """
     FAISS 서브-인덱스 파일을 물리적으로 삭제합니다.
 
+    `unlink(missing_ok=True)`를 사용하여 exists()체크와 unlink() 사이의
+    TOCTOU(검사 시점 vs 사용 시점) 레이스 컨디션을 회피합니다.
+
     Args:
         index_path: build_index_path()가 반환한 Path 객체
 
     Returns:
         True: 파일 삭제 성공 또는 원래 없었음, False: 삭제 실패(예외 발생)
     """
-    if not index_path.exists():
-        logger.debug(
-            "[OBS][PRIVACY] FAISS index file not found (already deleted or never created): path_suffix=%s",
-            index_path.suffix,
-        )
-        return True
-
     try:
-        index_path.unlink()
+        index_path.unlink(missing_ok=True)
         logger.info(
-            "[OBS][PRIVACY] FAISS index file permanently removed (suffix=%s).",
+            "[OBS][PRIVACY] FAISS index file permanently removed: path=%s, suffix=%s",
+            index_path,
             index_path.suffix,
         )
         return True
     except OSError as e:
         logger.error(
-            "[OBS][PRIVACY] Failed to remove FAISS index file: %s. "
+            "[OBS][PRIVACY] Failed to remove FAISS index file at path=%s: %s. "
             "Manual cleanup may be required.",
+            index_path,
             type(e).__name__,
         )
         return False
@@ -221,8 +239,8 @@ def _remove_faiss_index_file(index_path: Path) -> bool:
 async def delete_user_data(
     hashed_user_id: str,
     storage_base_path: str,
-    db_delete_fn: Any,
-) -> dict[str, Any]:
+    db_delete_fn: Callable[[str], Awaitable[int]],
+) -> DeletionResult:
     """
     GDPR 제17조(잊혀질 권리)에 따른 사용자 Vector Data 완전 삭제 파이프라인.
 
@@ -264,7 +282,7 @@ async def delete_user_data(
         raise ValueError("delete_user_data: 'storage_base_path' must not be empty.")
 
     masked = mask_uid(hashed_user_id)
-    result: dict[str, Any] = {
+    result: DeletionResult = {
         "hashed_user_id": masked,
         "db_rows_deleted": 0,
         "faiss_file_removed": False,
@@ -354,8 +372,12 @@ async def delete_user_data(
 
     result["redis_meta_deleted"] = redis_meta_deleted
 
-    # ── 5. 최종 결과 판단 및 감사 로그 기록 ─────────────────────────────
-    overall_success = faiss_removed and redis_meta_deleted
+    # ── 5. 최종 결과 판단 및 감사 로그 기록 ─────────────────────────
+    # DB 행 + FAISS 파일 + Redis 메타 삭제 전체 성공이어야 `success=True`
+    # rows_deleted == 0이도 예외 없이 난다면(원래 데이터 없었음) 부분 성공 쓰게냈음.
+    # 모든 조건을 AND로 연결하여 조용한 실패를 구조적으로 탐지합니다.
+    db_ok = result["db_rows_deleted"] > 0
+    overall_success = db_ok and faiss_removed and redis_meta_deleted
     result["success"] = overall_success
 
     if overall_success:
