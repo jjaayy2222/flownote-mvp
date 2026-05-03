@@ -132,6 +132,7 @@ class DeletionResult(TypedDict):
     모든 필드는 항상 존재하며, 타입 검사기가 호출측에서 올바른 체크를 수행할 수 있도록 보장합니다.
     """
     masked_user_id: str        # 마스킹된 UID (masked_uid, 원문 PII 미사용)
+    hashed_user_id: str        # [DEPRECATED] 이전 API 호환성을 위해 유지 (masked_user_id와 동일)
     db_rows_deleted: int       # DB 레코드 실제 삭제 행 수
     faiss_file_removed: bool   # FAISS 인덱스 파일 물리 삭제 성공 여부
     redis_meta_deleted: bool   # Redis 메타데이터 삭제 성공 여부
@@ -226,12 +227,10 @@ def _remove_faiss_index_file(index_path: Path) -> bool:
         )
         return True
     except OSError as e:
-        logger.error(
-            "[OBS][PRIVACY] Failed to remove FAISS index file at path=%s: %s. "
+        logger.exception(
+            "[OBS][PRIVACY] Failed to remove FAISS index file at path=%s. "
             "Manual cleanup may be required.",
             index_path,
-            str(e),
-            exc_info=True,
         )
         return False
 
@@ -288,6 +287,7 @@ async def delete_user_data(
     masked = mask_uid(hashed_user_id)
     result: DeletionResult = {
         "masked_user_id": masked,
+        "hashed_user_id": masked,
         "db_rows_deleted": 0,
         "faiss_file_removed": False,
         "redis_meta_deleted": False,
@@ -306,11 +306,18 @@ async def delete_user_data(
     try:
         rows_deleted: int = await db_delete_fn(hashed_user_id)
         result["db_rows_deleted"] = rows_deleted
-        logger.info(
-            "[OBS][PRIVACY] DB records deleted: rows=%d, masked_uid=%s",
-            rows_deleted,
-            masked,
-        )
+        if rows_deleted == 0:
+            logger.info(
+                "[OBS][PRIVACY] DB records already deleted (idempotent): rows=%d, masked_uid=%s",
+                rows_deleted,
+                masked,
+            )
+        else:
+            logger.info(
+                "[OBS][PRIVACY] DB records deleted: rows=%d, masked_uid=%s",
+                rows_deleted,
+                masked,
+            )
     except Exception as e:
         logger.error(
             "[OBS][PRIVACY] DB deletion failed for masked_uid=%s: %s",
@@ -385,10 +392,11 @@ async def delete_user_data(
     result["success"] = overall_success
 
     if overall_success:
+        is_idempotent = result["db_rows_deleted"] == 0
         write_audit_log(
             event_type=AuditEventType.DATA_DELETE_SUCCESS,
             masked_uid=masked,
-            result="success",
+            result="idempotent_success" if is_idempotent else "success",
             extra={
                 "db_rows_deleted": result["db_rows_deleted"],
                 "faiss_file_removed": faiss_removed,
@@ -397,10 +405,16 @@ async def delete_user_data(
                 "vacuum_triggered": vacuum_needed,
             },
         )
-        logger.info(
-            "[OBS][PRIVACY] User data deletion pipeline completed successfully. masked_uid=%s",
-            masked,
-        )
+        if is_idempotent:
+            logger.info(
+                "[OBS][PRIVACY] User data deletion pipeline completed idempotently (no DB rows). masked_uid=%s",
+                masked,
+            )
+        else:
+            logger.info(
+                "[OBS][PRIVACY] User data deletion pipeline completed successfully. masked_uid=%s",
+                masked,
+            )
     else:
         write_audit_log(
             event_type=AuditEventType.DATA_DELETE_FAILURE,
