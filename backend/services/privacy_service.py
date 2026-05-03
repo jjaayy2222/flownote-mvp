@@ -147,6 +147,29 @@ class DeletionResult:
         """DB 레코드가 1건 이상 삭제되었는지 여부 (명시적 파생 필드)"""
         return self.db_rows_deleted > 0
 
+    @classmethod
+    def create(
+        cls,
+        masked_uid: str,
+        db_rows_deleted: int,
+        faiss_removed: bool,
+        redis_meta_deleted: bool,
+        compaction_recommended: bool,
+        vacuum_needed: bool,
+        success: bool,
+    ) -> DeletionResult:
+        """파이프라인 상태를 캡슐화하여 일관된 인스턴스를 생성하는 팩토리 메서드."""
+        return cls(
+            masked_user_id=masked_uid,
+            hashed_user_id=masked_uid,
+            db_rows_deleted=db_rows_deleted,
+            faiss_file_removed=faiss_removed,
+            redis_meta_deleted=redis_meta_deleted,
+            compaction_recommended=compaction_recommended,
+            vacuum_triggered=vacuum_needed,
+            success=success,
+        )
+
 
 # =============================================================================
 # 공개 API
@@ -336,14 +359,13 @@ async def delete_user_data(
             masked_uid=masked,
             result=f"db_deletion_failed: {type(e).__name__}",
         )
-        return DeletionResult(
-            masked_user_id=masked,
-            hashed_user_id=masked,
+        return DeletionResult.create(
+            masked_uid=masked,
             db_rows_deleted=db_rows_deleted,
-            faiss_file_removed=faiss_removed,
+            faiss_removed=faiss_removed,
             redis_meta_deleted=redis_meta_deleted,
             compaction_recommended=compaction_recommended,
-            vacuum_triggered=vacuum_needed,
+            vacuum_needed=vacuum_needed,
             success=False,
         )
 
@@ -442,13 +464,12 @@ async def delete_user_data(
         )
 
     # ── 최종 불변 객체(Dataclass) 생성 및 반환 ──
-    return DeletionResult(
-        masked_user_id=masked,
-        hashed_user_id=masked,
+    return DeletionResult.create(
+        masked_uid=masked,
         db_rows_deleted=db_rows_deleted,
-        faiss_file_removed=faiss_removed,
+        faiss_removed=faiss_removed,
         redis_meta_deleted=redis_meta_deleted,
         compaction_recommended=compaction_recommended,
-        vacuum_triggered=vacuum_needed,
+        vacuum_needed=vacuum_needed,
         success=overall_success,
     )
