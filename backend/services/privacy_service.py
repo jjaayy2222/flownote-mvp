@@ -152,30 +152,37 @@ class DeletionResult:
     def __getitem__(self, key: str) -> Any:
         """기존 TypedDict 기반의 외부 호출부 하위 호환성을 위한 Mapping 인터페이스.
 
-        Mapping 인터페이스를 통해 노출되는 키는 `keys()`가 반환하는 키(데이터클래스 필드 + `db_deleted`)로 엄격히 제한합니다.
-        이를 통해 내부 메서드(예: .keys(), .get(), .create())가 노출되는 보안/설계 결함을 방지합니다.
+        __dict__를 사용하여 리플렉션 오버헤드 없이 O(1) 성능으로 데이터 필드에만 안전하게 접근합니다.
+        메서드나 외부 속성은 __dict__에 포함되지 않으므로 자연스럽게 차단됩니다.
         """
         if key == "db_deleted":
             return self.db_deleted
-
-        if any(f.name == key for f in dataclasses.fields(self)):
-            return getattr(self, key)
-
-        raise KeyError(key)
+        try:
+            return self.__dict__[key]
+        except KeyError:
+            raise KeyError(key)
 
     def get(self, key: str, default: Any = None) -> Any:
-        """기존 TypedDict 호환성을 위한 get 메서드.
-
-        존재하지 않는 키이거나 Mapping 인터페이스에서 허용되지 않는 키인 경우 default를 반환합니다.
-        """
-        try:
-            return self[key]
-        except KeyError:
-            return default
+        """기존 TypedDict 호환성을 위한 get 메서드."""
+        if key == "db_deleted":
+            return self.db_deleted
+        return self.__dict__.get(key, default)
 
     def keys(self) -> list[str]:
-        """기존 TypedDict 호환성을 위한 keys 메서드"""
-        return [f.name for f in dataclasses.fields(self)] + ["db_deleted"]
+        """기존 TypedDict 호환성을 위한 keys 메서드 (리플렉션 오버헤드 제거)."""
+        return [*self.__dict__.keys(), "db_deleted"]
+
+    def __iter__(self):
+        """dict() 형변환 및 Mapping 타입 반복문 지원을 위한 인터페이스."""
+        for k in self.__dict__.keys():
+            yield k
+        yield "db_deleted"
+
+    def items(self):
+        """dict() 형변환 및 Mapping 타입 반복문 지원을 위한 인터페이스."""
+        for k, v in self.__dict__.items():
+            yield k, v
+        yield "db_deleted", self.db_deleted
 
     @classmethod
     def create(
