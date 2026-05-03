@@ -34,8 +34,8 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TypedDict
 
 from backend.core.audit_logger import (
     AuditEventType,
@@ -123,53 +123,52 @@ def get_vacuum_batch_threshold() -> int:
 
 
 # =============================================================================
-# 결과 타입 정의 (TypedDict)
+# 결과 타입 정의 (Dataclass)
 # =============================================================================
 
-class DeletionResult(TypedDict):
+@dataclass(frozen=True)
+class DeletionResult:
     """
     delete_user_data() 반환값의 타입 계약.
-    모든 필드는 항상 존재하며, 타입 검사기가 호출측에서 올바른 체크를 수행할 수 있도록 보장합니다.
+    frozen=True를 통해 불변성(Immutability)을 보장하며, 
+    파생 필드(db_deleted)는 @property로 안전하게 제공됩니다.
     """
     masked_user_id: str        # 마스킹된 UID (masked_uid, 원문 PII 미사용)
     hashed_user_id: str        # [DEPRECATED] 이전 API 호환성을 위해 유지 (masked_user_id와 동일)
     db_rows_deleted: int       # DB 레코드 실제 삭제 행 수
-    db_deleted: bool           # DB 레코드가 1건 이상 삭제되었는지 여부 (계약 명확화)
     faiss_file_removed: bool   # FAISS 인덱스 파일 물리 삭제 성공 여부
     redis_meta_deleted: bool   # Redis 메타데이터 삭제 성공 여부
     compaction_recommended: bool  # FAISS Compaction 권장 여부
     vacuum_triggered: bool     # VACUUM 즉시 실행 권장 여부
     success: bool              # FAISS 파일 + Redis 메타 삭제 전체 성공 여부 (DB 0행은 멱등 성공으로 허용)
 
+    @property
+    def db_deleted(self) -> bool:
+        """DB 레코드가 1건 이상 삭제되었는지 여부 (명시적 파생 필드)"""
+        return self.db_rows_deleted > 0
 
-def _init_deletion_result(masked_uid: str) -> DeletionResult:
-    """초기 결과 객체를 생성하여 masked_user_id와 hashed_user_id가 항상 동일함을 보장합니다."""
-    return {
-        "masked_user_id": masked_uid,
-        "hashed_user_id": masked_uid,
-        "db_rows_deleted": 0,
-        "db_deleted": False,
-        "faiss_file_removed": False,
-        "redis_meta_deleted": False,
-        "compaction_recommended": False,
-        "vacuum_triggered": False,
-        "success": False,
-    }
-
-
-def _finalize_deletion_result(result: DeletionResult) -> DeletionResult:
-    """결과 객체의 불변식(invariant)을 검증하고, 파생 필드를 계산하여 최종 반환합니다."""
-    # db_deleted가 파이프라인 중간에 임의로 변경되지 않았는지(초기값 False인지) 검증
-    # Python -O 옵션에 의해 무시될 수 있는 assert 대신 명시적 예외를 발생시킵니다.
-    # 키가 존재하지 않으면 KeyError를 그대로 발생시켜 구조 자체의 불변식 위반을 드러냅니다.
-    if result["db_deleted"] is not False:
-        raise ValueError("db_deleted must not be modified directly. It is a derived field.")
-    
-    # 원본 객체를 직접 변조(mutate)하지 않고 얕은 복사본을 생성하여 반환 (Immutability)
-    # DeletionResult는 모든 필드가 원시 타입(primitive)이므로 얕은 복사로 충분히 불변성이 보장됩니다.
-    final_result = result.copy()
-    final_result["db_deleted"] = final_result["db_rows_deleted"] > 0
-    return final_result
+    @classmethod
+    def create(
+        cls,
+        masked_uid: str,
+        db_rows_deleted: int,
+        faiss_removed: bool,
+        redis_meta_deleted: bool,
+        compaction_recommended: bool,
+        vacuum_needed: bool,
+        success: bool,
+    ) -> DeletionResult:
+        """파이프라인 상태를 캡슐화하여 일관된 인스턴스를 생성하는 팩토리 메서드."""
+        return cls(
+            masked_user_id=masked_uid,
+            hashed_user_id=masked_uid,
+            db_rows_deleted=db_rows_deleted,
+            faiss_file_removed=faiss_removed,
+            redis_meta_deleted=redis_meta_deleted,
+            compaction_recommended=compaction_recommended,
+            vacuum_triggered=vacuum_needed,
+            success=success,
+        )
 
 
 # =============================================================================
@@ -318,7 +317,13 @@ async def delete_user_data(
         raise ValueError("delete_user_data: 'storage_base_path' must not be empty.")
 
     masked = mask_uid(hashed_user_id)
-    result: DeletionResult = _init_deletion_result(masked)
+    
+    # 파이프라인 상태 변수 초기화
+    db_rows_deleted = 0
+    faiss_removed = False
+    redis_meta_deleted = False
+    compaction_recommended = False
+    vacuum_needed = False
 
     # ── 1. DB 레코드 물리적 삭제 ──────────────────────────────────────────
     write_audit_log(
@@ -329,7 +334,7 @@ async def delete_user_data(
 
     try:
         rows_deleted: int = await db_delete_fn(hashed_user_id)
-        result["db_rows_deleted"] = rows_deleted
+        db_rows_deleted = rows_deleted
         if rows_deleted == 0:
             logger.info(
                 "[OBS][PRIVACY] DB records already deleted (idempotent): rows=%d, masked_uid=%s",
@@ -354,12 +359,19 @@ async def delete_user_data(
             masked_uid=masked,
             result=f"db_deletion_failed: {type(e).__name__}",
         )
-        return _finalize_deletion_result(result)
+        return DeletionResult.create(
+            masked_uid=masked,
+            db_rows_deleted=db_rows_deleted,
+            faiss_removed=faiss_removed,
+            redis_meta_deleted=redis_meta_deleted,
+            compaction_recommended=compaction_recommended,
+            vacuum_needed=vacuum_needed,
+            success=False,
+        )
 
     # ── 2. 누적 카운터 및 VACUUM 트리거 판단 ──────────────────────────────
     current_count = _increment_deletion_counter()
     vacuum_needed = trigger_vacuum_if_needed(current_count)
-    result["vacuum_triggered"] = vacuum_needed
 
     if vacuum_needed:
         logger.info(
@@ -372,16 +384,13 @@ async def delete_user_data(
     # ── 3. FAISS 인덱스 파일 물리 삭제 ───────────────────────────────────
     index_path = build_index_path(hashed_user_id, storage_base_path)
     faiss_removed = _remove_faiss_index_file(index_path)
-    result["faiss_file_removed"] = faiss_removed
 
     # ── 4. Redis 메타데이터 삭제 ──────────────────────────────────────────
-    redis_meta_deleted = False
     try:
         # 컴팩션 필요 여부를 삭제 전 메타데이터로 판단
         existing_meta = await load_index_metadata(hashed_user_id)
         if existing_meta is not None:
             compaction_recommended = should_rebuild_index(existing_meta)
-            result["compaction_recommended"] = compaction_recommended
             if compaction_recommended:
                 logger.info(
                     "[OBS][PRIVACY] Compaction recommended for masked_uid=%s "
@@ -405,27 +414,24 @@ async def delete_user_data(
             exc_info=True,
         )
 
-    result["redis_meta_deleted"] = redis_meta_deleted
-
     # ── 5. 최종 결과 판단 및 감사 로그 기록 ─────────────────────────
     # FAISS 파일 + Redis 메타 삭제가 모두 성공이면 `success=True`.
     # rows_deleted == 0인 경우에도 예외가 없다면(애초에 삭제할 데이터가 없었던 경우)
     # 멱등적 성공으로 처리합니다. DB 예외는 위에서 조기 리턴하므로 여기 도달 시 DB 단계는 무결합니다.
     # 모든 조건을 AND로 연결하여 조용한 실패를 구조적으로 탐지합니다.
     overall_success = faiss_removed and redis_meta_deleted
-    result["success"] = overall_success
 
     if overall_success:
-        is_idempotent = result["db_rows_deleted"] == 0
+        is_idempotent = db_rows_deleted == 0
         write_audit_log(
             event_type=AuditEventType.DATA_DELETE_SUCCESS,
             masked_uid=masked,
             result="idempotent_success" if is_idempotent else "success",
             extra={
-                "db_rows_deleted": result["db_rows_deleted"],
+                "db_rows_deleted": db_rows_deleted,
                 "faiss_file_removed": faiss_removed,
                 "redis_meta_deleted": redis_meta_deleted,
-                "compaction_recommended": result["compaction_recommended"],
+                "compaction_recommended": compaction_recommended,
                 "vacuum_triggered": vacuum_needed,
             },
         )
@@ -457,6 +463,13 @@ async def delete_user_data(
             redis_meta_deleted,
         )
 
-    # ── 최종 파생 필드 계산 및 반환 ──
-    # 캡슐화된 헬퍼를 통해 중간 상태 변조를 검증하고 파생 필드를 계산합니다.
-    return _finalize_deletion_result(result)
+    # ── 최종 불변 객체(Dataclass) 생성 및 반환 ──
+    return DeletionResult.create(
+        masked_uid=masked,
+        db_rows_deleted=db_rows_deleted,
+        faiss_removed=faiss_removed,
+        redis_meta_deleted=redis_meta_deleted,
+        compaction_recommended=compaction_recommended,
+        vacuum_needed=vacuum_needed,
+        success=overall_success,
+    )
