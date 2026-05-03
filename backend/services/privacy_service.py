@@ -129,15 +129,16 @@ def get_vacuum_batch_threshold() -> int:
 class DeletionResult(TypedDict):
     """
     delete_user_data() 반환값의 타입 계약.
-    모든 필드는 항상 존재하며, 타입 검사기가 호출측에서 올바른 쯤크를 수행할 수 있도록 보장합니다.
+    모든 필드는 항상 존재하며, 타입 검사기가 호출측에서 올바른 체크를 수행할 수 있도록 보장합니다.
     """
-    hashed_user_id: str        # 마스킹된 masked_uid (원문 PII 미사용)
+    masked_user_id: str        # 마스킹된 UID (masked_uid, 원문 PII 미사용)
+    hashed_user_id: str        # [DEPRECATED] 이전 API 호환성을 위해 유지 (masked_user_id와 동일)
     db_rows_deleted: int       # DB 레코드 실제 삭제 행 수
     faiss_file_removed: bool   # FAISS 인덱스 파일 물리 삭제 성공 여부
     redis_meta_deleted: bool   # Redis 메타데이터 삭제 성공 여부
     compaction_recommended: bool  # FAISS Compaction 권장 여부
     vacuum_triggered: bool     # VACUUM 즉시 실행 권장 여부
-    success: bool              # DB 행 + FAISS 파일 + Redis 메타 삭제 전체 성공 여부
+    success: bool              # FAISS 파일 + Redis 메타 삭제 전체 성공 여부 (DB 0행은 멱등 성공으로 허용)
 
 
 # =============================================================================
@@ -161,9 +162,12 @@ def _increment_deletion_counter() -> int:
     """
     프로세스 내 누적 삭제 카운터를 1 증가시키고 현재 값을 반환합니다.
 
-    [주의]
-    현재 구현은 프로세스 메모리 내 카운터이므로 서버 재시작 시 초기화됩니다.
-    운영 환경에서는 Redis INCR 또는 DB 기반 카운터로 교체하여 영속성을 보장하세요.
+    [동시성 주의사항]
+    이 카운터는 프로세스 메모리의 전역 변수이므로 다음 제약이 있습니다:
+    - CPython GIL 환경에서도 멀티스레드 동시 호출 시 정확한 집계를 보장하지 않습니다.
+    - 멀티프로세스(Gunicorn 워커, Celery 워커 등) 환경에서는 워커 간 카운터가 공유되지 않습니다.
+    - 서버 재시작 시 초기화됩니다.
+    운영 환경에서는 Redis INCR 또는 DB 기반 카운터로 교체하여 영속성과 정합성을 보장하세요.
     """
     global _deletion_batch_counter
     _deletion_batch_counter += 1
@@ -223,11 +227,10 @@ def _remove_faiss_index_file(index_path: Path) -> bool:
         )
         return True
     except OSError as e:
-        logger.error(
-            "[OBS][PRIVACY] Failed to remove FAISS index file at path=%s: %s. "
+        logger.exception(
+            "[OBS][PRIVACY] Failed to remove FAISS index file at path=%s. "
             "Manual cleanup may be required.",
             index_path,
-            type(e).__name__,
         )
         return False
 
@@ -283,6 +286,7 @@ async def delete_user_data(
 
     masked = mask_uid(hashed_user_id)
     result: DeletionResult = {
+        "masked_user_id": masked,
         "hashed_user_id": masked,
         "db_rows_deleted": 0,
         "faiss_file_removed": False,
@@ -302,11 +306,18 @@ async def delete_user_data(
     try:
         rows_deleted: int = await db_delete_fn(hashed_user_id)
         result["db_rows_deleted"] = rows_deleted
-        logger.info(
-            "[OBS][PRIVACY] DB records deleted: rows=%d, masked_uid=%s",
-            rows_deleted,
-            masked,
-        )
+        if rows_deleted == 0:
+            logger.info(
+                "[OBS][PRIVACY] DB records already deleted (idempotent): rows=%d, masked_uid=%s",
+                rows_deleted,
+                masked,
+            )
+        else:
+            logger.info(
+                "[OBS][PRIVACY] DB records deleted: rows=%d, masked_uid=%s",
+                rows_deleted,
+                masked,
+            )
     except Exception as e:
         logger.error(
             "[OBS][PRIVACY] DB deletion failed for masked_uid=%s: %s",
@@ -373,18 +384,19 @@ async def delete_user_data(
     result["redis_meta_deleted"] = redis_meta_deleted
 
     # ── 5. 최종 결과 판단 및 감사 로그 기록 ─────────────────────────
-    # DB 행 + FAISS 파일 + Redis 메타 삭제 전체 성공이어야 `success=True`
-    # rows_deleted == 0이도 예외 없이 난다면(원래 데이터 없었음) 부분 성공 쓰게냈음.
+    # FAISS 파일 + Redis 메타 삭제가 모두 성공이면 `success=True`.
+    # rows_deleted == 0인 경우에도 예외가 없다면(애초에 삭제할 데이터가 없었던 경우)
+    # 멱등적 성공으로 처리합니다. DB 예외는 위에서 조기 리턴하므로 여기 도달 시 DB 단계는 무결합니다.
     # 모든 조건을 AND로 연결하여 조용한 실패를 구조적으로 탐지합니다.
-    db_ok = result["db_rows_deleted"] > 0
-    overall_success = db_ok and faiss_removed and redis_meta_deleted
+    overall_success = faiss_removed and redis_meta_deleted
     result["success"] = overall_success
 
     if overall_success:
+        is_idempotent = result["db_rows_deleted"] == 0
         write_audit_log(
             event_type=AuditEventType.DATA_DELETE_SUCCESS,
             masked_uid=masked,
-            result="success",
+            result="idempotent_success" if is_idempotent else "success",
             extra={
                 "db_rows_deleted": result["db_rows_deleted"],
                 "faiss_file_removed": faiss_removed,
@@ -393,10 +405,16 @@ async def delete_user_data(
                 "vacuum_triggered": vacuum_needed,
             },
         )
-        logger.info(
-            "[OBS][PRIVACY] User data deletion pipeline completed successfully. masked_uid=%s",
-            masked,
-        )
+        if is_idempotent:
+            logger.info(
+                "[OBS][PRIVACY] User data deletion pipeline completed idempotently (no DB rows). masked_uid=%s",
+                masked,
+            )
+        else:
+            logger.info(
+                "[OBS][PRIVACY] User data deletion pipeline completed successfully. masked_uid=%s",
+                masked,
+            )
     else:
         write_audit_log(
             event_type=AuditEventType.DATA_DELETE_FAILURE,
