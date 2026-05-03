@@ -31,11 +31,13 @@ GDPR Right-to-Erasure — v9.0 Phase 2-4 (Privacy Pipeline ②)
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from backend.core.audit_logger import (
     AuditEventType,
@@ -147,6 +149,34 @@ class DeletionResult:
         """DB 레코드가 1건 이상 삭제되었는지 여부 (명시적 파생 필드)"""
         return self.db_rows_deleted > 0
 
+    def __getitem__(self, key: str) -> Any:
+        """기존 TypedDict 기반의 외부 호출부 하위 호환성을 위한 Mapping 인터페이스.
+
+        Mapping 인터페이스를 통해 노출되는 키는 `keys()`가 반환하는 키(데이터클래스 필드 + `db_deleted`)로 엄격히 제한합니다.
+        이를 통해 내부 메서드(예: .keys(), .get(), .create())가 노출되는 보안/설계 결함을 방지합니다.
+        """
+        if key == "db_deleted":
+            return self.db_deleted
+
+        if any(f.name == key for f in dataclasses.fields(self)):
+            return getattr(self, key)
+
+        raise KeyError(key)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """기존 TypedDict 호환성을 위한 get 메서드.
+
+        존재하지 않는 키이거나 Mapping 인터페이스에서 허용되지 않는 키인 경우 default를 반환합니다.
+        """
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def keys(self) -> list[str]:
+        """기존 TypedDict 호환성을 위한 keys 메서드"""
+        return [f.name for f in dataclasses.fields(self)] + ["db_deleted"]
+
     @classmethod
     def create(
         cls,
@@ -156,9 +186,10 @@ class DeletionResult:
         redis_meta_deleted: bool,
         compaction_recommended: bool,
         vacuum_needed: bool,
-        success: bool,
     ) -> DeletionResult:
         """파이프라인 상태를 캡슐화하여 일관된 인스턴스를 생성하는 팩토리 메서드."""
+        # success는 faiss_removed와 redis_meta_deleted의 조합으로 안전하게 자동 파생
+        success = faiss_removed and redis_meta_deleted
         return cls(
             masked_user_id=masked_uid,
             hashed_user_id=masked_uid,
@@ -366,7 +397,6 @@ async def delete_user_data(
             redis_meta_deleted=redis_meta_deleted,
             compaction_recommended=compaction_recommended,
             vacuum_needed=vacuum_needed,
-            success=False,
         )
 
     # ── 2. 누적 카운터 및 VACUUM 트리거 판단 ──────────────────────────────
@@ -471,5 +501,4 @@ async def delete_user_data(
         redis_meta_deleted=redis_meta_deleted,
         compaction_recommended=compaction_recommended,
         vacuum_needed=vacuum_needed,
-        success=overall_success,
     )
