@@ -157,6 +157,16 @@ def _init_deletion_result(masked_uid: str) -> DeletionResult:
     }
 
 
+def _finalize_deletion_result(result: DeletionResult) -> DeletionResult:
+    """결과 객체의 불변식(invariant)을 검증하고, 파생 필드를 계산하여 최종 반환합니다."""
+    # db_deleted가 파이프라인 중간에 임의로 변경되지 않았는지(초기값 False인지) 검증
+    assert result["db_deleted"] is False, "db_deleted must not be modified directly. It is a derived field."
+    
+    # db_rows_deleted를 기반으로만 안전하게 파생
+    result["db_deleted"] = result["db_rows_deleted"] > 0
+    return result
+
+
 # =============================================================================
 # 공개 API
 # =============================================================================
@@ -339,8 +349,7 @@ async def delete_user_data(
             masked_uid=masked,
             result=f"db_deletion_failed: {type(e).__name__}",
         )
-        result["db_deleted"] = result["db_rows_deleted"] > 0
-        return result
+        return _finalize_deletion_result(result)
 
     # ── 2. 누적 카운터 및 VACUUM 트리거 판단 ──────────────────────────────
     current_count = _increment_deletion_counter()
@@ -444,8 +453,5 @@ async def delete_user_data(
         )
 
     # ── 최종 파생 필드 계산 및 반환 ──
-    # db_deleted는 개별 로직에서 변형되지 않고, 오직 최종 결과 반환 직전에
-    # db_rows_deleted로부터 파생되어 데이터 불일치(divergence)를 원천 차단합니다.
-    result["db_deleted"] = result["db_rows_deleted"] > 0
-    
-    return result
+    # 캡슐화된 헬퍼를 통해 중간 상태 변조를 검증하고 파생 필드를 계산합니다.
+    return _finalize_deletion_result(result)
