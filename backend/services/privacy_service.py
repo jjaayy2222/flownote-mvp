@@ -32,9 +32,10 @@ GDPR Right-to-Erasure — v9.0 Phase 2-4 (Privacy Pipeline ②)
 from __future__ import annotations
 
 import dataclasses
+import functools
 import logging
 import os
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -129,7 +130,7 @@ def get_vacuum_batch_threshold() -> int:
 # =============================================================================
 
 @dataclass(frozen=True)
-class DeletionResult:
+class DeletionResult(Mapping[str, Any]):
     """
     delete_user_data() 반환값의 타입 계약.
     frozen=True를 통해 불변성(Immutability)을 보장하며, 
@@ -149,46 +150,35 @@ class DeletionResult:
         """DB 레코드가 1건 이상 삭제되었는지 여부 (명시적 파생 필드)"""
         return self.db_rows_deleted > 0
 
-    def keys(self) -> tuple[str, ...]:
-        """기존 TypedDict 호환성을 위한 keys 메서드 (지연 캐싱 적용).
+    @classmethod
+    @functools.lru_cache(maxsize=None)
+    def _allowed_keys(cls) -> tuple[str, ...]:
+        return tuple(f.name for f in dataclasses.fields(cls)) + ("db_deleted",)
 
-        클래스 레벨 캐시를 사용하여 리플렉션 오버헤드를 1회로 제한하며,
-        __dict__에 의존하지 않아 향후 slots=True 변경 시에도 안전합니다.
-        """
-        cache_key = "_allowed_keys_cache"
-        if not hasattr(self.__class__, cache_key):
-            allowed = tuple(f.name for f in dataclasses.fields(self)) + ("db_deleted",)
-            setattr(self.__class__, cache_key, allowed)
-        return getattr(self.__class__, cache_key)
+    @classmethod
+    @functools.lru_cache(maxsize=None)
+    def _allowed_key_set(cls) -> frozenset[str]:
+        return frozenset(cls._allowed_keys())
+
+    # --- Mapping Protocol Implementation ---
 
     def __getitem__(self, key: str) -> Any:
-        """기존 TypedDict 기반의 외부 호출부 하위 호환성을 위한 Mapping 인터페이스.
-
-        keys()에 선언된 필드만 허용하여 동적 속성 및 메서드 유출을 완벽히 차단합니다.
-        """
-        if key not in self.keys():
+        """기존 TypedDict 기반의 외부 호출부 하위 호환성을 위한 Mapping 인터페이스."""
+        if key not in self.__class__._allowed_key_set():
             raise KeyError(key)
         return getattr(self, key)
 
-    def get(self, key: str, default: Any = None) -> Any:
-        """기존 TypedDict 호환성을 위한 get 메서드."""
-        try:
-            return self[key]
-        except KeyError:
-            return default
+    def __iter__(self) -> Iterator[str]:
+        """dict() 형변환 및 Mapping 타입 반복문 지원을 위한 인터페이스."""
+        return iter(self.__class__._allowed_keys())
 
-    def __iter__(self):
-        """dict() 형변환 및 Mapping 타입 반복문 지원을 위한 인터페이스.
-        단일 진실 공급원인 keys()로 위임하여 중복을 제거합니다.
-        """
-        return iter(self.keys())
+    def __len__(self) -> int:
+        """Mapping 프로토콜 완성을 위한 데이터 길이 반환."""
+        return len(self.__class__._allowed_keys())
 
-    def items(self):
-        """dict() 형변환 및 Mapping 타입 반복문 지원을 위한 인터페이스.
-        단일 진실 공급원인 keys()와 __getitem__()으로 위임합니다.
-        """
-        for key in self.keys():
-            yield key, self[key]
+    def keys(self) -> tuple[str, ...]:  # type: ignore[override]
+        """기존 TypedDict 호환성을 위한 엄격한 튜플 반환형의 keys 메서드."""
+        return self.__class__._allowed_keys()
 
     @classmethod
     def create(
