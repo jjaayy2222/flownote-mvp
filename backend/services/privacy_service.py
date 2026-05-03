@@ -149,40 +149,46 @@ class DeletionResult:
         """DB 레코드가 1건 이상 삭제되었는지 여부 (명시적 파생 필드)"""
         return self.db_rows_deleted > 0
 
+    def keys(self) -> tuple[str, ...]:
+        """기존 TypedDict 호환성을 위한 keys 메서드 (지연 캐싱 적용).
+
+        클래스 레벨 캐시를 사용하여 리플렉션 오버헤드를 1회로 제한하며,
+        __dict__에 의존하지 않아 향후 slots=True 변경 시에도 안전합니다.
+        """
+        cache_key = "_allowed_keys_cache"
+        if not hasattr(self.__class__, cache_key):
+            allowed = tuple(f.name for f in dataclasses.fields(self)) + ("db_deleted",)
+            setattr(self.__class__, cache_key, allowed)
+        return getattr(self.__class__, cache_key)
+
     def __getitem__(self, key: str) -> Any:
         """기존 TypedDict 기반의 외부 호출부 하위 호환성을 위한 Mapping 인터페이스.
 
-        __dict__를 사용하여 리플렉션 오버헤드 없이 O(1) 성능으로 데이터 필드에만 안전하게 접근합니다.
-        메서드나 외부 속성은 __dict__에 포함되지 않으므로 자연스럽게 차단됩니다.
+        keys()에 선언된 필드만 허용하여 동적 속성 및 메서드 유출을 완벽히 차단합니다.
         """
-        if key == "db_deleted":
-            return self.db_deleted
-        try:
-            return self.__dict__[key]
-        except KeyError:
+        if key not in self.keys():
             raise KeyError(key)
+        return getattr(self, key)
 
     def get(self, key: str, default: Any = None) -> Any:
         """기존 TypedDict 호환성을 위한 get 메서드."""
-        if key == "db_deleted":
-            return self.db_deleted
-        return self.__dict__.get(key, default)
-
-    def keys(self) -> list[str]:
-        """기존 TypedDict 호환성을 위한 keys 메서드 (리플렉션 오버헤드 제거)."""
-        return [*self.__dict__.keys(), "db_deleted"]
+        try:
+            return self[key]
+        except KeyError:
+            return default
 
     def __iter__(self):
-        """dict() 형변환 및 Mapping 타입 반복문 지원을 위한 인터페이스."""
-        for k in self.__dict__.keys():
-            yield k
-        yield "db_deleted"
+        """dict() 형변환 및 Mapping 타입 반복문 지원을 위한 인터페이스.
+        단일 진실 공급원인 keys()로 위임하여 중복을 제거합니다.
+        """
+        return iter(self.keys())
 
     def items(self):
-        """dict() 형변환 및 Mapping 타입 반복문 지원을 위한 인터페이스."""
-        for k, v in self.__dict__.items():
-            yield k, v
-        yield "db_deleted", self.db_deleted
+        """dict() 형변환 및 Mapping 타입 반복문 지원을 위한 인터페이스.
+        단일 진실 공급원인 keys()와 __getitem__()으로 위임합니다.
+        """
+        for key in self.keys():
+            yield key, self[key]
 
     @classmethod
     def create(
