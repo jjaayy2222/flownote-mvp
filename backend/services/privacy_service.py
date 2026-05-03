@@ -150,15 +150,28 @@ class DeletionResult:
         return self.db_rows_deleted > 0
 
     def __getitem__(self, key: str) -> Any:
-        """기존 TypedDict 기반의 외부 호출부 하위 호환성을 위한 Mapping 인터페이스"""
-        try:
+        """기존 TypedDict 기반의 외부 호출부 하위 호환성을 위한 Mapping 인터페이스.
+
+        Mapping 인터페이스를 통해 노출되는 키는 `keys()`가 반환하는 키(데이터클래스 필드 + `db_deleted`)로 엄격히 제한합니다.
+        이를 통해 내부 메서드(예: .keys(), .get(), .create())가 노출되는 보안/설계 결함을 방지합니다.
+        """
+        if key == "db_deleted":
+            return self.db_deleted
+
+        if any(f.name == key for f in dataclasses.fields(self)):
             return getattr(self, key)
-        except AttributeError:
-            raise KeyError(key)
+
+        raise KeyError(key)
 
     def get(self, key: str, default: Any = None) -> Any:
-        """기존 TypedDict 호환성을 위한 get 메서드"""
-        return getattr(self, key, default)
+        """기존 TypedDict 호환성을 위한 get 메서드.
+
+        존재하지 않는 키이거나 Mapping 인터페이스에서 허용되지 않는 키인 경우 default를 반환합니다.
+        """
+        try:
+            return self[key]
+        except KeyError:
+            return default
 
     def keys(self) -> list[str]:
         """기존 TypedDict 호환성을 위한 keys 메서드"""
