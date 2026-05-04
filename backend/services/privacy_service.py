@@ -447,6 +447,19 @@ class KeyRotationPolicy(str, Enum):
 
 
 @dataclass(frozen=True)
+class Pbkdf2Config:
+    """
+    PBKDF2 익명화에 필요한 파라미터를 캡슐화한 불변 설정 객체.
+    NIST SP 800-132 검증이 완료된 상태임을 보장합니다.
+    """
+    iterations: int
+    hash_name: str
+    key_length: int
+    salt_length: int
+    key_version: int
+
+
+@dataclass(frozen=True)
 class AnonymizationResult:
     """
     anonymize_log_entry() 반환값의 타입 계약.
@@ -463,6 +476,88 @@ class AnonymizationResult:
 
 
 # =============================================================================
+# 익명화 내부 헬퍼 (순수 함수 — 테스트 용이성 확보)
+# =============================================================================
+
+def _load_pbkdf2_config() -> Pbkdf2Config:
+    """
+    환경 변수에서 PBKDF2 파라미터를 로드하고 NIST SP 800-132 검증을 수행한 뒤
+    캡슐화된 설정 객체를 반환합니다.
+
+    Raises:
+        ValueError: NIST 최소 요건 미충족 시
+    """
+    iterations = get_pbkdf2_iterations()
+    hash_name = _get_pbkdf2_hash_name()
+    key_length = _get_pbkdf2_int_param(
+        _PBKDF2_KEY_LENGTH_ENV_KEY, _DEFAULT_PBKDF2_KEY_LENGTH,
+        _MIN_PBKDF2_KEY_LENGTH, _MAX_PBKDF2_KEY_LENGTH, "key_length",
+    )
+    salt_length = _get_pbkdf2_int_param(
+        _PBKDF2_SALT_LENGTH_ENV_KEY, _DEFAULT_PBKDF2_SALT_LENGTH,
+        _MIN_PBKDF2_SALT_LENGTH, _MAX_PBKDF2_SALT_LENGTH, "salt_length",
+    )
+    key_version = get_current_key_version()
+
+    # NIST 검증 — 실패 시 ValueError 발생 → 파이프라인 진입 불가
+    _validate_nist_pbkdf2_params(iterations, key_length, salt_length, hash_name)
+
+    return Pbkdf2Config(
+        iterations=iterations,
+        hash_name=hash_name,
+        key_length=key_length,
+        salt_length=salt_length,
+        key_version=key_version,
+    )
+
+
+def _compute_rotation_policy(current_version: int, data_version: int) -> KeyRotationPolicy:
+    """
+    현재 시스템 키 버전(current_version)과 데이터의 키 버전(data_version)을 비교하여
+    로테이션 상태를 분류합니다.
+
+    [분류 기준]
+      DORMANT    : data_version <= current_version - 2 (N-2 이하)
+      TRANSITION : data_version == current_version - 1 (N-1)
+      CURRENT    : data_version == current_version      (N)
+    """
+    if data_version <= current_version - _KEY_VERSION_DORMANT_THRESHOLD_OFFSET:
+        return KeyRotationPolicy.DORMANT
+    if data_version == current_version - _KEY_VERSION_TRANSITION_MAX_OFFSET:
+        return KeyRotationPolicy.TRANSITION
+    return KeyRotationPolicy.CURRENT
+
+
+def _derive_anonymized_value(
+    value: str,
+    pepper: str,
+    config: Pbkdf2Config,
+) -> tuple[str, str]:
+    """
+    PBKDF2-HMAC 파생 연산을 수행하는 순수 함수.
+    I/O 없이 오직 암호학적 연산만 담당합니다.
+
+    [보안]
+      - pepper는 반환값이나 로그에 포함되지 않습니다 (PII/비밀 데이터)
+      - salt는 암호학적으로 안전한 secrets.token_bytes()로 생성
+
+    Returns:
+        (anonymized_hex, salt_hex) 튜플
+    """
+    salt: bytes = secrets.token_bytes(config.salt_length)
+    # password = value + pepper 조합으로 엔트로피 최대화
+    password_bytes: bytes = (value + pepper).encode("utf-8")
+    derived_key: bytes = hashlib.pbkdf2_hmac(
+        hash_name=config.hash_name,
+        password=password_bytes,
+        salt=salt,
+        iterations=config.iterations,
+        dklen=config.key_length,
+    )
+    return derived_key.hex(), salt.hex()
+
+
+# =============================================================================
 # 익명화 파이프라인
 # =============================================================================
 
@@ -476,12 +571,17 @@ async def anonymize_log_entry(
     [보안 설계]
       - Global Pepper: KMS/SSM에서 런타임 메모리 주입 (aws_client_wrapper 재사용)
       - Per-Entry Salt: secrets.token_bytes()로 암호학적으로 안전한 랜덤 솔트 생성
-      - NIST SP 800-132 준수: 파라미터 런타임 검증 후 진행
+      - NIST SP 800-132 준수: _load_pbkdf2_config() 내에서 파라미터 검증 후 진행
 
     [키 로테이션]
-      - PBKDF2_KEY_VERSION 환경 변수로 현재 버전(N)을 관리
-      - N-1 버전 데이터는 과도기(Transition) 처리 — 최대 1년 보관
-      - N-2 이하 버전 데이터는 휴면(Dormant) — get_dormant_key_versions()로 스케줄러에 통보
+      - PBKDF2_KEY_VERSION 환경 변수로 현재 시스템 키 버전(N)을 관리
+      - N-1 버전 데이터는 과도기(TRANSITION) 처리 — 최대 1년 보관
+      - N-2 이하 버전 데이터는 휴면(DORMANT) — get_dormant_key_versions()로 스케줄러에 통보
+
+    [감사 로그 흐름]
+      DATA_ANONYMIZE_STARTED → (성공) DATA_ANONYMIZE_SUCCESS
+                             → (실패) DATA_ANONYMIZE_FAILURE
+      rotation_policy는 extra 메타데이터로만 기록되며 이벤트 타입 결정에 사용되지 않습니다.
 
     Args:
         hashed_user_id: compute_hashed_user_id()의 반환값 (PII 미포함).
@@ -500,75 +600,46 @@ async def anonymize_log_entry(
 
     masked = mask_uid(hashed_user_id)
 
-    # ── 파라미터 로드 ──────────────────────────────────────────────────────────
-    iterations = get_pbkdf2_iterations()
-    hash_name = _get_pbkdf2_hash_name()
-    key_length = _get_pbkdf2_int_param(
-        _PBKDF2_KEY_LENGTH_ENV_KEY, _DEFAULT_PBKDF2_KEY_LENGTH,
-        _MIN_PBKDF2_KEY_LENGTH, _MAX_PBKDF2_KEY_LENGTH, "key_length",
+    # ── 설정 로드 및 NIST 검증 (실패 시 즉시 ValueError — try 블록 진입 안 함) ──
+    config: Pbkdf2Config = _load_pbkdf2_config()
+    rotation_policy: KeyRotationPolicy = _compute_rotation_policy(
+        current_version=config.key_version,
+        data_version=config.key_version,
     )
-    salt_length = _get_pbkdf2_int_param(
-        _PBKDF2_SALT_LENGTH_ENV_KEY, _DEFAULT_PBKDF2_SALT_LENGTH,
-        _MIN_PBKDF2_SALT_LENGTH, _MAX_PBKDF2_SALT_LENGTH, "salt_length",
-    )
-    key_version = get_current_key_version()
 
-    # ── NIST SP 800-132 준수 검증 ─────────────────────────────────────────────
-    _validate_nist_pbkdf2_params(iterations, key_length, salt_length, hash_name)
-
-    # ── 키 로테이션 정책 결정 ─────────────────────────────────────────────────
-    dormant_versions = get_dormant_key_versions()
-    if key_version in dormant_versions:
-        rotation_policy = KeyRotationPolicy.DORMANT
-    elif key_version == get_current_key_version() - _KEY_VERSION_TRANSITION_MAX_OFFSET:
-        rotation_policy = KeyRotationPolicy.TRANSITION
-    else:
-        rotation_policy = KeyRotationPolicy.CURRENT
-
+    # ── 시작 이벤트 기록 (결과 미확정 — 중립적 STARTED 사용) ─────────────────
     write_audit_log(
-        event_type=AuditEventType.DATA_ANONYMIZE_SUCCESS
-        if rotation_policy != KeyRotationPolicy.DORMANT
-        else AuditEventType.DATA_ANONYMIZE_FAILURE,
+        event_type=AuditEventType.DATA_ANONYMIZE_STARTED,
         masked_uid=masked,
         result="anonymization_initiated",
+        extra={
+            "key_version": config.key_version,
+            "rotation_policy": rotation_policy.value,
+        },
     )
 
     try:
         # ── Global Pepper 로드 (KMS/SSM 런타임 메모리 주입) ───────────────────
         pepper: str = await fetch_global_pepper()
 
-        # ── Per-Entry Salt 생성 (암호학적 랜덤) ───────────────────────────────
-        salt: bytes = secrets.token_bytes(salt_length)
-
-        # ── PBKDF2 파생 키 계산 ───────────────────────────────────────────────
-        # password = log_field_value + pepper 조합으로 엔트로피를 최대화합니다.
-        # pepper는 로그에 기록하지 않습니다 (PII/비밀 데이터)
-        password_bytes: bytes = (log_field_value + pepper).encode("utf-8")
-        derived_key: bytes = hashlib.pbkdf2_hmac(
-            hash_name=hash_name,
-            password=password_bytes,
-            salt=salt,
-            iterations=iterations,
-            dklen=key_length,
-        )
-
-        anonymized_hex = derived_key.hex()
-        salt_hex = salt.hex()
+        # ── 순수 PBKDF2 파생 연산 ─────────────────────────────────────────────
+        anonymized_hex, salt_hex = _derive_anonymized_value(log_field_value, pepper, config)
 
         logger.info(
             "[OBS][PRIVACY] Log field anonymized: masked_uid=%s, key_version=%d, "
             "iterations=%d, hash=%s, rotation_policy=%s",
-            masked, key_version, iterations, hash_name, rotation_policy.value,
+            masked, config.key_version, config.iterations,
+            config.hash_name, rotation_policy.value,
         )
         write_audit_log(
             event_type=AuditEventType.DATA_ANONYMIZE_SUCCESS,
             masked_uid=masked,
             result="success",
             extra={
-                "key_version": key_version,
+                "key_version": config.key_version,
                 "rotation_policy": rotation_policy.value,
-                "iterations": iterations,
-                "hash_name": hash_name,
+                "iterations": config.iterations,
+                "hash_name": config.hash_name,
             },
         )
 
@@ -576,10 +647,10 @@ async def anonymize_log_entry(
             masked_user_id=masked,
             anonymized_value=anonymized_hex,
             salt_hex=salt_hex,
-            key_version=key_version,
+            key_version=config.key_version,
             key_rotation_policy=rotation_policy,
-            iterations=iterations,
-            hash_name=hash_name,
+            iterations=config.iterations,
+            hash_name=config.hash_name,
             success=True,
         )
 
@@ -592,15 +663,19 @@ async def anonymize_log_entry(
             event_type=AuditEventType.DATA_ANONYMIZE_FAILURE,
             masked_uid=masked,
             result=f"anonymization_failed: {type(e).__name__}",
+            extra={
+                "key_version": config.key_version,
+                "rotation_policy": rotation_policy.value,
+            },
         )
         return AnonymizationResult(
             masked_user_id=masked,
             anonymized_value="",
             salt_hex="",
-            key_version=key_version,
+            key_version=config.key_version,
             key_rotation_policy=rotation_policy,
-            iterations=iterations,
-            hash_name=hash_name,
+            iterations=config.iterations,
+            hash_name=config.hash_name,
             success=False,
         )
 
