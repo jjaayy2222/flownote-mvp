@@ -176,7 +176,7 @@ class AnonymizationSummary(BaseModel):
     )
     reason: Optional[str] = Field(
         default=None,
-        description="실패 또는 부분 성공 시 사유 코드 (PII 미포함, 예: 'invalid_input')",
+        description="실패 또는 부분 성공 시 사유 코드 (PII 미포함, 예: 'invalid_input', 'internal_error')",
     )
 
 
@@ -377,8 +377,10 @@ async def erase_user_data(
                 "field_index=%d, error_type=%s",
                 masked, field_index, type(exc).__name__,
             )
+            # 내부 구현 세부사항(예외 클래스명)을 API 응답 스키마에 노출하지 않기 위해
+            # 예기치 않은 오류는 안정적인 공통 코드로 매핑합니다.
             anonymization_summaries.append(
-                _build_failed_summary(field_index, type(exc).__name__)
+                _build_failed_summary(field_index, "internal_error")
             )
 
     # ── 4. 최종 처리 결과 감사 로그 (실제 기록 성공 여부 추적) ──────────────
