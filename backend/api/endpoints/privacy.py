@@ -190,6 +190,21 @@ class AnonymizationSummary(BaseModel):
         description="실패 또는 부분 성공 시 사유 코드 (PII 미포함). 하위 호환성을 위해 str 유지 (예: 'invalid_input')",
     )
 
+    @field_validator("reason", mode="before")
+    @classmethod
+    def normalize_reason(cls, v: Any) -> Optional[str]:
+        """
+        reason 필드에 어떤 타입이 들어오든 안전한 문자열로 중앙에서 정규화합니다.
+        Enum이 들어오면 .value를 추출하고, 그 외의 알 수 없는 타입은 str()로 캐스팅하여 방어합니다.
+        """
+        if v is None:
+            return None
+        if isinstance(v, AnonymizationFailureReason):
+            return v.value
+        if not isinstance(v, str):
+            return str(v)
+        return v
+
 
 class EraseResponse(BaseModel):
     """
@@ -246,21 +261,19 @@ def _build_anonymization_summary(
 
 def _build_failed_summary(
     field_index: int,
-    reason: str | AnonymizationFailureReason,
+    reason: Any,
 ) -> AnonymizationSummary:
     """
     실패한 익명화 항목을 AnonymizationSummary 타입 모델로 생성합니다.
     성공 경로와 동일한 스키마를 유지하여 클라이언트 일관성을 보장합니다.
-    하위 호환성을 위해 Enum이 입력되면 문자열(.value)로 변환합니다.
     """
-    reason_str = reason.value if isinstance(reason, AnonymizationFailureReason) else reason
     return AnonymizationSummary(
         field_index=field_index,
         success=False,
         key_version=None,
         rotation_policy=None,
         hash_name=None,
-        reason=reason_str,
+        reason=reason,
     )
 
 
