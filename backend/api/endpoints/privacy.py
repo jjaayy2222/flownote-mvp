@@ -261,11 +261,16 @@ def _build_anonymization_summary(
 
 def _build_failed_summary(
     field_index: int,
-    reason: Any,
+    reason: str | AnonymizationFailureReason,
 ) -> AnonymizationSummary:
     """
     실패한 익명화 항목을 AnonymizationSummary 타입 모델로 생성합니다.
     성공 경로와 동일한 스키마를 유지하여 클라이언트 일관성을 보장합니다.
+
+    [타입 계약 및 방어 로직]
+    호출자는 `reason`으로 AnonymizationFailureReason(권장) 또는 일반 문자열을 전달해야 합니다.
+    만약 예외 객체 등 그 외의 타입이 전달될 경우, 모델 내부의 검증기가
+    str() 캐스팅을 통해 방어적 폴백(Fallback)으로 취급합니다.
     """
     return AnonymizationSummary(
         field_index=field_index,
