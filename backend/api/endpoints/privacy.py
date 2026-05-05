@@ -60,6 +60,9 @@ router = APIRouter(prefix="/privacy", tags=["privacy"])
 # SHA-256 결과: 64자리 16진수 (대소문자 허용)
 _SHA256_HEX_PATTERN: re.Pattern[str] = re.compile(r"^[0-9a-fA-F]{64}$")
 
+# 예외 메시지 정규화용: 메모리 주소 패턴 (해시 핑거프린트 안정성 확보용)
+_MEMORY_ADDRESS_PATTERN: re.Pattern[str] = re.compile(r"0x[0-9a-fA-F]+")
+
 # 익명화 실패 시 예외 메시지 보안 해싱(Hashing)을 위해 자를 자릿수(상수)
 # (개인정보보호와 추적성 간의 Trade-off를 문서를 통해 명시)
 EXCEPTION_HASH_PREFIX_LEN = 16
@@ -268,11 +271,16 @@ def _build_anonymization_summary(
 def _hash_exception_message(exc: Exception) -> str:
     """
     보안(GDPR): 원본 에러 메시지(PII 포함 가능성)를 서버 로그에 남기지 않기 위해 
-    안정적인 구조(타입명 + args)를 기반으로 SHA-256 해시 핑거프린트를 생성합니다.
+    안정적인 구조(모듈.타입명 + 정규화된 args)를 기반으로 SHA-256 해시 핑거프린트를 생성합니다.
     """
-    # str(exc)는 메모리 주소가 포함될 수 있어 해시가 불안정(Unstable)할 수 있으므로,
-    # 예외 타입과 인자(args)를 조합하여 안정적인 지문을 생성합니다.
-    stable_repr = f"{type(exc).__name__}:{exc.args}"
+    # 1. 모듈 경로를 포함하여 서로 다른 라이브러리의 동명 예외(충돌) 방지
+    exc_type = f"{exc.__class__.__module__}.{exc.__class__.__name__}"
+    
+    # 2. 인자 내부의 동적 메모리 주소(<... at 0x...>)를 정규화하여 지문 안정성 극대화
+    raw_args_str = str(exc.args)
+    normalized_args = _MEMORY_ADDRESS_PATTERN.sub("0x...", raw_args_str)
+    
+    stable_repr = f"{exc_type}:{normalized_args}"
     return hashlib.sha256(stable_repr.encode("utf-8")).hexdigest()[:EXCEPTION_HASH_PREFIX_LEN]
 
 
