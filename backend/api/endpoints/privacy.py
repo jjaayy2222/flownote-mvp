@@ -63,7 +63,24 @@ _SHA256_HEX_PATTERN: re.Pattern[str] = re.compile(r"^[0-9a-fA-F]{64}$")
 # 예외 메시지 정규화용: 메모리 주소 패턴 (해시 핑거프린트 안정성 확보용)
 # - 파이썬 내부 함수(<locals>) 및 제네릭(<MyClass[Type]>) 지원을 위해 특수 기호([, ], :, ,, ?, =) 추가
 # - 무분별한 꺾쇠(<, >) 허용으로 인한 Greedy 과잉 매칭(Swallowing)을 막기 위해 <locals>만 명시적 허용
-_MEMORY_ADDRESS_PATTERN: re.Pattern[str] = re.compile(r"(<(?:[\w. \[\]:,?=]|<locals>)+ at )0x[0-9a-fA-F]+(>)")
+# - 유지보수성을 위해 re.VERBOSE를 적용하고, 안전한 치환을 위해 Named Group(?P<prefix>, ?P<suffix>) 사용
+_MEMORY_ADDRESS_PATTERN: re.Pattern[str] = re.compile(
+    r"""
+    (?P<prefix>
+        <                           # 파이썬 repr 시작 꺾쇠
+        (?:
+            [\w.\ \[\]:,?=]         # 클래스명, 모듈명, 제네릭 타입 기호 등 (공백 포함)
+            | <locals>              # 내부 함수(Closure)의 <locals> 명시적 허용
+        )+                          # 위 패턴들의 조합이 1번 이상 반복
+        \ at\                       # 주소를 나타내는 ' at ' (앞뒤 공백)
+    )
+    0x[0-9a-fA-F]+                  # 마스킹 대상인 실제 16진수 메모리 주소
+    (?P<suffix>
+        >                           # 파이썬 repr 종료 꺾쇠
+    )
+    """,
+    re.VERBOSE,
+)
 
 # 익명화 실패 시 예외 메시지 보안 해싱(Hashing)을 위해 자를 자릿수(상수)
 # (개인정보보호와 추적성 간의 Trade-off를 문서를 통해 명시)
@@ -281,7 +298,7 @@ def _hash_exception_message(exc: Exception) -> str:
     # 2. 인자 내부의 동적 메모리 주소(<... at 0x...>)만 선택적으로 정규화하여 
     # 정상적인 16진수 데이터(예: 트랜잭션 ID)가 뭉개지는 과잉 정규화 방지
     raw_args_str = str(exc.args)
-    normalized_args = _MEMORY_ADDRESS_PATTERN.sub(r"\g<1>0x...\g<2>", raw_args_str)
+    normalized_args = _MEMORY_ADDRESS_PATTERN.sub(r"\g<prefix>0x...\g<suffix>", raw_args_str)
     
     stable_repr = f"{exc_type}:{normalized_args}"
     return hashlib.sha256(stable_repr.encode("utf-8")).hexdigest()[:EXCEPTION_HASH_PREFIX_LEN]
