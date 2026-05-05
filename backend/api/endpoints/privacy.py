@@ -185,9 +185,9 @@ class AnonymizationSummary(BaseModel):
         default=None,
         description="사용된 해시 알고리즘 이름 (성공 시에만 설정)",
     )
-    reason: Optional[AnonymizationFailureReason] = Field(
+    reason: Optional[str] = Field(
         default=None,
-        description="실패 또는 부분 성공 시 사유 코드 (PII 및 내부 세부사항 미포함)",
+        description="실패 또는 부분 성공 시 사유 코드 (PII 미포함). 하위 호환성을 위해 str 유지 (예: 'invalid_input')",
     )
 
 
@@ -246,19 +246,21 @@ def _build_anonymization_summary(
 
 def _build_failed_summary(
     field_index: int,
-    reason: AnonymizationFailureReason,
+    reason: str | AnonymizationFailureReason,
 ) -> AnonymizationSummary:
     """
     실패한 익명화 항목을 AnonymizationSummary 타입 모델로 생성합니다.
     성공 경로와 동일한 스키마를 유지하여 클라이언트 일관성을 보장합니다.
+    하위 호환성을 위해 Enum이 입력되면 문자열(.value)로 변환합니다.
     """
+    reason_str = reason.value if isinstance(reason, AnonymizationFailureReason) else reason
     return AnonymizationSummary(
         field_index=field_index,
         success=False,
         key_version=None,
         rotation_policy=None,
         hash_name=None,
-        reason=reason,
+        reason=reason_str,
     )
 
 
