@@ -61,7 +61,9 @@ router = APIRouter(prefix="/privacy", tags=["privacy"])
 _SHA256_HEX_PATTERN: re.Pattern[str] = re.compile(r"^[0-9a-fA-F]{64}$")
 
 # 예외 메시지 정규화용: 메모리 주소 패턴 (해시 핑거프린트 안정성 확보용)
-_MEMORY_ADDRESS_PATTERN: re.Pattern[str] = re.compile(r"0x[0-9a-fA-F]+")
+# - Python repr 등에서 자주 보이는 형태: "<ClassName object at 0x...>"
+# - 주소처럼 보이는 모든 16진수 리터럴이 아니라, repr 스타일에 한정해 과도한 정규화(Over-normalization) 방지
+_MEMORY_ADDRESS_PATTERN: re.Pattern[str] = re.compile(r"(<[^>]* at )0x[0-9a-fA-F]+(>)")
 
 # 익명화 실패 시 예외 메시지 보안 해싱(Hashing)을 위해 자를 자릿수(상수)
 # (개인정보보호와 추적성 간의 Trade-off를 문서를 통해 명시)
@@ -276,9 +278,10 @@ def _hash_exception_message(exc: Exception) -> str:
     # 1. 모듈 경로를 포함하여 서로 다른 라이브러리의 동명 예외(충돌) 방지
     exc_type = f"{exc.__class__.__module__}.{exc.__class__.__name__}"
     
-    # 2. 인자 내부의 동적 메모리 주소(<... at 0x...>)를 정규화하여 지문 안정성 극대화
+    # 2. 인자 내부의 동적 메모리 주소(<... at 0x...>)만 선택적으로 정규화하여 
+    # 정상적인 16진수 데이터(예: 트랜잭션 ID)가 뭉개지는 과잉 정규화 방지
     raw_args_str = str(exc.args)
-    normalized_args = _MEMORY_ADDRESS_PATTERN.sub("0x...", raw_args_str)
+    normalized_args = _MEMORY_ADDRESS_PATTERN.sub(r"\g<1>0x...\g<2>", raw_args_str)
     
     stable_repr = f"{exc_type}:{normalized_args}"
     return hashlib.sha256(stable_repr.encode("utf-8")).hexdigest()[:EXCEPTION_HASH_PREFIX_LEN]
