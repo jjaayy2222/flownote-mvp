@@ -34,6 +34,7 @@ GDPR Right-to-Erasure API Endpoint — v9.0 Phase 2-4 (Integration & Compliance)
 from __future__ import annotations
 
 import functools
+import hashlib
 import logging
 import os
 import re
@@ -278,10 +279,12 @@ def _normalize_reason(
         return reason.value
     if isinstance(reason, Exception):
         # 방어: 예외 객체가 그대로 넘어오면 메시지에 포함된 PII가 노출될 수 있으므로 마스킹
-        # 추적성을 잃지 않기 위해 덮어쓰기 직전에 서버 사이드 로깅 수행
+        # 보안(GDPR): 원본 에러 메시지(PII 포함 가능성)를 서버 로그에 남기지 않기 위해 
+        # exc_info를 제외하고 메시지를 SHA-256 해싱하여 추적성(Traceability)만 확보합니다.
+        msg_hash = hashlib.sha256(str(reason).encode("utf-8")).hexdigest()[:16]
         logger.error(
             "[OBS][PRIVACY][API] Implicit exception masking in _normalize_reason. "
-            "Exception type: %s", type(reason).__name__, exc_info=reason
+            "Exception type: %s, msg_hash: %s", type(reason).__name__, msg_hash
         )
         return AnonymizationFailureReason.INTERNAL_ERROR.value
     if not isinstance(reason, str):
