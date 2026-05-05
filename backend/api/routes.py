@@ -24,3 +24,8 @@ router.include_router(endpoints.search_router)
 router.include_router(endpoints.metadata_router)
 router.include_router(endpoints.chat_router)
 router.include_router(endpoints.admin_router)
+
+# GDPR Right-to-Erasure 엔드포인트 (Phase 2-4)
+# schedule_audit_log_cleanup()은 FastAPI lifespan 또는 Celery Beat에서 등록 필요
+# 참조: backend.core.audit_logger.schedule_audit_log_cleanup
+router.include_router(endpoints.privacy_router)

@@ -8,6 +8,7 @@ from .metadata import router as metadata_router
 from .automation import router as automation_router
 from .chat import router as chat_router
 from .admin import router as admin_router
+from .privacy import router as privacy_router
 
 __all__ = [
     "classify_router",
@@ -16,4 +17,5 @@ __all__ = [
     "automation_router",
     "chat_router",
     "admin_router",
+    "privacy_router",
 ]
