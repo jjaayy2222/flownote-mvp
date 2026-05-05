@@ -268,14 +268,17 @@ def _build_anonymization_summary(
 def _hash_exception_message(exc: Exception) -> str:
     """
     보안(GDPR): 원본 에러 메시지(PII 포함 가능성)를 서버 로그에 남기지 않기 위해 
-    메시지를 SHA-256 해싱하여 추적성(Traceability) 핑거프린트를 생성합니다.
+    안정적인 구조(타입명 + args)를 기반으로 SHA-256 해시 핑거프린트를 생성합니다.
     """
-    return hashlib.sha256(str(exc).encode("utf-8")).hexdigest()[:EXCEPTION_HASH_PREFIX_LEN]
+    # str(exc)는 메모리 주소가 포함될 수 있어 해시가 불안정(Unstable)할 수 있으므로,
+    # 예외 타입과 인자(args)를 조합하여 안정적인 지문을 생성합니다.
+    stable_repr = f"{type(exc).__name__}:{exc.args}"
+    return hashlib.sha256(stable_repr.encode("utf-8")).hexdigest()[:EXCEPTION_HASH_PREFIX_LEN]
 
 
 def _normalize_reason(
     reason: str | AnonymizationFailureReason | Exception | None,
-    correlation_id: str | int | None = None,
+    field_index: int | None = None,
 ) -> str:
     """
     익명화 실패 사유(reason)를 안전하고 일관된 문자열로 정규화하는 헬퍼 함수입니다.
@@ -295,8 +298,8 @@ def _normalize_reason(
         msg_hash = _hash_exception_message(reason)
         logger.error(
             "[OBS][PRIVACY][API] Implicit exception masking in _normalize_reason. "
-            "Exception type: %s, msg_hash: %s, correlation_id: %s", 
-            type(reason).__name__, msg_hash, correlation_id
+            "Exception type: %s, msg_hash: %s, field_index: %s", 
+            type(reason).__name__, msg_hash, field_index
         )
         return AnonymizationFailureReason.INTERNAL_ERROR.value
     if not isinstance(reason, str):
@@ -322,7 +325,7 @@ def _build_failed_summary(
         key_version=None,
         rotation_policy=None,
         hash_name=None,
-        reason=_normalize_reason(reason, correlation_id=field_index),
+        reason=_normalize_reason(reason, field_index=field_index),
     )
 
 
