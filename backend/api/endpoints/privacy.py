@@ -33,6 +33,7 @@ GDPR Right-to-Erasure API Endpoint — v9.0 Phase 2-4 (Integration & Compliance)
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import re
@@ -64,8 +65,9 @@ _MIN_LOG_FIELD_MAX_LENGTH = 64
 _MAX_LOG_FIELD_MAX_LENGTH = 1_048_576  # 1 MiB 상한
 
 
+@functools.lru_cache(maxsize=None)
 def _get_log_field_max_length() -> int:
-    """PRIVACY_LOG_FIELD_MAX_LENGTH 환경 변수를 파싱하여 반환합니다 (범위 검증 포함)."""
+    """PRIVACY_LOG_FIELD_MAX_LENGTH 환경 변수를 파싱하여 반환합니다 (범위 검증 및 캐싱 포함)."""
     raw = os.getenv(_LOG_FIELD_MAX_LENGTH_ENV_KEY)
     default = _DEFAULT_LOG_FIELD_MAX_LENGTH
     if raw is None:
@@ -128,18 +130,16 @@ class EraseRequest(BaseModel):
             )
         return v.lower()  # 일관성을 위해 소문자로 정규화
 
-    @field_validator("log_fields_to_anonymize", mode="before")
+    @field_validator("log_fields_to_anonymize", mode="after")
     @classmethod
-    def validate_log_fields(cls, v: Any) -> Any:
+    def validate_log_fields(cls, v: list[str]) -> list[str]:
         """
         log_fields_to_anonymize 각 항목의 최대 길이를 검증합니다.
-        최대 길이는 PRIVACY_LOG_FIELD_MAX_LENGTH 환경 변수로 외부화됩니다.
+        mode="after"를 사용하여 입력 이터러블이 이미 list[str]로 변환된 최종 상태에서 검증합니다.
         """
-        if not isinstance(v, list):
-            return v  # Pydantic 기본 타입 검증에 위임
         max_length = _get_log_field_max_length()
         for idx, item in enumerate(v):
-            if isinstance(item, str) and len(item) > max_length:
+            if len(item) > max_length:
                 raise ValueError(
                     f"log_fields_to_anonymize[{idx}] exceeds maximum allowed length "
                     f"({max_length} chars). Adjust PRIVACY_LOG_FIELD_MAX_LENGTH if needed."
@@ -217,9 +217,12 @@ def _build_anonymization_summary(
     AnonymizationResult를 AnonymizationSummary 타입 모델로 변환합니다.
     PII 원문(anonymized_value, salt_hex)은 포함하지 않습니다.
     """
+    if not result.success:
+        return _build_failed_summary(field_index, "anonymization_failed")
+
     return AnonymizationSummary(
         field_index=field_index,
-        success=result.success,
+        success=True,
         key_version=result.key_version,
         rotation_policy=result.key_rotation_policy.value,
         hash_name=result.hash_name,
