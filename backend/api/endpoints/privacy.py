@@ -37,6 +37,7 @@ import functools
 import logging
 import os
 import re
+from enum import Enum
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -147,6 +148,16 @@ class EraseRequest(BaseModel):
         return v
 
 
+class AnonymizationFailureReason(str, Enum):
+    """
+    익명화 실패 시 클라이언트에 노출해도 안전한 정규화된 사유 코드.
+    내부 구현 세부사항(예: 예외 클래스명)을 숨기고 API 스키마를 안정화합니다.
+    """
+    INVALID_INPUT = "invalid_input"
+    INTERNAL_ERROR = "internal_error"
+    ANONYMIZATION_FAILED = "anonymization_failed"
+
+
 class AnonymizationSummary(BaseModel):
     """
     개별 로그 필드에 대한 익명화 처리 결과 요약 스키마.
@@ -174,9 +185,9 @@ class AnonymizationSummary(BaseModel):
         default=None,
         description="사용된 해시 알고리즘 이름 (성공 시에만 설정)",
     )
-    reason: Optional[str] = Field(
+    reason: Optional[AnonymizationFailureReason] = Field(
         default=None,
-        description="실패 또는 부분 성공 시 사유 코드 (PII 미포함, 예: 'invalid_input')",
+        description="실패 또는 부분 성공 시 사유 코드 (PII 및 내부 세부사항 미포함)",
     )
 
 
@@ -218,7 +229,10 @@ def _build_anonymization_summary(
     PII 원문(anonymized_value, salt_hex)은 포함하지 않습니다.
     """
     if not result.success:
-        return _build_failed_summary(field_index, "anonymization_failed")
+        return _build_failed_summary(
+            field_index,
+            AnonymizationFailureReason.ANONYMIZATION_FAILED,
+        )
 
     return AnonymizationSummary(
         field_index=field_index,
@@ -230,7 +244,10 @@ def _build_anonymization_summary(
     )
 
 
-def _build_failed_summary(field_index: int, reason: str) -> AnonymizationSummary:
+def _build_failed_summary(
+    field_index: int,
+    reason: AnonymizationFailureReason,
+) -> AnonymizationSummary:
     """
     실패한 익명화 항목을 AnonymizationSummary 타입 모델로 생성합니다.
     성공 경로와 동일한 스키마를 유지하여 클라이언트 일관성을 보장합니다.
@@ -368,7 +385,7 @@ async def erase_user_data(
                 masked, field_index,
             )
             anonymization_summaries.append(
-                _build_failed_summary(field_index, "invalid_input")
+                _build_failed_summary(field_index, AnonymizationFailureReason.INVALID_INPUT)
             )
         except Exception as exc:
             # 예기치 않은 오류 — 해당 필드만 실패, Graceful Degradation
@@ -377,8 +394,10 @@ async def erase_user_data(
                 "field_index=%d, error_type=%s",
                 masked, field_index, type(exc).__name__,
             )
+            # 내부 구현 세부사항(예외 클래스명)을 API 응답 스키마에 노출하지 않기 위해
+            # 예기치 않은 오류는 안정적인 공통 코드로 매핑합니다.
             anonymization_summaries.append(
-                _build_failed_summary(field_index, type(exc).__name__)
+                _build_failed_summary(field_index, AnonymizationFailureReason.INTERNAL_ERROR)
             )
 
     # ── 4. 최종 처리 결과 감사 로그 (실제 기록 성공 여부 추적) ──────────────
