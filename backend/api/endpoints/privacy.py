@@ -63,7 +63,8 @@ _SHA256_HEX_PATTERN: re.Pattern[str] = re.compile(r"^[0-9a-fA-F]{64}$")
 # 예외 메시지 정규화용: 메모리 주소 패턴 (해시 핑거프린트 안정성 확보용)
 # - Python repr 등에서 자주 보이는 형태: "<ClassName object at 0x...>", "<function my_func at 0x...>"
 # - 주소처럼 보이는 모든 16진수 리터럴이 아니라, 파이썬 객체/함수 repr 스타일에 한정해 과도한 정규화 방지
-_MEMORY_ADDRESS_PATTERN: re.Pattern[str] = re.compile(r"(<[a-zA-Z0-9_.\s]+ at )0x[0-9a-fA-F]+(>)")
+# - \w를 사용하여 유니코드(한글 등) 식별자를 지원하고, \s 대신 명시적 띄어쓰기(' ')로 멀티라인 오탐 방지
+_MEMORY_ADDRESS_PATTERN: re.Pattern[str] = re.compile(r"(<[\w. ]+ at )0x[0-9a-fA-F]+(>)")
 
 # 익명화 실패 시 예외 메시지 보안 해싱(Hashing)을 위해 자를 자릿수(상수)
 # (개인정보보호와 추적성 간의 Trade-off를 문서를 통해 명시)
