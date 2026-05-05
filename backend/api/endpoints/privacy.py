@@ -259,34 +259,49 @@ def _build_anonymization_summary(
     )
 
 
+def _normalize_reason(
+    reason: str | AnonymizationFailureReason | Exception | None,
+) -> str:
+    """
+    익명화 실패 사유(reason)를 안전하고 일관된 문자열로 정규화하는 헬퍼 함수입니다.
+    
+    [보안 및 방어 로직]
+    - Enum: .value 추출
+    - Exception: PII 유출 및 내부 세부사항 노출을 막기 위해 강제로 INTERNAL_ERROR 처리
+    - None: 모호성을 없애기 위해 "unknown_error" 기본값 사용
+    - 그 외: 강제 str() 캐스팅
+    """
+    if reason is None:
+        return "unknown_error"
+    if isinstance(reason, AnonymizationFailureReason):
+        return reason.value
+    if isinstance(reason, Exception):
+        # 방어: 예외 객체가 그대로 넘어오면 메시지에 포함된 PII가 노출될 수 있으므로 마스킹
+        return AnonymizationFailureReason.INTERNAL_ERROR.value
+    if not isinstance(reason, str):
+        return str(reason)
+    return reason
+
+
 def _build_failed_summary(
     field_index: int,
-    reason: Any,
+    reason: str | AnonymizationFailureReason | Exception | None,
 ) -> AnonymizationSummary:
     """
     실패한 익명화 항목을 AnonymizationSummary 타입 모델로 생성합니다.
     성공 경로와 동일한 스키마를 유지하여 클라이언트 일관성을 보장합니다.
 
-    [타입 계약 및 명시적 방어 로직]
-    호출자는 `reason`으로 AnonymizationFailureReason 또는 일반 문자열을 전달하는 것이 권장됩니다.
-    예외 객체 등 다른 타입이 전달될 경우, Pydantic 검증기(Magic)에만 의존하지 않고
-    팩토리 함수에서 명시적으로 str() 캐스팅을 수행하여 방어적 폴백을 처리합니다.
+    [타입 계약]
+    _normalize_reason 헬퍼를 통해 어떠한 예기치 않은 타입이 들어오더라도 
+    안전한 문자열로 캐스팅되어 모델에 주입됩니다.
     """
-    # 명시적 정규화(Normalization) 및 캐스팅
-    if isinstance(reason, AnonymizationFailureReason):
-        normalized_reason = reason.value
-    elif not isinstance(reason, str) and reason is not None:
-        normalized_reason = str(reason)
-    else:
-        normalized_reason = reason
-
     return AnonymizationSummary(
         field_index=field_index,
         success=False,
         key_version=None,
         rotation_policy=None,
         hash_name=None,
-        reason=normalized_reason,
+        reason=_normalize_reason(reason),
     )
 
 
