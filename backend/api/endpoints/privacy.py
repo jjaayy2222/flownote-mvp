@@ -60,6 +60,10 @@ router = APIRouter(prefix="/privacy", tags=["privacy"])
 # SHA-256 결과: 64자리 16진수 (대소문자 허용)
 _SHA256_HEX_PATTERN: re.Pattern[str] = re.compile(r"^[0-9a-fA-F]{64}$")
 
+# 익명화 실패 시 예외 메시지 보안 해싱(Hashing)을 위해 자를 자릿수(상수)
+# (개인정보보호와 추적성 간의 Trade-off를 문서를 통해 명시)
+EXCEPTION_HASH_PREFIX_LEN = 16
+
 # log_fields_to_anonymize 항목별 제한 (하드코딩 금지 — 환경 변수 우선)
 _LOG_FIELD_MAX_LENGTH_ENV_KEY = "PRIVACY_LOG_FIELD_MAX_LENGTH"
 _DEFAULT_LOG_FIELD_MAX_LENGTH = 4096
@@ -263,6 +267,7 @@ def _build_anonymization_summary(
 
 def _normalize_reason(
     reason: str | AnonymizationFailureReason | Exception | None,
+    correlation_id: str | int | None = None,
 ) -> str:
     """
     익명화 실패 사유(reason)를 안전하고 일관된 문자열로 정규화하는 헬퍼 함수입니다.
@@ -281,10 +286,11 @@ def _normalize_reason(
         # 방어: 예외 객체가 그대로 넘어오면 메시지에 포함된 PII가 노출될 수 있으므로 마스킹
         # 보안(GDPR): 원본 에러 메시지(PII 포함 가능성)를 서버 로그에 남기지 않기 위해 
         # exc_info를 제외하고 메시지를 SHA-256 해싱하여 추적성(Traceability)만 확보합니다.
-        msg_hash = hashlib.sha256(str(reason).encode("utf-8")).hexdigest()[:16]
+        msg_hash = hashlib.sha256(str(reason).encode("utf-8")).hexdigest()[:EXCEPTION_HASH_PREFIX_LEN]
         logger.error(
             "[OBS][PRIVACY][API] Implicit exception masking in _normalize_reason. "
-            "Exception type: %s, msg_hash: %s", type(reason).__name__, msg_hash
+            "Exception type: %s, msg_hash: %s, correlation_id: %s", 
+            type(reason).__name__, msg_hash, correlation_id
         )
         return AnonymizationFailureReason.INTERNAL_ERROR.value
     if not isinstance(reason, str):
@@ -310,7 +316,7 @@ def _build_failed_summary(
         key_version=None,
         rotation_policy=None,
         hash_name=None,
-        reason=_normalize_reason(reason),
+        reason=_normalize_reason(reason, correlation_id=field_index),
     )
 
 
@@ -441,10 +447,13 @@ async def erase_user_data(
             )
         except Exception as exc:
             # 예기치 않은 오류 — 해당 필드만 실패, Graceful Degradation
-            logger.exception(
+            # 보안(GDPR): logger.exception은 예외 메시지원문을 남겨 PII 유출 리스크가 있으므로,
+            # logger.error로 전환하고 보안 해싱(Hashing) 기법을 사용하여 추적성 확보.
+            msg_hash = hashlib.sha256(str(exc).encode("utf-8")).hexdigest()[:EXCEPTION_HASH_PREFIX_LEN]
+            logger.error(
                 "[OBS][PRIVACY][API] Anonymization error: masked_uid=%s, "
-                "field_index=%d, error_type=%s",
-                masked, field_index, type(exc).__name__,
+                "field_index=%d, error_type=%s, msg_hash=%s",
+                masked, field_index, type(exc).__name__, msg_hash
             )
             # 내부 구현 세부사항(예외 클래스명)을 API 응답 스키마에 노출하지 않기 위해
             # 예기치 않은 오류는 안정적인 공통 코드로 매핑합니다.
