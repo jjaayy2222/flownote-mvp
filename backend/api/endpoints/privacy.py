@@ -265,6 +265,14 @@ def _build_anonymization_summary(
     )
 
 
+def _hash_exception_message(exc: Exception) -> str:
+    """
+    보안(GDPR): 원본 에러 메시지(PII 포함 가능성)를 서버 로그에 남기지 않기 위해 
+    메시지를 SHA-256 해싱하여 추적성(Traceability) 핑거프린트를 생성합니다.
+    """
+    return hashlib.sha256(str(exc).encode("utf-8")).hexdigest()[:EXCEPTION_HASH_PREFIX_LEN]
+
+
 def _normalize_reason(
     reason: str | AnonymizationFailureReason | Exception | None,
     correlation_id: str | int | None = None,
@@ -284,9 +292,7 @@ def _normalize_reason(
         return reason.value
     if isinstance(reason, Exception):
         # 방어: 예외 객체가 그대로 넘어오면 메시지에 포함된 PII가 노출될 수 있으므로 마스킹
-        # 보안(GDPR): 원본 에러 메시지(PII 포함 가능성)를 서버 로그에 남기지 않기 위해 
-        # exc_info를 제외하고 메시지를 SHA-256 해싱하여 추적성(Traceability)만 확보합니다.
-        msg_hash = hashlib.sha256(str(reason).encode("utf-8")).hexdigest()[:EXCEPTION_HASH_PREFIX_LEN]
+        msg_hash = _hash_exception_message(reason)
         logger.error(
             "[OBS][PRIVACY][API] Implicit exception masking in _normalize_reason. "
             "Exception type: %s, msg_hash: %s, correlation_id: %s", 
@@ -449,7 +455,7 @@ async def erase_user_data(
             # 예기치 않은 오류 — 해당 필드만 실패, Graceful Degradation
             # 보안(GDPR): logger.exception은 예외 메시지원문을 남겨 PII 유출 리스크가 있으므로,
             # logger.error로 전환하고 보안 해싱(Hashing) 기법을 사용하여 추적성 확보.
-            msg_hash = hashlib.sha256(str(exc).encode("utf-8")).hexdigest()[:EXCEPTION_HASH_PREFIX_LEN]
+            msg_hash = _hash_exception_message(exc)
             logger.error(
                 "[OBS][PRIVACY][API] Anonymization error: masked_uid=%s, "
                 "field_index=%d, error_type=%s, msg_hash=%s",
