@@ -34,6 +34,7 @@ GDPR Right-to-Erasure API Endpoint — v9.0 Phase 2-4 (Integration & Compliance)
 from __future__ import annotations
 
 import functools
+import hashlib
 import logging
 import os
 import re
@@ -156,6 +157,7 @@ class AnonymizationFailureReason(str, Enum):
     INVALID_INPUT = "invalid_input"
     INTERNAL_ERROR = "internal_error"
     ANONYMIZATION_FAILED = "anonymization_failed"
+    UNKNOWN_ERROR = "unknown_error"
 
 
 class AnonymizationSummary(BaseModel):
@@ -267,16 +269,23 @@ def _normalize_reason(
     
     [보안 및 방어 로직]
     - Enum: .value 추출
-    - Exception: PII 유출 및 내부 세부사항 노출을 막기 위해 강제로 INTERNAL_ERROR 처리
-    - None: 모호성을 없애기 위해 "unknown_error" 기본값 사용
+    - Exception: PII 유출을 막기 위해 마스킹하고, 추적을 위해 서버 사이드에 로깅
+    - None: 모호성을 없애기 위해 UNKNOWN_ERROR 사용
     - 그 외: 강제 str() 캐스팅
     """
     if reason is None:
-        return "unknown_error"
+        return AnonymizationFailureReason.UNKNOWN_ERROR.value
     if isinstance(reason, AnonymizationFailureReason):
         return reason.value
     if isinstance(reason, Exception):
         # 방어: 예외 객체가 그대로 넘어오면 메시지에 포함된 PII가 노출될 수 있으므로 마스킹
+        # 보안(GDPR): 원본 에러 메시지(PII 포함 가능성)를 서버 로그에 남기지 않기 위해 
+        # exc_info를 제외하고 메시지를 SHA-256 해싱하여 추적성(Traceability)만 확보합니다.
+        msg_hash = hashlib.sha256(str(reason).encode("utf-8")).hexdigest()[:16]
+        logger.error(
+            "[OBS][PRIVACY][API] Implicit exception masking in _normalize_reason. "
+            "Exception type: %s, msg_hash: %s", type(reason).__name__, msg_hash
+        )
         return AnonymizationFailureReason.INTERNAL_ERROR.value
     if not isinstance(reason, str):
         return str(reason)
