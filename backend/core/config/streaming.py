@@ -186,28 +186,38 @@ class StreamingConfig:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 모듈 로드 시점 기본값 범위 전검 (Fail-fast 선행 조건 검사)
-# 기본값과 범위 상수가 독립적으로 변경될 때 조용한 버그를 즉각 감지함
+# 모듈 로드 시점 기본값 범위 점검 (Fail-fast 선행 조건 검사)
+# assert 대신 명시적 예외를 사용하여 Python -O 모드에서도 검증 수행 보장
 # ─────────────────────────────────────────────────────────────────────────────
-assert (
-    _KEEPALIVE_INTERVAL_RANGE.min
-    <= _DEFAULT_KEEPALIVE_INTERVAL_SECS
-    <= _KEEPALIVE_INTERVAL_RANGE.max
-), (
-    f"DEFAULT_KEEPALIVE_INTERVAL_SECS={_DEFAULT_KEEPALIVE_INTERVAL_SECS} is outside "
-    f"KEEPALIVE_INTERVAL_RANGE=[{_KEEPALIVE_INTERVAL_RANGE.min}, {_KEEPALIVE_INTERVAL_RANGE.max}]"
+
+
+def _ensure_default_in_range(name: str, val: int, r: ConfigRange) -> None:
+    """기본값이 정의된 안전 범위 내에 있는지 강제한다 (Production-safe)."""
+    if not (r.min <= val <= r.max):
+        raise RuntimeError(
+            f"[STREAM][CONFIG][INVARIANT ERROR] Default {name}={val} is outside "
+            f"allowed range [{r.min}, {r.max}]. Check streaming.py constants."
+        )
+
+
+def _ensure_default_in_list(name: str, val: str, allowed: tuple[str, ...]) -> None:
+    """기본값이 허용된 목록에 있는지 강제한다 (Production-safe)."""
+    if val not in allowed:
+        raise RuntimeError(
+            f"[STREAM][CONFIG][INVARIANT ERROR] Default {name}={val!r} is not in "
+            f"allowed list {allowed}. Check streaming.py constants."
+        )
+
+
+# 기본값 정적 정합성 검사 실행
+# (assert 대신 명시적 예외를 사용하여 Python -O 모드에서도 검증 수행 보장)
+_ensure_default_in_range(
+    "KEEPALIVE_INTERVAL", _DEFAULT_KEEPALIVE_INTERVAL_SECS, _KEEPALIVE_INTERVAL_RANGE
 )
-assert (
-    _BUFFER_MAX_SIZE_RANGE.min <= _DEFAULT_BUFFER_MAX_SIZE <= _BUFFER_MAX_SIZE_RANGE.max
-), (
-    f"DEFAULT_BUFFER_MAX_SIZE={_DEFAULT_BUFFER_MAX_SIZE} is outside "
-    f"BUFFER_MAX_SIZE_RANGE=[{_BUFFER_MAX_SIZE_RANGE.min}, {_BUFFER_MAX_SIZE_RANGE.max}]"
+_ensure_default_in_range(
+    "BUFFER_MAX_SIZE", _DEFAULT_BUFFER_MAX_SIZE, _BUFFER_MAX_SIZE_RANGE
 )
-assert _TIMEOUT_RANGE.min <= _DEFAULT_TIMEOUT_SECS <= _TIMEOUT_RANGE.max, (
-    f"DEFAULT_TIMEOUT_SECS={_DEFAULT_TIMEOUT_SECS} is outside "
-    f"TIMEOUT_RANGE=[{_TIMEOUT_RANGE.min}, {_TIMEOUT_RANGE.max}]"
-)
-assert _DEFAULT_STREAM_VERSION in _VALID_STREAM_VERSIONS, (
-    f"DEFAULT_STREAM_VERSION={_DEFAULT_STREAM_VERSION!r} is not in "
-    f"VALID_STREAM_VERSIONS={_VALID_STREAM_VERSIONS}"
+_ensure_default_in_range("TIMEOUT", _DEFAULT_TIMEOUT_SECS, _TIMEOUT_RANGE)
+_ensure_default_in_list(
+    "STREAM_VERSION", _DEFAULT_STREAM_VERSION, _VALID_STREAM_VERSIONS
 )

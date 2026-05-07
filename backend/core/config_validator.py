@@ -526,7 +526,6 @@ class RealtimeStreamingConfig:
         """
         # StreamingConfig 스키마에서 정의된 상수를 참조 (하드코딩 금지)
         from backend.core.config.streaming import (
-            StreamingConfig,
             _DEFAULT_KEEPALIVE_INTERVAL_SECS,
             _DEFAULT_BUFFER_MAX_SIZE,
             _DEFAULT_TIMEOUT_SECS,
