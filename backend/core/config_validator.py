@@ -1,8 +1,8 @@
 # backend/core/config_validator.py
 
 """
-Global Configuration Validation Policy — v9.0 Phase 2 (Personalized RAG)
-=========================================================================
+Global Configuration Validation Policy — v9.0 Phase 2 (Personalized RAG) / Phase 3 (Realtime Streaming)
+=========================================================================================================
 
 장애 전파 범위(Blast Radius) 정책:
 
@@ -11,7 +11,8 @@ Global Configuration Validation Policy — v9.0 Phase 2 (Personalized RAG)
     → 보안 오염 방지를 위해 SystemExit(1)으로 전체 애플리케이션 기동 즉시 중단.
 
   [Subsystem Hard Failure]
-    선택적 부가 설정(FAISS_COMPACTION_*, TOPIC_CLUSTER_CACHE_TTL 등) 파싱 오류 시
+    선택적 부가 설정(FAISS_COMPACTION_*, TOPIC_CLUSTER_CACHE_TTL,
+    SSE_KEEPALIVE_INTERVAL_SECS 등) 파싱 오류 시
     → Silent Fallback 금지. 해당 서브시스템만 비활성화하고 핵심 REST API는 유지.
     → HealthRegistry를 통해 DEGRADED 상태를 노출하여 상태 은폐 방지.
 
@@ -49,6 +50,7 @@ class Subsystem(str, Enum):
     TOPIC_CLUSTERING = "topic_clustering"
     HYBRID_SEARCH = "hybrid_search"
     PERSONALIZED_INDEX = "personalized_index"
+    REALTIME_STREAMING = "realtime_streaming"  # Phase 3: 실시간 스트리밍 서브시스템
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -462,5 +464,145 @@ class PersonalizedRAGConfig:
             personalized_index_weight=p_weight,
             global_index_weight=g_weight,
             aws_wrapper_max_workers=aws_workers,
+            subsystem_ok=subsystem_ok,
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 3 스트리밍 설정 검증 클래스
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class RealtimeStreamingConfig:
+    """
+    v9.0 Phase 3 Realtime Streaming 전용 검증 설정 클래스.
+
+    사용법:
+        cfg = RealtimeStreamingConfig.from_env()  # bootstrap 단계에서 1회 호출
+
+    책임 (3-0/3-5 SSOT 정책 준수):
+        - StreamingConfig(backend/core/config/streaming.py)에서 정의된
+          스키마와 기본값을 바탕으로 OS 환경 변수를 로드한다.
+        - 바운더리 체크(Clamping) 및 유효성 검증을 중앙에서 강제한다.
+        - 파싱 오류 시 REALTIME_STREAMING 서브시스템만 DEGRADED 처리하고
+          기존 비스트리밍 엔드포인트 생존성을 유지한다 (Subsystem Hard Failure).
+
+    검증 시점 (Fail-Fast):
+        사용자 요청 시점(Request-time)이 아닌 애플리케이션 시작(Bootstrap/Startup)
+        시점에 즉각 수행되어야 한다.
+
+    선택적 환경 변수 (파싱 오류 시 해당 서브시스템만 비활성화):
+        SSE_KEEPALIVE_INTERVAL_SECS  (int, 기본: 15, 범위: 5~60)
+        STREAM_BUFFER_MAX_SIZE       (int, 기본: 100, 범위: 10~1000)
+        STREAM_TIMEOUT_SECS          (int, 기본: 120, 범위: 30~600)
+        LANGGRAPH_STREAM_VERSION     (str, 기본: "v2", 허용: "v1"/"v2")
+
+    보안 원칙:
+        민감 정보(사용자 ID, 토큰 등)는 절대 로그에 기록하지 않는다.
+    """
+
+    def __init__(
+        self,
+        *,
+        keepalive_interval_secs: int,
+        buffer_max_size: int,
+        timeout_secs: int,
+        stream_version: str,
+        subsystem_ok: Dict[str, bool],
+    ) -> None:
+        self.keepalive_interval_secs = keepalive_interval_secs
+        self.buffer_max_size = buffer_max_size
+        self.timeout_secs = timeout_secs
+        self.stream_version = stream_version
+        # 서브시스템 가동 여부 맵 (True=활성, False=비활성)
+        self.subsystem_ok: Dict[str, bool] = subsystem_ok
+
+    @classmethod
+    def from_env(cls) -> "RealtimeStreamingConfig":
+        """
+        환경 변수에서 스트리밍 설정을 파싱하여 RealtimeStreamingConfig 인스턴스를 반환한다.
+        파싱 오류 시 REALTIME_STREAMING 서브시스템 비활성화 — Subsystem Hard Failure.
+        전체 서버 부팅을 중단하지 않으며 기존 비스트리밍 API는 정상 유지된다.
+        """
+        # StreamingConfig 스키마에서 정의된 상수를 참조 (하드코딩 금지)
+        from backend.core.config.streaming import (
+            _DEFAULT_KEEPALIVE_INTERVAL_SECS,
+            _DEFAULT_BUFFER_MAX_SIZE,
+            _DEFAULT_TIMEOUT_SECS,
+            _DEFAULT_STREAM_VERSION,
+            _KEEPALIVE_INTERVAL_RANGE,
+            _BUFFER_MAX_SIZE_RANGE,
+            _TIMEOUT_RANGE,
+            _VALID_STREAM_VERSIONS,
+            _ENV_KEEPALIVE_INTERVAL,
+            _ENV_BUFFER_MAX_SIZE,
+            _ENV_TIMEOUT,
+            _ENV_STREAM_VERSION,
+        )
+
+        subsystem_ok: Dict[str, bool] = {}
+
+        # ── 서브시스템 설정 (Subsystem Hard Failure) ──────────────────────
+        keepalive, ok_ka = _parse_int_subsystem(
+            _ENV_KEEPALIVE_INTERVAL,
+            default=_DEFAULT_KEEPALIVE_INTERVAL_SECS,
+            range_=_KEEPALIVE_INTERVAL_RANGE,
+            subsystem=Subsystem.REALTIME_STREAMING,
+        )
+        buffer_size, ok_buf = _parse_int_subsystem(
+            _ENV_BUFFER_MAX_SIZE,
+            default=_DEFAULT_BUFFER_MAX_SIZE,
+            range_=_BUFFER_MAX_SIZE_RANGE,
+            subsystem=Subsystem.REALTIME_STREAMING,
+        )
+        timeout, ok_to = _parse_int_subsystem(
+            _ENV_TIMEOUT,
+            default=_DEFAULT_TIMEOUT_SECS,
+            range_=_TIMEOUT_RANGE,
+            subsystem=Subsystem.REALTIME_STREAMING,
+        )
+
+        # 문자열 열거형 검증 (허용 버전 이외 값 → 기본값 폴백)
+        # ENV key 존재 여부를 먼저 확인하여 기본값에 불필요한 .strip() 방지
+        if _ENV_STREAM_VERSION in os.environ:
+            raw_version = os.environ[_ENV_STREAM_VERSION].strip()
+        else:
+            raw_version = _DEFAULT_STREAM_VERSION
+
+        if raw_version not in _VALID_STREAM_VERSIONS:
+            logger.error(
+                "[CONFIG][SUBSYSTEM HARD FAILURE][%s] '%s'=%r is not a valid version. "
+                "Allowed: %s. Subsystem disabled. Core REST API remains operational.",
+                Subsystem.REALTIME_STREAMING.value,
+                _ENV_STREAM_VERSION,
+                raw_version,
+                _VALID_STREAM_VERSIONS,
+            )
+            stream_version = _DEFAULT_STREAM_VERSION
+            ok_ver = False
+        else:
+            stream_version = raw_version
+            ok_ver = True
+
+
+        # 하나라도 실패하면 REALTIME_STREAMING 서브시스템 비활성화
+        subsystem_ok[Subsystem.REALTIME_STREAMING.value] = (
+            ok_ka and ok_buf and ok_to and ok_ver
+        )
+
+        # ── 비활성화된 서브시스템 운영 가시성 로깅 ────────────────────────
+        for sub, ok in subsystem_ok.items():
+            if not ok:
+                logger.error(
+                    "[CONFIG][SUBSYSTEM DISABLED] '%s' subsystem is DISABLED due to "
+                    "invalid configuration. Register via HealthRegistry for /health exposure.",
+                    sub,
+                )
+
+        return cls(
+            keepalive_interval_secs=keepalive,
+            buffer_max_size=buffer_size,
+            timeout_secs=timeout,
+            stream_version=stream_version,
             subsystem_ok=subsystem_ok,
         )
