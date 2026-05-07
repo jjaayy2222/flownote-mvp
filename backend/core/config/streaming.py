@@ -21,6 +21,7 @@ StreamingConfig — Phase 3 (Realtime Streaming) 설정 스키마 및 기본값 
 import os
 import logging
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from backend.config import ConfigRange, _clamp
 
@@ -155,19 +156,11 @@ class StreamingConfig:
         default_factory=lambda: _DEFAULT_STREAM_VERSION
     )
 
-    # ── 스키마/범위 상수 노출 (외부 참조용 — 변경 금지) ──────────────────
-    ENV_KEEPALIVE_INTERVAL: str = field(
-        default=_ENV_KEEPALIVE_INTERVAL, init=False, repr=False, compare=False
-    )
-    ENV_BUFFER_MAX_SIZE: str = field(
-        default=_ENV_BUFFER_MAX_SIZE, init=False, repr=False, compare=False
-    )
-    ENV_TIMEOUT: str = field(
-        default=_ENV_TIMEOUT, init=False, repr=False, compare=False
-    )
-    ENV_STREAM_VERSION: str = field(
-        default=_ENV_STREAM_VERSION, init=False, repr=False, compare=False
-    )
+    # ── 스키마/범위 상수 노출 (외부 참조용 — ClassVar로 선언하여 인스턴스 필드에서 완전 제외) ────
+    ENV_KEEPALIVE_INTERVAL: ClassVar[str] = _ENV_KEEPALIVE_INTERVAL
+    ENV_BUFFER_MAX_SIZE: ClassVar[str] = _ENV_BUFFER_MAX_SIZE
+    ENV_TIMEOUT: ClassVar[str] = _ENV_TIMEOUT
+    ENV_STREAM_VERSION: ClassVar[str] = _ENV_STREAM_VERSION
 
     @classmethod
     def load(cls) -> "StreamingConfig":
@@ -198,3 +191,35 @@ class StreamingConfig:
                 valid_values=_VALID_STREAM_VERSIONS,
             ),
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 모듈 로드 시점 기본값 범위 전검 (Fail-fast 선행 조건 검사)
+# 기본값과 범위 상수가 독립적으로 변경될 때 조용한 버그를 즉각 감지함
+# ─────────────────────────────────────────────────────────────────────────────
+assert (
+    _KEEPALIVE_INTERVAL_RANGE.min
+    <= _DEFAULT_KEEPALIVE_INTERVAL_SECS
+    <= _KEEPALIVE_INTERVAL_RANGE.max
+), (
+    f"DEFAULT_KEEPALIVE_INTERVAL_SECS={_DEFAULT_KEEPALIVE_INTERVAL_SECS} is outside "
+    f"KEEPALIVE_INTERVAL_RANGE=[{_KEEPALIVE_INTERVAL_RANGE.min}, {_KEEPALIVE_INTERVAL_RANGE.max}]"
+)
+assert (
+    _BUFFER_MAX_SIZE_RANGE.min
+    <= _DEFAULT_BUFFER_MAX_SIZE
+    <= _BUFFER_MAX_SIZE_RANGE.max
+), (
+    f"DEFAULT_BUFFER_MAX_SIZE={_DEFAULT_BUFFER_MAX_SIZE} is outside "
+    f"BUFFER_MAX_SIZE_RANGE=[{_BUFFER_MAX_SIZE_RANGE.min}, {_BUFFER_MAX_SIZE_RANGE.max}]"
+)
+assert (
+    _TIMEOUT_RANGE.min <= _DEFAULT_TIMEOUT_SECS <= _TIMEOUT_RANGE.max
+), (
+    f"DEFAULT_TIMEOUT_SECS={_DEFAULT_TIMEOUT_SECS} is outside "
+    f"TIMEOUT_RANGE=[{_TIMEOUT_RANGE.min}, {_TIMEOUT_RANGE.max}]"
+)
+assert _DEFAULT_STREAM_VERSION in _VALID_STREAM_VERSIONS, (
+    f"DEFAULT_STREAM_VERSION={_DEFAULT_STREAM_VERSION!r} is not in "
+    f"VALID_STREAM_VERSIONS={_VALID_STREAM_VERSIONS}"
+)
