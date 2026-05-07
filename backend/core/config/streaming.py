@@ -194,32 +194,41 @@ class StreamingConfig:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 모듈 로드 시점 기본값 범위 전검 (Fail-fast 선행 조건 검사)
-# 기본값과 범위 상수가 독립적으로 변경될 때 조용한 버그를 즉각 감지함
+# 모듈 로드 시점 기본값 범위 전검 (항상 실행되는 명시적 예외 발생)
+#
+# [주의] `assert` 대신 `if ... raise ValueError` 패턴을 사용합니다.
+# Python을 `-O` (최적화) 플래그와 함께 실행하면 `assert`는 건너뛰게 되므로,
+# 프로덕션 환경에서도 반드시 검증이 수행되도록 명시적 예외 발생 방식을 채택합니다.
 # ─────────────────────────────────────────────────────────────────────────────
-assert (
-    _KEEPALIVE_INTERVAL_RANGE.min
-    <= _DEFAULT_KEEPALIVE_INTERVAL_SECS
-    <= _KEEPALIVE_INTERVAL_RANGE.max
-), (
-    f"DEFAULT_KEEPALIVE_INTERVAL_SECS={_DEFAULT_KEEPALIVE_INTERVAL_SECS} is outside "
-    f"KEEPALIVE_INTERVAL_RANGE=[{_KEEPALIVE_INTERVAL_RANGE.min}, {_KEEPALIVE_INTERVAL_RANGE.max}]"
+
+
+def _verify_default_in_range(name: str, default: int, range_: ConfigRange) -> None:
+    """
+    기본값이 ConfigRange 내에 있는지 검증한다.
+    범위를 벗어나면 ValueError를 발생시킨다.
+    `-O` 플래그 환경에서도 항상 실행되도록 assert 대신 명시적 예외를 사용한다.
+    """
+    if not (range_.min <= default <= range_.max):
+        raise ValueError(
+            f"[CONFIG INVARIANT] {name}={default} is outside "
+            f"safe range [{range_.min}, {range_.max}]. "
+            f"Update the default or the range to maintain consistency."
+        )
+
+
+# (변수명, 기본값, 유효 범위) 순서로 검증 목록을 정의 — 항목 추가 시 이 목록만 수정
+_INT_DEFAULT_CHECKS: tuple[tuple[str, int, ConfigRange], ...] = (
+    ("DEFAULT_KEEPALIVE_INTERVAL_SECS", _DEFAULT_KEEPALIVE_INTERVAL_SECS, _KEEPALIVE_INTERVAL_RANGE),
+    ("DEFAULT_BUFFER_MAX_SIZE", _DEFAULT_BUFFER_MAX_SIZE, _BUFFER_MAX_SIZE_RANGE),
+    ("DEFAULT_TIMEOUT_SECS", _DEFAULT_TIMEOUT_SECS, _TIMEOUT_RANGE),
 )
-assert (
-    _BUFFER_MAX_SIZE_RANGE.min
-    <= _DEFAULT_BUFFER_MAX_SIZE
-    <= _BUFFER_MAX_SIZE_RANGE.max
-), (
-    f"DEFAULT_BUFFER_MAX_SIZE={_DEFAULT_BUFFER_MAX_SIZE} is outside "
-    f"BUFFER_MAX_SIZE_RANGE=[{_BUFFER_MAX_SIZE_RANGE.min}, {_BUFFER_MAX_SIZE_RANGE.max}]"
-)
-assert (
-    _TIMEOUT_RANGE.min <= _DEFAULT_TIMEOUT_SECS <= _TIMEOUT_RANGE.max
-), (
-    f"DEFAULT_TIMEOUT_SECS={_DEFAULT_TIMEOUT_SECS} is outside "
-    f"TIMEOUT_RANGE=[{_TIMEOUT_RANGE.min}, {_TIMEOUT_RANGE.max}]"
-)
-assert _DEFAULT_STREAM_VERSION in _VALID_STREAM_VERSIONS, (
-    f"DEFAULT_STREAM_VERSION={_DEFAULT_STREAM_VERSION!r} is not in "
-    f"VALID_STREAM_VERSIONS={_VALID_STREAM_VERSIONS}"
-)
+
+for _name, _default, _range in _INT_DEFAULT_CHECKS:
+    _verify_default_in_range(_name, _default, _range)
+
+# 문자열 열거형 기본값 검증 (별도 처리)
+if _DEFAULT_STREAM_VERSION not in _VALID_STREAM_VERSIONS:
+    raise ValueError(
+        f"[CONFIG INVARIANT] DEFAULT_STREAM_VERSION={_DEFAULT_STREAM_VERSION!r} "
+        f"is not in VALID_STREAM_VERSIONS={_VALID_STREAM_VERSIONS}."
+    )
