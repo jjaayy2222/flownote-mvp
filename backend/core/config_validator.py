@@ -508,14 +508,14 @@ class RealtimeStreamingConfig:
         buffer_max_size: int,
         timeout_secs: int,
         stream_version: str,
-        subsystem_ok: Dict[str, bool],
+        subsystem_ok: Dict[Subsystem, bool],
     ) -> None:
         self.keepalive_interval_secs = keepalive_interval_secs
         self.buffer_max_size = buffer_max_size
         self.timeout_secs = timeout_secs
         self.stream_version = stream_version
-        # 서브시스템 가동 여부 맵 (True=활성, False=비활성)
-        self.subsystem_ok: Dict[str, bool] = subsystem_ok
+        # 서브시스템 가동 여부 맵: Enum 키로 내부 관리, 경계에서만 .value 변환
+        self.subsystem_ok: Dict[Subsystem, bool] = subsystem_ok
 
     @classmethod
     def from_env(cls) -> "RealtimeStreamingConfig":
@@ -524,79 +524,79 @@ class RealtimeStreamingConfig:
         파싱 오류 시 REALTIME_STREAMING 서브시스템 비활성화 — Subsystem Hard Failure.
         전체 서버 부팅을 중단하지 않으며 기존 비스트리밍 API는 정상 유지된다.
         """
-        # StreamingConfig 스키마에서 정의된 상수를 참조 (하드코딩 금지)
+        # 공개 상수 별칭을 통해 임포트 (밑줄 접두 내부 상수 직접 참조 금지)
         from backend.core.config.streaming import (
-            _DEFAULT_KEEPALIVE_INTERVAL_SECS,
-            _DEFAULT_BUFFER_MAX_SIZE,
-            _DEFAULT_TIMEOUT_SECS,
-            _DEFAULT_STREAM_VERSION,
-            _KEEPALIVE_INTERVAL_RANGE,
-            _BUFFER_MAX_SIZE_RANGE,
-            _TIMEOUT_RANGE,
-            _VALID_STREAM_VERSIONS,
-            _ENV_KEEPALIVE_INTERVAL,
-            _ENV_BUFFER_MAX_SIZE,
-            _ENV_TIMEOUT,
-            _ENV_STREAM_VERSION,
+            STREAMING_DEFAULT_KEEPALIVE_INTERVAL_SECS,
+            STREAMING_DEFAULT_BUFFER_MAX_SIZE,
+            STREAMING_DEFAULT_TIMEOUT_SECS,
+            STREAMING_DEFAULT_STREAM_VERSION,
+            STREAMING_KEEPALIVE_INTERVAL_RANGE,
+            STREAMING_BUFFER_MAX_SIZE_RANGE,
+            STREAMING_TIMEOUT_RANGE,
+            STREAMING_VALID_STREAM_VERSIONS,
+            STREAMING_ENV_KEEPALIVE_INTERVAL,
+            STREAMING_ENV_BUFFER_MAX_SIZE,
+            STREAMING_ENV_TIMEOUT,
+            STREAMING_ENV_STREAM_VERSION,
         )
 
-        subsystem_ok: Dict[str, bool] = {}
+        # Dict[Subsystem, bool]: Enum 키로 내부 타입 안전성 확보
+        subsystem_ok: Dict[Subsystem, bool] = {}
 
         # ── 서브시스템 설정 (Subsystem Hard Failure) ──────────────────────
         keepalive, ok_ka = _parse_int_subsystem(
-            _ENV_KEEPALIVE_INTERVAL,
-            default=_DEFAULT_KEEPALIVE_INTERVAL_SECS,
-            range_=_KEEPALIVE_INTERVAL_RANGE,
+            STREAMING_ENV_KEEPALIVE_INTERVAL,
+            default=STREAMING_DEFAULT_KEEPALIVE_INTERVAL_SECS,
+            range_=STREAMING_KEEPALIVE_INTERVAL_RANGE,
             subsystem=Subsystem.REALTIME_STREAMING,
         )
         buffer_size, ok_buf = _parse_int_subsystem(
-            _ENV_BUFFER_MAX_SIZE,
-            default=_DEFAULT_BUFFER_MAX_SIZE,
-            range_=_BUFFER_MAX_SIZE_RANGE,
+            STREAMING_ENV_BUFFER_MAX_SIZE,
+            default=STREAMING_DEFAULT_BUFFER_MAX_SIZE,
+            range_=STREAMING_BUFFER_MAX_SIZE_RANGE,
             subsystem=Subsystem.REALTIME_STREAMING,
         )
         timeout, ok_to = _parse_int_subsystem(
-            _ENV_TIMEOUT,
-            default=_DEFAULT_TIMEOUT_SECS,
-            range_=_TIMEOUT_RANGE,
+            STREAMING_ENV_TIMEOUT,
+            default=STREAMING_DEFAULT_TIMEOUT_SECS,
+            range_=STREAMING_TIMEOUT_RANGE,
             subsystem=Subsystem.REALTIME_STREAMING,
         )
 
         # 문자열 열거형 검증 (허용 버전 이외 값 → 기본값 폴백)
         # ENV key 존재 여부를 먼저 확인하여 기본값에 불필요한 .strip() 방지
-        if _ENV_STREAM_VERSION in os.environ:
-            raw_version = os.environ[_ENV_STREAM_VERSION].strip()
+        if STREAMING_ENV_STREAM_VERSION in os.environ:
+            raw_version = os.environ[STREAMING_ENV_STREAM_VERSION].strip()
         else:
-            raw_version = _DEFAULT_STREAM_VERSION
+            raw_version = STREAMING_DEFAULT_STREAM_VERSION
 
-        if raw_version not in _VALID_STREAM_VERSIONS:
+        if raw_version not in STREAMING_VALID_STREAM_VERSIONS:
             logger.error(
                 "[CONFIG][SUBSYSTEM HARD FAILURE][%s] '%s'=%r is not a valid version. "
                 "Allowed: %s. Subsystem disabled. Core REST API remains operational.",
                 Subsystem.REALTIME_STREAMING.value,
-                _ENV_STREAM_VERSION,
+                STREAMING_ENV_STREAM_VERSION,
                 raw_version,
-                _VALID_STREAM_VERSIONS,
+                STREAMING_VALID_STREAM_VERSIONS,
             )
-            stream_version = _DEFAULT_STREAM_VERSION
+            stream_version = STREAMING_DEFAULT_STREAM_VERSION
             ok_ver = False
         else:
             stream_version = raw_version
             ok_ver = True
 
-
         # 하나라도 실패하면 REALTIME_STREAMING 서브시스템 비활성화
-        subsystem_ok[Subsystem.REALTIME_STREAMING.value] = (
+        subsystem_ok[Subsystem.REALTIME_STREAMING] = (
             ok_ka and ok_buf and ok_to and ok_ver
         )
 
-        # ── 비활성화된 서브시스템 운영 가시성 로깅 ────────────────────────
+        # ── 비활성화된 서브시스템 운영 가시성 로깅 (경계에서 .value 변환) ──
         for sub, ok in subsystem_ok.items():
             if not ok:
                 logger.error(
                     "[CONFIG][SUBSYSTEM DISABLED] '%s' subsystem is DISABLED due to "
                     "invalid configuration. Register via HealthRegistry for /health exposure.",
-                    sub,
+                    sub.value,  # HealthRegistry 인터페이스는 str — 경계에서만 변환
                 )
 
         return cls(
@@ -606,3 +606,4 @@ class RealtimeStreamingConfig:
             stream_version=stream_version,
             subsystem_ok=subsystem_ok,
         )
+

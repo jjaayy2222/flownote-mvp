@@ -54,6 +54,26 @@ _DEFAULT_BUFFER_MAX_SIZE: int = 100
 _DEFAULT_TIMEOUT_SECS: int = 120
 _DEFAULT_STREAM_VERSION: str = "v2"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 공개 상수 별칭 (외부 모듈 참조용 — 내부 구현과의 결합도 최소화)
+# 외부 모듈은 _언더스코어 접두 상수가 아닌 이 공개 이름을 임포트해야 합니다.
+# ─────────────────────────────────────────────────────────────────────────────
+
+STREAMING_ENV_KEEPALIVE_INTERVAL: str = _ENV_KEEPALIVE_INTERVAL
+STREAMING_ENV_BUFFER_MAX_SIZE: str = _ENV_BUFFER_MAX_SIZE
+STREAMING_ENV_TIMEOUT: str = _ENV_TIMEOUT
+STREAMING_ENV_STREAM_VERSION: str = _ENV_STREAM_VERSION
+
+STREAMING_DEFAULT_KEEPALIVE_INTERVAL_SECS: int = _DEFAULT_KEEPALIVE_INTERVAL_SECS
+STREAMING_DEFAULT_BUFFER_MAX_SIZE: int = _DEFAULT_BUFFER_MAX_SIZE
+STREAMING_DEFAULT_TIMEOUT_SECS: int = _DEFAULT_TIMEOUT_SECS
+STREAMING_DEFAULT_STREAM_VERSION: str = _DEFAULT_STREAM_VERSION
+
+STREAMING_KEEPALIVE_INTERVAL_RANGE: ConfigRange = _KEEPALIVE_INTERVAL_RANGE
+STREAMING_BUFFER_MAX_SIZE_RANGE: ConfigRange = _BUFFER_MAX_SIZE_RANGE
+STREAMING_TIMEOUT_RANGE: ConfigRange = _TIMEOUT_RANGE
+STREAMING_VALID_STREAM_VERSIONS: tuple[str, ...] = _VALID_STREAM_VERSIONS
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 내부 파싱 헬퍼 (모듈 전용 — PII 비노출)
