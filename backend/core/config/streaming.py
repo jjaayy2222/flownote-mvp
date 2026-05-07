@@ -21,6 +21,7 @@ StreamingConfig — Phase 3 (Realtime Streaming) 설정 스키마 및 기본값 
 import os
 import logging
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from backend.config import ConfigRange, _clamp
 
@@ -155,19 +156,11 @@ class StreamingConfig:
         default_factory=lambda: _DEFAULT_STREAM_VERSION
     )
 
-    # ── 스키마/범위 상수 노출 (외부 참조용 — 변경 금지) ──────────────────
-    ENV_KEEPALIVE_INTERVAL: str = field(
-        default=_ENV_KEEPALIVE_INTERVAL, init=False, repr=False, compare=False
-    )
-    ENV_BUFFER_MAX_SIZE: str = field(
-        default=_ENV_BUFFER_MAX_SIZE, init=False, repr=False, compare=False
-    )
-    ENV_TIMEOUT: str = field(
-        default=_ENV_TIMEOUT, init=False, repr=False, compare=False
-    )
-    ENV_STREAM_VERSION: str = field(
-        default=_ENV_STREAM_VERSION, init=False, repr=False, compare=False
-    )
+    # ── 스키마/범위 상수 노출 (외부 참조용 — ClassVar로 선언하여 인스턴스 필드에서 완전 제외) ────
+    ENV_KEEPALIVE_INTERVAL: ClassVar[str] = _ENV_KEEPALIVE_INTERVAL
+    ENV_BUFFER_MAX_SIZE: ClassVar[str] = _ENV_BUFFER_MAX_SIZE
+    ENV_TIMEOUT: ClassVar[str] = _ENV_TIMEOUT
+    ENV_STREAM_VERSION: ClassVar[str] = _ENV_STREAM_VERSION
 
     @classmethod
     def load(cls) -> "StreamingConfig":
@@ -198,3 +191,44 @@ class StreamingConfig:
                 valid_values=_VALID_STREAM_VERSIONS,
             ),
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 모듈 로드 시점 기본값 범위 전검 (항상 실행되는 명시적 예외 발생)
+#
+# [주의] `assert` 대신 `if ... raise ValueError` 패턴을 사용합니다.
+# Python을 `-O` (최적화) 플래그와 함께 실행하면 `assert`는 건너뛰게 되므로,
+# 프로덕션 환경에서도 반드시 검증이 수행되도록 명시적 예외 발생 방식을 채택합니다.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _verify_default_in_range(name: str, default: int, range_: ConfigRange) -> None:
+    """
+    기본값이 ConfigRange 내에 있는지 검증한다.
+    범위를 벗어나면 ValueError를 발생시킨다.
+    `-O` 플래그 환경에서도 항상 실행되도록 assert 대신 명시적 예외를 사용한다.
+    """
+    if not (range_.min <= default <= range_.max):
+        raise ValueError(
+            f"[CONFIG INVARIANT] {name}={default} is outside "
+            f"safe range [{range_.min}, {range_.max}]. "
+            f"Update the default or the range to maintain consistency."
+        )
+
+
+# (변수명, 기본값, 유효 범위) 순서로 검증 목록을 정의 — 항목 추가 시 이 목록만 수정
+_INT_DEFAULT_CHECKS: tuple[tuple[str, int, ConfigRange], ...] = (
+    ("DEFAULT_KEEPALIVE_INTERVAL_SECS", _DEFAULT_KEEPALIVE_INTERVAL_SECS, _KEEPALIVE_INTERVAL_RANGE),
+    ("DEFAULT_BUFFER_MAX_SIZE", _DEFAULT_BUFFER_MAX_SIZE, _BUFFER_MAX_SIZE_RANGE),
+    ("DEFAULT_TIMEOUT_SECS", _DEFAULT_TIMEOUT_SECS, _TIMEOUT_RANGE),
+)
+
+for _name, _default, _range in _INT_DEFAULT_CHECKS:
+    _verify_default_in_range(_name, _default, _range)
+
+# 문자열 열거형 기본값 검증 (별도 처리)
+if _DEFAULT_STREAM_VERSION not in _VALID_STREAM_VERSIONS:
+    raise ValueError(
+        f"[CONFIG INVARIANT] DEFAULT_STREAM_VERSION={_DEFAULT_STREAM_VERSION!r} "
+        f"is not in VALID_STREAM_VERSIONS={_VALID_STREAM_VERSIONS}."
+    )
