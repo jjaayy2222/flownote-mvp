@@ -20,51 +20,154 @@ StreamingConfig — Phase 3 (Realtime Streaming) 설정 스키마 및 기본값 
 
 import os
 import logging
+from dataclasses import dataclass, field
 
 from backend.config import ConfigRange, _clamp
 
 logger = logging.getLogger(__name__)
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 환경 변수 키 상수 (문자열 하드코딩 방지 — 모듈 수준 정의)
+# ─────────────────────────────────────────────────────────────────────────────
 
+_ENV_KEEPALIVE_INTERVAL: str = "SSE_KEEPALIVE_INTERVAL_SECS"
+_ENV_BUFFER_MAX_SIZE: str = "STREAM_BUFFER_MAX_SIZE"
+_ENV_TIMEOUT: str = "STREAM_TIMEOUT_SECS"
+_ENV_STREAM_VERSION: str = "LANGGRAPH_STREAM_VERSION"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 유효 범위 상수 (Clamping 규칙 중앙 정의 — 모듈 수준 정의)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_KEEPALIVE_INTERVAL_RANGE: ConfigRange = ConfigRange(min=5, max=60)
+_BUFFER_MAX_SIZE_RANGE: ConfigRange = ConfigRange(min=10, max=1000)
+_TIMEOUT_RANGE: ConfigRange = ConfigRange(min=30, max=600)
+_VALID_STREAM_VERSIONS: tuple[str, ...] = ("v1", "v2")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 기본값 상수 (Magic Numbers 제거 — 모듈 수준 정의)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_DEFAULT_KEEPALIVE_INTERVAL_SECS: int = 15
+_DEFAULT_BUFFER_MAX_SIZE: int = 100
+_DEFAULT_TIMEOUT_SECS: int = 120
+_DEFAULT_STREAM_VERSION: str = "v2"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 내부 파싱 헬퍼 (모듈 전용 — PII 비노출)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _load_int(key: str, default: int, range_: ConfigRange) -> int:
+    """
+    정수형 환경 변수를 로드하고 안전 범위로 Clamp한다.
+    파싱 오류 시 기본값 폴백 + WARNING 로그.
+    """
+    raw = os.environ.get(key)
+    if raw is None:
+        return default
+
+    try:
+        value = int(raw)
+    except (ValueError, TypeError):
+        logger.warning(
+            "[STREAM][CONFIG] '%s' must be an integer, got type=%s. "
+            "Falling back to default=%d.",
+            key,
+            type(raw).__name__,
+            default,
+        )
+        return default
+
+    clamped = _clamp(value, range_)
+    if clamped != value:
+        logger.warning(
+            "[STREAM][CONFIG][CLAMP] '%s'=%d is outside safe range [%d, %d]; "
+            "clamped to %d.",
+            key,
+            value,
+            range_.min,
+            range_.max,
+            clamped,
+        )
+    return clamped
+
+
+def _load_str_enum(
+    key: str, default: str, valid_values: tuple[str, ...]
+) -> str:
+    """
+    문자열 열거형 환경 변수를 로드한다.
+    환경 변수가 설정되지 않은 경우 default를 그대로 반환하여,
+    기본값에 불필요한 .strip() 등의 조작이 가해지지 않도록 보장한다.
+    유효하지 않은 값이면 기본값 폴백 + WARNING 로그.
+    """
+    # 두 단계 읽기: 먼저 존재 여부를 확인한 후 strip()을 적용
+    # os.environ.get(key, default).strip() 패턴은 default에도 strip()을
+    # 적용하여 의도치 않은 정규화를 유발할 수 있으므로 사용하지 않음
+    if key not in os.environ:
+        return default
+
+    raw = os.environ[key].strip()
+    if raw not in valid_values:
+        logger.warning(
+            "[STREAM][CONFIG] '%s'=%r is not a valid value. "
+            "Allowed: %s. Falling back to default=%r.",
+            key,
+            raw,
+            valid_values,
+            default,
+        )
+        return default
+    return raw
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# StreamingConfig 데이터 클래스 (명시적 타입 스키마)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@dataclass
 class StreamingConfig:
     """
-    실시간 스트리밍 파이프라인 설정 스키마 및 기본값 정의.
+    실시간 스트리밍 파이프라인 런타임 설정값.
 
-    역할: 환경 변수 모델링 및 기본값 정의만 담당.
-    유효성 검증 및 Subsystem 등록은 `backend/core/config_validator.py`에서 수행.
+    역할: 환경 변수를 로드하여 타입이 지정된 설정 객체로 반환.
+    유효성 검증(Fail-Fast) 및 Subsystem 등록은 `backend/core/config_validator.py`에서 수행.
+
+    사용 예시:
+        config = StreamingConfig.load()
+        timeout = config.timeout_secs  # 정적 타입 추론 가능
     """
 
-    # ─────────────────────────────────────────────────────────────────────
-    # 기본값 상수 (Magic Numbers 제거, 하드코딩 금지)
-    # ─────────────────────────────────────────────────────────────────────
+    # 런타임 설정값 (타입 명시 — IDE 자동완성 및 mypy 지원)
+    keepalive_interval_secs: int = field(
+        default_factory=lambda: _DEFAULT_KEEPALIVE_INTERVAL_SECS
+    )
+    buffer_max_size: int = field(
+        default_factory=lambda: _DEFAULT_BUFFER_MAX_SIZE
+    )
+    timeout_secs: int = field(
+        default_factory=lambda: _DEFAULT_TIMEOUT_SECS
+    )
+    stream_version: str = field(
+        default_factory=lambda: _DEFAULT_STREAM_VERSION
+    )
 
-    DEFAULT_KEEPALIVE_INTERVAL_SECS: int = 15
-    DEFAULT_BUFFER_MAX_SIZE: int = 100
-    DEFAULT_TIMEOUT_SECS: int = 120
-    DEFAULT_STREAM_VERSION: str = "v2"
-
-    # ─────────────────────────────────────────────────────────────────────
-    # 유효 범위 (Clamping 규칙 중앙 정의)
-    # ─────────────────────────────────────────────────────────────────────
-
-    KEEPALIVE_INTERVAL_RANGE: ConfigRange = ConfigRange(min=5, max=60)
-    BUFFER_MAX_SIZE_RANGE: ConfigRange = ConfigRange(min=10, max=1000)
-    TIMEOUT_RANGE: ConfigRange = ConfigRange(min=30, max=600)
-    VALID_STREAM_VERSIONS: tuple[str, ...] = ("v1", "v2")
-
-    # ─────────────────────────────────────────────────────────────────────
-    # 환경 변수 키 상수 (문자열 하드코딩 방지)
-    # ─────────────────────────────────────────────────────────────────────
-
-    ENV_KEEPALIVE_INTERVAL = "SSE_KEEPALIVE_INTERVAL_SECS"
-    ENV_BUFFER_MAX_SIZE = "STREAM_BUFFER_MAX_SIZE"
-    ENV_TIMEOUT = "STREAM_TIMEOUT_SECS"
-    ENV_STREAM_VERSION = "LANGGRAPH_STREAM_VERSION"
-
-    # ─────────────────────────────────────────────────────────────────────
-    # 런타임 로딩 (기본값 + Clamping 적용)
-    # 실제 유효성 강제(Fail-Fast, Subsystem 등록)는 config_validator.py에 위임
-    # ─────────────────────────────────────────────────────────────────────
+    # ── 스키마/범위 상수 노출 (외부 참조용 — 변경 금지) ──────────────────
+    ENV_KEEPALIVE_INTERVAL: str = field(
+        default=_ENV_KEEPALIVE_INTERVAL, init=False, repr=False, compare=False
+    )
+    ENV_BUFFER_MAX_SIZE: str = field(
+        default=_ENV_BUFFER_MAX_SIZE, init=False, repr=False, compare=False
+    )
+    ENV_TIMEOUT: str = field(
+        default=_ENV_TIMEOUT, init=False, repr=False, compare=False
+    )
+    ENV_STREAM_VERSION: str = field(
+        default=_ENV_STREAM_VERSION, init=False, repr=False, compare=False
+    )
 
     @classmethod
     def load(cls) -> "StreamingConfig":
@@ -73,94 +176,25 @@ class StreamingConfig:
         파싱 오류 시 기본값으로 폴백 후 WARNING 로그를 남긴다.
         Subsystem 비활성화 결정은 config_validator.py에서 수행한다.
         """
-        instance = cls()
-
-        # SSE keepalive 핑 간격
-        instance.keepalive_interval_secs = cls._load_int(
-            key=cls.ENV_KEEPALIVE_INTERVAL,
-            default=cls.DEFAULT_KEEPALIVE_INTERVAL_SECS,
-            range_=cls.KEEPALIVE_INTERVAL_RANGE,
+        return cls(
+            keepalive_interval_secs=_load_int(
+                key=_ENV_KEEPALIVE_INTERVAL,
+                default=_DEFAULT_KEEPALIVE_INTERVAL_SECS,
+                range_=_KEEPALIVE_INTERVAL_RANGE,
+            ),
+            buffer_max_size=_load_int(
+                key=_ENV_BUFFER_MAX_SIZE,
+                default=_DEFAULT_BUFFER_MAX_SIZE,
+                range_=_BUFFER_MAX_SIZE_RANGE,
+            ),
+            timeout_secs=_load_int(
+                key=_ENV_TIMEOUT,
+                default=_DEFAULT_TIMEOUT_SECS,
+                range_=_TIMEOUT_RANGE,
+            ),
+            stream_version=_load_str_enum(
+                key=_ENV_STREAM_VERSION,
+                default=_DEFAULT_STREAM_VERSION,
+                valid_values=_VALID_STREAM_VERSIONS,
+            ),
         )
-
-        # 토큰 큐 최대 크기
-        instance.buffer_max_size = cls._load_int(
-            key=cls.ENV_BUFFER_MAX_SIZE,
-            default=cls.DEFAULT_BUFFER_MAX_SIZE,
-            range_=cls.BUFFER_MAX_SIZE_RANGE,
-        )
-
-        # 스트리밍 세션 최대 허용 시간
-        instance.timeout_secs = cls._load_int(
-            key=cls.ENV_TIMEOUT,
-            default=cls.DEFAULT_TIMEOUT_SECS,
-            range_=cls.TIMEOUT_RANGE,
-        )
-
-        # LangGraph 스트리밍 API 버전
-        instance.stream_version = cls._load_str_enum(
-            key=cls.ENV_STREAM_VERSION,
-            default=cls.DEFAULT_STREAM_VERSION,
-            valid_values=cls.VALID_STREAM_VERSIONS,
-        )
-
-        return instance
-
-    # ─────────────────────────────────────────────────────────────────────
-    # 내부 파싱 헬퍼 (모듈 전용 — PII 비노출)
-    # ─────────────────────────────────────────────────────────────────────
-
-    @classmethod
-    def _load_int(cls, key: str, default: int, range_: ConfigRange) -> int:
-        """
-        정수형 환경 변수를 로드하고 안전 범위로 Clamp한다.
-        파싱 오류 시 기본값 폴백 + WARNING 로그.
-        """
-        raw = os.environ.get(key)
-        if raw is None:
-            return default
-
-        try:
-            value = int(raw)
-        except (ValueError, TypeError):
-            logger.warning(
-                "[STREAM][CONFIG] '%s' must be an integer, got type=%s. "
-                "Falling back to default=%d.",
-                key,
-                type(raw).__name__,
-                default,
-            )
-            return default
-
-        clamped = _clamp(value, range_)
-        if clamped != value:
-            logger.warning(
-                "[STREAM][CONFIG][CLAMP] '%s'=%d is outside safe range [%d, %d]; "
-                "clamped to %d.",
-                key,
-                value,
-                range_.min,
-                range_.max,
-                clamped,
-            )
-        return clamped
-
-    @classmethod
-    def _load_str_enum(
-        cls, key: str, default: str, valid_values: tuple[str, ...]
-    ) -> str:
-        """
-        문자열 열거형 환경 변수를 로드한다.
-        유효하지 않은 값이면 기본값 폴백 + WARNING 로그.
-        """
-        raw = os.environ.get(key, default).strip()
-        if raw not in valid_values:
-            logger.warning(
-                "[STREAM][CONFIG] '%s'=%r is not a valid value. "
-                "Allowed: %s. Falling back to default=%r.",
-                key,
-                raw,
-                valid_values,
-                default,
-            )
-            return default
-        return raw
