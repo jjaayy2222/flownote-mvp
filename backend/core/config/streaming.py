@@ -21,7 +21,7 @@ StreamingConfig — Phase 3 (Realtime Streaming) 설정 스키마 및 기본값 
 import os
 import logging
 from dataclasses import dataclass, field
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, cast, get_args
 
 from backend.config import ConfigRange, _clamp
 
@@ -43,15 +43,15 @@ _ENV_STREAM_VERSION: str = "LANGGRAPH_STREAM_VERSION"
 _KEEPALIVE_INTERVAL_RANGE: ConfigRange = ConfigRange(min=5, max=60)
 _BUFFER_MAX_SIZE_RANGE: ConfigRange = ConfigRange(min=10, max=1000)
 _TIMEOUT_RANGE: ConfigRange = ConfigRange(min=30, max=600)
-_VALID_STREAM_VERSIONS: tuple[str, ...] = ("v1", "v2")
-
 # ─────────────────────────────────────────────────────────────────────────────
-# StreamVersion 타입 별칭 (SSOT)
+# StreamVersion 타입 별칭 및 지원 버전 SSOT
 # LangGraph astream_events의 version 파라미터와 일치하는 지원 버전 목록
-# 새 버전 표준화 시 이 정의만 수정하면 전체 코드베이스에 반영됨
+# 지원 버전의 SSOT은 `StreamVersion`이며, 이 정의만 수정하면
+# 런타임 검증 로직(`_VALID_STREAM_VERSIONS`)에도 자동으로 반영됨
 # ─────────────────────────────────────────────────────────────────────────────
 
 StreamVersion = Literal["v1", "v2"]
+_VALID_STREAM_VERSIONS: tuple[str, ...] = cast(tuple[str, ...], get_args(StreamVersion))
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 기본값 상수 (Magic Numbers 제거 — 모듈 수준 정의)

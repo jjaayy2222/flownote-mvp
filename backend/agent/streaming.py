@@ -143,7 +143,9 @@ def _extract_token_from_event(event: Mapping[str, Any]) -> str | None:
     # 1단계: data 키 자체가 없음 → 조용히 건너뜀 (정상적인 비-스트리밍 이벤트)
     # 2단계: data 키는 있으나 값이 명시적 None → 스키마 이상 신호이므로 warning
     # 3단계: data 값이 비-Mapping → 스키마 이상 신호이므로 warning
-    run_id: str = event.get("run_id", "")  # 진단용 세션 식별자 (원문 노출 없이 컨텍스트 제공)
+    # run_id: None(키 없음)과 실제 빈 문자열을 구분하여 로그 명확성 확보
+    _raw_run_id = event.get("run_id")
+    run_id: str = str(_raw_run_id) if _raw_run_id is not None else "N/A"
     
     if _EVENT_DATA_KEY not in event:
         # data 키가 아예 없는 이벤트: 정상 케이스로 간주
