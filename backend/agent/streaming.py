@@ -28,15 +28,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from typing import TYPE_CHECKING, Any
+
+from langchain_core.runnables import RunnableConfig
 
 from backend.core.config.streaming import STREAMING_DEFAULT_STREAM_VERSION
 from backend.schemas.streaming import (
     DoneChunk,
     ErrorChunk,
     StreamChunk,
-    StreamChunkType,
     TokenChunk,
 )
 
@@ -59,7 +60,12 @@ _CONTENT_KEY: str = "content"
 
 # 에러 코드 상수 (하드코딩 방지)
 _ERROR_CODE_STREAM_ERROR: str = "STREAM_ERROR"
-_ERROR_CODE_CLIENT_DISCONNECT: str = "CLIENT_DISCONNECT"
+
+# 클라이언트에 전달할 일반화된 에러 메시지
+# 내부 구현 세부사항(스택 트레이스, 경로 등) 노출 방지 — Information Disclosure 예방
+_GENERIC_STREAM_ERROR_MESSAGE: str = (
+    "Unexpected error occurred during streaming. Please try again later."
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -69,8 +75,8 @@ _ERROR_CODE_CLIENT_DISCONNECT: str = "CLIENT_DISCONNECT"
 
 async def stream_agent_response(
     graph: CompiledStateGraph,
-    inputs: dict[str, Any],
-    config: dict[str, Any],
+    inputs: Mapping[str, Any],
+    config: RunnableConfig,
     *,
     stream_version: str = STREAMING_DEFAULT_STREAM_VERSION,
 ) -> AsyncIterator[StreamChunk]:
@@ -134,16 +140,19 @@ async def stream_agent_response(
         raise
 
     except Exception as exc:  # noqa: BLE001
-        # 예상치 못한 예외: 로그 후 ErrorChunk 발행 및 스트림 종료
-        # PII 마스킹은 ErrorChunk.message의 @field_validator가 자동 적용
+        # 예상치 못한 예외: 서버 로그에는 상세 정보 기록, 클라이언트에는 일반화된 메시지만 전달
+        # 내부 에러 메시지/스택 트레이스의 클라이언트 노출은 Information Disclosure 위험이므로
+        # str(exc)는 로그에만 남기고 _GENERIC_STREAM_ERROR_MESSAGE를 클라이언트에 발행
         logger.error(
-            "[STREAM][ERROR] Unexpected error during streaming: type=%s",
+            "[STREAM][ERROR] Unexpected error during streaming: type=%s, detail=%s",
             type(exc).__name__,
+            str(exc),  # 상세 에러 정보는 서버 로그에만 기록
             exc_info=True,
         )
         yield ErrorChunk(
             code=_ERROR_CODE_STREAM_ERROR,
-            message=str(exc),  # @field_validator가 mask_pii_id() 자동 적용
+            # 클라이언트에는 일반화된 메시지만 전달 (구현 세부사항 비노출)
+            message=_GENERIC_STREAM_ERROR_MESSAGE,
         )
         return
 
