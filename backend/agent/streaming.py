@@ -29,7 +29,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphRecursionError
@@ -46,6 +46,35 @@ if TYPE_CHECKING:
     from langgraph.graph.state import CompiledStateGraph
 
 logger = logging.getLogger(__name__)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LangGraph 이벤트 스키마 타입 정의 (TypedDict)
+# 느슨한 Mapping[str, Any] 대신 이벤트 계약을 명시적으로 문서화
+# total=False: LangGraph가 새로운 필드를 추가할 수 있어 선택적 필드로 보수적으로 처리
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class _StreamEventData(TypedDict, total=False):
+    """
+    LangGraph astream_events 이벤트의 `data` 필드 예상 구조.
+    스트리밍 이벤트에서는 `chunk` 키에 AIMessage-류 객체가 담김.
+    """
+
+    chunk: Any
+
+
+class _StreamEvent(TypedDict, total=False):
+    """
+    LangGraph `astream_events` v2가 발행하는 이벤트 구조.
+    표준 필드를 명시적으로 문서화하여 이벤트 스키마 변경 시 조기 감지를 돕는다.
+    """
+
+    event: str
+    data: _StreamEventData
+    name: str
+    run_id: str
+    tags: list[str]
+    metadata: dict[str, Any]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LangGraph 이벤트 타입 상수 (문자열 하드코딩 방지)
@@ -88,6 +117,10 @@ def _extract_token_from_event(event: Mapping[str, Any]) -> str | None:
     이벤트 구조에 대한 가정을 한 곳에 집중하여, 이벤트 스키마 변경 시
     수정 지점을 최소화하고 단위 테스트를 용이하게 한다.
 
+    예상 이벤트 구조: _StreamEvent TypedDict 참조 (문서화 목적).
+    LangGraph가 실제로 반환하는 타입은 CustomStreamEvent | StandardStreamEvent
+    Union이므로, 런타임 호환성을 위해 파라미터는 Mapping[str, Any]를 사용한다.
+
     Args:
         event: LangGraph astream_events가 발행하는 이벤트 딕셔너리.
 
@@ -104,13 +137,26 @@ def _extract_token_from_event(event: Mapping[str, Any]) -> str | None:
         return None
 
     # data 필드가 None 또는 비-Mapping 타입일 경우 방어적으로 처리
-    # event.get()이 None을 반환할 수 있고, emitter가 예상치 못한 타입을 보낼 수 있음
+    # 스트리밍 이벤트 내부에서 예상치 못한 구조는 관측성 로그로 기록
     raw_data = event.get(_EVENT_DATA_KEY) or {}
     if not isinstance(raw_data, Mapping):
+        logger.warning(
+            "[STREAM][SCHEMA] Unexpected data type in streaming event '%s': "
+            "expected Mapping, got %s. Possible schema change.",
+            event_name,
+            type(raw_data).__name__,
+        )
         return None
-    chunk_data: Mapping[str, Any] = raw_data
+
+    chunk_data: _StreamEventData = cast(_StreamEventData, raw_data)
     chunk = chunk_data.get(_CHUNK_KEY)
     if chunk is None:
+        logger.warning(
+            "[STREAM][SCHEMA] No '%s' key in data of streaming event '%s'. "
+            "Possible schema change.",
+            _CHUNK_KEY,
+            event_name,
+        )
         return None
 
     content = getattr(chunk, _CONTENT_KEY, None)
