@@ -32,6 +32,7 @@ from collections.abc import AsyncIterator, Mapping
 from typing import TYPE_CHECKING, Any
 
 from langchain_core.runnables import RunnableConfig
+from langgraph.errors import GraphRecursionError
 
 from backend.core.config.streaming import STREAMING_DEFAULT_STREAM_VERSION
 from backend.schemas.streaming import (
@@ -57,15 +58,66 @@ _LANGGRAPH_EVENT_ON_LLM_STREAM: str = "on_llm_stream"
 # 토큰 청크 데이터 접근 키
 _CHUNK_KEY: str = "chunk"
 _CONTENT_KEY: str = "content"
+_EVENT_NAME_KEY: str = "event"
+_EVENT_DATA_KEY: str = "data"
 
 # 에러 코드 상수 (하드코딩 방지)
 _ERROR_CODE_STREAM_ERROR: str = "STREAM_ERROR"
+_ERROR_CODE_RECURSION_LIMIT: str = "RECURSION_LIMIT"
 
 # 클라이언트에 전달할 일반화된 에러 메시지
 # 내부 구현 세부사항(스택 트레이스, 경로 등) 노출 방지 — Information Disclosure 예방
 _GENERIC_STREAM_ERROR_MESSAGE: str = (
     "Unexpected error occurred during streaming. Please try again later."
 )
+_RECURSION_LIMIT_MESSAGE: str = (
+    "The response could not be completed due to a processing limit. "
+    "Please try a shorter or simpler query."
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 이벤트 파싱 헬퍼
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _extract_token_from_event(event: Mapping[str, Any]) -> str | None:
+    """
+    LangGraph 스트림 이벤트에서 토큰 텍스트를 추출한다.
+
+    이벤트 구조에 대한 가정을 한 곳에 집중하여, 이벤트 스키마 변경 시
+    수정 지점을 최소화하고 단위 테스트를 용이하게 한다.
+
+    Args:
+        event: LangGraph astream_events가 발행하는 이벤트 딕셔너리.
+
+    Returns:
+        추출된 토큰 텍스트(str). 토큰이 없거나 비어 있으면 None.
+    """
+    event_name: str = event.get(_EVENT_NAME_KEY, "")
+
+    # 모델 스트림 이벤트가 아니면 토큰 없음
+    if event_name not in (
+        _LANGGRAPH_EVENT_ON_CHAT_MODEL_STREAM,
+        _LANGGRAPH_EVENT_ON_LLM_STREAM,
+    ):
+        return None
+
+    # data 필드가 None 또는 비-Mapping 타입일 경우 방어적으로 처리
+    # event.get()이 None을 반환할 수 있고, emitter가 예상치 못한 타입을 보낼 수 있음
+    raw_data = event.get(_EVENT_DATA_KEY) or {}
+    if not isinstance(raw_data, Mapping):
+        return None
+    chunk_data: Mapping[str, Any] = raw_data
+    chunk = chunk_data.get(_CHUNK_KEY)
+    if chunk is None:
+        return None
+
+    content = getattr(chunk, _CONTENT_KEY, None)
+    if not isinstance(content, str) or not content:
+        return None
+
+    return content
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -106,29 +158,14 @@ async def stream_agent_response(
             config=config,
             version=stream_version,
         ):
-            event_name: str = event.get("event", "")
-            chunk_data = event.get("data", {})
-
-            # 모델 스트림 이벤트만 추출하여 TokenChunk 발행
-            if event_name in (
-                _LANGGRAPH_EVENT_ON_CHAT_MODEL_STREAM,
-                _LANGGRAPH_EVENT_ON_LLM_STREAM,
-            ):
-                chunk = chunk_data.get(_CHUNK_KEY)
-                if chunk is None:
-                    continue
-
-                content = getattr(chunk, _CONTENT_KEY, None)
-                if not isinstance(content, str) or not content:
-                    continue
-
-                yield TokenChunk(data=content)
-
+            token = _extract_token_from_event(event)
+            if token is not None:
+                yield TokenChunk(data=token)
             else:
                 # 비스트림 이벤트: 내부 관측성 로그로만 기록 (클라이언트에 미노출)
                 logger.debug(
                     "[STREAM][INTERNAL] event=%r (not forwarded to client)",
-                    event_name,
+                    event.get(_EVENT_NAME_KEY, ""),
                 )
 
     except asyncio.CancelledError:
@@ -138,6 +175,18 @@ async def stream_agent_response(
         )
         # CancelledError를 재발생시켜 상위 태스크가 올바르게 취소될 수 있도록 함
         raise
+
+    except GraphRecursionError as exc:
+        # LangGraph 재귀 한계 초과 — 알려진 운영 오류로 별도 처리
+        logger.warning(
+            "[STREAM][RECURSION] GraphRecursionError during streaming: %s",
+            type(exc).__name__,
+        )
+        yield ErrorChunk(
+            code=_ERROR_CODE_RECURSION_LIMIT,
+            message=_RECURSION_LIMIT_MESSAGE,
+        )
+        return
 
     except Exception as exc:  # noqa: BLE001
         # 예상치 못한 예외: 서버 로그에는 상세 정보 기록, 클라이언트에는 일반화된 메시지만 전달
@@ -158,3 +207,4 @@ async def stream_agent_response(
 
     # 스트림 정상 완료
     yield DoneChunk()
+
