@@ -46,13 +46,21 @@ _TIMEOUT_RANGE: ConfigRange = ConfigRange(min=30, max=600)
 _VALID_STREAM_VERSIONS: tuple[str, ...] = ("v1", "v2")
 
 # ─────────────────────────────────────────────────────────────────────────────
+# StreamVersion 타입 별칭 (SSOT)
+# LangGraph astream_events의 version 파라미터와 일치하는 지원 버전 목록
+# 새 버전 표준화 시 이 정의만 수정하면 전체 코드베이스에 반영됨
+# ─────────────────────────────────────────────────────────────────────────────
+
+StreamVersion = Literal["v1", "v2"]
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 기본값 상수 (Magic Numbers 제거 — 모듈 수준 정의)
 # ─────────────────────────────────────────────────────────────────────────────
 
 _DEFAULT_KEEPALIVE_INTERVAL_SECS: int = 15
 _DEFAULT_BUFFER_MAX_SIZE: int = 100
 _DEFAULT_TIMEOUT_SECS: int = 120
-_DEFAULT_STREAM_VERSION: Literal["v1", "v2"] = "v2"
+_DEFAULT_STREAM_VERSION: StreamVersion = "v2"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 공개 상수 별칭 (외부 모듈 참조용 — 내부 구현과의 결합도 최소화)
@@ -67,7 +75,7 @@ STREAMING_ENV_STREAM_VERSION: str = _ENV_STREAM_VERSION
 STREAMING_DEFAULT_KEEPALIVE_INTERVAL_SECS: int = _DEFAULT_KEEPALIVE_INTERVAL_SECS
 STREAMING_DEFAULT_BUFFER_MAX_SIZE: int = _DEFAULT_BUFFER_MAX_SIZE
 STREAMING_DEFAULT_TIMEOUT_SECS: int = _DEFAULT_TIMEOUT_SECS
-STREAMING_DEFAULT_STREAM_VERSION: Literal["v1", "v2"] = _DEFAULT_STREAM_VERSION
+STREAMING_DEFAULT_STREAM_VERSION: StreamVersion = _DEFAULT_STREAM_VERSION
 
 STREAMING_KEEPALIVE_INTERVAL_RANGE: ConfigRange = _KEEPALIVE_INTERVAL_RANGE
 STREAMING_BUFFER_MAX_SIZE_RANGE: ConfigRange = _BUFFER_MAX_SIZE_RANGE
