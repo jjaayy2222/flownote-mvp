@@ -103,7 +103,12 @@ def _extract_token_from_event(event: Mapping[str, Any]) -> str | None:
     ):
         return None
 
-    chunk_data: Mapping[str, Any] = event.get(_EVENT_DATA_KEY, {})
+    # data 필드가 None 또는 비-Mapping 타입일 경우 방어적으로 처리
+    # event.get()이 None을 반환할 수 있고, emitter가 예상치 못한 타입을 보낼 수 있음
+    raw_data = event.get(_EVENT_DATA_KEY) or {}
+    if not isinstance(raw_data, Mapping):
+        return None
+    chunk_data: Mapping[str, Any] = raw_data
     chunk = chunk_data.get(_CHUNK_KEY)
     if chunk is None:
         return None
