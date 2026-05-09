@@ -21,7 +21,7 @@ StreamingConfig — Phase 3 (Realtime Streaming) 설정 스키마 및 기본값 
 import os
 import logging
 from dataclasses import dataclass, field
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, cast, get_args
 
 from backend.config import ConfigRange, _clamp
 
@@ -43,7 +43,15 @@ _ENV_STREAM_VERSION: str = "LANGGRAPH_STREAM_VERSION"
 _KEEPALIVE_INTERVAL_RANGE: ConfigRange = ConfigRange(min=5, max=60)
 _BUFFER_MAX_SIZE_RANGE: ConfigRange = ConfigRange(min=10, max=1000)
 _TIMEOUT_RANGE: ConfigRange = ConfigRange(min=30, max=600)
-_VALID_STREAM_VERSIONS: tuple[str, ...] = ("v1", "v2")
+# ─────────────────────────────────────────────────────────────────────────────
+# StreamVersion 타입 별칭 및 지원 버전 SSOT
+# LangGraph astream_events의 version 파라미터와 일치하는 지원 버전 목록
+# 지원 버전의 SSOT은 `StreamVersion`이며, 이 정의만 수정하면
+# 런타임 검증 로직(`_VALID_STREAM_VERSIONS`)에도 자동으로 반영됨
+# ─────────────────────────────────────────────────────────────────────────────
+
+StreamVersion = Literal["v1", "v2"]
+_VALID_STREAM_VERSIONS: tuple[str, ...] = cast(tuple[str, ...], get_args(StreamVersion))
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 기본값 상수 (Magic Numbers 제거 — 모듈 수준 정의)
@@ -52,7 +60,7 @@ _VALID_STREAM_VERSIONS: tuple[str, ...] = ("v1", "v2")
 _DEFAULT_KEEPALIVE_INTERVAL_SECS: int = 15
 _DEFAULT_BUFFER_MAX_SIZE: int = 100
 _DEFAULT_TIMEOUT_SECS: int = 120
-_DEFAULT_STREAM_VERSION: Literal["v1", "v2"] = "v2"
+_DEFAULT_STREAM_VERSION: StreamVersion = "v2"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 공개 상수 별칭 (외부 모듈 참조용 — 내부 구현과의 결합도 최소화)
@@ -67,7 +75,7 @@ STREAMING_ENV_STREAM_VERSION: str = _ENV_STREAM_VERSION
 STREAMING_DEFAULT_KEEPALIVE_INTERVAL_SECS: int = _DEFAULT_KEEPALIVE_INTERVAL_SECS
 STREAMING_DEFAULT_BUFFER_MAX_SIZE: int = _DEFAULT_BUFFER_MAX_SIZE
 STREAMING_DEFAULT_TIMEOUT_SECS: int = _DEFAULT_TIMEOUT_SECS
-STREAMING_DEFAULT_STREAM_VERSION: Literal["v1", "v2"] = _DEFAULT_STREAM_VERSION
+STREAMING_DEFAULT_STREAM_VERSION: StreamVersion = _DEFAULT_STREAM_VERSION
 
 STREAMING_KEEPALIVE_INTERVAL_RANGE: ConfigRange = _KEEPALIVE_INTERVAL_RANGE
 STREAMING_BUFFER_MAX_SIZE_RANGE: ConfigRange = _BUFFER_MAX_SIZE_RANGE

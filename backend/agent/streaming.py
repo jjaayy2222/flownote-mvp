@@ -34,7 +34,10 @@ from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphRecursionError
 
-from backend.core.config.streaming import STREAMING_DEFAULT_STREAM_VERSION
+from backend.core.config.streaming import (
+    STREAMING_DEFAULT_STREAM_VERSION,
+    StreamVersion,
+)
 from backend.schemas.streaming import (
     DoneChunk,
     ErrorChunk,
@@ -136,18 +139,28 @@ def _extract_token_from_event(event: Mapping[str, Any]) -> str | None:
     ):
         return None
 
-    # data 필드 방어적 처리 — 두 단계 검증
-    # 1단계: None(data 키 없음) → 조용히 건너뜀 (정상적인 비-스트리밍 이벤트일 수 있음)
-    # 2단계: 非-None이지만 비-Mapping → 스키마 이상 신호이므로 warning 로그
-    # ※ or {}를 사용하면 [], '', 0 같은 falsy 비-Mapping 값도 {}로 변환되어
-    #   isinstance 체크가 항상 통과되고 스키마 이상 감지가 불가능해지는 버그 발생
+    # data 필드 방어적 처리 — 세 단계 검증 (정상 스킵 vs 비정상 None 구분)
+    # 1단계: data 키 자체가 없음 → 조용히 건너뜀 (정상적인 비-스트리밍 이벤트)
+    # 2단계: data 키는 있으나 값이 명시적 None → 스키마 이상 신호이므로 warning
+    # 3단계: data 값이 비-Mapping → 스키마 이상 신호이므로 warning
     # run_id: None(키 없음)과 실제 빈 문자열을 구분하여 로그 명확성 확보
     _raw_run_id = event.get("run_id")
     run_id: str = str(_raw_run_id) if _raw_run_id is not None else "N/A"
-    raw_data = event.get(_EVENT_DATA_KEY)
-    if raw_data is None:
-        # data 키가 없는 이벤트: 정상 케이스로 조용히 건너뜀
+    
+    if _EVENT_DATA_KEY not in event:
+        # data 키가 아예 없는 이벤트: 정상 케이스로 간주
         return None
+        
+    raw_data = event[_EVENT_DATA_KEY]
+    if raw_data is None:
+        logger.warning(
+            "[STREAM][SCHEMA] Explicit data=None in streaming event '%s' "
+            "(run_id=%s). Possible schema change.",
+            event_name,
+            run_id,
+        )
+        return None
+        
     if not isinstance(raw_data, Mapping):
         logger.warning(
             "[STREAM][SCHEMA] Unexpected data type in streaming event '%s' "
@@ -188,7 +201,7 @@ async def stream_agent_response(
     inputs: Mapping[str, Any],
     config: RunnableConfig,
     *,
-    stream_version: Literal["v1", "v2"] = STREAMING_DEFAULT_STREAM_VERSION,
+    stream_version: StreamVersion = STREAMING_DEFAULT_STREAM_VERSION,
 ) -> AsyncIterator[StreamChunk]:
     """
     LangGraph 그래프를 실행하고 모델이 생성하는 토큰을 `StreamChunk`로 발행한다.
