@@ -141,7 +141,9 @@ def _extract_token_from_event(event: Mapping[str, Any]) -> str | None:
     # 2단계: 非-None이지만 비-Mapping → 스키마 이상 신호이므로 warning 로그
     # ※ or {}를 사용하면 [], '', 0 같은 falsy 비-Mapping 값도 {}로 변환되어
     #   isinstance 체크가 항상 통과되고 스키마 이상 감지가 불가능해지는 버그 발생
-    run_id: str = event.get("run_id", "")  # 진단용 세션 식별자 (원문 노출 없이 컨텍스트 제공)
+    # run_id: None(키 없음)과 실제 빈 문자열을 구분하여 로그 명확성 확보
+    _raw_run_id = event.get("run_id")
+    run_id: str = str(_raw_run_id) if _raw_run_id is not None else "N/A"
     raw_data = event.get(_EVENT_DATA_KEY)
     if raw_data is None:
         # data 키가 없는 이벤트: 정상 케이스로 조용히 건너뜀
@@ -186,9 +188,7 @@ async def stream_agent_response(
     inputs: Mapping[str, Any],
     config: RunnableConfig,
     *,
-    stream_version: Literal["v1", "v2"] = cast(
-        Literal["v1", "v2"], STREAMING_DEFAULT_STREAM_VERSION
-    ),
+    stream_version: Literal["v1", "v2"] = STREAMING_DEFAULT_STREAM_VERSION,
 ) -> AsyncIterator[StreamChunk]:
     """
     LangGraph 그래프를 실행하고 모델이 생성하는 토큰을 `StreamChunk`로 발행한다.
