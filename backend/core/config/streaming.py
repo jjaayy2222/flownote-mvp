@@ -21,7 +21,7 @@ StreamingConfig — Phase 3 (Realtime Streaming) 설정 스키마 및 기본값 
 import os
 import logging
 from dataclasses import dataclass, field
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from backend.config import ConfigRange, _clamp
 
@@ -52,7 +52,7 @@ _VALID_STREAM_VERSIONS: tuple[str, ...] = ("v1", "v2")
 _DEFAULT_KEEPALIVE_INTERVAL_SECS: int = 15
 _DEFAULT_BUFFER_MAX_SIZE: int = 100
 _DEFAULT_TIMEOUT_SECS: int = 120
-_DEFAULT_STREAM_VERSION: str = "v2"
+_DEFAULT_STREAM_VERSION: Literal["v1", "v2"] = "v2"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 공개 상수 별칭 (외부 모듈 참조용 — 내부 구현과의 결합도 최소화)
@@ -67,7 +67,7 @@ STREAMING_ENV_STREAM_VERSION: str = _ENV_STREAM_VERSION
 STREAMING_DEFAULT_KEEPALIVE_INTERVAL_SECS: int = _DEFAULT_KEEPALIVE_INTERVAL_SECS
 STREAMING_DEFAULT_BUFFER_MAX_SIZE: int = _DEFAULT_BUFFER_MAX_SIZE
 STREAMING_DEFAULT_TIMEOUT_SECS: int = _DEFAULT_TIMEOUT_SECS
-STREAMING_DEFAULT_STREAM_VERSION: str = _DEFAULT_STREAM_VERSION
+STREAMING_DEFAULT_STREAM_VERSION: Literal["v1", "v2"] = _DEFAULT_STREAM_VERSION
 
 STREAMING_KEEPALIVE_INTERVAL_RANGE: ConfigRange = _KEEPALIVE_INTERVAL_RANGE
 STREAMING_BUFFER_MAX_SIZE_RANGE: ConfigRange = _BUFFER_MAX_SIZE_RANGE
