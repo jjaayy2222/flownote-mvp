@@ -29,7 +29,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Mapping
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphRecursionError
@@ -136,14 +136,22 @@ def _extract_token_from_event(event: Mapping[str, Any]) -> str | None:
     ):
         return None
 
-    # data 필드가 None 또는 비-Mapping 타입일 경우 방어적으로 처리
-    # 스트리밍 이벤트 내부에서 예상치 못한 구조는 관측성 로그로 기록
-    raw_data = event.get(_EVENT_DATA_KEY) or {}
+    # data 필드 방어적 처리 — 두 단계 검증
+    # 1단계: None(data 키 없음) → 조용히 건너뜀 (정상적인 비-스트리밍 이벤트일 수 있음)
+    # 2단계: 非-None이지만 비-Mapping → 스키마 이상 신호이므로 warning 로그
+    # ※ or {}를 사용하면 [], '', 0 같은 falsy 비-Mapping 값도 {}로 변환되어
+    #   isinstance 체크가 항상 통과되고 스키마 이상 감지가 불가능해지는 버그 발생
+    run_id: str = event.get("run_id", "")  # 진단용 세션 식별자 (원문 노출 없이 컨텍스트 제공)
+    raw_data = event.get(_EVENT_DATA_KEY)
+    if raw_data is None:
+        # data 키가 없는 이벤트: 정상 케이스로 조용히 건너뜀
+        return None
     if not isinstance(raw_data, Mapping):
         logger.warning(
-            "[STREAM][SCHEMA] Unexpected data type in streaming event '%s': "
-            "expected Mapping, got %s. Possible schema change.",
+            "[STREAM][SCHEMA] Unexpected data type in streaming event '%s' "
+            "(run_id=%s): expected Mapping, got %s. Possible schema change.",
             event_name,
+            run_id,
             type(raw_data).__name__,
         )
         return None
@@ -152,12 +160,14 @@ def _extract_token_from_event(event: Mapping[str, Any]) -> str | None:
     chunk = chunk_data.get(_CHUNK_KEY)
     if chunk is None:
         logger.warning(
-            "[STREAM][SCHEMA] No '%s' key in data of streaming event '%s'. "
-            "Possible schema change.",
+            "[STREAM][SCHEMA] No '%s' key in data of streaming event '%s' "
+            "(run_id=%s). Possible schema change.",
             _CHUNK_KEY,
             event_name,
+            run_id,
         )
         return None
+
 
     content = getattr(chunk, _CONTENT_KEY, None)
     if not isinstance(content, str) or not content:
@@ -176,7 +186,9 @@ async def stream_agent_response(
     inputs: Mapping[str, Any],
     config: RunnableConfig,
     *,
-    stream_version: str = STREAMING_DEFAULT_STREAM_VERSION,
+    stream_version: Literal["v1", "v2"] = cast(
+        Literal["v1", "v2"], STREAMING_DEFAULT_STREAM_VERSION
+    ),
 ) -> AsyncIterator[StreamChunk]:
     """
     LangGraph 그래프를 실행하고 모델이 생성하는 토큰을 `StreamChunk`로 발행한다.
