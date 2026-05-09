@@ -29,7 +29,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Mapping
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphRecursionError
@@ -49,15 +49,15 @@ logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LangGraph 이벤트 스키마 타입 정의 (TypedDict)
-# 마우스 Mapping[str, Any] 대신 이벤트 계약을 명시적으로 문서화
-# total=False: LangGraph가 눈라운 필드를 추가할 수 있어 선택적 필드로 보수적으로 처리
+# 느슨한 Mapping[str, Any] 대신 이벤트 계약을 명시적으로 문서화
+# total=False: LangGraph가 새로운 필드를 추가할 수 있어 선택적 필드로 보수적으로 처리
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 class _StreamEventData(TypedDict, total=False):
     """
     LangGraph astream_events 이벤트의 `data` 필드 예상 구조.
-    스트리밍 이벤트에서는 `chunk` 키에 AIMessage쿠라이크가 담김.
+    스트리밍 이벤트에서는 `chunk` 키에 AIMessage-류 객체가 담김.
     """
 
     chunk: Any
@@ -140,7 +140,7 @@ def _extract_token_from_event(event: Mapping[str, Any]) -> str | None:
     # 스트리밍 이벤트 내부에서 예상치 못한 구조는 관측성 로그로 기록
     raw_data = event.get(_EVENT_DATA_KEY) or {}
     if not isinstance(raw_data, Mapping):
-        logger.debug(
+        logger.warning(
             "[STREAM][SCHEMA] Unexpected data type in streaming event '%s': "
             "expected Mapping, got %s. Possible schema change.",
             event_name,
@@ -148,10 +148,10 @@ def _extract_token_from_event(event: Mapping[str, Any]) -> str | None:
         )
         return None
 
-    chunk_data: _StreamEventData = raw_data  # type: ignore[assignment]
+    chunk_data: _StreamEventData = cast(_StreamEventData, raw_data)
     chunk = chunk_data.get(_CHUNK_KEY)
     if chunk is None:
-        logger.debug(
+        logger.warning(
             "[STREAM][SCHEMA] No '%s' key in data of streaming event '%s'. "
             "Possible schema change.",
             _CHUNK_KEY,
