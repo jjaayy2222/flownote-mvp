@@ -38,16 +38,27 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
-@router.post("", summary="RAG 채팅 결과 동기 반환 (비스트리밍)")
+@router.post(
+    "",
+    summary="[비활성화/실험적] RAG 채팅 결과 동기 반환 (현재 501 Not Implemented)",
+    deprecated=True,
+)
 async def sync_chat(
     request: ChatQueryRequest, chat_service: ChatService = Depends(get_chat_service)
 ):
     """
+    [비활성화/실험적 엔드포인트]
+
     스트리밍이 불가한 클라이언트를 위해 기존 동기 응답 엔드포인트는 제거하지 않고 병행 운영합니다.
+    다만 현재 구현은 항상 501 Not Implemented 를 반환하며, 실사용 가능한 비스트리밍 RAG 응답은
+    추후 구현 예정입니다.
+
+    클라이언트에서 동기 채팅이 반드시 필요한 경우, 이 엔드포인트의 501 응답을 고려하여
+    실패 처리 / 폴백 로직을 구현하거나, 권장되는 스트리밍 기반 채팅 엔드포인트를 사용해 주세요.
     """
     logger.info(
         "Chat sync requested by user: %s (query_len=%d)",
-        request.user_id,
+        mask_pii_id(request.user_id),
         len(request.query),
     )
 
