@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List, Union
 from datetime import datetime
 import hashlib
+from collections.abc import Mapping
 
 logger = logging.getLogger(__name__)
 
@@ -107,12 +108,12 @@ def mask_pii_id(value: Optional[str], truncate_len: int = 12) -> str:
     return hashed
 
 
-def get_chat_log_extra(request_or_body: Any) -> Dict[str, Any]:
+def get_chat_log_extra(request_or_body: Union[Mapping[str, Any], Any]) -> Dict[str, Any]:
     """
     채팅 엔드포인트(동기/스트리밍)에서 공통으로 사용하는
     안전한 로깅 extra 딕셔너리를 생성합니다.
     """
-    if isinstance(request_or_body, dict):
+    if isinstance(request_or_body, Mapping):
         raw_user_id = request_or_body.get("user_id")
         raw_query = request_or_body.get("query")
     else:
