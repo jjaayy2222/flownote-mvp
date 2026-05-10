@@ -113,8 +113,10 @@ def get_chat_log_extra(request_or_body: Any) -> Dict[str, Any]:
     채팅 엔드포인트(동기/스트리밍)에서 공통으로 사용하는
     안전한 로깅 extra 딕셔너리를 생성합니다.
     
-    (내부적으로 Mapping 타입인지 검사하여, dict 뿐만 아니라 Pydantic 객체나
-    FastAPI QueryDict 등 어떤 객체가 들어와도 읽기 전용으로 안전하게 처리합니다.)
+    내부적으로 인입된 객체의 형태를 검사하여:
+    1. dict, FastAPI QueryDict 등 Mapping 객체는 `.get()`으로
+    2. Pydantic BaseModel 등 일반 객체는 `getattr`로
+    안전하게 필드를 읽어와 처리합니다.
     """
     if isinstance(request_or_body, Mapping):
         raw_user_id = request_or_body.get("user_id")
