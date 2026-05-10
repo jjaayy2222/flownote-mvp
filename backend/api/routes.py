@@ -23,6 +23,7 @@ router.include_router(endpoints.classify_router)
 router.include_router(endpoints.search_router)
 router.include_router(endpoints.metadata_router)
 router.include_router(endpoints.chat_router)
+router.include_router(endpoints.chat_stream_router)
 router.include_router(endpoints.admin_router)
 
 # GDPR Right-to-Erasure 엔드포인트 (Phase 2-4)
