@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 INVALID_PII_SENTINEL = "<INVALID_PII>"
 ANONYMOUS_USER_ID = "anonymous"
+MAX_QUERY_PREVIEW_LEN = 200
 
 
 def safe_parse_env_int(
@@ -111,9 +112,21 @@ def get_chat_log_extra(request_or_body: Any) -> Dict[str, Any]:
     채팅 엔드포인트(동기/스트리밍)에서 공통으로 사용하는
     안전한 로깅 extra 딕셔너리를 생성합니다.
     """
-    safe_user_id = getattr(request_or_body, "user_id", None) or ANONYMOUS_USER_ID
-    safe_query = getattr(request_or_body, "query", "") or ""
-    truncated_query = safe_query[:200] + ("..." if len(safe_query) > 200 else "")
+    if isinstance(request_or_body, dict):
+        raw_user_id = request_or_body.get("user_id")
+        raw_query = request_or_body.get("query")
+    else:
+        raw_user_id = getattr(request_or_body, "user_id", None)
+        raw_query = getattr(request_or_body, "query", None)
+
+    # Truthy 체크를 통해 빈 문자열("")이나 0 같은 Falsy 값에 대해서도
+    # 안전하게 ANONYMOUS_USER_ID 로 폴백하도록 기존 동작 복원
+    safe_user_id = str(raw_user_id) if raw_user_id else ANONYMOUS_USER_ID
+    safe_query = str(raw_query) if raw_query else ""
+    
+    is_truncated = len(safe_query) > MAX_QUERY_PREVIEW_LEN
+    truncated_query = safe_query[:MAX_QUERY_PREVIEW_LEN] + ("..." if is_truncated else "")
+    
     return {
         "user_id_hash": mask_pii_id(safe_user_id),
         "query_preview": truncated_query,
