@@ -9,7 +9,7 @@ from fastapi import APIRouter, Request
 from sse_starlette.sse import EventSourceResponse
 
 from backend.api.models import ChatQueryRequest
-from backend.utils import mask_pii_id
+from backend.utils import get_chat_log_extra
 from backend.core.config.streaming import STREAMING_DEFAULT_TIMEOUT_SECS
 
 logger = logging.getLogger(__name__)
@@ -32,15 +32,9 @@ async def stream_chat_endpoint(
 
     # 디버깅 및 트레이싱을 위한 최소 로그 (PII 마스킹 적용)
     # body.user_id가 누락되거나 None인 경우에 대비하여 안전하게 처리합니다.
-    safe_user_id = getattr(body, "user_id", None) or "anonymous"
-    safe_query = getattr(body, "query", "") or ""
-    truncated_query = safe_query[:200] + ("..." if len(safe_query) > 200 else "")
     logger.info(
         "Received streaming chat request",
-        extra={
-            "user_id_hash": mask_pii_id(safe_user_id),
-            "query_preview": truncated_query,
-        },
+        extra=get_chat_log_extra(body),
     )
     
     async def event_generator() -> AsyncGenerator[dict, None]:

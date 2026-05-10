@@ -31,7 +31,7 @@ from backend.services.chat_history_service import (  # type: ignore[import]
     MAX_FEEDBACK_STATS_LIMIT,
 )
 from backend.config import AdminConfig, AlertConfig
-from backend.utils import mask_pii_id  # type: ignore[import]
+from backend.utils import mask_pii_id, get_chat_log_extra  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
 
@@ -56,15 +56,9 @@ async def sync_chat(
     클라이언트에서 동기 채팅이 반드시 필요한 경우, 이 엔드포인트의 501 응답을 고려하여
     실패 처리 / 폴백 로직을 구현하거나, 권장되는 스트리밍 기반 채팅 엔드포인트를 사용해 주세요.
     """
-    safe_user_id = getattr(request, "user_id", None) or "anonymous"
-    safe_query = getattr(request, "query", "") or ""
-    truncated_query = safe_query[:200] + ("..." if len(safe_query) > 200 else "")
     logger.info(
         "Chat sync requested",
-        extra={
-            "user_id_hash": mask_pii_id(safe_user_id),
-            "query_preview": truncated_query,
-        },
+        extra=get_chat_log_extra(request),
     )
 
     # 비스트리밍(동기) 채팅 서비스 로직 연동 전까지 명시적인 501 에러 반환

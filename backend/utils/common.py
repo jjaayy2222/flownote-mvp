@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 INVALID_PII_SENTINEL = "<INVALID_PII>"
+ANONYMOUS_USER_ID = "anonymous"
 
 
 def safe_parse_env_int(
@@ -99,11 +100,24 @@ def mask_pii_id(value: Optional[str], truncate_len: int = 12) -> str:
     # [Security Validation] 음수 방어(Safe Wrapper)
     safe_len = max(0, truncate_len)
 
-    hashed = str(hashlib.sha256(value.encode("utf-8")).hexdigest())
+    hashed = hashlib.sha256(value.encode("utf-8")).hexdigest()
     if safe_len > 0:
         return hashed[:safe_len]  # type: ignore[index]
     return hashed
 
+
+def get_chat_log_extra(request_or_body: Any) -> Dict[str, Any]:
+    """
+    채팅 엔드포인트(동기/스트리밍)에서 공통으로 사용하는
+    안전한 로깅 extra 딕셔너리를 생성합니다.
+    """
+    safe_user_id = getattr(request_or_body, "user_id", None) or ANONYMOUS_USER_ID
+    safe_query = getattr(request_or_body, "query", "") or ""
+    truncated_query = safe_query[:200] + ("..." if len(safe_query) > 200 else "")
+    return {
+        "user_id_hash": mask_pii_id(safe_user_id),
+        "query_preview": truncated_query,
+    }
 
 def check_metadata_match(
     doc_metadata: Optional[Dict[str, Any]], metadata_filter: Optional[Dict[str, Any]]
