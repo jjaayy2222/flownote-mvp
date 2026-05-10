@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api")
 @router.get("/health", response_model=HealthCheckResponse)
 async def health_check(locale: str = Depends(get_locale)) -> HealthCheckResponse:
     """서버 상태 확인 (다국어 지원)"""
-    return HealthCheckResponse(status="ok", message=get_message("status_ok", locale))
+    return HealthCheckResponse(status="success", message=get_message("status_ok", locale))
 
 
 # Include endpoint routers

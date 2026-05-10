@@ -51,11 +51,11 @@ async def sync_chat(
         len(request.query),
     )
 
-    # TODO: 비스트리밍(동기) 채팅 서비스 로직 연동
-    return {
-        "status": "success",
-        "message": "Scaffolded synchronous endpoint for non-streaming clients.",
-    }
+    # 비스트리밍(동기) 채팅 서비스 로직 연동 전까지 명시적인 501 에러 반환
+    raise HTTPException(
+        status_code=501,
+        detail="Synchronous chat endpoint is scaffolded but not yet implemented.",
+    )
 
 
 # ─────────────────────────────────────────────────────────────

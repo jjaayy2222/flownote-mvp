@@ -2,6 +2,7 @@
 
 import logging
 import asyncio
+import json
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Request
@@ -33,7 +34,10 @@ async def stream_chat_endpoint(
             # 현재는 연결 확인을 위한 간단한 더미 이벤트를 전송합니다.
             yield {
                 "event": "message",
-                "data": '{"status": "connected", "message": "Streaming endpoint scaffolded successfully."}',
+                "data": json.dumps({
+                    "status": "connected",
+                    "message": "Streaming endpoint scaffolded successfully."
+                }),
             }
             
             # 클라이언트 연결 종료 감지를 위한 임시 대기 (추후 백프레셔 큐 기반 폴링으로 대체)
@@ -50,7 +54,7 @@ async def stream_chat_endpoint(
             logger.error(f"[STREAM] Unexpected error in streaming endpoint: {e}")
             yield {
                 "event": "error",
-                "data": '{"error": "Internal Server Error"}',
+                "data": json.dumps({"error": "Internal Server Error"}),
             }
 
     return EventSourceResponse(
