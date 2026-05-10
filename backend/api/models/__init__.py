@@ -7,7 +7,7 @@ API Models Package
 from enum import Enum
 from functools import lru_cache
 from typing import cast, Iterable, List, Dict, Any, Optional
-from pydantic import BaseModel, Field  # type: ignore[import]
+from pydantic import BaseModel, Field, field_validator  # type: ignore[import]
 
 from backend.api.models.shared import (  # type: ignore[import]
     ApiStatus,
@@ -212,6 +212,13 @@ class ChatQueryRequest(BaseModel):
     alpha: float = Field(
         default=0.5, ge=0.0, le=1.0, description="하이브리드 검색 FAISS 가중치"
     )
+
+    @field_validator("query")
+    @classmethod
+    def validate_query(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("`query`는 비어 있을 수 없습니다.")
+        return v
 
 
 class ChatMessage(BaseModel):
