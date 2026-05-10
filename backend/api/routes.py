@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api")
 @router.get("/health", response_model=HealthCheckResponse)
 async def health_check(locale: str = Depends(get_locale)) -> HealthCheckResponse:
     """서버 상태 확인 (다국어 지원)"""
-    return HealthCheckResponse(status="ok", message=get_message("status_ok", locale))
+    return HealthCheckResponse(status="success", message=get_message("status_ok", locale))
 
 
 # Include endpoint routers
@@ -23,6 +23,7 @@ router.include_router(endpoints.classify_router)
 router.include_router(endpoints.search_router)
 router.include_router(endpoints.metadata_router)
 router.include_router(endpoints.chat_router)
+router.include_router(endpoints.chat_stream_router)
 router.include_router(endpoints.admin_router)
 
 # GDPR Right-to-Erasure 엔드포인트 (Phase 2-4)

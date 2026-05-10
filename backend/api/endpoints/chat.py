@@ -38,34 +38,23 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
-@router.post("/stream", summary="RAG 채팅 결과 스트리밍")
-async def stream_chat(
+@router.post("", summary="RAG 채팅 결과 동기 반환 (비스트리밍)")
+async def sync_chat(
     request: ChatQueryRequest, chat_service: ChatService = Depends(get_chat_service)
 ):
     """
-    사용자의 질문을 기반으로 RAG 파이프라인(LangChain + Hybrid Search)을 거쳐
-    LLM의 응답을 Server-Sent Events(SSE) 스트리밍 형식으로 반환합니다.
+    스트리밍이 불가한 클라이언트를 위해 기존 동기 응답 엔드포인트는 제거하지 않고 병행 운영합니다.
     """
     logger.info(
-        "Chat stream requested by user: %s (query_len=%d)",
+        "Chat sync requested by user: %s (query_len=%d)",
         request.user_id,
         len(request.query),
     )
 
-    return StreamingResponse(
-        chat_service.stream_chat(
-            query=request.query,
-            user_id=request.user_id,
-            session_id=request.session_id,
-            k=request.k,
-            alpha=request.alpha,
-        ),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+    # 비스트리밍(동기) 채팅 서비스 로직 연동 전까지 명시적인 501 에러 반환
+    raise HTTPException(
+        status_code=501,
+        detail="Synchronous chat endpoint is scaffolded but not yet implemented.",
     )
 
 
