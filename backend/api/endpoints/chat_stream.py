@@ -9,6 +9,8 @@ from fastapi import APIRouter, Request
 from sse_starlette.sse import EventSourceResponse
 
 from backend.api.models import ChatQueryRequest
+from backend.utils import mask_pii_id
+from backend.core.config.streaming import STREAMING_DEFAULT_TIMEOUT_SECS
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,16 @@ async def stream_chat_endpoint(
     """
     SSE 기반 스트리밍 엔드포인트 스캐폴딩.
     """
+
+    # 디버깅 및 트레이싱을 위한 최소 로그 (PII 마스킹 적용)
+    truncated_query = body.query[:200] + ("..." if len(body.query) > 200 else "")
+    logger.info(
+        "Received streaming chat request",
+        extra={
+            "user_id_hash": mask_pii_id(body.user_id),
+            "query_preview": truncated_query,
+        },
+    )
     
     async def event_generator() -> AsyncGenerator[dict, None]:
         try:
@@ -40,12 +52,17 @@ async def stream_chat_endpoint(
                 }),
             }
             
-            # 클라이언트 연결 종료 감지를 위한 임시 대기 (추후 백프레셔 큐 기반 폴링으로 대체)
-            while True:
-                if await request.is_disconnected():
-                    logger.info("[STREAM] Client disconnected.")
-                    break
-                await asyncio.sleep(1)
+            # 클라이언트 연결 종료 감지를 위한 임시 대기 (asyncio.wait_for 활용)
+            # 타임아웃을 걸어두고, 긴 주기로 연결 상태만 폴링하여 서버 자원(CPU, Event Loop)을 절약합니다.
+            async def check_disconnect() -> None:
+                while not await request.is_disconnected():
+                    await asyncio.sleep(5)
+                    
+            try:
+                await asyncio.wait_for(check_disconnect(), timeout=STREAMING_DEFAULT_TIMEOUT_SECS)
+                logger.info("[STREAM] Client disconnected.")
+            except asyncio.TimeoutError:
+                logger.warning("[STREAM] Connection timed out due to inactivity.")
                 
         except asyncio.CancelledError:
             logger.info("[STREAM] Request was cancelled.")
