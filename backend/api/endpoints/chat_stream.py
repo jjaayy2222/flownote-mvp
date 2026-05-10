@@ -9,7 +9,7 @@ from fastapi import APIRouter, Request
 from sse_starlette.sse import EventSourceResponse
 
 from backend.api.models import ChatQueryRequest
-from backend.utils import mask_pii_id
+from backend.utils import get_chat_log_extra
 from backend.core.config.streaming import STREAMING_DEFAULT_TIMEOUT_SECS
 
 logger = logging.getLogger(__name__)
@@ -31,13 +31,10 @@ async def stream_chat_endpoint(
     """
 
     # 디버깅 및 트레이싱을 위한 최소 로그 (PII 마스킹 적용)
-    truncated_query = body.query[:200] + ("..." if len(body.query) > 200 else "")
+    # body.user_id가 누락되거나 None인 경우에 대비하여 안전하게 처리합니다.
     logger.info(
         "Received streaming chat request",
-        extra={
-            "user_id_hash": mask_pii_id(body.user_id),
-            "query_preview": truncated_query,
-        },
+        extra=get_chat_log_extra(body),
     )
     
     async def event_generator() -> AsyncGenerator[dict, None]:
@@ -53,7 +50,9 @@ async def stream_chat_endpoint(
             }
             
             # 클라이언트 연결 종료 감지를 위한 임시 대기 (asyncio.wait_for 활용)
-            # 타임아웃을 걸어두고, 긴 주기로 연결 상태만 폴링하여 서버 자원(CPU, Event Loop)을 절약합니다.
+            # 주의: 이는 스캐폴딩 상태에서의 '하드 타임아웃(최대 연결 유지 시간)' 제한입니다.
+            # 추후 실제 LangGraph 구현이 연동되면, 무조건적인 종료가 아닌 
+            # '마지막 청크 전송 이후의 유휴 시간(Idle Timeout)'을 기준으로 폴링이 종료되도록 변경해야 합니다.
             async def check_disconnect() -> None:
                 while not await request.is_disconnected():
                     await asyncio.sleep(5)
