@@ -5,7 +5,7 @@ import asyncio
 import json
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request
 from sse_starlette.sse import EventSourceResponse
 
 from backend.api.models import ChatQueryRequest
@@ -30,10 +30,6 @@ async def stream_chat_endpoint(
     SSE 기반 스트리밍 엔드포인트 스캐폴딩.
     """
 
-    # 기본 스키마 검증: 필수 필드 확인 및 간단한 내용 검증
-    if not body.query or not body.query.strip():
-        raise HTTPException(status_code=400, detail="`query`는 비어 있을 수 없습니다.")
-
     # 디버깅 및 트레이싱을 위한 최소 로그 (PII 마스킹 적용)
     truncated_query = body.query[:200] + ("..." if len(body.query) > 200 else "")
     logger.info(
@@ -56,13 +52,16 @@ async def stream_chat_endpoint(
                 }),
             }
             
-            # 클라이언트 연결 종료 감지를 위한 임시 대기 (최대 타임아웃 적용)
-            for _ in range(STREAMING_DEFAULT_TIMEOUT_SECS):
-                if await request.is_disconnected():
-                    logger.info("[STREAM] Client disconnected.")
-                    break
-                await asyncio.sleep(1)
-            else:
+            # 클라이언트 연결 종료 감지를 위한 임시 대기 (asyncio.wait_for 활용)
+            # 타임아웃을 걸어두고, 긴 주기로 연결 상태만 폴링하여 서버 자원(CPU, Event Loop)을 절약합니다.
+            async def check_disconnect() -> None:
+                while not await request.is_disconnected():
+                    await asyncio.sleep(5)
+                    
+            try:
+                await asyncio.wait_for(check_disconnect(), timeout=STREAMING_DEFAULT_TIMEOUT_SECS)
+                logger.info("[STREAM] Client disconnected.")
+            except asyncio.TimeoutError:
                 logger.warning("[STREAM] Connection timed out due to inactivity.")
                 
         except asyncio.CancelledError:
