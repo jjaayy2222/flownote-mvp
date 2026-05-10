@@ -119,14 +119,14 @@ def get_chat_log_extra(request_or_body: Any) -> Dict[str, Any]:
         raw_user_id = getattr(request_or_body, "user_id", None)
         raw_query = getattr(request_or_body, "query", None)
 
-    safe_user_id = str(raw_user_id) if raw_user_id is not None else ANONYMOUS_USER_ID
+    # Truthy 체크를 통해 빈 문자열("")이나 0 같은 Falsy 값에 대해서도
+    # 안전하게 ANONYMOUS_USER_ID 로 폴백하도록 기존 동작 복원
+    safe_user_id = str(raw_user_id) if raw_user_id else ANONYMOUS_USER_ID
+    safe_query = str(raw_query) if raw_query else ""
     
-    # 쿼리가 None이면 빈 문자열, 아니면 강제로 문자열 캐스팅
-    safe_query = "" if raw_query is None else str(raw_query)
+    is_truncated = len(safe_query) > MAX_QUERY_PREVIEW_LEN
+    truncated_query = safe_query[:MAX_QUERY_PREVIEW_LEN] + ("..." if is_truncated else "")
     
-    truncated_query = safe_query[:MAX_QUERY_PREVIEW_LEN] + (
-        "..." if len(safe_query) > MAX_QUERY_PREVIEW_LEN else ""
-    )
     return {
         "user_id_hash": mask_pii_id(safe_user_id),
         "query_preview": truncated_query,
