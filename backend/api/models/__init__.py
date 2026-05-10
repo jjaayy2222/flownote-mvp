@@ -111,7 +111,7 @@ class PARACategory(str, Enum):
 # `list[property] is not assignable to list[str]` Type Error (False Positive)를 우회하기 위한 조치.
 # (유사 이슈: https://github.com/facebook/pyre-check/issues/224). 
 # list(PARACategory)에 명시적인 Iterable 캐스팅을 적용합니다.
-PARA_CATEGORIES: List[str] = [str(cat.value) for cat in cast(Iterable[PARACategory], list(PARACategory))]
+PARA_CATEGORIES: List[str] = [cat.value for cat in cast(Iterable[PARACategory], list(PARACategory))]
 
 
 class HybridSearchRequest(BaseModel):
@@ -216,9 +216,10 @@ class ChatQueryRequest(BaseModel):
     @field_validator("query")
     @classmethod
     def validate_query(cls, v: str) -> str:
-        if not v or not v.strip():
+        stripped = v.strip() if v else ""
+        if not stripped:
             raise ValueError("`query`는 비어 있을 수 없습니다.")
-        return v
+        return stripped
 
 
 class ChatMessage(BaseModel):
