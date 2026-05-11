@@ -6,16 +6,21 @@ SSE 스트리밍 채팅 엔드포인트 (Phase 3 — 2단계: Integration)
 
 역할:
   ChatQueryRequest를 수신하여 LangGraph 에이전트(stream_agent_response)를
-  asyncio.Queue 기반 백프레셔 버퍼를 통해 SSE 형식으로 클라이언트에 전달한다.
+  SSE 형식으로 클라이언트에 직접 전달한다.
 
-설계 결정:
-  - 프로듀서(LangGraph)와 컨슈머(SSE) 속도 불일치를 asyncio.Queue로 흡수
-  - 큐 크기(STREAM_BUFFER_MAX_SIZE)는 설정 외부화, 초과 시 가장 오래된 청크를 드랍
-  - TTFT / 총 스트리밍 시간 / 발행 청크 수를 [STREAM] 구조화 로그로 기록
-  - 클라이언트 연결 종료 시 프로듀서 태스크를 즉시 취소하여 리소스 누수 방지
+설계 결정 (1차 개선):
+  - 스캐폴딩 단계에서 asyncio.Queue + 프로듀서/컨슈머 이중 구조는 불필요한 복잡성을 추가하며,
+    다음의 실제 버그를 내포하고 있었습니다:
+      1. finally 블록의 `await queue.put(None)` — 큐 포화 + 컨슈머 종료 시 데드락 위험
+      2. disconnect 체크가 각 청크 처리 이후에만 실행 — 느린 teardown
+      3. 주석의 "drop oldest" 설명과 실제 blocking put() 동작 불일치
+  - 이를 해결하기 위해 단일 루프 + 내부 `_chunk_stream()` 제너레이터 패턴으로 단순화.
+  - `asyncio.timeout()` 컨텍스트 매니저로 전체 스트림에 명확한 타임아웃 범위 적용.
+  - 3단계(실제 에이전트 연결) 시 `_chunk_stream()` 본문만 교체하면 되도록 인터페이스 유지.
 
 하드코딩 금지:
   - 모든 설정값은 StreamingConfig.load()를 통해 외부 환경 변수에서 로드
+  - SSE 이벤트 이름은 클라이언트 API 계약이므로 모듈 수준 상수로 관리
 """
 
 import asyncio
@@ -27,7 +32,7 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, Request
 from sse_starlette.sse import EventSourceResponse
 
-from backend.agent.streaming import stream_agent_response
+from backend.agent.streaming import stream_agent_response  # noqa: F401 (3단계 연동 예정)
 from backend.api.models import ChatQueryRequest
 from backend.core.config.streaming import StreamingConfig
 from backend.schemas.streaming import DoneChunk, ErrorChunk, StreamChunk, TokenChunk
@@ -42,7 +47,8 @@ router = APIRouter(prefix="/chat", tags=["chat-stream"])
 # ─────────────────────────────────────────────────────────────────────────────
 _cfg = StreamingConfig.load()
 
-# 큐 드랍 시 경고를 위한 내부 이벤트 타입 상수 (하드코딩 방지)
+# SSE 이벤트 이름 상수 (클라이언트 API 계약 — 하드코딩 방지)
+# 프론트엔드와 동기화된 표준 이벤트 이름이므로, 변경 시 이 상수만 수정하면 됩니다.
 _SSE_EVENT_MESSAGE: str = "message"
 _SSE_EVENT_ERROR: str = "error"
 _SSE_EVENT_DONE: str = "done"
@@ -66,10 +72,10 @@ async def stream_chat_endpoint(
     SSE 기반 스트리밍 엔드포인트 (2단계: 어댑터 연결).
 
     흐름:
-      1. LangGraph 어댑터(stream_agent_response)를 프로듀서 태스크로 실행
-      2. asyncio.Queue 버퍼를 통해 백프레셔 제어
-      3. 컨슈머(event_generator)가 큐에서 청크를 꺼내 SSE 이벤트로 발행
-      4. 클라이언트 연결 종료 또는 타임아웃 시 프로듀서 태스크를 즉시 취소
+      1. 내부 _chunk_stream() 제너레이터에서 StreamChunk를 순차 발행
+      2. asyncio.timeout()으로 전체 스트림에 타임아웃 적용
+      3. 각 청크 처리 후 클라이언트 disconnect 감지 → 즉시 종료
+      4. TTFT / 총 스트리밍 시간 / 청크 수를 구조화 로그로 기록
     """
     # PII 마스킹 적용 구조화 로그
     logger.info(
@@ -79,28 +85,25 @@ async def stream_chat_endpoint(
     )
 
     async def event_generator() -> AsyncGenerator[dict, None]:
-        # ── 설정값 로컬 바인딩 (루프 내 반복 속성 접근 최소화) ──────────────
+        # ── 설정값 로컬 바인딩 ────────────────────────────────────────────────
         timeout_secs: int = _cfg.timeout_secs
-        buffer_max_size: int = _cfg.buffer_max_size
 
-        # ── 관측성 메트릭 초기화 ────────────────────────────────────────────
+        # ── 관측성 메트릭 초기화 ─────────────────────────────────────────────
         request_start: float = time.monotonic()
         first_token_time: float | None = None
         chunk_count: int = 0
 
-        # ── 백프레셔 큐 (프로듀서-컨슈머 속도 불일치 흡수) ─────────────────
-        # maxsize=buffer_max_size: 큐가 가득 찼을 때 put()이 block되어 자연스러운 백프레셔 형성
-        queue: asyncio.Queue[StreamChunk | None] = asyncio.Queue(maxsize=buffer_max_size)
-
-        # ── 프로듀서 코루틴 정의 ────────────────────────────────────────────
-        async def _producer() -> None:
+        # ── 내부 청크 제너레이터 ─────────────────────────────────────────────
+        async def _chunk_stream() -> AsyncGenerator[StreamChunk, None]:
             """
-            LangGraph 어댑터를 구독하여 StreamChunk를 큐에 적재한다.
-            완료 또는 예외 발생 시 None 센티널을 큐에 삽입하여 컨슈머 종료를 알린다.
+            LangGraph 어댑터 인터페이스를 모델링하는 내부 청크 제너레이터.
 
             NOTE (2단계 스캐폴딩):
-              현재 graph/inputs/config는 실제 LangGraph 인스턴스가 아닌 플레이스홀더.
-              3단계(실제 에이전트 연결)에서 chat_service 또는 agent 팩토리로 교체 예정.
+              현재는 더미 청크를 발행합니다.
+              3단계(실제 에이전트 연결)에서 이 본문만 교체 예정:
+
+              async for chunk in stream_agent_response(graph, inputs, config):
+                  yield chunk
             """
             try:
                 # TODO(3단계): 실제 LangGraph graph, inputs, config 주입
@@ -108,120 +111,94 @@ async def stream_chat_endpoint(
                 # inputs = {"query": body.query, "user_id": hashed_user_id}
                 # config = RunnableConfig(configurable={"thread_id": session_id})
                 # async for chunk in stream_agent_response(graph, inputs, config):
-                #     await queue.put(chunk)
-                #
-                # ── 2단계 스캐폴딩: 어댑터 인터페이스 연동 확인용 더미 청크 ──
-                await asyncio.sleep(0)  # 이벤트 루프 양보 (실제 코루틴 시뮬레이션)
-                await queue.put(
-                    TokenChunk(data="[2단계 연결 완료: LangGraph 어댑터 인터페이스 준비됨]")
-                )
-                await queue.put(DoneChunk())
-            except asyncio.CancelledError:
-                logger.info("%s Producer task cancelled (client disconnected).", _LOG_TAG)
-                raise
+                #     yield chunk
+
+                # 2단계 스캐폴딩: 어댑터 인터페이스 검증용 더미 청크
+                await asyncio.sleep(0)  # 이벤트 루프 양보 (비동기 코루틴 시뮬레이션)
+                yield TokenChunk(data="[2단계 연결 완료: LangGraph 어댑터 인터페이스 준비됨]")
+                yield DoneChunk()
+
             except Exception as exc:  # noqa: BLE001
+                # 청크 발행 중 예상치 못한 예외 — 클라이언트에는 일반화된 에러만 전달
                 logger.error(
-                    "%s[ERROR] Producer raised unexpected error: type=%s",
+                    "%s[ERROR] _chunk_stream raised unexpected error: type=%s",
                     _LOG_TAG,
                     type(exc).__name__,
                     exc_info=True,
                 )
-                await queue.put(
-                    ErrorChunk(code="PRODUCER_ERROR", message=str(exc))
-                )
-            finally:
-                # 정상/비정상 종료 모두 None 센티널을 삽입하여 컨슈머를 종료시킴
-                await queue.put(None)
+                yield ErrorChunk(code="PRODUCER_ERROR", message=str(exc))
 
-        # ── 프로듀서를 별도 태스크로 실행 ───────────────────────────────────
-        producer_task = asyncio.create_task(_producer())
-
+        # ── 메인 컨슈머 루프 ─────────────────────────────────────────────────
         try:
-            # ── 컨슈머 루프: 큐에서 청크를 꺼내 SSE 이벤트로 변환 ───────────
-            while True:
-                # 타임아웃 초과 시 asyncio.TimeoutError 발생 → 연결 종료
-                try:
-                    chunk: StreamChunk | None = await asyncio.wait_for(
-                        queue.get(),
-                        timeout=timeout_secs,
-                    )
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        "%s Session timed out after %ds (no chunk received).",
-                        _LOG_TAG,
-                        timeout_secs,
-                    )
-                    yield {
-                        "event": _SSE_EVENT_ERROR,
-                        "data": json.dumps({"error": "Stream timed out. Please retry."}),
-                    }
-                    break
+            # asyncio.timeout: 전체 스트림에 명확한 타임아웃 범위 지정 (Python 3.11+)
+            async with asyncio.timeout(timeout_secs):
+                async for chunk in _chunk_stream():
+                    # ── TokenChunk 처리 ───────────────────────────────────
+                    if isinstance(chunk, TokenChunk):
+                        if first_token_time is None:
+                            first_token_time = time.monotonic()
+                            ttft_ms = (first_token_time - request_start) * 1000
+                            logger.info(
+                                "%s[TTFT] Time to first token: %.1fms",
+                                _LOG_TAG,
+                                ttft_ms,
+                            )
+                        chunk_count += 1
+                        yield {
+                            "event": _SSE_EVENT_MESSAGE,
+                            "data": chunk.model_dump_json(),
+                        }
 
-                # None 센티널 수신 → 프로듀서 종료 신호
-                if chunk is None:
-                    break
-
-                # ── TokenChunk 처리 ─────────────────────────────────────
-                if isinstance(chunk, TokenChunk):
-                    if first_token_time is None:
-                        first_token_time = time.monotonic()
-                        ttft_ms = (first_token_time - request_start) * 1000
+                    # ── DoneChunk 처리 ────────────────────────────────────
+                    elif isinstance(chunk, DoneChunk):
+                        total_secs = time.monotonic() - request_start
                         logger.info(
-                            "%s[TTFT] Time to first token: %.1fms",
+                            "%s Streaming completed. chunks=%d, total_time=%.2fs",
                             _LOG_TAG,
-                            ttft_ms,
+                            chunk_count,
+                            total_secs,
                         )
-                    chunk_count += 1
-                    yield {
-                        "event": _SSE_EVENT_MESSAGE,
-                        "data": chunk.model_dump_json(),
-                    }
+                        yield {
+                            "event": _SSE_EVENT_DONE,
+                            "data": chunk.model_dump_json(),
+                        }
+                        break
 
-                # ── DoneChunk 처리 ──────────────────────────────────────
-                elif isinstance(chunk, DoneChunk):
-                    total_secs = time.monotonic() - request_start
-                    logger.info(
-                        "%s Streaming completed. chunks=%d, total_time=%.2fs",
-                        _LOG_TAG,
-                        chunk_count,
-                        total_secs,
-                    )
-                    yield {
-                        "event": _SSE_EVENT_DONE,
-                        "data": chunk.model_dump_json(),
-                    }
-                    break
+                    # ── ErrorChunk 처리 ───────────────────────────────────
+                    elif isinstance(chunk, ErrorChunk):
+                        logger.error(
+                            "%s[ERROR] ErrorChunk received: code=%s",
+                            _LOG_TAG,
+                            chunk.code,
+                        )
+                        yield {
+                            "event": _SSE_EVENT_ERROR,
+                            "data": chunk.model_dump_json(),
+                        }
+                        break
 
-                # ── ErrorChunk 처리 ─────────────────────────────────────
-                elif isinstance(chunk, ErrorChunk):
-                    logger.error(
-                        "%s[ERROR] ErrorChunk received: code=%s",
-                        _LOG_TAG,
-                        chunk.code,
-                    )
-                    yield {
-                        "event": _SSE_EVENT_ERROR,
-                        "data": chunk.model_dump_json(),
-                    }
-                    break
+                    # ── 클라이언트 disconnect 감지 (각 청크 처리 후 즉시 확인) ──
+                    if await request.is_disconnected():
+                        logger.info("%s Client disconnected. Stopping stream.", _LOG_TAG)
+                        break
 
-                # ── 클라이언트 연결 종료 감지 ───────────────────────────
-                if await request.is_disconnected():
-                    logger.info("%s Client disconnected. Stopping consumer.", _LOG_TAG)
-                    break
+        except TimeoutError:
+            # asyncio.timeout() 초과 시 TimeoutError 발생 (Python 3.11+)
+            logger.warning(
+                "%s Session timed out after %ds.",
+                _LOG_TAG,
+                timeout_secs,
+            )
+            yield {
+                "event": _SSE_EVENT_ERROR,
+                "data": json.dumps({"error": "Stream timed out. Please retry."}),
+            }
 
         except asyncio.CancelledError:
             logger.info("%s Event generator cancelled.", _LOG_TAG)
             raise
-        finally:
-            # 컨슈머 종료 시 프로듀서 태스크를 반드시 취소하여 리소스 누수 방지
-            if not producer_task.done():
-                producer_task.cancel()
-                try:
-                    await producer_task
-                except (asyncio.CancelledError, Exception):
-                    pass  # 정리 완료
 
+        finally:
             total_elapsed = time.monotonic() - request_start
             logger.info(
                 "%s Session closed. total_elapsed=%.2fs, chunks_sent=%d",
