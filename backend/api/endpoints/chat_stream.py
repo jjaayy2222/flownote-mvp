@@ -138,8 +138,9 @@ async def stream_chat_endpoint(
                 )
 
         # ── 메인 컨슈머 루프 ─────────────────────────────────────────────────
-        stream_gen = _chunk_stream()  # 제너레이터 객체 생성
+        stream_gen: AsyncGenerator[StreamChunk, None] | None = None
         try:
+            stream_gen = _chunk_stream()  # 제너레이터 객체 생성
             # asyncio.timeout: 전체 스트림에 명확한 타임아웃 범위 지정 (Python 3.11+)
             async with asyncio.timeout(timeout_secs):
                 async for chunk in stream_gen:
