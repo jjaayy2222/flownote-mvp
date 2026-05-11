@@ -24,7 +24,6 @@ SSE 스트리밍 채팅 엔드포인트 (Phase 3 — 2단계: Integration)
 """
 
 import asyncio
-import json
 import logging
 import time
 from typing import AsyncGenerator
@@ -54,6 +53,12 @@ _SSE_EVENT_ERROR: str = "error"
 _SSE_EVENT_DONE: str = "done"
 
 _LOG_TAG: str = "[STREAM]"
+
+# 클라이언트에 전달할 일반화된 에러 메시지 (하드코딩 방지)
+# 내부 구현 세부사항(스택 트레이스 등) 클라이언트 노출 방지 — Information Disclosure 예방
+_GENERIC_STREAM_ERROR_MESSAGE: str = (
+    "Unexpected error occurred during streaming. Please try again later."
+)
 
 
 @router.post(
@@ -119,14 +124,20 @@ async def stream_chat_endpoint(
                 yield DoneChunk()
 
             except Exception as exc:  # noqa: BLE001
-                # 청크 발행 중 예상치 못한 예외 — 클라이언트에는 일반화된 에러만 전달
+                # 청크 발행 중 예상치 못한 예외
+                # 서버 로그에는 상세 정보 기록, 클라이언트에는 일반화된 메시지만 전달
+                # str(exc)를 클라이언트에 직접 노출하면 내부 경로·데이터가 유출될 수 있음
                 logger.error(
-                    "%s[ERROR] _chunk_stream raised unexpected error: type=%s",
+                    "%s[ERROR] _chunk_stream raised unexpected error: type=%s, detail=%s",
                     _LOG_TAG,
                     type(exc).__name__,
+                    str(exc),  # 상세 정보는 서버 로그에만 기록
                     exc_info=True,
                 )
-                yield ErrorChunk(code="PRODUCER_ERROR", message=str(exc))
+                yield ErrorChunk(
+                    code="PRODUCER_ERROR",
+                    message=_GENERIC_STREAM_ERROR_MESSAGE,  # 클라이언트에는 일반화된 메시지만
+                )
 
         # ── 메인 컨슈머 루프 ─────────────────────────────────────────────────
         try:
@@ -177,13 +188,33 @@ async def stream_chat_endpoint(
                         }
                         break
 
+                    # ── 알 수 없는 청크 타입 처리 (안전망) ────────────────────
+                    # TokenChunk / DoneChunk / ErrorChunk 외의 타입이 발행되면
+                    # 조용히 드랍되지 않도록 경고 로그 + 에러 이벤트로 가시화
+                    else:
+                        logger.warning(
+                            "%s[SCHEMA] Unknown chunk type received: %s. "
+                            "Possible schema mismatch.",
+                            _LOG_TAG,
+                            type(chunk).__name__,
+                        )
+                        yield {
+                            "event": _SSE_EVENT_ERROR,
+                            "data": ErrorChunk(
+                                code="UNKNOWN_CHUNK",
+                                message=_GENERIC_STREAM_ERROR_MESSAGE,
+                            ).model_dump_json(),
+                        }
+                        break
+
                     # ── 클라이언트 disconnect 감지 (각 청크 처리 후 즉시 확인) ──
                     if await request.is_disconnected():
                         logger.info("%s Client disconnected. Stopping stream.", _LOG_TAG)
                         break
 
-        except TimeoutError:
-            # asyncio.timeout() 초과 시 TimeoutError 발생 (Python 3.11+)
+        except asyncio.TimeoutError:
+            # asyncio.timeout() 초과 시 asyncio.TimeoutError 발생 (Python 3.11+)
+            # 명시적으로 asyncio.TimeoutError를 잡아 무관한 TimeoutError와 구분
             logger.warning(
                 "%s Session timed out after %ds.",
                 _LOG_TAG,
@@ -191,7 +222,10 @@ async def stream_chat_endpoint(
             )
             yield {
                 "event": _SSE_EVENT_ERROR,
-                "data": json.dumps({"error": "Stream timed out. Please retry."}),
+                "data": ErrorChunk(
+                    code="STREAM_TIMEOUT",
+                    message=_GENERIC_STREAM_ERROR_MESSAGE,
+                ).model_dump_json(),
             }
 
         except asyncio.CancelledError:
