@@ -56,9 +56,9 @@ _LOG_TAG: str = "[STREAM]"
 
 # 클라이언트에 전달할 일반화된 에러 메시지 (하드코딩 방지)
 # 내부 구현 세부사항(스택 트레이스 등) 클라이언트 노출 방지 — Information Disclosure 예방
-_GENERIC_STREAM_ERROR_MESSAGE: str = (
-    "Unexpected error occurred during streaming. Please try again later."
-)
+_ERROR_MSG_INTERNAL: str = "Internal server error occurred during streaming."
+_ERROR_MSG_TIMEOUT: str = "Streaming session timed out. Please retry."
+_ERROR_MSG_SCHEMA: str = "Data format mismatch detected. Please contact support."
 
 
 @router.post(
@@ -128,22 +128,21 @@ async def stream_chat_endpoint(
                 # 서버 로그에는 상세 정보 기록, 클라이언트에는 일반화된 메시지만 전달
                 # str(exc)를 클라이언트에 직접 노출하면 내부 경로·데이터가 유출될 수 있음
                 logger.error(
-                    "%s[ERROR] _chunk_stream raised unexpected error: type=%s, detail=%s",
+                    "%s[ERROR] _chunk_stream raised unexpected error",
                     _LOG_TAG,
-                    type(exc).__name__,
-                    str(exc),  # 상세 정보는 서버 로그에만 기록
                     exc_info=True,
                 )
                 yield ErrorChunk(
                     code="PRODUCER_ERROR",
-                    message=_GENERIC_STREAM_ERROR_MESSAGE,  # 클라이언트에는 일반화된 메시지만
+                    message=_ERROR_MSG_INTERNAL,  # 내부 오류 메시지 사용
                 )
 
         # ── 메인 컨슈머 루프 ─────────────────────────────────────────────────
+        stream_gen = _chunk_stream()  # 제너레이터 객체 생성
         try:
             # asyncio.timeout: 전체 스트림에 명확한 타임아웃 범위 지정 (Python 3.11+)
             async with asyncio.timeout(timeout_secs):
-                async for chunk in _chunk_stream():
+                async for chunk in stream_gen:
                     # ── TokenChunk 처리 ───────────────────────────────────
                     if isinstance(chunk, TokenChunk):
                         if first_token_time is None:
@@ -204,7 +203,7 @@ async def stream_chat_endpoint(
                             "event": _SSE_EVENT_ERROR,
                             "data": ErrorChunk(
                                 code="UNKNOWN_CHUNK",
-                                message=_GENERIC_STREAM_ERROR_MESSAGE,
+                                message=_ERROR_MSG_SCHEMA,  # 스캐마 불일치 메시지
                             ).model_dump_json(),
                         }
                         break
@@ -226,7 +225,7 @@ async def stream_chat_endpoint(
                 "event": _SSE_EVENT_ERROR,
                 "data": ErrorChunk(
                     code="STREAM_TIMEOUT",
-                    message=_GENERIC_STREAM_ERROR_MESSAGE,
+                    message=_ERROR_MSG_TIMEOUT,  # 타임아웃 전용 메시지
                 ).model_dump_json(),
             }
 
@@ -234,7 +233,33 @@ async def stream_chat_endpoint(
             logger.info("%s Event generator cancelled.", _LOG_TAG)
             raise
 
+        except Exception as exc:  # noqa: BLE001
+            # 메인 루프 예외 처리 (로그 기록 후 에러 청크 발행)
+            logger.error(
+                "%s[FATAL] Event generator encountered unexpected error",
+                _LOG_TAG,
+                exc_info=True,
+            )
+            yield {
+                "event": _SSE_EVENT_ERROR,
+                "data": ErrorChunk(
+                    code="FATAL_ERROR",
+                    message=_ERROR_MSG_INTERNAL,
+                ).model_dump_json(),
+            }
+
         finally:
+            # 리소스 정리 강화: 제너레이터를 안전하게 종료 (리뷰 반영)
+            if stream_gen is not None:
+                try:
+                    await stream_gen.aclose()
+                except Exception:  # noqa: BLE001
+                    logger.warning(
+                        "%s[CLEANUP] Failed to close stream generator gracefully.",
+                        _LOG_TAG,
+                        exc_info=True,
+                    )
+            
             total_elapsed = time.monotonic() - request_start
             logger.info(
                 "%s Session closed. total_elapsed=%.2fs, chunks_sent=%d",
