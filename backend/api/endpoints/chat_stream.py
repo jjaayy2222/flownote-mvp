@@ -128,10 +128,8 @@ async def stream_chat_endpoint(
                 # 서버 로그에는 상세 정보 기록, 클라이언트에는 일반화된 메시지만 전달
                 # str(exc)를 클라이언트에 직접 노출하면 내부 경로·데이터가 유출될 수 있음
                 logger.error(
-                    "%s[ERROR] _chunk_stream raised unexpected error: type=%s, detail=%s",
+                    "%s[ERROR] _chunk_stream raised unexpected error",
                     _LOG_TAG,
-                    type(exc).__name__,
-                    str(exc),  # 상세 정보는 서버 로그에만 기록
                     exc_info=True,
                 )
                 yield ErrorChunk(
@@ -238,9 +236,8 @@ async def stream_chat_endpoint(
         except Exception as exc:  # noqa: BLE001
             # 메인 루프 예외 처리 (로그 기록 후 에러 청크 발행)
             logger.error(
-                "%s[FATAL] Event generator encountered unexpected error: %s",
+                "%s[FATAL] Event generator encountered unexpected error",
                 _LOG_TAG,
-                str(exc),
                 exc_info=True,
             )
             yield {
@@ -252,9 +249,16 @@ async def stream_chat_endpoint(
             }
 
         finally:
-            # 리소스 정리 강화: 제너레이터를 명시적으로 종료하여 
-            # 프로듀서 측의 백그라운드 태스크나 리소스 누수를 방지 (리뷰 반영)
-            await stream_gen.aclose()
+            # 리소스 정리 강화: 제너레이터를 안전하게 종료 (리뷰 반영)
+            if stream_gen is not None:
+                try:
+                    await stream_gen.aclose()
+                except Exception:  # noqa: BLE001
+                    logger.warning(
+                        "%s[CLEANUP] Failed to close stream generator gracefully.",
+                        _LOG_TAG,
+                        exc_info=True,
+                    )
             
             total_elapsed = time.monotonic() - request_start
             logger.info(
