@@ -190,13 +190,15 @@ async def stream_chat_endpoint(
 
                     # ── 알 수 없는 청크 타입 처리 (안전망) ────────────────────
                     # TokenChunk / DoneChunk / ErrorChunk 외의 타입이 발행되면
-                    # 조용히 드랍되지 않도록 경고 로그 + 에러 이벤트로 가시화
+                    # 조용히 드랍되지 않도록 경고 로그 + 에러 이벤트로 가시화.
+                    # 스키마 불일치 발생 시 스트림 무결성을 위해 즉시 중단(break)합니다.
                     else:
                         logger.warning(
                             "%s[SCHEMA] Unknown chunk type received: %s. "
-                            "Possible schema mismatch.",
+                            "payload=%r. Possible schema mismatch.",
                             _LOG_TAG,
                             type(chunk).__name__,
+                            chunk,
                         )
                         yield {
                             "event": _SSE_EVENT_ERROR,
