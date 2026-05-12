@@ -452,11 +452,11 @@ Standalone Question:"""
         logger.info(f"Stream chat started for user {user_id}")
 
         # 1. 공통 에이전트 실행 로직 재사용
-        build_start = time.perf_counter()
+        setup_start = time.perf_counter()
         initial_state, agent_graph = await self.build_agent_state_and_graph(
             query=query, user_id=user_id, session_id=session_id
         )
-        setup_duration = time.perf_counter() - build_start
+        setup_duration = time.perf_counter() - setup_start
 
         # 3. Streaming 실행 (astream_events v2 사용)
         is_cancelled = False
