@@ -310,7 +310,7 @@ class ChatService:
         self,
         *,
         start_time: float,
-        rephrase_duration: float,
+        setup_duration: float,
         user_id: str,
     ) -> float:
         """
@@ -324,7 +324,7 @@ class ChatService:
             f"[Performance] TTFT recorded for user {user_id}",
             extra={
                 "ttft": ttft,
-                "rephrase_duration": rephrase_duration,
+                "setup_duration": setup_duration,
                 "user_id": user_id,
             },
         )
@@ -456,7 +456,7 @@ Standalone Question:"""
         initial_state, agent_graph = await self.build_agent_state_and_graph(
             query=query, user_id=user_id, session_id=session_id
         )
-        rephrase_duration = time.perf_counter() - build_start
+        setup_duration = time.perf_counter() - build_start
 
         # 3. Streaming 실행 (astream_events v2 사용)
         is_cancelled = False
@@ -494,7 +494,7 @@ Standalone Question:"""
                         if not ttft_recorded:
                             _ = self._log_ttft_once(
                                 start_time=start_time,
-                                rephrase_duration=rephrase_duration,
+                                setup_duration=setup_duration,
                                 user_id=user_id,
                             )
                             ttft_recorded = True
