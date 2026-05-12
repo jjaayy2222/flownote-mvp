@@ -26,6 +26,7 @@ SSE 스트리밍 채팅 엔드포인트 (Phase 3 — 2단계: Integration)
 import asyncio
 import logging
 import time
+import uuid
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Request
@@ -118,13 +119,15 @@ async def stream_chat_endpoint(
                 chat_service = get_chat_service()
 
                 # 기존 /api/chat 엔드포인트와 공통 로직 리팩터링 (재사용)
-                initial_state, agent_graph, _ = await chat_service.build_agent_state_and_graph(
+                initial_state, agent_graph = await chat_service.build_agent_state_and_graph(
                     query=body.query,
                     user_id=body.user_id,
                     session_id=body.session_id,
                 )
 
-                config = RunnableConfig(configurable={"thread_id": body.session_id})
+                # downstream 컴포넌트 오류 방지를 위한 식별자 정규화
+                effective_session_id = body.session_id if body.session_id and body.session_id.strip() else f"temp_{uuid.uuid4().hex}"
+                config = RunnableConfig(configurable={"thread_id": effective_session_id})
 
                 # 실제 LangGraph 스트리밍 어댑터 호출
                 async for chunk in stream_agent_response(agent_graph, initial_state, config):

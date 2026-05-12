@@ -8,7 +8,11 @@ import time
 import hashlib
 from functools import lru_cache
 from itertools import islice
-from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, TypedDict, cast
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, List, Optional, Tuple, TypedDict, cast
+
+if TYPE_CHECKING:
+    from langgraph.graph.state import CompiledStateGraph  # type: ignore[import, import-untyped]
+
 
 from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun  # type: ignore[import, import-untyped, reportMissingImports]
 from langchain_core.documents import Document  # type: ignore[import, import-untyped, reportMissingImports]
@@ -395,23 +399,23 @@ Standalone Question:"""
         query: str,
         user_id: str,
         session_id: Optional[str] = None,
-    ) -> Tuple[Dict[str, Any], Any, float]:
+    ) -> Tuple[Dict[str, Any], "CompiledStateGraph"]:
         """
         RAG 파이프라인(LangGraph) 실행을 위한 초기 상태와 그래프를 생성합니다.
         스트리밍과 비스트리밍 엔드포인트 간의 공통 로직을 분리하여 중복을 방지합니다.
+
+        Returns:
+            Tuple[Dict[str, Any], CompiledStateGraph]: 에이전트 초기 상태와 LangGraph 그래프 객체.
         """
         history: List[ChatMessage] = []
         feedback_history: List[FeedbackEntry] = []
         effective_query = query
-        rephrase_duration = 0.0
 
         if session_id and session_id.strip():
             history = await self.chat_history_service.get_history(session_id)
             feedback_history = await self.chat_history_service.get_session_feedback(session_id, limit=3)
             if history:
-                rephrase_start = time.perf_counter()
                 effective_query = await self._rephrase_query(query, history)
-                rephrase_duration = time.perf_counter() - rephrase_start
 
         from langchain_core.messages import HumanMessage, AIMessage, BaseMessage  # type: ignore[import, import-untyped, reportMissingImports]
         langchain_history: List[BaseMessage] = []
@@ -433,7 +437,7 @@ Standalone Question:"""
         from backend.agent.chat.graph import create_chat_workflow  # type: ignore[import, import-untyped, reportMissingImports]
         agent_graph = create_chat_workflow(checkpointer=None)
 
-        return initial_state, agent_graph, rephrase_duration
+        return initial_state, agent_graph
 
     async def stream_chat(
         self,
@@ -448,9 +452,11 @@ Standalone Question:"""
         logger.info(f"Stream chat started for user {user_id}")
 
         # 1. 공통 에이전트 실행 로직 재사용
-        initial_state, agent_graph, rephrase_duration = await self.build_agent_state_and_graph(
+        build_start = time.perf_counter()
+        initial_state, agent_graph = await self.build_agent_state_and_graph(
             query=query, user_id=user_id, session_id=session_id
         )
+        rephrase_duration = time.perf_counter() - build_start
 
         # 3. Streaming 실행 (astream_events v2 사용)
         is_cancelled = False
