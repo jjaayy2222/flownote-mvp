@@ -125,10 +125,11 @@ class ChatService:
         import os
 
         # 런타임마다 읽지 않고 서비스 초기화 시점에 한 번만 읽고 검증(Fail Fast)
+        raw_docs = os.getenv("RAG_MAX_DOCS", "10")
+        raw_chars = os.getenv("RAG_MAX_DOC_CHARS", "2000")
+        raw_total = os.getenv("RAG_MAX_TOTAL_CHARS", "16000")
+
         try:
-            raw_docs = os.getenv("RAG_MAX_DOCS", "10")
-            raw_chars = os.getenv("RAG_MAX_DOC_CHARS", "2000")
-            raw_total = os.getenv("RAG_MAX_TOTAL_CHARS", "16000")
 
             self.rag_max_docs = int(raw_docs)
             self.rag_max_doc_chars = int(raw_chars)
@@ -389,19 +390,16 @@ Standalone Question:"""
         # JSON 직렬화 불가 객체(UUID, datetime 등) 방어를 위해 default=str 파라미터 적용
         return f"data: {json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
 
-    async def stream_chat(
+    async def build_agent_state_and_graph(
         self,
         query: str,
         user_id: str,
         session_id: Optional[str] = None,
-        k: int = 5,
-        alpha: Optional[float] = None,
-    ) -> AsyncGenerator[str, None]:
-        """질의를 받아 RAG 체인을 실행하고 SSE 규격에 맞게 결과 청크를 반환하는 비동기 제너레이터"""
-        start_time = time.perf_counter()
-        logger.info(f"Stream chat started for user {user_id}")
-
-        # 0. 히스토리 로드 및 질의 재구성
+    ) -> Tuple[Dict[str, Any], Any, float]:
+        """
+        RAG 파이프라인(LangGraph) 실행을 위한 초기 상태와 그래프를 생성합니다.
+        스트리밍과 비스트리밍 엔드포인트 간의 공통 로직을 분리하여 중복을 방지합니다.
+        """
         history: List[ChatMessage] = []
         feedback_history: List[FeedbackEntry] = []
         effective_query = query
@@ -415,7 +413,6 @@ Standalone Question:"""
                 effective_query = await self._rephrase_query(query, history)
                 rephrase_duration = time.perf_counter() - rephrase_start
 
-        # 1. 메시지 컨텍스트 및 초기 State 구성
         from langchain_core.messages import HumanMessage, AIMessage, BaseMessage  # type: ignore[import, import-untyped, reportMissingImports]
         langchain_history: List[BaseMessage] = []
         for msg in history:
@@ -433,9 +430,27 @@ Standalone Question:"""
             "feedback_history": feedback_history,
         }
 
-        # 2. workflow 컴파일 및 의존성 주입
         from backend.agent.chat.graph import create_chat_workflow  # type: ignore[import, import-untyped, reportMissingImports]
         agent_graph = create_chat_workflow(checkpointer=None)
+
+        return initial_state, agent_graph, rephrase_duration
+
+    async def stream_chat(
+        self,
+        query: str,
+        user_id: str,
+        session_id: Optional[str] = None,
+        k: int = 5,
+        alpha: Optional[float] = None,
+    ) -> AsyncGenerator[str, None]:
+        """질의를 받아 RAG 체인을 실행하고 SSE 규격에 맞게 결과 청크를 반환하는 비동기 제너레이터"""
+        start_time = time.perf_counter()
+        logger.info(f"Stream chat started for user {user_id}")
+
+        # 1. 공통 에이전트 실행 로직 재사용
+        initial_state, agent_graph, rephrase_duration = await self.build_agent_state_and_graph(
+            query=query, user_id=user_id, session_id=session_id
+        )
 
         # 3. Streaming 실행 (astream_events v2 사용)
         is_cancelled = False

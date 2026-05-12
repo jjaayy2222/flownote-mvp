@@ -111,17 +111,24 @@ async def stream_chat_endpoint(
                   yield chunk
             """
             try:
-                # TODO(3단계): 실제 LangGraph graph, inputs, config 주입
-                # graph = await get_compiled_graph()
-                # inputs = {"query": body.query, "user_id": hashed_user_id}
-                # config = RunnableConfig(configurable={"thread_id": session_id})
-                # async for chunk in stream_agent_response(graph, inputs, config):
-                #     yield chunk
+                from backend.services.chat_service import get_chat_service
+                from backend.agent.streaming import stream_agent_response
+                from langchain_core.runnables import RunnableConfig  # type: ignore[import]
 
-                # 2단계 스캐폴딩: 어댑터 인터페이스 검증용 더미 청크
-                await asyncio.sleep(0)  # 이벤트 루프 양보 (비동기 코루틴 시뮬레이션)
-                yield TokenChunk(data="[2단계 연결 완료: LangGraph 어댑터 인터페이스 준비됨]")
-                yield DoneChunk()
+                chat_service = get_chat_service()
+
+                # 기존 /api/chat 엔드포인트와 공통 로직 리팩터링 (재사용)
+                initial_state, agent_graph, _ = await chat_service.build_agent_state_and_graph(
+                    query=body.query,
+                    user_id=body.user_id,
+                    session_id=body.session_id,
+                )
+
+                config = RunnableConfig(configurable={"thread_id": body.session_id})
+
+                # 실제 LangGraph 스트리밍 어댑터 호출
+                async for chunk in stream_agent_response(agent_graph, initial_state, config):
+                    yield chunk
 
             except Exception as exc:  # noqa: BLE001
                 # 청크 발행 중 예상치 못한 예외
