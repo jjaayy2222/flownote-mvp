@@ -1,10 +1,10 @@
 // web_ui/src/lib/stream-client.ts
 
 import { API_BASE } from './api';
+import type { SourceItem } from '@/types/chat';
 
 export type StreamChunkToken = { type: 'token'; data: string };
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type StreamChunkSources = { type: 'sources'; data: any[] };
+export type StreamChunkSources = { type: 'sources'; data: SourceItem[] };
 export type StreamChunkError = { type: 'error'; error_code: string; message: string };
 export type StreamChunkDone = { type: 'done' };
 export type StreamChunk = StreamChunkToken | StreamChunkSources | StreamChunkError | StreamChunkDone;
@@ -56,32 +56,42 @@ export async function* fetchChatStream(
 
       buffer += decoder.decode(value, { stream: true });
       
-      let newlineIndex;
-      // SSE 이벤트는 \n\n으로 구분됨
-      while ((newlineIndex = buffer.indexOf('\n\n')) >= 0) {
-        const chunk = buffer.slice(0, newlineIndex).trim();
-        buffer = buffer.slice(newlineIndex + 2);
+      const lines = buffer.split(/\r?\n/);
+      // 마지막 원소는 아직 완료되지 않은 줄일 수 있으므로 버퍼에 남겨둡니다.
+      buffer = lines.pop() || '';
 
-        if (!chunk) continue;
-        
-        // SSE 규격 "data: <json>"
-        if (chunk.startsWith('data: ')) {
-          const dataStr = chunk.slice(6).trim();
-          
-          if (dataStr === '[DONE]') {
-            yield { type: 'done' };
-            return;
+      let currentData: string[] = [];
+
+      for (const line of lines) {
+        if (line === '') {
+          // 빈 줄은 SSE 블록의 끝(Dispatch)을 의미합니다.
+          if (currentData.length > 0) {
+            const dataStr = currentData.join('\n');
+            currentData = []; // 리셋
+
+            if (dataStr === '[DONE]') {
+              yield { type: 'done' };
+              return;
+            }
+
+            try {
+              const parsed = JSON.parse(dataStr) as StreamChunk;
+              // 에러 청크인 경우 여기서 변환을 추가할 수 있습니다.
+              // (보안을 위해 내부 에러 코드는 클라이언트에서 마스킹)
+              yield parsed;
+            } catch (e) {
+              console.error('[StreamClient] Failed to parse stream chunk JSON:', e, dataStr);
+            }
           }
-          
-          try {
-            const parsed = JSON.parse(dataStr) as StreamChunk;
-            // 에러 청크인 경우 여기서 변환을 추가할 수 있습니다.
-            // (보안을 위해 내부 에러 코드는 클라이언트에서 마스킹)
-            yield parsed;
-          } catch (e) {
-            console.error('[StreamClient] Failed to parse stream chunk JSON:', e, dataStr);
-          }
+          continue;
         }
+
+        if (line.startsWith('data:')) {
+          // 'data:' 바로 뒤에 공백이 있다면 하나만 제거 (스펙 준수)
+          const dataContent = line.startsWith('data: ') ? line.slice(6) : line.slice(5);
+          currentData.push(dataContent);
+        }
+        // event:, id: 등 기타 필드는 현재 무시합니다. (필요 시 확장 가능)
       }
     }
   } finally {
