@@ -41,19 +41,19 @@ export async function* fetchChatStream(
   } catch (err: unknown) {
     const error = err as Error;
     if (error.name === 'AbortError') {
-      console.log('[StreamClient] fetch aborted by user');
+      console.debug('[StreamClient] fetch aborted by user');
       return;
     }
     throw err;
   }
 
+  if (!response.ok) {
+    throw new Error(`Failed to start stream: ${response.status} ${response.statusText}`);
+  }
+
   const contentType = response.headers.get('content-type');
   if (!contentType || !contentType.includes('text/event-stream')) {
     throw new Error(`Expected text/event-stream but received ${contentType}`);
-  }
-
-  if (!response.ok) {
-    throw new Error(`Failed to start stream: ${response.status} ${response.statusText}`);
   }
 
   if (!response.body) {
@@ -78,7 +78,7 @@ export async function* fetchChatStream(
       } catch (err: unknown) {
         const error = err as Error;
         if (error.name === 'AbortError') {
-          console.log('[StreamClient] Stream read aborted by user');
+          console.debug('[StreamClient] Stream read aborted by user');
           return;
         }
         throw err;
