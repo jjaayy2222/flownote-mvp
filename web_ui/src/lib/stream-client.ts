@@ -18,8 +18,20 @@ export interface StreamChatRequest {
 }
 
 /**
+ * AbortError 여부를 안전하게 판별하는 타입 가드 헬퍼.
+ *
+ * - 브라우저에서 AbortController.abort() 시 DOMException이 던져질 수 있으므로 두 케이스 모두 커버.
+ * - SSR(Next.js) 또는 테스트(Vitest) 환경에서 DOMException이 없는 경우를 대비해 typeof 가드 적용.
+ */
+function isAbortError(err: unknown): boolean {
+  if (err instanceof Error && err.name === 'AbortError') return true;
+  if (typeof DOMException !== 'undefined' && err instanceof DOMException && err.name === 'AbortError') return true;
+  return false;
+}
+
+/**
  * 표준 fetch API를 사용하여 백엔드의 SSE(Server-Sent Events) 스트림을 소비합니다.
- * EventSource 객체 대신 fetch를 사용하여 POST 요청과 커스텀 헤더 인증을 지원합니다.
+ * EventSource 개체 대신 fetch를 사용하여 POST 요청과 커스텀 헤더 인증을 지원합니다.
  */
 export async function* fetchChatStream(
   payload: StreamChatRequest,
@@ -39,8 +51,7 @@ export async function* fetchChatStream(
       signal,
     });
   } catch (err: unknown) {
-    const error = err as Error;
-    if (error.name === 'AbortError') {
+    if (isAbortError(err)) {
       console.debug('[StreamClient] fetch aborted by user');
       return;
     }
@@ -76,8 +87,7 @@ export async function* fetchChatStream(
       try {
         readResult = await reader.read();
       } catch (err: unknown) {
-        const error = err as Error;
-        if (error.name === 'AbortError') {
+        if (isAbortError(err)) {
           console.debug('[StreamClient] Stream read aborted by user');
           return;
         }
@@ -100,9 +110,12 @@ export async function* fetchChatStream(
             currentData = []; // 리셋
 
             if (currentEvent || currentId) {
-              // 추후 reconnection이나 event-type 라우팅을 지원하기 위해 파싱해둠
-              console.debug(`[StreamClient] event: ${currentEvent}, id: ${currentId}`);
-              currentEvent = null; // SSE 스펙상 event는 블록 끝에서 리셋됨
+              // 추후 reconnection이나 event-type 라우팅을 지원하기 위해 파싱해둠.
+              // [SSE 스펙] 'event'는 각 블록마다 초기화되지만 'id'(Last-Event-ID)는
+              // 새로운 id: 필드가 올 때까지 이전 값을 유지해야 하므로 여기서 리셋하지 않음.
+              console.debug(`[StreamClient] dispatching event: ${currentEvent ?? 'message'}, lastEventId: ${currentId}`);
+              currentEvent = null; // SSE 스펙: event 필드는 블록 경계에서 초기화
+              // currentId는 의도적으로 유지 (Last-Event-ID 역할)
             }
 
             if (dataStr === '[DONE]') {
