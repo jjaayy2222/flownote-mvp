@@ -18,8 +18,20 @@ export interface StreamChatRequest {
 }
 
 /**
+ * AbortError 여부를 안전하게 판별하는 타입 가드 헬퍼.
+ *
+ * - 브라우저에서 AbortController.abort() 시 DOMException이 던져질 수 있으므로 두 케이스 모두 커버.
+ * - SSR(Next.js) 또는 테스트(Vitest) 환경에서 DOMException이 없는 경우를 대비해 typeof 가드 적용.
+ */
+function isAbortError(err: unknown): boolean {
+  if (err instanceof Error && err.name === 'AbortError') return true;
+  if (typeof DOMException !== 'undefined' && err instanceof DOMException && err.name === 'AbortError') return true;
+  return false;
+}
+
+/**
  * 표준 fetch API를 사용하여 백엔드의 SSE(Server-Sent Events) 스트림을 소비합니다.
- * EventSource 객체 대신 fetch를 사용하여 POST 요청과 커스텀 헤더 인증을 지원합니다.
+ * EventSource 개체 대신 fetch를 사용하여 POST 요청과 커스텀 헤더 인증을 지원합니다.
  */
 export async function* fetchChatStream(
   payload: StreamChatRequest,
@@ -39,11 +51,7 @@ export async function* fetchChatStream(
       signal,
     });
   } catch (err: unknown) {
-    // AbortError는 DOMException 또는 Error로 올 수 있으므로 두 경우를 모두 처리
-    const isAbort =
-      (err instanceof DOMException && err.name === 'AbortError') ||
-      (err instanceof Error && err.name === 'AbortError');
-    if (isAbort) {
+    if (isAbortError(err)) {
       console.debug('[StreamClient] fetch aborted by user');
       return;
     }
@@ -79,11 +87,7 @@ export async function* fetchChatStream(
       try {
         readResult = await reader.read();
       } catch (err: unknown) {
-        // AbortError는 DOMException 또는 Error로 올 수 있으므로 두 경우를 모두 처리
-        const isAbort =
-          (err instanceof DOMException && err.name === 'AbortError') ||
-          (err instanceof Error && err.name === 'AbortError');
-        if (isAbort) {
+        if (isAbortError(err)) {
           console.debug('[StreamClient] Stream read aborted by user');
           return;
         }
