@@ -27,18 +27,33 @@ export async function* fetchChatStream(
 ): AsyncGenerator<StreamChunk, void, unknown> {
   const url = `${API_BASE}/api/chat/stream`;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'text/event-stream',
-    },
-    body: JSON.stringify(payload),
-    signal,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+      },
+      body: JSON.stringify(payload),
+      signal,
+    });
+  } catch (err: unknown) {
+    const error = err as Error;
+    if (error.name === 'AbortError') {
+      console.debug('[StreamClient] fetch aborted by user');
+      return;
+    }
+    throw err;
+  }
 
   if (!response.ok) {
     throw new Error(`Failed to start stream: ${response.status} ${response.statusText}`);
+  }
+
+  const contentType = response.headers.get('content-type');
+  if (!contentType || !contentType.includes('text/event-stream')) {
+    throw new Error(`Expected text/event-stream but received ${contentType}`);
   }
 
   if (!response.body) {
@@ -49,18 +64,33 @@ export async function* fetchChatStream(
   const decoder = new TextDecoder('utf-8');
   let buffer = '';
 
+  // [Bugfix] 상태 변수들을 while 루프 외부로 이동하여 
+  // 네트워크 청크(frame) 분할 시에도 데이터가 유실되지 않고 온전히 누적되도록 수정
+  let currentData: string[] = [];
+  let currentEvent: string | null = null;
+  let currentId: string | null = null;
+
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      let readResult;
+      try {
+        readResult = await reader.read();
+      } catch (err: unknown) {
+        const error = err as Error;
+        if (error.name === 'AbortError') {
+          console.debug('[StreamClient] Stream read aborted by user');
+          return;
+        }
+        throw err;
+      }
+
+      const { done, value } = readResult;
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
       
       const lines = buffer.split(/\r?\n/);
-      // 마지막 원소는 아직 완료되지 않은 줄일 수 있으므로 버퍼에 남겨둡니다.
       buffer = lines.pop() || '';
-
-      let currentData: string[] = [];
 
       for (const line of lines) {
         if (line === '') {
@@ -69,6 +99,12 @@ export async function* fetchChatStream(
             const dataStr = currentData.join('\n');
             currentData = []; // 리셋
 
+            if (currentEvent || currentId) {
+              // 추후 reconnection이나 event-type 라우팅을 지원하기 위해 파싱해둠
+              console.debug(`[StreamClient] event: ${currentEvent}, id: ${currentId}`);
+              currentEvent = null; // SSE 스펙상 event는 블록 끝에서 리셋됨
+            }
+
             if (dataStr === '[DONE]') {
               yield { type: 'done' };
               return;
@@ -76,8 +112,6 @@ export async function* fetchChatStream(
 
             try {
               const parsed = JSON.parse(dataStr) as StreamChunk;
-              // 에러 청크인 경우 여기서 변환을 추가할 수 있습니다.
-              // (보안을 위해 내부 에러 코드는 클라이언트에서 마스킹)
               yield parsed;
             } catch (e) {
               console.error('[StreamClient] Failed to parse stream chunk JSON:', e, dataStr);
@@ -87,11 +121,13 @@ export async function* fetchChatStream(
         }
 
         if (line.startsWith('data:')) {
-          // 'data:' 바로 뒤에 공백이 있다면 하나만 제거 (스펙 준수)
           const dataContent = line.startsWith('data: ') ? line.slice(6) : line.slice(5);
           currentData.push(dataContent);
+        } else if (line.startsWith('event:')) {
+          currentEvent = line.startsWith('event: ') ? line.slice(7) : line.slice(6);
+        } else if (line.startsWith('id:')) {
+          currentId = line.startsWith('id: ') ? line.slice(4) : line.slice(3);
         }
-        // event:, id: 등 기타 필드는 현재 무시합니다. (필요 시 확장 가능)
       }
     }
   } finally {
