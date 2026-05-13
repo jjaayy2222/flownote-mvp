@@ -39,8 +39,11 @@ export async function* fetchChatStream(
       signal,
     });
   } catch (err: unknown) {
-    const error = err as Error;
-    if (error.name === 'AbortError') {
+    // AbortError는 DOMException 또는 Error로 올 수 있으므로 두 경우를 모두 처리
+    const isAbort =
+      (err instanceof DOMException && err.name === 'AbortError') ||
+      (err instanceof Error && err.name === 'AbortError');
+    if (isAbort) {
       console.debug('[StreamClient] fetch aborted by user');
       return;
     }
@@ -76,8 +79,11 @@ export async function* fetchChatStream(
       try {
         readResult = await reader.read();
       } catch (err: unknown) {
-        const error = err as Error;
-        if (error.name === 'AbortError') {
+        // AbortError는 DOMException 또는 Error로 올 수 있으므로 두 경우를 모두 처리
+        const isAbort =
+          (err instanceof DOMException && err.name === 'AbortError') ||
+          (err instanceof Error && err.name === 'AbortError');
+        if (isAbort) {
           console.debug('[StreamClient] Stream read aborted by user');
           return;
         }
@@ -100,9 +106,12 @@ export async function* fetchChatStream(
             currentData = []; // 리셋
 
             if (currentEvent || currentId) {
-              // 추후 reconnection이나 event-type 라우팅을 지원하기 위해 파싱해둠
-              console.debug(`[StreamClient] event: ${currentEvent}, id: ${currentId}`);
-              currentEvent = null; // SSE 스펙상 event는 블록 끝에서 리셋됨
+              // 추후 reconnection이나 event-type 라우팅을 지원하기 위해 파싱해둠.
+              // [SSE 스펙] 'event'는 각 블록마다 초기화되지만 'id'(Last-Event-ID)는
+              // 새로운 id: 필드가 올 때까지 이전 값을 유지해야 하므로 여기서 리셋하지 않음.
+              console.debug(`[StreamClient] dispatching event: ${currentEvent ?? 'message'}, lastEventId: ${currentId}`);
+              currentEvent = null; // SSE 스펙: event 필드는 블록 경계에서 초기화
+              // currentId는 의도적으로 유지 (Last-Event-ID 역할)
             }
 
             if (dataStr === '[DONE]') {
