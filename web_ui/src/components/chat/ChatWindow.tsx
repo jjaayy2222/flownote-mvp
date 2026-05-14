@@ -21,7 +21,6 @@ function ErrorBanner({ message, onRetry }: { message: string; onRetry?: () => vo
   return (
     <div
       role="alert"
-      aria-live="polite"
       className="p-4 mb-4 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 flex items-center gap-2 animate-in fade-in slide-in-from-top-2"
     >
       <span className="font-bold">Error:</span>
