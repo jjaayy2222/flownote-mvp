@@ -14,6 +14,31 @@ import { Button } from '@/components/ui/button';
 import { Send, Loader2, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 
+/**
+ * 공용 에러 배너 컴포넌트
+ */
+function ErrorBanner({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  return (
+    <div
+      role="alert"
+      className="p-4 mb-4 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 flex items-center gap-2 animate-in fade-in slide-in-from-top-2"
+    >
+      <span className="font-bold">Error:</span>
+      <span>{message}</span>
+      {onRetry && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onRetry}
+          className="ml-auto h-6 text-[10px] hover:bg-red-100"
+        >
+          재시도
+        </Button>
+      )}
+    </div>
+  );
+}
+
 /** 초기 환영 메시지 */
 const WELCOME_MESSAGE: UIMessage = {
   id: 'welcome',
@@ -211,6 +236,19 @@ export function ChatWindow({
       toast.error('스트리밍 중 오류가 발생했습니다.', {
         description: err.message,
       });
+    },
+    onFinish: (content) => {
+      // 스트리밍이 끝나면 영구적인 messages 배열에 추가하여 
+      // 리렌더링이나 히스토리에서 일관되게 보이도록 합니다.
+      if (!content) return;
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: generateId('ast'),
+          role: 'assistant',
+          parts: [{ type: 'text', text: content }],
+        },
+      ]);
     },
   });
 
@@ -422,36 +460,15 @@ export function ChatWindow({
               </div>
             )}
 
-            {/* 에러 UI: 스트리밍 모드와 기존 모드를 분기 */}
+            {/* 에러 UI: 스트리밍 모드와 기존 모드를 분기하지만 일관된 UI 컴포넌트 사용 */}
             {isStreamingMode ? (
-              streamError && (
-                <div
-                  role="alert"
-                  aria-live="polite"
-                  className="p-4 mb-4 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 flex items-center gap-2 animate-in fade-in slide-in-from-top-2"
-                >
-                  <span className="font-bold">Error:</span>
-                  <span>{streamError.message}</span>
-                </div>
-              )
+              streamError && <ErrorBanner message={streamError.message} />
             ) : (
               error && (
-                <div
-                  role="alert"
-                  aria-live="polite"
-                  className="p-4 mb-4 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 flex items-center gap-2 animate-in fade-in slide-in-from-top-2"
-                >
-                  <span className="font-bold">Error:</span>
-                  <span>{error.message || '메시지 전송 중 오류가 발생했습니다.'}</span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleRetry}
-                    className="ml-auto h-6 text-[10px] hover:bg-red-100"
-                  >
-                    재시도
-                  </Button>
-                </div>
+                <ErrorBanner
+                  message={error.message || '메시지 전송 중 오류가 발생했습니다.'}
+                  onRetry={handleRetry}
+                />
               )
             )}
             <div className="h-4" />

@@ -45,6 +45,11 @@ export interface UseStreamingChatOptions {
    * [보안] StreamError 타입을 통해 내부 에러 코드와 사용자 메시지가 분리되어 전달됩니다.
    */
   onError?: (error: StreamError, raw: unknown) => void;
+  /**
+   * 스트림이 성공적으로 완료되었을 때 호출되는 콜백.
+   * 스트리밍된 결과물을 메인 대화 이력 등에 영구 저장할 때 유용합니다.
+   */
+  onFinish?: (content: string, sources: SourceItem[]) => void;
 }
 
 // =============================================================================
@@ -73,7 +78,6 @@ export interface UseStreamingChatOptions {
  * ```
  */
 export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStreamingChatReturn {
-  const { onError } = options;
   const [tokens, setTokens] = useState<string>('');
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [sources, setSources] = useState<SourceItem[]>([]);
@@ -83,11 +87,13 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
   // 상태 업데이트를 트리거하지 않고 안전하게 접근 가능
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // onError 콜백을 ref로 보관하여, 콜백이 바뀌어도 startStream 재생성을 방지
-  const onErrorRef = useRef(onError);
+  // 콜백들을 ref로 보관하여 콜백이 바뀌어도 startStream 재생성을 방지
+  const onErrorRef = useRef(options.onError);
+  const onFinishRef = useRef(options.onFinish);
   useEffect(() => {
-    onErrorRef.current = onError;
-  }, [onError]);
+    onErrorRef.current = options.onError;
+    onFinishRef.current = options.onFinish;
+  }, [options.onError, options.onFinish]);
 
   // [언마운트 클린업] 컴포넌트 해제 시 진행 중인 스트림을 자동으로 중단하여
   // 언마운트된 컴포넌트에서 setState가 호출되는 것을 방지합니다.
@@ -132,6 +138,9 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
 
       // 비동기 스트림 소비 (async IIFE)
       (async () => {
+        let accumulatedTokens = '';
+        let finalSources: SourceItem[] = [];
+
         try {
           for await (const chunk of fetchChatStream(payload, controller.signal)) {
             // 컨트롤러가 교체된 경우(다른 startStream 호출) 이 스트림 결과는 무시
@@ -139,10 +148,12 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
 
             switch (chunk.type) {
               case 'token':
-                setTokens((prev) => prev + chunk.data);
+                accumulatedTokens += chunk.data;
+                setTokens(accumulatedTokens);
                 break;
               case 'sources':
-                setSources(chunk.data);
+                finalSources = chunk.data;
+                setSources(finalSources);
                 break;
               case 'error': {
                 // [보안] 내부 에러 코드는 상태에만 저장하고 직접 렌더링하지 않음
@@ -154,7 +165,8 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
                 break;
               }
               case 'done':
-                // 정상 완료 - 별도 처리 불필요
+                // 정상 완료 - 누적된 토큰과 소스를 부모에게 전달
+                onFinishRef.current?.(accumulatedTokens, finalSources);
                 break;
             }
           }
