@@ -162,7 +162,8 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
                   errorCode: errChunk.error_code,
                   message: errChunk.message,
                 });
-                break;
+                // 에러 발생 시 스트림 처리를 즉각 중단하여 onFinish가 호출되는 것을 방어합니다.
+                return;
               }
               case 'done':
                 // 정상 완료 - 누적된 토큰과 소스를 부모에게 전달
