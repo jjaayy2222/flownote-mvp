@@ -1,6 +1,6 @@
 // web_ui/src/hooks/useStreamingChat.ts
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   fetchChatStream,
   type StreamChatRequest,
@@ -36,6 +36,17 @@ export interface UseStreamingChatReturn {
   cancelStream: () => void;
 }
 
+/** useStreamingChat 훅의 옵션 타입 */
+export interface UseStreamingChatOptions {
+  /**
+   * 예상치 못한 스트림 에러 발생 시 호출되는 콜백.
+   * 기본값: console.error (개발 환경용)
+   * 운영 환경에서는 Sentry 등 외부 모니터링 유틸리티로 교체 권장.
+   * [보안] StreamError 타입을 통해 내부 에러 코드와 사용자 메시지가 분리되어 전달됩니다.
+   */
+  onError?: (error: StreamError, raw: unknown) => void;
+}
+
 // =============================================================================
 // 커스텀 훅
 // =============================================================================
@@ -44,12 +55,15 @@ export interface UseStreamingChatReturn {
  * SSE 기반 실시간 스트리밍 채팅을 위한 React 커스텀 훅.
  *
  * - AbortController를 통한 취소 및 클린업 보장
+ * - useEffect 클린업으로 언마운트 시 자동 스트림 중단 보장
  * - 상태 관리: tokens(누적 토큰), isStreaming, sources, error
- * - useEffect 클린업 없이도 cancelStream() 호출로 명시적 중단 가능
+ * - onError 콜백을 주입하여 에러 리포팅 전략을 외부에서 제어 가능
  *
  * @example
  * ```tsx
- * const { tokens, isStreaming, error, startStream, cancelStream } = useStreamingChat();
+ * const { tokens, isStreaming, error, startStream, cancelStream } = useStreamingChat({
+ *   onError: (err, raw) => Sentry.captureException(raw),
+ * });
  *
  * // 스트림 시작
  * startStream({ query: '안녕하세요', user_id: userId, session_id: sessionId });
@@ -58,7 +72,8 @@ export interface UseStreamingChatReturn {
  * cancelStream();
  * ```
  */
-export function useStreamingChat(): UseStreamingChatReturn {
+export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStreamingChatReturn {
+  const { onError } = options;
   const [tokens, setTokens] = useState<string>('');
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [sources, setSources] = useState<SourceItem[]>([]);
@@ -67,6 +82,21 @@ export function useStreamingChat(): UseStreamingChatReturn {
   // 진행 중인 스트림의 AbortController를 ref로 관리하여
   // 상태 업데이트를 트리거하지 않고 안전하게 접근 가능
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // onError 콜백을 ref로 보관하여, 콜백이 바뀌어도 startStream 재생성을 방지
+  const onErrorRef = useRef(onError);
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
+
+  // [언마운트 클린업] 컴포넌트 해제 시 진행 중인 스트림을 자동으로 중단하여
+  // 언마운트된 컴포넌트에서 setState가 호출되는 것을 방지합니다.
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+    };
+  }, []);
 
   /**
    * 진행 중인 스트림을 안전하게 중단합니다.
@@ -140,12 +170,22 @@ export function useStreamingChat(): UseStreamingChatReturn {
               err.name === 'AbortError');
 
           if (!isAbort) {
-            console.error('[useStreamingChat] Unexpected stream error:', err);
-            setError({
+            const streamErr: StreamError = {
               errorCode: 'STREAM_ERROR',
               message: err instanceof Error ? err.message : '스트리밍 중 오류가 발생했습니다.',
-            });
+            };
+            // [보안/방어] onError 콜백을 통해 에러 리포팅을 외부에서 제어.
+            // 사용자 제공 콜백이 예외를 던지더라도 setError는 반드시 실행되어야 하므로
+            // try/catch로 격리하고, 콜백 실패 시 console.error로 폴백합니다.
+            try {
+              const reporter = onErrorRef.current ?? console.error;
+              reporter(streamErr, err);
+            } catch (reporterErr: unknown) {
+              console.error('[useStreamingChat] onError callback threw an exception:', reporterErr);
+            }
+            setError(streamErr);
           }
+
         } finally {
           // 이 스트림이 여전히 현재 스트림인 경우에만 상태 클린업
           if (abortControllerRef.current === controller) {
