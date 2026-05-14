@@ -32,3 +32,13 @@ export const CHAT_CONFIG = {
 export const UI_CONFIG = {
   SCROLL_THRESHOLD: 100, // UX 바닥 인식 임계치 (px)
 } as const;
+
+/**
+ * 기능 플래그(Feature Flags) - 환경변수 기반 점진적 롤아웃 관리
+ *
+ * NEXT_PUBLIC_USE_STREAMING=true 로 설정 시 SSE 기반 스트리밍 훅을 활성화합니다.
+ * 미설정 또는 'false'일 경우 기존 useChat 방식으로 폴백됩니다.
+ */
+export const FEATURE_FLAGS = {
+  USE_STREAMING: process.env.NEXT_PUBLIC_USE_STREAMING === 'true',
+} as const;
