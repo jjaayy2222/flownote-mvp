@@ -20,7 +20,6 @@ import { toast } from 'sonner';
 function ErrorBanner({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <div
-      role="alert"
       className="p-4 mb-4 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 flex items-center gap-2 animate-in fade-in slide-in-from-top-2"
     >
       <span className="font-bold">Error:</span>
@@ -460,17 +459,19 @@ export function ChatWindow({
               </div>
             )}
 
-            {/* 에러 UI: 스트리밍 모드와 기존 모드를 분기하지만 일관된 UI 컴포넌트 사용 */}
-            {isStreamingMode ? (
-              streamError && <ErrorBanner message={streamError.message} />
-            ) : (
-              error && (
-                <ErrorBanner
-                  message={error.message || '메시지 전송 중 오류가 발생했습니다.'}
-                  onRetry={handleRetry}
-                />
-              )
-            )}
+            {/* 에러 UI: 스크린 리더가 DOM 삽입을 항상 감지할 수 있도록 라이브 리전 컨테이너를 상시 렌더링합니다. */}
+            <div aria-live="assertive" aria-atomic="true">
+              {isStreamingMode ? (
+                streamError && <ErrorBanner message={streamError.message} />
+              ) : (
+                error && (
+                  <ErrorBanner
+                    message={error.message || '메시지 전송 중 오류가 발생했습니다.'}
+                    onRetry={handleRetry}
+                  />
+                )
+              )}
+            </div>
             <div className="h-4" />
           </div>
         </ScrollArea>
