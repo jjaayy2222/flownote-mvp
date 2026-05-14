@@ -187,20 +187,27 @@ export function ChatWindow({
   const { messages, sendMessage, status, setMessages, error } = useChat(chatOptions);
 
   // =========================================================================
-  // [스트리밍 훅] FEATURE_FLAGS.USE_STREAMING 활성화 시 useStreamingChat 사용
+  // [스트리밍 훅] 플래그 활성화 시 useStreamingChat 사용
   // 기존 useChat 방식과 공존하며, 플래그 토글로 즉시 전환 가능합니다.
   // =========================================================================
+
+  // [DRY] 플래그를 한 번만 참조하여 컴포넌트 전체에서 사용
+  const isStreamingMode = FEATURE_FLAGS.USE_STREAMING;
+
   const {
     tokens: streamTokens,
     isStreaming,
-    sources: streamSources,
+    // sources는 향후 SourcePanel 컴포넌트 연결 시 추가 예정
     error: streamError,
     startStream,
     cancelStream,
   } = useStreamingChat({
     onError: (err, raw) => {
-      // [보안] StreamError 타입을 통해 내부 에러 코드 미노출
-      console.error('[ChatWindow] Stream error:', raw);
+      // [보안] 운영 환경에서는 원본 raw 에러 객체를 콘솔에 노출하지 않습니다.
+      // 내부 스택 트레이스나 서버 세부정보 노출 위험이 있으므로, 개발 환경에서만 로깅합니다.
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('[ChatWindow] Stream error (dev only):', raw);
+      }
       toast.error('스트리밍 중 오류가 발생했습니다.', {
         description: err.message,
       });
@@ -286,7 +293,7 @@ export function ChatWindow({
   };
 
   // 플래그에 따라 로딩 상태를 통합 (기존 useChat 방식 또는 스트리밍 방식)
-  const isLoading = FEATURE_FLAGS.USE_STREAMING
+  const isLoading = isStreamingMode
     ? isStreaming
     : status === 'streaming' || status === 'submitted';
 
@@ -303,7 +310,7 @@ export function ChatWindow({
     const trimmed = input.trim();
     if (!trimmed || isLoading) return;
 
-    if (FEATURE_FLAGS.USE_STREAMING) {
+    if (isStreamingMode) {
       // 스트리밍 훅 방식: useStreamingChat.startStream() 호출
       const payload: StreamChatRequest = {
         query: trimmed,
@@ -319,7 +326,7 @@ export function ChatWindow({
     }
 
     setInput('');
-  }, [input, isLoading, sendMessage, startStream, userId, sessionId, alpha]);
+  }, [input, isLoading, isStreamingMode, sendMessage, startStream, userId, sessionId, alpha]);
 
   const handleRetry = useCallback(() => {
     if (isLoading) return;
@@ -404,7 +411,7 @@ export function ChatWindow({
               />
             ))}
             {/* [스트리밍 모드] 누적 토큰을 실시간으로 렌더링 */}
-            {FEATURE_FLAGS.USE_STREAMING && streamTokens && (
+            {isStreamingMode && streamTokens && (
               <div className="flex justify-start px-1 py-2">
                 <div className="max-w-[80%] rounded-2xl rounded-tl-sm bg-slate-50 border border-slate-100 px-4 py-3 text-sm text-slate-800 whitespace-pre-wrap">
                   {streamTokens}
@@ -416,7 +423,7 @@ export function ChatWindow({
             )}
 
             {/* 에러 UI: 스트리밍 모드와 기존 모드를 분기 */}
-            {FEATURE_FLAGS.USE_STREAMING ? (
+            {isStreamingMode ? (
               streamError && (
                 <div
                   role="alert"
@@ -496,7 +503,7 @@ export function ChatWindow({
             </Button>
 
             {/* [스트리밍 모드] 진행 중 취소 버튼 */}
-            {FEATURE_FLAGS.USE_STREAMING && isStreaming && (
+            {isStreamingMode && isStreaming && (
               <Button
                 type="button"
                 size="sm"
