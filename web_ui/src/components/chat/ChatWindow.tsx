@@ -4,7 +4,9 @@ import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import { useChat } from '@ai-sdk/react';
 import type { UIMessage } from 'ai';
 import { DefaultChatTransport } from 'ai';
-import { CHAT_CONFIG, STORAGE_KEYS, UI_CONFIG } from '@/lib/constants';
+import { CHAT_CONFIG, STORAGE_KEYS, UI_CONFIG, FEATURE_FLAGS } from '@/lib/constants';
+import { useStreamingChat } from '@/hooks/useStreamingChat';
+import type { StreamChatRequest } from '@/lib/stream-client';
 import { MessageBubble } from './MessageBubble';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
@@ -184,6 +186,27 @@ export function ChatWindow({
 
   const { messages, sendMessage, status, setMessages, error } = useChat(chatOptions);
 
+  // =========================================================================
+  // [스트리밍 훅] FEATURE_FLAGS.USE_STREAMING 활성화 시 useStreamingChat 사용
+  // 기존 useChat 방식과 공존하며, 플래그 토글로 즉시 전환 가능합니다.
+  // =========================================================================
+  const {
+    tokens: streamTokens,
+    isStreaming,
+    sources: streamSources,
+    error: streamError,
+    startStream,
+    cancelStream,
+  } = useStreamingChat({
+    onError: (err, raw) => {
+      // [보안] StreamError 타입을 통해 내부 에러 코드 미노출
+      console.error('[ChatWindow] Stream error:', raw);
+      toast.error('스트리밍 중 오류가 발생했습니다.', {
+        description: err.message,
+      });
+    },
+  });
+
   useEffect(() => {
     if (!sessionId) return;
     let ignore = false;
@@ -262,7 +285,10 @@ export function ChatWindow({
     }
   };
 
-  const isLoading = status === 'streaming' || status === 'submitted';
+  // 플래그에 따라 로딩 상태를 통합 (기존 useChat 방식 또는 스트리밍 방식)
+  const isLoading = FEATURE_FLAGS.USE_STREAMING
+    ? isStreaming
+    : status === 'streaming' || status === 'submitted';
 
   useEffect(() => {
     if (autoScrollEnabled) {
@@ -276,9 +302,24 @@ export function ChatWindow({
     e?.preventDefault();
     const trimmed = input.trim();
     if (!trimmed || isLoading) return;
-    sendMessage({ role: 'user', parts: [{ type: 'text', text: trimmed }] });
+
+    if (FEATURE_FLAGS.USE_STREAMING) {
+      // 스트리밍 훅 방식: useStreamingChat.startStream() 호출
+      const payload: StreamChatRequest = {
+        query: trimmed,
+        user_id: userId || CHAT_CONFIG.DEFAULT_USER_ID || '',
+        session_id: sessionId,
+        k: CHAT_CONFIG.DEFAULT_K,
+        alpha: alpha,
+      };
+      startStream(payload);
+    } else {
+      // 폴백: 기존 useChat 방식
+      sendMessage({ role: 'user', parts: [{ type: 'text', text: trimmed }] });
+    }
+
     setInput('');
-  }, [input, isLoading, sendMessage]);
+  }, [input, isLoading, sendMessage, startStream, userId, sessionId, alpha]);
 
   const handleRetry = useCallback(() => {
     if (isLoading) return;
@@ -362,23 +403,49 @@ export function ChatWindow({
                 sessionId={sessionId}
               />
             ))}
-            {error && (
-              <div 
-                role="alert" 
-                aria-live="polite"
-                className="p-4 mb-4 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 flex items-center gap-2 animate-in fade-in slide-in-from-top-2"
-              >
-                <span className="font-bold">Error:</span>
-                <span>{error.message || '메시지 전송 중 오류가 발생했습니다.'}</span>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={handleRetry} 
-                  className="ml-auto h-6 text-[10px] hover:bg-red-100"
-                >
-                  재시도
-                </Button>
+            {/* [스트리밍 모드] 누적 토큰을 실시간으로 렌더링 */}
+            {FEATURE_FLAGS.USE_STREAMING && streamTokens && (
+              <div className="flex justify-start px-1 py-2">
+                <div className="max-w-[80%] rounded-2xl rounded-tl-sm bg-slate-50 border border-slate-100 px-4 py-3 text-sm text-slate-800 whitespace-pre-wrap">
+                  {streamTokens}
+                  {isStreaming && (
+                    <span className="inline-block w-1.5 h-4 bg-slate-400 rounded-sm ml-0.5 animate-pulse" aria-hidden="true" />
+                  )}
+                </div>
               </div>
+            )}
+
+            {/* 에러 UI: 스트리밍 모드와 기존 모드를 분기 */}
+            {FEATURE_FLAGS.USE_STREAMING ? (
+              streamError && (
+                <div
+                  role="alert"
+                  aria-live="polite"
+                  className="p-4 mb-4 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 flex items-center gap-2 animate-in fade-in slide-in-from-top-2"
+                >
+                  <span className="font-bold">Error:</span>
+                  <span>{streamError.message}</span>
+                </div>
+              )
+            ) : (
+              error && (
+                <div
+                  role="alert"
+                  aria-live="polite"
+                  className="p-4 mb-4 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 flex items-center gap-2 animate-in fade-in slide-in-from-top-2"
+                >
+                  <span className="font-bold">Error:</span>
+                  <span>{error.message || '메시지 전송 중 오류가 발생했습니다.'}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleRetry}
+                    className="ml-auto h-6 text-[10px] hover:bg-red-100"
+                  >
+                    재시도
+                  </Button>
+                </div>
+              )
             )}
             <div className="h-4" />
           </div>
@@ -427,6 +494,19 @@ export function ChatWindow({
             >
               {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 ml-0.5" />}
             </Button>
+
+            {/* [스트리밍 모드] 진행 중 취소 버튼 */}
+            {FEATURE_FLAGS.USE_STREAMING && isStreaming && (
+              <Button
+                type="button"
+                size="sm"
+                aria-label="스트리밍 취소"
+                onClick={cancelStream}
+                className="absolute right-14 bottom-3 h-8 px-3 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 text-xs font-medium"
+              >
+                중단
+              </Button>
+            )}
           </div>
         </form>
       </div>
