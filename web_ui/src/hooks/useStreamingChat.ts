@@ -174,12 +174,18 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
               errorCode: 'STREAM_ERROR',
               message: err instanceof Error ? err.message : '스트리밍 중 오류가 발생했습니다.',
             };
-            // [보안] onError 콜백을 통해 에러 리포팅을 외부에서 제어.
-            // 기본값으로 console.error 사용 (운영 환경에서는 Sentry 등으로 교체 권장)
-            const reporter = onErrorRef.current ?? console.error;
-            reporter(streamErr, err);
+            // [보안/방어] onError 콜백을 통해 에러 리포팅을 외부에서 제어.
+            // 사용자 제공 콜백이 예외를 던지더라도 setError는 반드시 실행되어야 하므로
+            // try/catch로 격리하고, 콜백 실패 시 console.error로 폴백합니다.
+            try {
+              const reporter = onErrorRef.current ?? console.error;
+              reporter(streamErr, err);
+            } catch (reporterErr: unknown) {
+              console.error('[useStreamingChat] onError callback threw an exception:', reporterErr);
+            }
             setError(streamErr);
           }
+
         } finally {
           // 이 스트림이 여전히 현재 스트림인 경우에만 상태 클린업
           if (abortControllerRef.current === controller) {
