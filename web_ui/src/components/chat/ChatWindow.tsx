@@ -460,7 +460,7 @@ export function ChatWindow({
             )}
 
             {/* 에러 UI: 스크린 리더가 DOM 삽입을 항상 감지할 수 있도록 라이브 리전 컨테이너를 상시 렌더링합니다. */}
-            <div aria-live="assertive" className="empty:hidden">
+            <div aria-live="assertive" aria-atomic="true">
               {isStreamingMode ? (
                 streamError && <ErrorBanner message={streamError.message} />
               ) : (
