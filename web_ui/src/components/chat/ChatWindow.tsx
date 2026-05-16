@@ -474,7 +474,7 @@ export function ChatWindow({
               />
             ))}
             {/* [스트리밍 모드] 첫 토큰 도착 전 타이핑 인디케이터 */}
-            {isStreamingMode && isStreaming && !streamTokens && (
+            {isStreamingMode && isStreaming && (streamTokens == null || streamTokens === '') && (
               <TypingIndicator />
             )}
 
