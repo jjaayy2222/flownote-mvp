@@ -413,6 +413,8 @@ export function ChatWindow({
     }
   };
 
+  const shouldShowTypingIndicator = isStreamingMode && isStreaming && (streamTokens == null || streamTokens === '');
+
   return (
     <div 
       className="flex flex-col w-full border-none shadow-none bg-transparent overflow-hidden relative h-full"
@@ -474,7 +476,7 @@ export function ChatWindow({
               />
             ))}
             {/* [스트리밍 모드] 첫 토큰 도착 전 타이핑 인디케이터 */}
-            {isStreamingMode && isStreaming && (streamTokens == null || streamTokens === '') && (
+            {shouldShowTypingIndicator && (
               <TypingIndicator />
             )}
 
