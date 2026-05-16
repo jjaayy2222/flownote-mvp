@@ -38,21 +38,23 @@ function ErrorBanner({ message, onRetry }: { message: string; onRetry?: () => vo
   );
 }
 
+const TYPING_ANIMATION_DELAYS = ['[animation-delay:-0.3s]', '[animation-delay:-0.15s]', ''];
+
 /**
  * 스트리밍 대기 시 보여지는 타이핑 인디케이터
  */
-function TypingIndicator() {
+function TypingIndicator({ className = '' }: { className?: string }) {
   return (
-    <div className="flex justify-start px-1 py-2">
+    <div className={`flex justify-start px-1 py-2 ${className}`.trim()}>
       <div 
         className="max-w-[80%] rounded-2xl rounded-tl-sm bg-slate-50 border border-slate-100 px-4 py-4 flex items-center gap-1.5"
         role="status"
         aria-live="polite"
       >
-        {['[animation-delay:-0.3s]', '[animation-delay:-0.15s]', ''].map((delayClass, index) => (
+        {TYPING_ANIMATION_DELAYS.map((delayClass, index) => (
           <div 
             key={index}
-            className={`w-2 h-2 bg-slate-400 rounded-full animate-bounce ${delayClass}`} 
+            className={`w-2 h-2 bg-slate-400 rounded-full animate-bounce ${delayClass}`.trim()} 
             aria-hidden="true" 
           />
         ))}
@@ -472,7 +474,7 @@ export function ChatWindow({
               />
             ))}
             {/* [스트리밍 모드] 첫 토큰 도착 전 타이핑 인디케이터 */}
-            {isStreamingMode && isStreaming && (!streamTokens || streamTokens.length === 0) && (
+            {isStreamingMode && isStreaming && streamTokens === '' && (
               <TypingIndicator />
             )}
 
