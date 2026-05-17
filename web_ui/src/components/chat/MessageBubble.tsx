@@ -10,10 +10,8 @@ import { cn } from '@/lib/utils';
 import type { UIMessage } from 'ai';
 import { SourcePanel } from './SourcePanel';
 import { type SourceItem } from '@/types/chat';
-import type { Components } from 'react-markdown';
 import { stabilizeIncompleteMarkdown } from '@/lib/markdown';
 import { 
-  CITATION_VALIDATION_REGEX, 
   extractSources,
   buildProcessedContent,
   areTextPartsEqual,

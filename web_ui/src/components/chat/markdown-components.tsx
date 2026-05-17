@@ -82,14 +82,12 @@ export function useMarkdownComponents(
             return <FallbackCitation className={className}>{children}</FallbackCitation>;
           }
 
+          const commonBadgeClasses = "inline-flex items-center justify-center mx-0.5 px-1 min-w-[1rem] h-4 rounded align-top mt-0.5 select-none";
+          
           if (!onBadgeClick) {
             return (
               <sup
-                className={cn(
-                  "inline-flex items-center justify-center mx-0.5 px-1 min-w-[1rem] h-4",
-                  "bg-slate-100 text-slate-500 font-medium text-[9px] rounded border border-slate-200",
-                  "align-top mt-0.5 select-none"
-                )}
+                className={cn(commonBadgeClasses, "bg-slate-100 text-slate-500 font-medium text-[9px] border border-slate-200")}
                 title={source.title ? `출처: ${source.title}` : `출처: ${source.id}`}
               >
                 {children}
@@ -97,7 +95,7 @@ export function useMarkdownComponents(
             );
           }
 
-          const handleCitationClick = (e: React.MouseEvent | React.KeyboardEvent) => {
+          const handleCitationAction = (e: React.SyntheticEvent) => {
             e.preventDefault();
             onBadgeClick(source);
           };
@@ -106,17 +104,16 @@ export function useMarkdownComponents(
             <sup
               role="button"
               tabIndex={0}
-              onClick={handleCitationClick}
+              onClick={handleCitationAction}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
-                  handleCitationClick(e as unknown as React.MouseEvent);
+                  handleCitationAction(e);
                 }
               }}
               className={cn(
-                "inline-flex items-center justify-center mx-0.5 px-1 min-w-[1rem] h-4",
-                "bg-blue-50 text-blue-700 font-bold text-[9px] rounded border border-blue-200",
-                "cursor-pointer hover:bg-blue-100 hover:border-blue-300 transition-colors",
-                "align-top mt-0.5 select-none focus:outline-none focus:ring-1 focus:ring-blue-400"
+                commonBadgeClasses,
+                "bg-blue-50 text-blue-700 font-bold text-[9px] border border-blue-200",
+                "cursor-pointer hover:bg-blue-100 hover:border-blue-300 transition-colors focus:outline-none focus:ring-1 focus:ring-blue-400"
               )}
               title={source.title ? `출처: ${source.title}` : `출처: ${source.id}`}
             >
