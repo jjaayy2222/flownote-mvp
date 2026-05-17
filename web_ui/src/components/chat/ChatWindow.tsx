@@ -281,7 +281,9 @@ export function ChatWindow({
     },
   });
 
-  const markdownComponents = useMarkdownComponents(streamSources);
+  // 클릭 핸들러가 없을 때 `useMarkdownComponents`가 비인터랙티브한 citation 배지를
+  // 렌더링할 수 있도록, 명시적으로 `undefined`를 넘겨줍니다.
+  const markdownComponents = useMarkdownComponents(streamSources, undefined);
 
   useEffect(() => {
     if (!sessionId) return;
