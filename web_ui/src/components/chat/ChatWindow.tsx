@@ -12,6 +12,10 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Send, Loader2, ChevronDown } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import { REMARK_PLUGINS, REHYPE_PLUGINS, useMarkdownComponents } from './markdown-components';
+import { stabilizeIncompleteMarkdown } from '@/lib/markdown';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { toast } from 'sonner';
 
 /**
@@ -247,7 +251,7 @@ export function ChatWindow({
   const {
     tokens: streamTokens,
     isStreaming,
-    // sources는 향후 SourcePanel 컴포넌트 연결 시 추가 예정
+    sources: streamSources,
     error: streamError,
     startStream,
     cancelStream,
@@ -276,6 +280,8 @@ export function ChatWindow({
       ]);
     },
   });
+
+  const markdownComponents = useMarkdownComponents(streamSources);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -414,6 +420,7 @@ export function ChatWindow({
   };
 
   const shouldShowTypingIndicator = isStreamingMode && isStreaming && (streamTokens == null || streamTokens === '');
+  const shouldShowStreamingTokens = isStreamingMode && isStreaming && streamTokens != null && streamTokens !== '';
 
   return (
     <div 
@@ -481,13 +488,28 @@ export function ChatWindow({
             )}
 
             {/* [스트리밍 모드] 누적 토큰을 실시간으로 렌더링 */}
-            {isStreamingMode && streamTokens && (
-              <div className="flex justify-start px-1 py-2">
-                <div className="max-w-[80%] rounded-2xl rounded-tl-sm bg-slate-50 border border-slate-100 px-4 py-3 text-sm text-slate-800 whitespace-pre-wrap">
-                  {streamTokens}
-                  {isStreaming && (
-                    <span className="inline-block w-1.5 h-4 bg-slate-400 rounded-sm ml-0.5 animate-pulse" aria-hidden="true" />
-                  )}
+            {shouldShowStreamingTokens && (
+              <div className="flex gap-3 w-full justify-start mb-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                {/* 아바타 */}
+                <Avatar className="w-8 h-8 shrink-0 mt-1 shadow-sm border border-slate-100">
+                  <AvatarFallback className="bg-blue-100 text-blue-700 text-xs font-bold">AI</AvatarFallback>
+                </Avatar>
+
+                <div className="flex flex-col gap-2 max-w-[85%] items-start w-full">
+                  <div
+                    className="px-4 py-3 rounded-2xl text-sm leading-relaxed bg-white text-slate-800 rounded-bl-sm shadow-sm border border-slate-100 w-full"
+                  >
+                    <ReactMarkdown
+                      remarkPlugins={REMARK_PLUGINS}
+                      rehypePlugins={REHYPE_PLUGINS}
+                      components={markdownComponents}
+                    >
+                      {stabilizeIncompleteMarkdown(streamTokens)}
+                    </ReactMarkdown>
+                    {isStreaming && (
+                      <span className="inline-block w-1.5 h-4 bg-slate-400 rounded-sm ml-0.5 animate-pulse align-middle" aria-hidden="true" />
+                    )}
+                  </div>
                 </div>
               </div>
             )}
