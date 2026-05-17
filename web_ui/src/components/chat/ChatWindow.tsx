@@ -13,8 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Send, Loader2, ChevronDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeSanitize from 'rehype-sanitize';
+import { REMARK_PLUGINS, REHYPE_PLUGINS, useMarkdownComponents } from './markdown-components';
 import { stabilizeIncompleteMarkdown } from '@/lib/markdown';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { toast } from 'sonner';
@@ -252,7 +251,7 @@ export function ChatWindow({
   const {
     tokens: streamTokens,
     isStreaming,
-    // sources는 향후 SourcePanel 컴포넌트 연결 시 추가 예정
+    sources: streamSources,
     error: streamError,
     startStream,
     cancelStream,
@@ -281,6 +280,8 @@ export function ChatWindow({
       ]);
     },
   });
+
+  const markdownComponents = useMarkdownComponents(streamSources);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -499,8 +500,9 @@ export function ChatWindow({
                     className="px-4 py-3 rounded-2xl text-sm leading-relaxed bg-white text-slate-800 rounded-bl-sm shadow-sm border border-slate-100 w-full"
                   >
                     <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      rehypePlugins={[rehypeSanitize]}
+                      remarkPlugins={REMARK_PLUGINS}
+                      rehypePlugins={REHYPE_PLUGINS}
+                      components={markdownComponents}
                     >
                       {stabilizeIncompleteMarkdown(streamTokens)}
                     </ReactMarkdown>
