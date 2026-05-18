@@ -39,87 +39,100 @@ function FallbackCitation({
  * - 소스(sources) 데이터와 클릭 핸들러(onBadgeClick)는 인용구 렌더링에 사용됩니다.
  */
 export function useMarkdownComponents(
-  sources: SourceItem[] = [],
+  sources?: SourceItem[],
   onBadgeClick?: (src: SourceItem) => void
 ): Components {
-  return useMemo(() => ({
-    code({ className, children, ...props }: CodeProps) {
-      const match = /language-(\w+)/.exec(className || '');
-      const isBlock = Boolean(match);
-      return isBlock ? (
-        <SyntaxHighlighter
-          style={vscDarkPlus as Record<string, React.CSSProperties>}
-          language={match![1]}
-          PreTag="div"
-          className="rounded-md my-2 text-xs"
-        >
-          {String(children).replace(/\n$/, '')}
-        </SyntaxHighlighter>
-      ) : (
-        <code
-          className="bg-black/10 px-1 py-0.5 rounded text-xs font-mono"
-          {...props}
-        >
-          {children}
-        </code>
-      );
-    },
-    a({ children, href, className, ...props }) {
-      if (href?.startsWith('cite:')) {
-        const indexStr = href.replace('cite:', '').trim();
+  return useMemo(() => {
+    const safeSources = sources ?? [];
 
-        if (!CITATION_VALIDATION_REGEX.test(indexStr)) {
-          return <FallbackCitation className={className}>{children}</FallbackCitation>;
-        }
-
-        const index = parseInt(indexStr, 10) - 1;
-        const source = sources[index];
-        
-        if (!source) {
-          return <FallbackCitation className={className}>{children}</FallbackCitation>;
-        }
-
-        const handleCitationClick = (e: React.MouseEvent | React.KeyboardEvent) => {
-          e.preventDefault();
-          onBadgeClick?.(source);
-        };
-
-        return (
-          <sup
-            role="button"
-            tabIndex={0}
-            onClick={handleCitationClick}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                handleCitationClick(e as unknown as React.MouseEvent);
-              }
-            }}
-            className="
-              inline-flex items-center justify-center
-              mx-0.5 px-1 min-w-[1rem] h-4
-              bg-blue-50 text-blue-700 font-bold text-[9px]
-              rounded border border-blue-200
-              cursor-pointer hover:bg-blue-100 hover:border-blue-300
-              transition-colors align-top mt-0.5
-              select-none focus:outline-none focus:ring-1 focus:ring-blue-400
-            "
-            title={source.title ? `출처: ${source.title}` : `출처: ${source.id}`}
+    return {
+      code({ className, children, ...props }: CodeProps) {
+        const match = /language-(\w+)/.exec(className || '');
+        const isBlock = Boolean(match);
+        return isBlock ? (
+          <SyntaxHighlighter
+            style={vscDarkPlus as Record<string, React.CSSProperties>}
+            language={match![1]}
+            PreTag="div"
+            className="rounded-md my-2 text-xs"
+          >
+            {String(children).replace(/\n$/, '')}
+          </SyntaxHighlighter>
+        ) : (
+          <code
+            className={cn("bg-black/10 px-1 py-0.5 rounded text-xs font-mono", className)}
+            {...props}
           >
             {children}
-          </sup>
+          </code>
         );
-      }
-      return (
-        <a 
-          href={href} 
-          className={cn("text-blue-600 underline", className)} 
-          target="_blank" 
-          rel="noopener noreferrer" 
-          {...props}
-        >
-          {children}
-        </a>
-      );
-    },
-  }), [sources, onBadgeClick]);
+      },
+      a({ children, href, className, ...props }) {
+        if (href?.startsWith('cite:')) {
+          const indexStr = href.replace('cite:', '').trim();
+
+          if (!CITATION_VALIDATION_REGEX.test(indexStr)) {
+            return <FallbackCitation className={className}>{children}</FallbackCitation>;
+          }
+
+          const index = parseInt(indexStr, 10) - 1;
+          const source = safeSources[index];
+          
+          if (!source) {
+            return <FallbackCitation className={className}>{children}</FallbackCitation>;
+          }
+
+          const commonBadgeClasses = "inline-flex items-center justify-center mx-0.5 px-1 min-w-[1rem] h-4 rounded align-top mt-0.5 select-none";
+          
+          if (!onBadgeClick) {
+            return (
+              <sup
+                className={cn(commonBadgeClasses, "bg-slate-100 text-slate-500 font-medium text-[9px] border border-slate-200")}
+                title={source.title ? `출처: ${source.title}` : `출처: ${source.id}`}
+              >
+                {children}
+              </sup>
+            );
+          }
+
+          const handleCitationAction = (e: React.SyntheticEvent) => {
+            e.preventDefault();
+            onBadgeClick(source);
+          };
+
+          return (
+            <sup
+              role="button"
+              tabIndex={0}
+              onClick={handleCitationAction}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  handleCitationAction(e);
+                }
+              }}
+              className={cn(
+                commonBadgeClasses,
+                "bg-blue-50 text-blue-700 font-bold text-[9px] border border-blue-200",
+                "cursor-pointer hover:bg-blue-100 hover:border-blue-300 transition-colors focus:outline-none focus:ring-1 focus:ring-blue-400"
+              )}
+              title={source.title ? `출처: ${source.title}` : `출처: ${source.id}`}
+            >
+              {children}
+            </sup>
+          );
+        }
+        return (
+          <a 
+            href={href} 
+            className={cn("text-blue-600 underline", className)} 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            {...props}
+          >
+            {children}
+          </a>
+        );
+      },
+    };
+  }, [sources, onBadgeClick]);
 }
