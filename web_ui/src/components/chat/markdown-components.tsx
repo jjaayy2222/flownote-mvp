@@ -68,7 +68,7 @@ function CopyButton({ code }: { code: string }) {
       // Clipboard API 미지원 환경 — 콘솔 스팸과 blocking alert 없이, 한 번만 경고 로그를 남기고
       // UI 레벨에서 비차단형 안내(토스트)를 표시합니다.
       if (typeof window !== 'undefined') {
-        const win = window as unknown as Record<typeof CLIPBOARD_UNSUPPORTED_WARN_FLAG, boolean | undefined>;
+        const win = window as unknown as Window & Record<typeof CLIPBOARD_UNSUPPORTED_WARN_FLAG, boolean | undefined>;
         
         if (!win[CLIPBOARD_UNSUPPORTED_WARN_FLAG]) {
           console.warn('[CopyButton] Clipboard API is not supported in this environment (e.g., HTTP or SSR).');
