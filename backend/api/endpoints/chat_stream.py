@@ -27,7 +27,7 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 from fastapi import APIRouter, Request
 from sse_starlette.sse import EventSourceResponse
@@ -60,6 +60,36 @@ _LOG_TAG: str = "[STREAM]"
 _ERROR_MSG_INTERNAL: str = "Internal server error occurred during streaming."
 _ERROR_MSG_TIMEOUT: str = "Streaming session timed out. Please retry."
 _ERROR_MSG_SCHEMA: str = "Data format mismatch detected. Please contact support."
+def _safe_repr(obj: Any) -> str:
+    """
+    민감 데이터(PII)의 로깅 노출 위험 없이 스키마 불일치 디버깅을 돕기 위해
+    객체의 구조(필드/키/타입/길이) 정보만 안전하게 추출하여 반환합니다.
+    """
+    if obj is None:
+        return "None"
+
+    from pydantic import BaseModel
+    try:
+        if isinstance(obj, BaseModel):
+            fields = list(obj.model_fields.keys())
+            return f"{obj.__class__.__name__}(fields={fields})"
+        elif isinstance(obj, dict):
+            keys = list(obj.keys())
+            return f"dict(keys={keys})"
+        elif isinstance(obj, list):
+            elem_reprs = [_safe_repr(item) for item in obj[:3]]
+            if len(obj) > 3:
+                elem_reprs.append("...")
+            return f"list(size={len(obj)}, items={elem_reprs})"
+        elif isinstance(obj, str):
+            # 문자열은 길이 정보만 제공하여 PII 노출 방지
+            return f"str(length={len(obj)})"
+        elif isinstance(obj, (int, float, bool)):
+            return repr(obj)
+        else:
+            return f"{obj.__class__.__name__}(type={type(obj)})"
+    except Exception as e:
+        return f"<repr_error: {type(e).__name__}>"
 
 
 @router.post(
@@ -200,21 +230,28 @@ async def stream_chat_endpoint(
 
                     # ── 알 수 없는 청크 타입 처리 (안전망) ────────────────────
                     # TokenChunk / DoneChunk / ErrorChunk 외의 타입이 발행되면
-                    # 조용히 드랍되지 않도록 경고 로그 + 에러 이벤트로 가시화.
-                    # 스키마 불일치 발생 시 스트림 무결성을 위해 즉시 중단(break)합니다.
+                    # 조용히 드랍되지 않도록 경고 로그 + 에러 이벤트로 가시화합니다.
+                    #
+                    # [설계 결정 - 즉시 중단(break)의 의도된 거동 및 안전성 검증]:
+                    # 1. 스트림 무결성 보장: 스키마 불일치(SCHEMA MISMATCH)가 한 번 발생하면, 이후의 후속 데이터들 역시 비정상적이거나
+                    #    클라이언트(프론트엔드)에서 파싱 및 렌더링에 실패하여 애플리케이션 오동작을 초래할 수 있으므로 스트림을 즉시 중단합니다.
+                    # 2. 리소스 누수 방지: 즉시 break하여 루프를 탈출하면, finally 블록으로 넘어가 `stream_gen.aclose()`가 안전하게 실행되며,
+                    #    이로 인해 generator가 즉시 회수되어 어떠한 리소스 누수도 발생하지 않습니다.
+                    # 3. 버퍼 비워짐 영향 없음: 현재 구조는 인메모리 큐를 거치지 않고 제너레이터로부터 청크를 직접 온디맨드식으로
+                    #    비동기 순회하므로, 스킵된 '버퍼링된 잔여 청크'가 존재하지 않아 클라이언트에 혼선을 유발하지 않습니다.
                     else:
                         logger.warning(
                             "%s[SCHEMA] Unknown chunk type received: %s. "
-                            "payload=%r. Possible schema mismatch.",
+                            "safe_payload=%s. Possible schema mismatch.",
                             _LOG_TAG,
                             type(chunk).__name__,
-                            chunk,
+                            _safe_repr(chunk),  # PII 유출 위험이 전혀 없는 구조 정보와 비민감 메타데이터 로깅 (안전성 우선 원칙)
                         )
                         yield {
                             "event": _SSE_EVENT_ERROR,
                             "data": ErrorChunk(
                                 code="UNKNOWN_CHUNK",
-                                message=_ERROR_MSG_SCHEMA,  # 스캐마 불일치 메시지
+                                message=_ERROR_MSG_SCHEMA,  # 스키마 불일치용 일반화 에러 메시지
                             ).model_dump_json(),
                         }
                         break
