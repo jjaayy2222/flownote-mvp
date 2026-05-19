@@ -96,7 +96,8 @@ def _safe_repr(obj: Any, _depth: int = 0) -> str:
             fields = list(type(obj).model_fields.keys())
             return f"{obj.__class__.__name__}(fields={fields})"
         elif isinstance(obj, dict):
-            # [설계 결정] islice를 사용하여 전체 키를 list로 구체화하지 않고 N개만 순회 (O(N) 보장)
+            # [설계 결정] islice를 사용하여 전체 키를 list로 구체화하지 않고 최대 _SAFE_REPR_MAX_KEYS 개만 순회
+            # (실제 연산 복잡도: O(min(total_keys, _SAFE_REPR_MAX_KEYS)) -> 사실상 상수 시간 보장)
             # len(obj)는 dict의 O(1) 연산이므로 전체 순회 없이 총 키 수 확인 가능
             total_keys = len(obj)
             sampled_keys = list(islice(obj.keys(), _SAFE_REPR_MAX_KEYS))

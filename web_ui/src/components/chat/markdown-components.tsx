@@ -64,7 +64,11 @@ function CopyButton({ code }: { code: string }) {
     // Next.js SSR 또는 jsdom 미탑재 테스트 환경에서 navigator 전역 객체 자체가 존재하지 않을 수 있음.
     // typeof 가드로 ReferenceError를 원천 차단한 후, optional chaining으로 API 가용성을 추가 확인.
     if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
-      // Clipboard API 미지원 환경 — 조용히 처리 (향후 execCommand 폴백 추가 지점)
+      // Clipboard API 미지원 환경 — 조용히 실패하지 않도록 로그를 남기고 간단한 UX 힌트 제공
+      console.warn('[CopyButton] Clipboard API is not supported in this environment (e.g., HTTP or SSR).');
+      if (typeof window !== 'undefined') {
+        window.alert('이 환경에서는 클립보드 복사 기능을 지원하지 않습니다.');
+      }
       return;
     }
 
