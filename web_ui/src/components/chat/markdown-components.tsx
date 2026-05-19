@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useRef } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -41,37 +41,31 @@ function FallbackCitation({
 /**
  * 코드 블록 복사 버튼 컴포넌트
  *
- * - 복사 성공 시 2초간 체크마크 피드백 표시 후 원래 아이콘으로 복원
- * - setTimeout은 컴포넌트 언마운트 시 자동 취소(메모리 누수 방지)
+ * - 복사 성공 시 COPY_FEEDBACK_DURATION_MS 동안 체크마크 피드백 표시 후 원복
+ * - copied 상태 변화에 반응하는 단일 useEffect로 타이머를 관리하여
+ *   timerRef + useCallback 의존성 복잡성 제거 (컴포넌트 언마운트 시 자동 정리 보장)
  * - 개인정보(PII)를 직접 다루지 않으며, clipboard API를 통해서만 코드 문자열을 처리
  */
 function CopyButton({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
-  // 언마운트 시 타이머를 안전하게 취소하기 위해 ref로 관리
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleCopy = useCallback(async () => {
-    if (copied) return; // 중복 클릭 방지
+  // copied=true가 되면 타이머를 등록하고, 만료 시 false로 복원.
+  // useEffect 클린업이 언마운트 시 타이머를 자동 취소하므로 별도 timerRef 불필요.
+  useEffect(() => {
+    if (!copied) return;
+    const timerId = setTimeout(() => setCopied(false), COPY_FEEDBACK_DURATION_MS);
+    return () => clearTimeout(timerId);
+  }, [copied]);
+
+  const handleCopy = async () => {
+    if (copied) return; // 복사 완료 상태 중 중복 클릭 방지
     try {
       await navigator.clipboard.writeText(code);
       setCopied(true);
-      // 기존 타이머가 있으면 초기화 후 재등록
-      if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => {
-        setCopied(false);
-        timerRef.current = null;
-      }, COPY_FEEDBACK_DURATION_MS);
     } catch {
       // Clipboard API 실패(권한 거부 등) — 사용자 UX에 영향 없이 조용히 처리
     }
-  }, [code, copied]);
-
-  // 컴포넌트 언마운트 시 타이머 정리
-  React.useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
+  };
 
   return (
     <button
@@ -100,6 +94,46 @@ function CopyButton({ code }: { code: string }) {
         </>
       )}
     </button>
+  );
+}
+
+/**
+ * 코드 블록 렌더링 컴포넌트 (블록 코드 전용)
+ *
+ * code() 핸들러로부터 블록 렌더링 책임을 분리하여 단일 책임 원칙(SRP)을 준수합니다.
+ * - isStreaming=true: plain <pre>로 렌더링 (미완성 코드 펜스 파서 오류 방지)
+ * - isStreaming=false: SyntaxHighlighter + CopyButton 활성화 (type:"done" 수신 후)
+ */
+type CodeBlockProps = {
+  language: string;
+  codeText: string;
+  isStreaming?: boolean;
+};
+
+function CodeBlock({ language, codeText, isStreaming }: CodeBlockProps) {
+  // [설계 결정] 스트리밍 중에는 plain <pre>로 렌더링
+  // 미완성 코드 펜스로 인한 SyntaxHighlighter 파서 오류 및 레이아웃 깨짐 방지
+  if (isStreaming) {
+    return (
+      <pre className="rounded-md my-2 text-xs bg-[#1e1e1e] text-[#d4d4d4] p-4 overflow-x-auto">
+        <code>{codeText}</code>
+      </pre>
+    );
+  }
+
+  // 스트리밍 완료(type:"done" 수신) 후: SyntaxHighlighter + 복사 버튼 활성화
+  return (
+    <div className="relative group/codeblock my-2">
+      <CopyButton code={codeText} />
+      <SyntaxHighlighter
+        style={vscDarkPlus as Record<string, React.CSSProperties>}
+        language={language}
+        PreTag="div"
+        className="rounded-md text-xs !mt-0"
+      >
+        {codeText}
+      </SyntaxHighlighter>
+    </div>
   );
 }
 
@@ -142,29 +176,13 @@ export function useMarkdownComponents(
           );
         }
 
-        // [설계 결정] 스트리밍 중에는 plain <pre>로 렌더링
-        // 미완성 코드 펜스로 인한 SyntaxHighlighter 파서 오류 및 레이아웃 깨짐 방지
-        if (isStreaming) {
-          return (
-            <pre className="rounded-md my-2 text-xs bg-[#1e1e1e] text-[#d4d4d4] p-4 overflow-x-auto">
-              <code>{codeText}</code>
-            </pre>
-          );
-        }
-
-        // 스트리밍 완료(type:"done" 수신) 후: SyntaxHighlighter + 복사 버튼 활성화
+        // 블록 코드: CodeBlock에 렌더링 책임 위임 (isStreaming에 따른 분기는 CodeBlock 내부에서 처리)
         return (
-          <div className="relative group/codeblock my-2">
-            <CopyButton code={codeText} />
-            <SyntaxHighlighter
-              style={vscDarkPlus as Record<string, React.CSSProperties>}
-              language={match![1]}
-              PreTag="div"
-              className="rounded-md text-xs !mt-0"
-            >
-              {codeText}
-            </SyntaxHighlighter>
-          </div>
+          <CodeBlock
+            language={match![1]}
+            codeText={codeText}
+            isStreaming={isStreaming}
+          />
         );
       },
       a({ children, href, className, ...props }) {

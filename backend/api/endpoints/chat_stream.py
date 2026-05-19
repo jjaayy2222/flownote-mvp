@@ -30,6 +30,7 @@ import uuid
 from typing import Any, AsyncGenerator
 
 from fastapi import APIRouter, Request
+from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from backend.agent.streaming import stream_agent_response  # noqa: F401 (3단계 연동 예정)
@@ -60,24 +61,43 @@ _LOG_TAG: str = "[STREAM]"
 _ERROR_MSG_INTERNAL: str = "Internal server error occurred during streaming."
 _ERROR_MSG_TIMEOUT: str = "Streaming session timed out. Please retry."
 _ERROR_MSG_SCHEMA: str = "Data format mismatch detected. Please contact support."
-def _safe_repr(obj: Any) -> str:
+
+# _safe_repr 재귀 최대 깊이 (하드코딩 방지 — 비정상 중첩 객체로 인한 Stack Overflow 방어)
+_SAFE_REPR_MAX_DEPTH: int = 3
+
+
+def _safe_repr(obj: Any, _depth: int = 0) -> str:
     """
     민감 데이터(PII)의 로깅 노출 위험 없이 스키마 불일치 디버깅을 돕기 위해
     객체의 구조(필드/키/타입/길이) 정보만 안전하게 추출하여 반환합니다.
+
+    Args:
+        obj: 안전하게 표현할 대상 객체
+        _depth: 내부 재귀 깊이 추적용 (외부에서 직접 전달하지 않음)
+
+    [설계 결정 - 재귀 깊이 제한]:
+    비정상적으로 깊은 중첩 객체(list of list of list...)가 인입될 경우
+    Stack Overflow 또는 로그 크기 무제한 팽창을 방지하기 위해
+    _SAFE_REPR_MAX_DEPTH 상수로 최대 깊이를 제한합니다.
     """
     if obj is None:
         return "None"
 
-    from pydantic import BaseModel
+    # 재귀 깊이 초과 시 즉시 타입 정보만 반환 (안전망)
+    if _depth >= _SAFE_REPR_MAX_DEPTH:
+        return f"<max_depth_reached: {type(obj).__name__}>"
+
     try:
         if isinstance(obj, BaseModel):
-            fields = list(obj.model_fields.keys())
+            # model_fields는 클래스 속성이므로 인스턴스 접근 대신 타입으로 조회 (Pydantic V3 호환)
+            fields = list(type(obj).model_fields.keys())
             return f"{obj.__class__.__name__}(fields={fields})"
         elif isinstance(obj, dict):
             keys = list(obj.keys())
             return f"dict(keys={keys})"
         elif isinstance(obj, list):
-            elem_reprs = [_safe_repr(item) for item in obj[:3]]
+            # 항목 3개까지만 표시하며, 각 항목도 깊이를 증가시켜 재귀 제한 적용
+            elem_reprs = [_safe_repr(item, _depth + 1) for item in obj[:3]]
             if len(obj) > 3:
                 elem_reprs.append("...")
             return f"list(size={len(obj)}, items={elem_reprs})"
