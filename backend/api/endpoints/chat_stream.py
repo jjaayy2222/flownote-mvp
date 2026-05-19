@@ -27,6 +27,7 @@ import asyncio
 import logging
 import time
 import uuid
+from itertools import islice
 from typing import Any, AsyncGenerator
 
 from fastapi import APIRouter, Request
@@ -64,6 +65,8 @@ _ERROR_MSG_SCHEMA: str = "Data format mismatch detected. Please contact support.
 
 # _safe_repr 재귀 최대 깊이 (하드코딩 방지 — 비정상 중첩 객체로 인한 Stack Overflow 방어)
 _SAFE_REPR_MAX_DEPTH: int = 3
+# _safe_repr dict 최대 키 출력 수 (하드코딩 방지 — 대형 dict로 인한 로그 크기 팽창 방어)
+_SAFE_REPR_MAX_KEYS: int = 10
 
 
 def _safe_repr(obj: Any, _depth: int = 0) -> str:
@@ -93,8 +96,12 @@ def _safe_repr(obj: Any, _depth: int = 0) -> str:
             fields = list(type(obj).model_fields.keys())
             return f"{obj.__class__.__name__}(fields={fields})"
         elif isinstance(obj, dict):
-            keys = list(obj.keys())
-            return f"dict(keys={keys})"
+            # [설계 결정] islice를 사용하여 전체 키를 list로 구체화하지 않고 N개만 순회 (O(N) 보장)
+            # len(obj)는 dict의 O(1) 연산이므로 전체 순회 없이 총 키 수 확인 가능
+            total_keys = len(obj)
+            sampled_keys = list(islice(obj.keys(), _SAFE_REPR_MAX_KEYS))
+            suffix = ", ..." if total_keys > _SAFE_REPR_MAX_KEYS else ""
+            return f"dict(total_keys={total_keys}, sampled_keys={sampled_keys}{suffix})"
         elif isinstance(obj, list):
             # 항목 3개까지만 표시하며, 각 항목도 깊이를 증가시켜 재귀 제한 적용
             elem_reprs = [_safe_repr(item, _depth + 1) for item in obj[:3]]
