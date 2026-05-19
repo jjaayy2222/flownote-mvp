@@ -298,7 +298,9 @@ export const MessageBubble = memo(
   };
 
   // 공유 마크다운 컴포넌트 (Memoized)
-  const markdownComponents = useMarkdownComponents(sources, handleBadgeClick);
+  // [설계 결정] isLast && isStreaming: 마지막 메시지가 스트리밍 중인 경우에만 하이라이팅 지연
+  // 히스토리의 완료된 메시지들은 항상 isStreaming=false → SyntaxHighlighter + 복사 버튼 적용
+  const markdownComponents = useMarkdownComponents(sources, handleBadgeClick, isLast && isStreaming);
 
   // [Performance] 콘텐츠 가공 및 마크다운 안정화 로직 통합 호출
   const processedContent = useMemo(() => {
