@@ -65,15 +65,12 @@ function CopyButton({ code }: { code: string }) {
       // Clipboard API 미지원 환경 — 콘솔 스팸과 blocking alert 없이, 한 번만 경고 로그를 남기고
       // UI 레벨에서 비차단형 안내(토스트)를 표시합니다.
       if (typeof window !== 'undefined') {
-        const flagKey = '__copyButtonClipboardUnsupportedWarned__';
-        interface CustomWindow extends Window {
-          [flagKey]?: boolean;
-        }
-        const win = window as CustomWindow;
+        const FLAG = '__flownote_copy_btn_unsupported_warned__';
+        const win = window as unknown as Record<string, boolean>;
         
-        if (!win[flagKey]) {
+        if (!win[FLAG]) {
           console.warn('[CopyButton] Clipboard API is not supported in this environment (e.g., HTTP or SSR).');
-          win[flagKey] = true;
+          win[FLAG] = true;
           
           toast.warning('이 환경에서는 클립보드 복사 기능을 지원하지 않습니다.', {
             id: 'clipboard-unsupported-warning', // 동일 에러의 토스트 중복(스택) 방지
