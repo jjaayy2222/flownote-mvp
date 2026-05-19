@@ -16,6 +16,9 @@ export const REHYPE_PLUGINS = [rehypeSanitize];
 // 복사 완료 피드백 표시 지속 시간 (ms) — 하드코딩 방지
 const COPY_FEEDBACK_DURATION_MS = 2000;
 
+// 미지원 클립보드 환경(HTTP, SSR 등)에서의 중복 경고 방지용 전역 플래그 (Module scope)
+const CLIPBOARD_UNSUPPORTED_WARN_FLAG = '__flownote_copy_btn_unsupported_warned__' as const;
+
 type CodeProps = React.ComponentPropsWithoutRef<'code'> & {
   inline?: boolean;
 };
@@ -65,15 +68,11 @@ function CopyButton({ code }: { code: string }) {
       // Clipboard API 미지원 환경 — 콘솔 스팸과 blocking alert 없이, 한 번만 경고 로그를 남기고
       // UI 레벨에서 비차단형 안내(토스트)를 표시합니다.
       if (typeof window !== 'undefined') {
-        const flagKey = '__copyButtonClipboardUnsupportedWarned__';
-        interface CustomWindow extends Window {
-          [flagKey]?: boolean;
-        }
-        const win = window as CustomWindow;
+        const win = window as unknown as Record<typeof CLIPBOARD_UNSUPPORTED_WARN_FLAG, boolean | undefined>;
         
-        if (!win[flagKey]) {
+        if (!win[CLIPBOARD_UNSUPPORTED_WARN_FLAG]) {
           console.warn('[CopyButton] Clipboard API is not supported in this environment (e.g., HTTP or SSR).');
-          win[flagKey] = true;
+          win[CLIPBOARD_UNSUPPORTED_WARN_FLAG] = true;
           
           toast.warning('이 환경에서는 클립보드 복사 기능을 지원하지 않습니다.', {
             id: 'clipboard-unsupported-warning', // 동일 에러의 토스트 중복(스택) 방지
