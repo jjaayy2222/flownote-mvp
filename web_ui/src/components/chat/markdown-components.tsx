@@ -59,11 +59,19 @@ function CopyButton({ code }: { code: string }) {
 
   const handleCopy = async () => {
     if (copied) return; // 복사 완료 상태 중 중복 클릭 방지
+
+    // [방어적 코딩] HTTP 환경이나 구형 브라우저에서 navigator.clipboard가 undefined일 수 있음.
+    // optional chaining으로 가용성을 먼저 확인하여 TypeError(미지원)와 DOMException(권한 거부)을 명확히 구분.
+    if (!navigator.clipboard?.writeText) {
+      // Clipboard API 미지원 환경 — 조용히 처리 (향후 execCommand 폴백 추가 지점)
+      return;
+    }
+
     try {
       await navigator.clipboard.writeText(code);
       setCopied(true);
     } catch {
-      // Clipboard API 실패(권한 거부 등) — 사용자 UX에 영향 없이 조용히 처리
+      // DOMException: 권한 거부(permissions-policy 등) — 사용자 UX에 영향 없이 조용히 처리
     }
   };
 
