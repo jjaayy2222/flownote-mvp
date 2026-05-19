@@ -8,6 +8,7 @@ import { Check, Copy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CITATION_VALIDATION_REGEX } from '@/lib/chat-utils';
 import type { SourceItem } from '@/types/chat';
+import { toast } from 'sonner';
 
 export const REMARK_PLUGINS = [remarkGfm];
 export const REHYPE_PLUGINS = [rehypeSanitize];
@@ -60,11 +61,28 @@ function CopyButton({ code }: { code: string }) {
   const handleCopy = async () => {
     if (copied) return; // 복사 완료 상태 중 중복 클릭 방지
 
-    // [방어적 코딩 - SSR/테스트 환경 대응]
-    // Next.js SSR 또는 jsdom 미탑재 테스트 환경에서 navigator 전역 객체 자체가 존재하지 않을 수 있음.
-    // typeof 가드로 ReferenceError를 원천 차단한 후, optional chaining으로 API 가용성을 추가 확인.
     if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
-      // Clipboard API 미지원 환경 — 조용히 처리 (향후 execCommand 폴백 추가 지점)
+      // Clipboard API 미지원 환경 — 콘솔 스팸과 blocking alert 없이, 한 번만 경고 로그를 남기고
+      // UI 레벨에서 비차단형 안내(토스트)를 표시합니다.
+      if (typeof window !== 'undefined') {
+        const flagKey = '__copyButtonClipboardUnsupportedWarned__';
+        interface CustomWindow extends Window {
+          [flagKey]?: boolean;
+        }
+        const win = window as CustomWindow;
+        
+        if (!win[flagKey]) {
+          console.warn('[CopyButton] Clipboard API is not supported in this environment (e.g., HTTP or SSR).');
+          win[flagKey] = true;
+          
+          toast.warning('이 환경에서는 클립보드 복사 기능을 지원하지 않습니다.', {
+            id: 'clipboard-unsupported-warning', // 동일 에러의 토스트 중복(스택) 방지
+          });
+        }
+      } else {
+        // window가 없는 순수 SSR 환경 등에서의 로깅
+        console.warn('[CopyButton] Clipboard API is not supported and window is undefined (likely SSR).');
+      }
       return;
     }
 
