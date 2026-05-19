@@ -60,9 +60,10 @@ function CopyButton({ code }: { code: string }) {
   const handleCopy = async () => {
     if (copied) return; // 복사 완료 상태 중 중복 클릭 방지
 
-    // [방어적 코딩] HTTP 환경이나 구형 브라우저에서 navigator.clipboard가 undefined일 수 있음.
-    // optional chaining으로 가용성을 먼저 확인하여 TypeError(미지원)와 DOMException(권한 거부)을 명확히 구분.
-    if (!navigator.clipboard?.writeText) {
+    // [방어적 코딩 - SSR/테스트 환경 대응]
+    // Next.js SSR 또는 jsdom 미탑재 테스트 환경에서 navigator 전역 객체 자체가 존재하지 않을 수 있음.
+    // typeof 가드로 ReferenceError를 원천 차단한 후, optional chaining으로 API 가용성을 추가 확인.
+    if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
       // Clipboard API 미지원 환경 — 조용히 처리 (향후 execCommand 폴백 추가 지점)
       return;
     }
@@ -70,8 +71,12 @@ function CopyButton({ code }: { code: string }) {
     try {
       await navigator.clipboard.writeText(code);
       setCopied(true);
-    } catch {
-      // DOMException: 권한 거부(permissions-policy 등) — 사용자 UX에 영향 없이 조용히 처리
+    } catch (err) {
+      // DOMException(권한 거부, permissions-policy 등)만 조용히 처리.
+      // 예상치 못한 에러 타입은 타입명만 로깅 (message에 PII/경로 노출 방지).
+      if (!(err instanceof DOMException)) {
+        console.error('[CopyButton] Unexpected clipboard error:', err instanceof Error ? err.constructor.name : typeof err);
+      }
     }
   };
 
