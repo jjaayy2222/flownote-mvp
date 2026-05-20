@@ -46,10 +46,13 @@ export interface UseStreamingChatOptions {
    */
   onError?: (error: StreamError, raw: unknown) => void;
   /**
-   * 스트림이 성공적으로 완료되었을 때 호출되는 콜백.
-   * 스트리밍된 결과물을 메인 대화 이력 등에 영구 저장할 때 유용합니다.
+   * 스트림이 완료되었을 때 호출되는 콜백.
+   * @param content 스트리밍된 전체/일부 결과물
+   * @param sources 수신된 소스 문서 목록
+   * @param isPartial 사용자 중지 또는 오류 등으로 인해 스트림이 중단된 부분 응답인지 여부.
+   *                  전달되지 않은(undefined) 경우 기본적으로 `false`로 간주됩니다.
    */
-  onFinish?: (content: string, sources: SourceItem[]) => void;
+  onFinish?: (content: string, sources: SourceItem[], isPartial?: boolean) => void;
 }
 
 // =============================================================================
@@ -111,6 +114,12 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
   const cancelStream = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
+    } else {
+      // abortController가 없더라도 UI 상태 교착 방지 및 데이터 오염 방지를 위해 전체 스트리밍 상태 초기화
+      setIsStreaming(false);
+      setTokens('');
+      setSources([]);
+      setError(null);
     }
   }, []);
 
@@ -146,7 +155,7 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
             const interruptedTokens =
               accumulatedTokens.length > 0 ? `${accumulatedTokens}...` : accumulatedTokens;
             setTokens(interruptedTokens);
-            onFinishRef.current?.(interruptedTokens, finalSources);
+            onFinishRef.current?.(interruptedTokens, finalSources, true);
           }
         };
 
@@ -178,7 +187,7 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
               case 'done':
                 // 정상 완료 - 누적된 토큰과 소스를 부모에게 전달
                 isSuccess = true;
-                onFinishRef.current?.(accumulatedTokens, finalSources);
+                onFinishRef.current?.(accumulatedTokens, finalSources, false);
                 break;
             }
           }
