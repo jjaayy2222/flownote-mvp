@@ -140,6 +140,16 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
         let finalSources: SourceItem[] = [];
         let isSuccess = false;
 
+        // 스트림이 중단되었을 때 부분 응답 처리를 위한 헬퍼 함수
+        const handleInterrupt = () => {
+          if (!isSuccess) {
+            const interruptedTokens =
+              accumulatedTokens.length > 0 ? `${accumulatedTokens}...` : accumulatedTokens;
+            setTokens(interruptedTokens);
+            onFinishRef.current?.(interruptedTokens, finalSources);
+          }
+        };
+
         try {
           for await (const chunk of fetchChatStream(payload, controller.signal)) {
             // 컨트롤러가 교체된 경우(다른 startStream 호출) 이 스트림 결과는 무시
@@ -175,10 +185,8 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
 
           // 루프가 정상적으로 끝났지만 doneChunk 수신 전이고 (사용자 중단 등으로 인해)
           // 여전히 이 스트림이 현재 스트림인 경우 부분 응답 처리
-          if (!isSuccess && abortControllerRef.current === controller) {
-            const interruptedTokens = accumulatedTokens + '...';
-            setTokens(interruptedTokens);
-            onFinishRef.current?.(interruptedTokens, finalSources);
+          if (abortControllerRef.current === controller) {
+            handleInterrupt();
           }
         } catch (err: unknown) {
           // 이 스트림이 이미 교체된 경우 에러 무시
@@ -192,30 +200,25 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
               err.name === 'AbortError');
 
           if (isAbort) {
-            if (!isSuccess) {
-              const interruptedTokens = accumulatedTokens + '...';
-              setTokens(interruptedTokens);
-              onFinishRef.current?.(interruptedTokens, finalSources);
-            }
+            handleInterrupt();
             return;
           }
 
-          if (!isAbort) {
-            const streamErr: StreamError = {
-              errorCode: 'STREAM_ERROR',
-              message: err instanceof Error ? err.message : '스트리밍 중 오류가 발생했습니다.',
-            };
-            // [보안/방어] onError 콜백을 통해 에러 리포팅을 외부에서 제어.
-            // 사용자 제공 콜백이 예외를 던지더라도 setError는 반드시 실행되어야 하므로
-            // try/catch로 격리하고, 콜백 실패 시 console.error로 폴백합니다.
-            try {
-              const reporter = onErrorRef.current ?? console.error;
-              reporter(streamErr, err);
-            } catch (reporterErr: unknown) {
-              console.error('[useStreamingChat] onError callback threw an exception:', reporterErr);
-            }
-            setError(streamErr);
+          // 일반 스트림 에러 처리 (isAbort가 아니므로 무조건 실행)
+          const streamErr: StreamError = {
+            errorCode: 'STREAM_ERROR',
+            message: err instanceof Error ? err.message : '스트리밍 중 오류가 발생했습니다.',
+          };
+          // [보안/방어] onError 콜백을 통해 에러 리포팅을 외부에서 제어.
+          // 사용자 제공 콜백이 예외를 던지더라도 setError는 반드시 실행되어야 하므로
+          // try/catch로 격리하고, 콜백 실패 시 console.error로 폴백합니다.
+          try {
+            const reporter = onErrorRef.current ?? console.error;
+            reporter(streamErr, err);
+          } catch (reporterErr: unknown) {
+            console.error('[useStreamingChat] onError callback threw an exception:', reporterErr);
           }
+          setError(streamErr);
 
         } finally {
           // 이 스트림이 여전히 현재 스트림인 경우에만 상태 클린업
