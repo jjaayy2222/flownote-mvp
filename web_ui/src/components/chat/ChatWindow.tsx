@@ -568,26 +568,25 @@ export function ChatWindow({
               rows={1}
               disabled={isLoading}
             />
-            <Button
-              type="submit"
-              size="icon"
-              aria-label="메시지 전송"
-              disabled={!input.trim() || isLoading}
-              className="absolute right-3 bottom-3 h-8 w-8 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white transition-opacity disabled:opacity-50"
-            >
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 ml-0.5" />}
-            </Button>
-
-            {/* [스트리밍 모드] 진행 중 취소 버튼 */}
-            {isStreamingMode && isStreaming && (
+            {isStreamingMode && isStreaming ? (
               <Button
                 type="button"
-                size="sm"
-                aria-label="스트리밍 취소"
+                size="icon"
+                aria-label="응답 중지"
                 onClick={cancelStream}
-                className="absolute right-14 bottom-3 h-8 px-3 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 text-xs font-medium"
+                className="absolute right-3 bottom-3 h-8 w-8 rounded-lg bg-red-500 hover:bg-red-600 text-white transition-colors flex items-center justify-center shadow-md animate-in zoom-in-50 duration-200"
               >
-                중단
+                <div className="w-2.5 h-2.5 bg-white rounded-[2px]" />
+              </Button>
+            ) : (
+              <Button
+                type="submit"
+                size="icon"
+                aria-label="메시지 전송"
+                disabled={!input.trim() || isLoading}
+                className="absolute right-3 bottom-3 h-8 w-8 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white transition-opacity disabled:opacity-50"
+              >
+                {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 ml-0.5" />}
               </Button>
             )}
           </div>
