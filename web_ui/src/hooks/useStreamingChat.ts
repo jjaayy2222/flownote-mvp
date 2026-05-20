@@ -111,9 +111,7 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
   const cancelStream = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-      abortControllerRef.current = null;
     }
-    setIsStreaming(false);
   }, []);
 
   /**
@@ -140,6 +138,7 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
       (async () => {
         let accumulatedTokens = '';
         let finalSources: SourceItem[] = [];
+        let isSuccess = false;
 
         try {
           for await (const chunk of fetchChatStream(payload, controller.signal)) {
@@ -168,9 +167,18 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
               }
               case 'done':
                 // 정상 완료 - 누적된 토큰과 소스를 부모에게 전달
+                isSuccess = true;
                 onFinishRef.current?.(accumulatedTokens, finalSources);
                 break;
             }
+          }
+
+          // 루프가 정상적으로 끝났지만 doneChunk 수신 전이고 (사용자 중단 등으로 인해)
+          // 여전히 이 스트림이 현재 스트림인 경우 부분 응답 처리
+          if (!isSuccess && abortControllerRef.current === controller) {
+            const interruptedTokens = accumulatedTokens + '...';
+            setTokens(interruptedTokens);
+            onFinishRef.current?.(interruptedTokens, finalSources);
           }
         } catch (err: unknown) {
           // 이 스트림이 이미 교체된 경우 에러 무시
@@ -182,6 +190,15 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
             (typeof DOMException !== 'undefined' &&
               err instanceof DOMException &&
               err.name === 'AbortError');
+
+          if (isAbort) {
+            if (!isSuccess) {
+              const interruptedTokens = accumulatedTokens + '...';
+              setTokens(interruptedTokens);
+              onFinishRef.current?.(interruptedTokens, finalSources);
+            }
+            return;
+          }
 
           if (!isAbort) {
             const streamErr: StreamError = {
