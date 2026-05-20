@@ -110,13 +110,14 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
   /**
    * isStreaming, tokens, sources, error를 초기값으로 일괄 초기화합니다.
    * 컨트롤러 없이 isStreaming이 true인 비정상 교착 상태에서만 호출해야 합니다.
+   * (setIsStreaming 등 안정적인 상태 setter만 사용하므로 useCallback 불필요)
    */
-  const resetStreamingState = useCallback(() => {
+  const resetStreamingState = () => {
     setIsStreaming(false);
     setTokens('');
     setSources([]);
     setError(null);
-  }, []);
+  };
 
   /**
    * 진행 중인 스트림을 안전하게 중단합니다.
@@ -132,7 +133,8 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
       // (정상 완료 후 cancelStream 호출 시 완료된 tokens/sources를 지우지 않도록 보호)
       resetStreamingState();
     }
-  }, [isStreaming, resetStreamingState]);
+  }, [isStreaming]); // resetStreamingState는 안정적인 setter만 참조하므로 deps 불필요
+
 
   /**
    * 스트리밍을 시작합니다.
