@@ -16,7 +16,8 @@ export const REHYPE_PLUGINS = [rehypeSanitize];
 // 복사 완료 피드백 표시 지속 시간 (ms) — 하드코딩 방지
 const COPY_FEEDBACK_DURATION_MS = 2000;
 
-// 미지원 클립보드 환경(HTTP, SSR 등)에서의 중복 경고 방지용 전역 플래그 (Module scope)
+// 미지원 클립보드 환경(HTTP, SSR 등)에서의 중복 경고 방지용 전역 플래그 (Window global scope)
+// 참고: 이 파일은 최상단에 import 문이 존재하므로 TypeScript 모듈로 처리되어 전역 확장이 정상 적용됩니다.
 declare global {
   interface Window {
     __flownote_copy_btn_unsupported_warned__?: boolean;
