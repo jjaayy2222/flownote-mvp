@@ -108,20 +108,33 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
   }, []);
 
   /**
+   * isStreaming, tokens, sources, error를 초기값으로 일괄 초기화합니다.
+   * 컨트롤러 없이 isStreaming이 true인 비정상 교착 상태에서만 호출해야 합니다.
+   * (setIsStreaming 등 안정적인 상태 setter만 사용하므로 useCallback 불필요)
+   */
+  const resetStreamingState = () => {
+    setIsStreaming(false);
+    setTokens('');
+    setSources([]);
+    setError(null);
+  };
+
+  /**
    * 진행 중인 스트림을 안전하게 중단합니다.
-   * 이미 완료되었거나 없는 경우 무시합니다.
+   * - 컨트롤러가 있으면: abort()를 통해 스트림 취소 (finally 블록이 isStreaming을 정리)
+   * - 컨트롤러가 없고 isStreaming이 true면: 비정상 교착 상태로 전체 상태를 강제 초기화
+   * - 컨트롤러도 없고 isStreaming도 false면: 이미 완료된 상태이므로 무시 (결과 보존)
    */
   const cancelStream = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-    } else {
-      // abortController가 없더라도 UI 상태 교착 방지 및 데이터 오염 방지를 위해 전체 스트리밍 상태 초기화
-      setIsStreaming(false);
-      setTokens('');
-      setSources([]);
-      setError(null);
+    } else if (isStreaming) {
+      // isStreaming=true이지만 컨트롤러가 없는 비정상 교착 상태에서만 전체 리셋
+      // (정상 완료 후 cancelStream 호출 시 완료된 tokens/sources를 지우지 않도록 보호)
+      resetStreamingState();
     }
-  }, []);
+  }, [isStreaming]); // resetStreamingState는 안정적인 setter만 참조하므로 deps 불필요
+
 
   /**
    * 스트리밍을 시작합니다.
