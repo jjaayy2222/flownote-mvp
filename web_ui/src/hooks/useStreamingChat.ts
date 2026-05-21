@@ -90,6 +90,11 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
   // 상태 업데이트를 트리거하지 않고 안전하게 접근 가능
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // isStreaming 최신값을 ref로 추적하여, stable 콜백(cancelStream 등)에서
+  // deps 없이 현재 스트리밍 상태를 안전하게 읽을 수 있도록 합니다.
+  const isStreamingRef = useRef(false);
+  isStreamingRef.current = isStreaming; // 렌더마다 동기 업데이트
+
   // 콜백들을 ref로 보관하여 콜백이 바뀌어도 startStream 재생성을 방지
   const onErrorRef = useRef(options.onError);
   const onFinishRef = useRef(options.onFinish);
@@ -108,33 +113,23 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
   }, []);
 
   /**
-   * isStreaming, tokens, sources, error를 초기값으로 일괄 초기화합니다.
-   * 컨트롤러 없이 isStreaming이 true인 비정상 교착 상태에서만 호출해야 합니다.
-   * (setIsStreaming 등 안정적인 상태 setter만 사용하므로 useCallback 불필요)
-   */
-  const resetStreamingState = () => {
-    setIsStreaming(false);
-    setTokens('');
-    setSources([]);
-    setError(null);
-  };
-
-  /**
    * 진행 중인 스트림을 안전하게 중단합니다.
    * - 컨트롤러가 있으면: abort()를 통해 스트림 취소 (finally 블록이 isStreaming을 정리)
-   * - 컨트롤러가 없고 isStreaming이 true면: 비정상 교착 상태로 전체 상태를 강제 초기화
-   * - 컨트롤러도 없고 isStreaming도 false면: 이미 완료된 상태이므로 무시 (결과 보존)
+   * - 컨트롤러가 없고 isStreamingRef가 true면: 비정상 교착 상태로 전체 상태를 강제 초기화
+   * - 컨트롤러도 없고 isStreamingRef도 false면: 이미 완료된 상태이므로 무시 (결과 보존)
    */
   const cancelStream = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-    } else if (isStreaming) {
-      // isStreaming=true이지만 컨트롤러가 없는 비정상 교착 상태에서만 전체 리셋
-      // (정상 완료 후 cancelStream 호출 시 완료된 tokens/sources를 지우지 않도록 보호)
-      resetStreamingState();
+    } else if (isStreamingRef.current) {
+      // 컨트롤러가 없는데 isStreaming=true인 비정상 교착 상태에서만 전체 리셋
+      // (정상 완료 후 호출 시 isStreamingRef.current === false이므로 이 블록에 진입하지 않아 결과를 보존)
+      setIsStreaming(false);
+      setTokens('');
+      setSources([]);
+      setError(null);
     }
-  }, [isStreaming]); // resetStreamingState는 안정적인 setter만 참조하므로 deps 불필요
-
+  }, []); // isStreaming은 isStreamingRef로 읽으므로 deps 없이 stable 참조 보장
 
   /**
    * 스트리밍을 시작합니다.
