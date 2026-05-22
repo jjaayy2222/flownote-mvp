@@ -63,17 +63,27 @@ async def get_graph_data() -> GraphDataResponse:
         "Archive": {"x": 600.0, "y": 600.0},
     }
 
-    nodes: list[GraphNode] = [
-        GraphNode(
-            id=cat,
-            label=cat,
-            node_type=NodeType.CATEGORY,
-            properties={"para_category": cat},
-            position_x=category_positions[cat]["x"],
-            position_y=category_positions[cat]["y"],
+    nodes: list[GraphNode] = []
+    
+    for cat in category_positions:
+        try:
+            pos_x = category_positions[cat]["x"]
+            pos_y = category_positions[cat]["y"]
+        except KeyError as e:
+            # 설정 누락 시 런타임 에러 추적을 용이하게 하기 위한 Descriptive Error
+            raise RuntimeError(f"지식 그래프 설정 오류: 카테고리 '{cat}'의 좌표({e})가 누락되었습니다.") from e
+
+        nodes.append(
+            GraphNode(
+                id=cat,
+                label=cat,
+                node_type=NodeType.CATEGORY,
+                properties={"para_category": cat},
+                position_x=pos_x,
+                position_y=pos_y,
+            )
         )
-        for cat in category_positions
-    ]
+        
     edges: list[GraphEdge] = []
 
     # ─── 파일 노드 및 카테고리→파일 엣지 생성 ────────────────────────────────
