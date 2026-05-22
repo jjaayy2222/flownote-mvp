@@ -110,9 +110,9 @@ async def get_graph_data() -> GraphDataResponse:
         # 파일 노드 ID: 'file-{id}' 형식 (GraphEdge.id 규약과 동일)
         file_node_id = f"file-{file_id}"
 
-        # [PII 보안] user_id가 존재하는 경우 반드시 해시하여 저장
+        # [PII 보안] user_id가 빈 문자열이 아닌 유효한 값인 경우에만 해싱 (Falsy 0 방어 및 "" 결측치 방어)
         raw_user_id = file.get("user_id")
-        hashed_uid = mask_pii_id(raw_user_id) if raw_user_id is not None else None
+        hashed_uid = mask_pii_id(raw_user_id) if raw_user_id not in (None, "") else None
 
         # Deterministic position: 파일 ID 시드를 사용하여 리로드 시에도 레이아웃 안정 보장
         rng = random.Random(file_id)
