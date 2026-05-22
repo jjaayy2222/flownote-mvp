@@ -69,8 +69,8 @@ async def get_graph_data() -> GraphDataResponse:
             label=cat,
             node_type=NodeType.CATEGORY,
             properties={"para_category": cat},
-            position_x=category_positions.get(cat, {}).get("x"),
-            position_y=category_positions.get(cat, {}).get("y"),
+            position_x=category_positions[cat]["x"],
+            position_y=category_positions[cat]["y"],
         )
         for cat in category_positions
     ]
@@ -102,7 +102,7 @@ async def get_graph_data() -> GraphDataResponse:
 
         # [PII 보안] user_id가 존재하는 경우 반드시 해시하여 저장
         raw_user_id = file.get("user_id")
-        hashed_uid = mask_pii_id(raw_user_id) if raw_user_id else None
+        hashed_uid = mask_pii_id(raw_user_id) if raw_user_id is not None else None
 
         # Deterministic position: 파일 ID 시드를 사용하여 리로드 시에도 레이아웃 안정 보장
         rng = random.Random(file_id)
