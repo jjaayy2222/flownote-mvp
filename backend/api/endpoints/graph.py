@@ -1,112 +1,147 @@
 # backend/api/endpoints/graph.py
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Phase 4: 지식 그래프 API 엔드포인트 - v1
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+# [SSOT 정책]
+# 이 라우터의 모든 응답은 반드시 `backend.schemas.graph`의 모델을 response_model로 선언해야 합니다.
+# raw dict 반환은 OpenAPI 스키마 동기화를 깨뜨리므로 절대 허용되지 않습니다.
+#
+# [버저닝 정책]
+# 현재 라우터 prefix: /api/graph (= v1)
+# Breaking Change 발생 시 /api/v2/graph 라우터를 신규 생성하고,
+# 이 v1 라우터는 Deprecation 헤더를 추가하여 일정 기간 유지합니다.
+#
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+from __future__ import annotations
+
+import random
+import logging
 
 from fastapi import APIRouter
+
 from backend.database.connection import DatabaseConnection
-import random
+from backend.schemas.graph import (
+    EdgeRelationshipType,
+    GraphDataResponse,
+    GraphEdge,
+    GraphNode,
+    NodeType,
+)
+from backend.utils.common import mask_pii_id
 
-router = APIRouter(prefix="/graph", tags=["visualization"])
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/graph", tags=["Knowledge Graph (v1)"])
 
 
-@router.get("/data")
-async def get_graph_data():
+@router.get(
+    "/data",
+    response_model=GraphDataResponse,
+    summary="PARA 기반 지식 그래프 데이터 조회",
+    description=(
+        "PARA 방법론(Projects/Areas/Resources/Archive) 기반으로 구성된 "
+        "노트 간의 노드-엣지 데이터를 반환합니다. "
+        "프론트엔드 react-force-graph 시각화에 사용됩니다.\n\n"
+        "[SSOT] 응답 스키마는 `backend.schemas.graph.GraphDataResponse`를 단일 진실 공급원으로 합니다."
+    ),
+)
+async def get_graph_data() -> GraphDataResponse:
     """
-    PARA Graph View를 위한 노드와 엣지 데이터 반환 using React Flow format
-    """
-    nodes = []
-    edges = []
+    PARA Graph View를 위한 노드와 엣지 데이터를 SSOT 스키마 형식으로 반환합니다.
 
-    # helper for positions
-    # PARA Categories layout (fixed)
+    [v1] 현재는 PARA 카테고리 계층 관계(EdgeRelationshipType.PARA_CATEGORY)만 표현합니다.
+    Phase 4-1에서 명시적/암묵적 관계 추출 파이프라인이 연동되면 확장됩니다.
+    """
+    # ─── PARA 카테고리 노드 (고정 시드 노드) ───────────────────────────────
+    # 기존 graph.py의 하드코딩 레이아웃을 기반으로 고정 좌표 부여
     category_positions = {
-        "Projects": {"x": 0, "y": 0},
-        "Areas": {"x": 600, "y": 0},
-        "Resources": {"x": 0, "y": 600},
-        "Archive": {"x": 600, "y": 600},
+        "Projects": {"x": 0.0, "y": 0.0},
+        "Areas": {"x": 600.0, "y": 0.0},
+        "Resources": {"x": 0.0, "y": 600.0},
+        "Archive": {"x": 600.0, "y": 600.0},
     }
 
-    # 1. Add Category Nodes
-    for cat, pos in category_positions.items():
-        nodes.append(
-            {
-                "id": cat,
-                "type": "input",
-                "data": {"label": cat},
-                "position": pos,
-                "style": {
-                    "width": 120,
-                    "height": 120,
-                    "borderRadius": "50%",
-                    "display": "flex",
-                    "justifyContent": "center",
-                    "alignItems": "center",
-                    "backgroundColor": "#e0e7ff",
-                    "border": "2px solid #6366f1",
-                    "fontWeight": "bold",
-                    "fontSize": "14px",
-                    "color": "#3730a3",
-                },
-            }
+    nodes: list[GraphNode] = [
+        GraphNode(
+            id=cat,
+            label=cat,
+            node_type=NodeType.CATEGORY,
+            properties={"para_category": cat},
+            position_x=category_positions.get(cat, {}).get("x"),
+            position_y=category_positions.get(cat, {}).get("y"),
         )
+        for cat in category_positions
+    ]
+    edges: list[GraphEdge] = []
 
-    with DatabaseConnection() as db:
-        files = db.get_files_with_para()
+    # ─── 파일 노드 및 카테고리→파일 엣지 생성 ────────────────────────────────
+    try:
+        with DatabaseConnection() as db:
+            files = db.get_files_with_para()
+    except Exception:
+        logger.exception("그래프 데이터 조회 중 DB 연결 실패. 빈 그래프를 반환합니다.")
+        return GraphDataResponse(nodes=nodes, edges=edges)
 
-    # 2. Add File Nodes and Edges
+    valid_category_ids = set(category_positions)
+
+    file_nodes: list[GraphNode] = []
+    file_edges: list[GraphEdge] = []
+
     for file in files:
         file_id = str(file["id"])
-        filename = file["filename"]
-        category = file["para_category"]
+        filename = file.get("filename", "")
+        category = file.get("para_category", "")
 
-        # Skip if category is not in our main PARA (unless we want to show uncategorized)
-        if not category or category not in category_positions:
+        if not category or category not in valid_category_ids:
             continue
 
-        # Deterministic offset around the category based on file id
-        # This ensures the graph layout is stable across reloads
-        base_pos = category_positions[category]
+        # 파일 노드 ID: 'file-{id}' 형식 (GraphEdge.id 규약과 동일)
+        file_node_id = f"file-{file_id}"
 
-        # Seed random with file_id for consistent positioning
+        # [PII 보안] user_id가 존재하는 경우 반드시 해시하여 저장
+        raw_user_id = file.get("user_id")
+        hashed_uid = mask_pii_id(raw_user_id) if raw_user_id else None
+
+        # Deterministic position: 파일 ID 시드를 사용하여 리로드 시에도 레이아웃 안정 보장
         rng = random.Random(file_id)
-
         offset_x = rng.randint(-200, 200)
         offset_y = rng.randint(-200, 200)
-
-        # Avoid placing too close to center (simple rejection logic)
         if abs(offset_x) < 80 and abs(offset_y) < 80:
             offset_x += 100 if offset_x >= 0 else -100
 
-        file_node_id = f"file-{file_id}"
+        # 중심 카테고리 좌표를 기준으로 난수 오프셋 연산
+        base_x = category_positions.get(category, {}).get("x", 0.0)
+        base_y = category_positions.get(category, {}).get("y", 0.0)
+        
+        pos_x = base_x + offset_x
+        pos_y = base_y + offset_y
 
-        nodes.append(
-            {
-                "id": file_node_id,
-                "data": {"label": filename},
-                "position": {
-                    "x": base_pos["x"] + offset_x,
-                    "y": base_pos["y"] + offset_y,
+        file_nodes.append(
+            GraphNode(
+                id=file_node_id,
+                label=filename,
+                node_type=NodeType.NOTE,
+                properties={
+                    "para_category": category,
                 },
-                "style": {
-                    "width": 100,
-                    "height": 40,
-                    "borderRadius": "20px",
-                    "fontSize": "12px",
-                    "display": "flex",
-                    "justifyContent": "center",
-                    "alignItems": "center",
-                    "backgroundColor": "white",
-                    "border": "1px solid #cbd5e1",
-                },
-            }
+                position_x=pos_x,
+                position_y=pos_y,
+                user_id_hash=hashed_uid,
+            )
+        )
+        file_edges.append(
+            GraphEdge(
+                id=f"e-{category}-{file_node_id}",
+                source=category,
+                target=file_node_id,
+                relationship_type=EdgeRelationshipType.PARA_CATEGORY,
+                weight=1.0,
+            )
         )
 
-        # Edge from Category to File
-        edges.append(
-            {
-                "id": f"e-{category}-{file_node_id}",
-                "source": category,
-                "target": file_node_id,
-                "animated": True,
-            }
-        )
+    nodes.extend(file_nodes)
+    edges.extend(file_edges)
 
-    return {"nodes": nodes, "edges": edges}
+    return GraphDataResponse(nodes=nodes, edges=edges)
