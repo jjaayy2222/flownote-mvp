@@ -21,8 +21,9 @@ from enum import Enum
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
+import re
 
-from backend.utils.common import mask_pii_id
+from backend.utils.common import mask_pii_id, INVALID_PII_SENTINEL
 
 
 # ─────────────────────────────────────────
@@ -92,6 +93,14 @@ class GraphNode(BaseModel):
         default_factory=dict,
         description="노드에 연결된 추가 메타데이터. (예: {'para_category': 'Projects', 'tags': ['AI']})",
     )
+    position_x: Optional[float] = Field(
+        default=None,
+        description="시각화 화면에서의 X 좌표 (명시적 레이아웃 정보)",
+    )
+    position_y: Optional[float] = Field(
+        default=None,
+        description="시각화 화면에서의 Y 좌표 (명시적 레이아웃 정보)",
+    )
     user_id_hash: Optional[str] = Field(
         default=None,
         description=(
@@ -104,15 +113,22 @@ class GraphNode(BaseModel):
     @classmethod
     def ensure_user_id_is_hashed(cls, v: Optional[str]) -> Optional[str]:
         """
-        user_id_hash 필드에 비해시 원본값이 실수로 주입되는 것을 방어합니다.
-        이 validator가 호출될 시점에 이미 hash된 값이 들어와야 합니다.
-        원본 user_id를 직접 이 필드에 넣지 마세요.
+        [보안 강화] user_id_hash 필드에 원본 ID가 실수로 주입되는 것을 차단합니다.
+        오직 mask_pii_id()를 통과한 해시 문자열(12자리/64자리 Hex) 또는 INVALID_PII_SENTINEL만 허용합니다.
         """
         if v is None:
             return None
-        # 길이 체크: SHA-256 hex는 64자. mask_pii_id 기본 truncate는 12자.
-        # 원본 user_id처럼 보이는 값이 들어오면 한 번 더 마스킹하여 방어.
-        return mask_pii_id(v) if len(v) > 64 else v
+        
+        if v == INVALID_PII_SENTINEL:
+            return v
+            
+        # 정확히 소문자 a-f, 0-9 로 구성된 12자리(truncate) 또는 64자리(full sha256)만 허용
+        if not re.match(r"^[a-f0-9]{12}$|^[a-f0-9]{64}$", v):
+            raise ValueError(
+                "PII 보안 경고: user_id_hash 필드에 안전하지 않은 값이 입력되었습니다. "
+                "반드시 mask_pii_id(raw_user_id)를 통해 해싱된 값을 전달해야 합니다."
+            )
+        return v
 
 
 class GraphEdge(BaseModel):

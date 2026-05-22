@@ -55,7 +55,13 @@ async def get_graph_data() -> GraphDataResponse:
     Phase 4-1에서 명시적/암묵적 관계 추출 파이프라인이 연동되면 확장됩니다.
     """
     # ─── PARA 카테고리 노드 (고정 시드 노드) ───────────────────────────────
-    para_categories = ["Projects", "Areas", "Resources", "Archive"]
+    # 기존 graph.py의 하드코딩 레이아웃을 기반으로 고정 좌표 부여
+    category_positions = {
+        "Projects": {"x": 0.0, "y": 0.0},
+        "Areas": {"x": 600.0, "y": 0.0},
+        "Resources": {"x": 0.0, "y": 600.0},
+        "Archive": {"x": 600.0, "y": 600.0},
+    }
 
     nodes: list[GraphNode] = [
         GraphNode(
@@ -63,8 +69,10 @@ async def get_graph_data() -> GraphDataResponse:
             label=cat,
             node_type=NodeType.CATEGORY,
             properties={"para_category": cat},
+            position_x=category_positions.get(cat, {}).get("x"),
+            position_y=category_positions.get(cat, {}).get("y"),
         )
-        for cat in para_categories
+        for cat in category_positions
     ]
     edges: list[GraphEdge] = []
 
@@ -76,7 +84,7 @@ async def get_graph_data() -> GraphDataResponse:
         logger.exception("그래프 데이터 조회 중 DB 연결 실패. 빈 그래프를 반환합니다.")
         return GraphDataResponse(nodes=nodes, edges=edges)
 
-    valid_category_ids = set(para_categories)
+    valid_category_ids = set(category_positions)
 
     file_nodes: list[GraphNode] = []
     file_edges: list[GraphEdge] = []
@@ -103,6 +111,13 @@ async def get_graph_data() -> GraphDataResponse:
         if abs(offset_x) < 80 and abs(offset_y) < 80:
             offset_x += 100 if offset_x >= 0 else -100
 
+        # 중심 카테고리 좌표를 기준으로 난수 오프셋 연산
+        base_x = category_positions.get(category, {}).get("x", 0.0)
+        base_y = category_positions.get(category, {}).get("y", 0.0)
+        
+        pos_x = base_x + offset_x
+        pos_y = base_y + offset_y
+
         file_nodes.append(
             GraphNode(
                 id=file_node_id,
@@ -110,9 +125,9 @@ async def get_graph_data() -> GraphDataResponse:
                 node_type=NodeType.NOTE,
                 properties={
                     "para_category": category,
-                    "offset_x": offset_x,
-                    "offset_y": offset_y,
                 },
+                position_x=pos_x,
+                position_y=pos_y,
                 user_id_hash=hashed_uid,
             )
         )
