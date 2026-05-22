@@ -63,17 +63,27 @@ async def get_graph_data() -> GraphDataResponse:
         "Archive": {"x": 600.0, "y": 600.0},
     }
 
-    nodes: list[GraphNode] = [
-        GraphNode(
-            id=cat,
-            label=cat,
-            node_type=NodeType.CATEGORY,
-            properties={"para_category": cat},
-            position_x=category_positions.get(cat, {}).get("x"),
-            position_y=category_positions.get(cat, {}).get("y"),
+    nodes: list[GraphNode] = []
+    
+    for cat in category_positions:
+        try:
+            pos_x = category_positions[cat]["x"]
+            pos_y = category_positions[cat]["y"]
+        except KeyError as e:
+            # 설정 누락 시 런타임 에러 추적을 용이하게 하기 위한 Descriptive Error
+            raise RuntimeError(f"지식 그래프 설정 오류: 카테고리 '{cat}'의 좌표({e})가 누락되었습니다.") from e
+
+        nodes.append(
+            GraphNode(
+                id=cat,
+                label=cat,
+                node_type=NodeType.CATEGORY,
+                properties={"para_category": cat},
+                position_x=pos_x,
+                position_y=pos_y,
+            )
         )
-        for cat in category_positions
-    ]
+        
     edges: list[GraphEdge] = []
 
     # ─── 파일 노드 및 카테고리→파일 엣지 생성 ────────────────────────────────
@@ -102,7 +112,7 @@ async def get_graph_data() -> GraphDataResponse:
 
         # [PII 보안] user_id가 존재하는 경우 반드시 해시하여 저장
         raw_user_id = file.get("user_id")
-        hashed_uid = mask_pii_id(raw_user_id) if raw_user_id else None
+        hashed_uid = mask_pii_id(raw_user_id) if raw_user_id is not None else None
 
         # Deterministic position: 파일 ID 시드를 사용하여 리로드 시에도 레이아웃 안정 보장
         rng = random.Random(file_id)

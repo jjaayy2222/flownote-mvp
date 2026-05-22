@@ -23,7 +23,12 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field, field_validator
 import re
 
-from backend.utils.common import mask_pii_id, INVALID_PII_SENTINEL
+from backend.utils.common import INVALID_PII_SENTINEL
+
+# ─────────────────────────────────────────
+# Regex Patterns (Performance Optimization)
+# ─────────────────────────────────────────
+USER_ID_HASH_PATTERN: re.Pattern[str] = re.compile(r"^(?:[a-f0-9]{12}|[a-f0-9]{64})$")
 
 
 # ─────────────────────────────────────────
@@ -123,7 +128,7 @@ class GraphNode(BaseModel):
             return v
             
         # 정확히 소문자 a-f, 0-9 로 구성된 12자리(truncate) 또는 64자리(full sha256)만 허용
-        if not re.match(r"^[a-f0-9]{12}$|^[a-f0-9]{64}$", v):
+        if not USER_ID_HASH_PATTERN.fullmatch(v):
             raise ValueError(
                 "PII 보안 경고: user_id_hash 필드에 안전하지 않은 값이 입력되었습니다. "
                 "반드시 mask_pii_id(raw_user_id)를 통해 해싱된 값을 전달해야 합니다."
