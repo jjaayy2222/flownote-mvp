@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import random
+from typing import Any
 import logging
 
 from fastapi import APIRouter
@@ -34,6 +35,14 @@ from backend.utils.common import mask_pii_id
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/graph", tags=["Knowledge Graph (v1)"])
+
+def _is_valid_raw_user_id(raw_id: Any) -> bool:
+    """
+    원본 user_id가 해싱을 수행할 만큼 유효한 값인지 검증하는 헬퍼 함수입니다.
+    None, 빈 문자열(""), 공백 문자열("   ") 등은 결측치로 간주하여 False를 반환합니다.
+    숫자(예: 0) 등 그 외의 값은 유효한 Falsy/Truthy 값으로 간주하여 True를 반환합니다.
+    """
+    return raw_id is not None and (not isinstance(raw_id, str) or bool(raw_id.strip()))
 
 
 @router.get(
@@ -110,9 +119,9 @@ async def get_graph_data() -> GraphDataResponse:
         # 파일 노드 ID: 'file-{id}' 형식 (GraphEdge.id 규약과 동일)
         file_node_id = f"file-{file_id}"
 
-        # [PII 보안] user_id가 빈 문자열이 아닌 유효한 값인 경우에만 해싱 (Falsy 0 방어 및 "" 결측치 방어)
+        # [PII 보안] user_id가 유효한 값(공백 제외)인 경우에만 해싱
         raw_user_id = file.get("user_id")
-        hashed_uid = mask_pii_id(raw_user_id) if raw_user_id not in (None, "") else None
+        hashed_uid = mask_pii_id(raw_user_id) if _is_valid_raw_user_id(raw_user_id) else None
 
         # Deterministic position: 파일 ID 시드를 사용하여 리로드 시에도 레이아웃 안정 보장
         rng = random.Random(file_id)
