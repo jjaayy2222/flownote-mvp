@@ -191,6 +191,13 @@ export enum EdgeRelationshipType {
 }
 
 /**
+ * 백엔드에서 프론트엔드가 모르는 새로운 관계 타입 문자열을 보낼 경우를 대비한 Fallback 타입.
+ * (string & {}) 기법을 사용하여 기존 Enum(EdgeRelationshipType)의 IDE 자동 완성 기능을 보존하면서도
+ * 런타임 및 컴파일 타임에 임의의 문자열을 허용하는 유연성을 제공합니다.
+ */
+export type UnknownRelationshipType = string & {};
+
+/**
  * 그래프 노드 데이터 타입 (백엔드 schemas/graph.py SSOT 연동)
  * @template TProps 속성(properties)의 구체적인 타입 (기본값: Record<string, unknown>)
  */
@@ -212,20 +219,22 @@ export interface GraphEdge<TProps extends Record<string, unknown> = Record<strin
   id: string;
   source: string;
   target: string;
-  relationship_type: EdgeRelationshipType | (string & {});
+  relationship_type: EdgeRelationshipType | UnknownRelationshipType;
   weight: number;
   properties: TProps;
 }
 
 /**
  * 그래프 전체 데이터 타입 (백엔드 GraphDataResponse 호환)
- * @template TProps 노드와 엣지의 공통 확장 속성 타입
+ * @template TNodeProps 노드 속성의 확장 타입
+ * @template TEdgeProps 엣지 속성의 확장 타입
  */
 export interface GraphData<
-  TProps extends Record<string, unknown> = Record<string, unknown>
+  TNodeProps extends Record<string, unknown> = Record<string, unknown>,
+  TEdgeProps extends Record<string, unknown> = Record<string, unknown>
 > {
-  nodes: GraphNode<TProps>[];
-  edges: GraphEdge<TProps>[];
+  nodes: GraphNode<TNodeProps>[];
+  edges: GraphEdge<TEdgeProps>[];
 }
 
 /**
