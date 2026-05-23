@@ -194,7 +194,7 @@ export enum EdgeRelationshipType {
  * 그래프 노드 데이터 타입 (백엔드 schemas/graph.py SSOT 연동)
  * @template TProps 속성(properties)의 구체적인 타입 (기본값: Record<string, unknown>)
  */
-export interface GraphNode<TProps = Record<string, unknown>> {
+export interface GraphNode<TProps extends Record<string, unknown> = Record<string, unknown>> {
   id: string;
   label: string;
   node_type: NodeType;
@@ -208,7 +208,7 @@ export interface GraphNode<TProps = Record<string, unknown>> {
  * 그래프 엣지 데이터 타입 (백엔드 schemas/graph.py SSOT 연동)
  * @template TProps 속성(properties)의 구체적인 타입 (기본값: Record<string, unknown>)
  */
-export interface GraphEdge<TProps = Record<string, unknown>> {
+export interface GraphEdge<TProps extends Record<string, unknown> = Record<string, unknown>> {
   id: string;
   source: string;
   target: string;
@@ -223,8 +223,8 @@ export interface GraphEdge<TProps = Record<string, unknown>> {
  * @template TEdgeProps 엣지 속성 타입
  */
 export interface GraphData<
-  TNodeProps = Record<string, unknown>,
-  TEdgeProps = Record<string, unknown>
+  TNodeProps extends Record<string, unknown> = Record<string, unknown>,
+  TEdgeProps extends Record<string, unknown> = Record<string, unknown>
 > {
   nodes: GraphNode<TNodeProps>[];
   edges: GraphEdge<TEdgeProps>[];
