@@ -211,6 +211,17 @@ export enum EdgeRelationshipType {
 export type UnknownRelationshipType = string & { readonly __brand: 'UnknownRelationshipType' };
 
 /**
+ * 백엔드에서 전달된 알 수 없는 문자열을 UnknownRelationshipType 브랜드 타입으로 안전하게 변환하는 헬퍼 함수입니다.
+ * 코드베이스 전반에 불안전한 타입 단언(as)이 흩어지는 것을 방지하고 캐스팅 지점을 단일화(Centralize)합니다.
+ * 
+ * @param value 백엔드에서 전달된 임의의 문자열
+ * @returns 브랜딩이 적용된 UnknownRelationshipType
+ */
+export function asUnknownRelationshipType(value: string): UnknownRelationshipType {
+  return value as UnknownRelationshipType;
+}
+
+/**
  * 그래프 노드 데이터 타입 (백엔드 schemas/graph.py SSOT 연동)
  * @template TProps 속성(properties)의 구체적인 타입 (기본값: Record<string, unknown>)
  */
