@@ -189,10 +189,10 @@ export interface GraphNode {
   id: string;
   label: string;
   node_type: NodeType;
-  properties?: Record<string, unknown>;
-  position_x?: number | null;
-  position_y?: number | null;
-  user_id_hash?: string | null;
+  properties: Record<string, unknown>;
+  position_x: number | null;
+  position_y: number | null;
+  user_id_hash: string | null;
 }
 
 /**
@@ -202,9 +202,9 @@ export interface GraphEdge {
   id: string;
   source: string;
   target: string;
-  relationship_type?: string;
-  weight?: number;
-  properties?: Record<string, unknown>;
+  relationship_type: string;
+  weight: number;
+  properties: Record<string, unknown>;
 }
 
 /**
