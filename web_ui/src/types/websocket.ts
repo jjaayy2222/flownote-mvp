@@ -192,10 +192,34 @@ export enum EdgeRelationshipType {
 
 /**
  * 백엔드에서 프론트엔드가 모르는 새로운 관계 타입 문자열을 보낼 경우를 대비한 Fallback 타입.
- * (string & {}) 기법을 사용하여 기존 Enum(EdgeRelationshipType)의 IDE 자동 완성 기능을 보존하면서도
- * 런타임 및 컴파일 타임에 임의의 문자열을 허용하는 유연성을 제공합니다.
+ * 브랜드 타입(Branded Type) 기법을 사용하여, 단순한 string과 엄격하게 구분합니다.
+ * 
+ * @example
+ * // 런타임 사용 권장 패턴 (Exhaustive Check 방지)
+ * function handleEdge(edge: GraphEdge) {
+ *   switch (edge.relationship_type) {
+ *     case EdgeRelationshipType.RELATED_TO:
+ *       // 알려진 타입 처리
+ *       break;
+ *     default:
+ *       // 알 수 없는 타입(UnknownRelationshipType)에 대한 안전한 폴백 처리
+ *       console.warn("Unknown relationship:", edge.relationship_type);
+ *       break;
+ *   }
+ * }
  */
-export type UnknownRelationshipType = string & {};
+export type UnknownRelationshipType = string & { readonly __brand: 'UnknownRelationshipType' };
+
+/**
+ * 백엔드에서 전달된 알 수 없는 문자열을 UnknownRelationshipType 브랜드 타입으로 안전하게 변환하는 헬퍼 함수입니다.
+ * 코드베이스 전반에 불안전한 타입 단언(as)이 흩어지는 것을 방지하고 캐스팅 지점을 단일화(Centralize)합니다.
+ * 
+ * @param value 백엔드에서 전달된 임의의 문자열
+ * @returns 브랜딩이 적용된 UnknownRelationshipType
+ */
+export function asUnknownRelationshipType(value: string): UnknownRelationshipType {
+  return value as UnknownRelationshipType;
+}
 
 /**
  * 그래프 노드 데이터 타입 (백엔드 schemas/graph.py SSOT 연동)
