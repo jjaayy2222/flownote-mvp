@@ -212,22 +212,20 @@ export interface GraphEdge<TProps extends Record<string, unknown> = Record<strin
   id: string;
   source: string;
   target: string;
-  relationship_type: EdgeRelationshipType;
+  relationship_type: EdgeRelationshipType | (string & {});
   weight: number;
   properties: TProps;
 }
 
 /**
  * 그래프 전체 데이터 타입 (백엔드 GraphDataResponse 호환)
- * @template TNodeProps 노드 속성 타입
- * @template TEdgeProps 엣지 속성 타입
+ * @template TProps 노드와 엣지의 공통 확장 속성 타입
  */
 export interface GraphData<
-  TNodeProps extends Record<string, unknown> = Record<string, unknown>,
-  TEdgeProps extends Record<string, unknown> = Record<string, unknown>
+  TProps extends Record<string, unknown> = Record<string, unknown>
 > {
-  nodes: GraphNode<TNodeProps>[];
-  edges: GraphEdge<TEdgeProps>[];
+  nodes: GraphNode<TProps>[];
+  edges: GraphEdge<TProps>[];
 }
 
 /**
