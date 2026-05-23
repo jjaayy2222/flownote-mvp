@@ -191,8 +191,14 @@ export enum EdgeRelationshipType {
 }
 
 /**
+ * 브랜드 타입을 위한 우주 유일의 고유 식별자(Symbol).
+ * 런타임 코드에서는 삭제되며 오직 컴파일 타임의 타입 구분에만 사용됩니다.
+ */
+declare const UnknownRelationshipBrand: unique symbol;
+
+/**
  * 백엔드에서 프론트엔드가 모르는 새로운 관계 타입 문자열을 보낼 경우를 대비한 Fallback 타입.
- * 브랜드 타입(Branded Type) 기법을 사용하여, 단순한 string과 엄격하게 구분합니다.
+ * Unique Symbol 기반의 브랜드 타입(Branded Type) 기법을 사용하여, 단순한 string과 외부 라이브러리 간의 타입 충돌을 완벽히 방지합니다.
  * 
  * @example
  * // 런타임 사용 권장 패턴 (Exhaustive Check 방지)
@@ -208,11 +214,14 @@ export enum EdgeRelationshipType {
  *   }
  * }
  */
-export type UnknownRelationshipType = string & { readonly __brand: 'UnknownRelationshipType' };
+export type UnknownRelationshipType = string & { readonly [UnknownRelationshipBrand]: true };
 
 /**
  * 백엔드에서 전달된 알 수 없는 문자열을 UnknownRelationshipType 브랜드 타입으로 안전하게 변환하는 헬퍼 함수입니다.
  * 코드베이스 전반에 불안전한 타입 단언(as)이 흩어지는 것을 방지하고 캐스팅 지점을 단일화(Centralize)합니다.
+ * 
+ * @internal 이 함수는 오직 백엔드 API 응답(WebSocket, Fetch 등)을 파싱하는 최전방 경계(Boundary Layer)에서만 사용되어야 합니다.
+ * 비즈니스 로직 내부에서 임의로 호출하여 캐스팅하는 것을 엄격히 금지합니다.
  * 
  * @param value 백엔드에서 전달된 임의의 문자열
  * @returns 브랜딩이 적용된 UnknownRelationshipType
