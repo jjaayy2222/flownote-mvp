@@ -192,14 +192,15 @@ export enum EdgeRelationshipType {
 
 /**
  * 향후 다른 브랜드 타입이 추가될 때 우연한 이름 충돌이나 전역 스코프 오염을 방지하기 위한
- * 모듈 레벨의 고유 식별자(Symbol)입니다. (ES2015 Module 스코프 활용)
+ * 모듈 내부 전용 고유 식별자(Symbol)입니다. 
+ * 외부 모듈과의 결합도(Coupling)를 낮추고 정보 은닉(Encapsulation)을 강제하기 위해 export 하지 않습니다.
  * 런타임 코드에서는 삭제되며 오직 컴파일 타임의 타입 구분에만 사용됩니다.
  */
-export declare const GraphUnknownRelationshipBrand: unique symbol;
+declare const UnknownRelationshipBrand: unique symbol;
 
 /**
  * 백엔드에서 프론트엔드가 모르는 새로운 관계 타입 문자열을 보낼 경우를 대비한 Fallback 타입.
- * 모듈 스코프의 Unique Symbol을 사용하여 외부와의 충돌을 막고, 
+ * 모듈 스코프 내에 캡슐화된 Unique Symbol을 사용하여 외부와의 충돌을 막고, 
  * 브랜드 값을 명시적 리터럴 문자열('UnknownRelationshipType')로 지정하여 IDE의 에러 툴팁 가독성을 극대화합니다.
  * 
  * @example
@@ -217,7 +218,7 @@ export declare const GraphUnknownRelationshipBrand: unique symbol;
  * }
  */
 export type UnknownRelationshipType = string & { 
-  readonly [GraphUnknownRelationshipBrand]: 'UnknownRelationshipType' 
+  readonly [UnknownRelationshipBrand]: 'UnknownRelationshipType' 
 };
 
 /**
