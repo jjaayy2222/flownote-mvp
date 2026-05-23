@@ -175,26 +175,40 @@ export interface WsConflict {
 }
 
 /**
- * 그래프 노드 데이터 타입
+ * 지식 그래프 노드 타입 (백엔드 SSOT 연동)
+ */
+export enum NodeType {
+  CATEGORY = "category",
+  NOTE = "note",
+}
+
+/**
+ * 그래프 노드 데이터 타입 (백엔드 schemas/graph.py SSOT 연동)
  */
 export interface GraphNode {
   id: string;
   label: string;
-  type: 'project' | 'area' | 'resource' | 'archive' | 'note';
-  val: number; // 크기
+  node_type: NodeType;
+  properties?: Record<string, unknown>;
+  position_x?: number | null;
+  position_y?: number | null;
+  user_id_hash?: string | null;
 }
 
 /**
- * 그래프 엣지 데이터 타입
+ * 그래프 엣지 데이터 타입 (백엔드 schemas/graph.py SSOT 연동)
  */
 export interface GraphEdge {
+  id: string;
   source: string;
   target: string;
-  value: number; // 가중치
+  relationship_type?: string;
+  weight?: number;
+  properties?: Record<string, unknown>;
 }
 
 /**
- * 그래프 전체 데이터 타입
+ * 그래프 전체 데이터 타입 (백엔드 GraphDataResponse 호환)
  */
 export interface GraphData {
   nodes: GraphNode[];
