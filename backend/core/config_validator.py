@@ -30,7 +30,7 @@ from __future__ import annotations
 import logging
 import os
 from enum import Enum
-from typing import Callable, ClassVar, Dict
+from typing import Callable, ClassVar, Dict, Mapping
 
 # 프로젝트 공통 유틸 재사용 — 중복 구현 금지
 from backend.config import ConfigRange, _clamp
@@ -289,11 +289,12 @@ def _parse_float_clamped(
     return clamped
 
 
-def _log_disabled_subsystems(subsystem_ok: dict) -> None:
+def _log_disabled_subsystems(subsystem_ok: Mapping[Subsystem, bool]) -> None:
     """비활성화된 서브시스템 운영 가시성 로깅 헬퍼."""
     for sub, ok in subsystem_ok.items():
         if not ok:
-            sub_name = sub.value if hasattr(sub, "value") else sub
+            # sub는 Subsystem 타입임이 보장되므로, 명시적으로 .value를 호출하여 str로 변환
+            sub_name: str = sub.value
             logger.error(
                 "[CONFIG][SUBSYSTEM DISABLED] '%s' subsystem is DISABLED due to "
                 "invalid configuration. Register via HealthRegistry for /health exposure.",
@@ -354,7 +355,7 @@ class PersonalizedRAGConfig:
         # Clamped
         aws_wrapper_max_workers: int,
         # Subsystem health map
-        subsystem_ok: Dict[str, bool],
+        subsystem_ok: Dict[Subsystem, bool],
     ) -> None:
         self.storage_base_path = storage_base_path
         self.pbkdf2_iterations = pbkdf2_iterations
@@ -366,7 +367,7 @@ class PersonalizedRAGConfig:
         self.global_index_weight = global_index_weight
         self.aws_wrapper_max_workers = aws_wrapper_max_workers
         # 서브시스템 가동 여부 맵 (True=활성, False=비활성)
-        self.subsystem_ok: Dict[str, bool] = subsystem_ok
+        self.subsystem_ok: Dict[Subsystem, bool] = subsystem_ok
 
     @classmethod
     def from_env(cls) -> "PersonalizedRAGConfig":
@@ -379,8 +380,8 @@ class PersonalizedRAGConfig:
         pbkdf2_iterations = _parse_int_critical("PBKDF2_ITERATIONS", min_val=600_000)
 
         # ── 2. 서브시스템 설정 (Subsystem Hard Failure) ───────────────────
-        # subsystem_ok 키는 항상 str (Subsystem.value) 로 통일 — HealthRegistry 경계와 일치
-        subsystem_ok: Dict[str, bool] = {}
+        # subsystem_ok 키는 항상 Subsystem Enum으로 통일 — 타입 안전성 보장
+        subsystem_ok: Dict[Subsystem, bool] = {}
 
         faiss_threshold, ok_ft = _parse_int_subsystem(
             "FAISS_COMPACTION_VECTOR_THRESHOLD",
@@ -395,14 +396,14 @@ class PersonalizedRAGConfig:
             subsystem=Subsystem.FAISS_COMPACTION,
         )
         # 두 설정 중 하나라도 실패하면 FAISS Compaction 서브시스템 비활성화
-        subsystem_ok[Subsystem.FAISS_COMPACTION.value] = ok_ft and ok_fr
+        subsystem_ok[Subsystem.FAISS_COMPACTION] = ok_ft and ok_fr
 
         topic_ttl, ok_ttl = _parse_int_subsystem(
             "TOPIC_CLUSTER_CACHE_TTL",
             default=3600,
             subsystem=Subsystem.TOPIC_CLUSTERING,
         )
-        subsystem_ok[Subsystem.TOPIC_CLUSTERING.value] = ok_ttl
+        subsystem_ok[Subsystem.TOPIC_CLUSTERING] = ok_ttl
 
         p_weight, ok_pw = _parse_float_subsystem(
             "PERSONALIZED_INDEX_WEIGHT",
@@ -416,7 +417,7 @@ class PersonalizedRAGConfig:
             range_=cls._WEIGHT_RANGE,
             subsystem=Subsystem.HYBRID_SEARCH,
         )
-        subsystem_ok[Subsystem.HYBRID_SEARCH.value] = ok_pw and ok_gw
+        subsystem_ok[Subsystem.HYBRID_SEARCH] = ok_pw and ok_gw
 
         tolerance = _parse_float_clamped(
             "WEIGHT_SUM_TOLERANCE",
@@ -646,7 +647,7 @@ class GraphEngineConfig:
         db_url: str,
         migration_node_threshold: int,
         migration_concurrency_threshold: int,
-        subsystem_ok: Dict[str, bool],
+        subsystem_ok: Dict[Subsystem, bool],
     ) -> None:
         self.max_traversal_depth = max_traversal_depth
         self.max_graph_nodes = max_graph_nodes
@@ -655,7 +656,7 @@ class GraphEngineConfig:
         self.migration_node_threshold = migration_node_threshold
         self.migration_concurrency_threshold = migration_concurrency_threshold
         # 서브시스템 가동 여부 맵 (True=활성, False=DEGRADED)
-        self.subsystem_ok: Dict[str, bool] = subsystem_ok
+        self.subsystem_ok: Dict[Subsystem, bool] = subsystem_ok
 
     @classmethod
     def from_env(cls) -> "GraphEngineConfig":
@@ -685,8 +686,8 @@ class GraphEngineConfig:
             MIGRATION_NODE_THRESHOLD_RANGE,
         )
 
-        # subsystem_ok 키는 항상 str (Subsystem.value) — HealthRegistry 경계와 일치
-        subsystem_ok: Dict[str, bool] = {}
+        # subsystem_ok 키는 항상 Subsystem Enum으로 통일 — 타입 안전성 보장
+        subsystem_ok: Dict[Subsystem, bool] = {}
 
         # ── 정수 설정: Clamp + WARNING (범위 이탈) / DEGRADED (파싱 불가) ─────
         max_depth, ok_depth = _parse_int_subsystem(
@@ -728,7 +729,7 @@ class GraphEngineConfig:
         # ── 서브시스템 건강 판정: 하나라도 파싱 실패 시 DEGRADED ──────────
         # GRAPH_DB_URL 파싱 실패는 서브시스템 비활성화 조건에 포함하지 않음
         # (빈 값은 유효한 상태이므로)
-        subsystem_ok[Subsystem.GRAPH_ENGINE.value] = (
+        subsystem_ok[Subsystem.GRAPH_ENGINE] = (
             ok_depth and ok_nodes and ok_mn and ok_mc
         )
 
