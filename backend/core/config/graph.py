@@ -4,7 +4,7 @@
 지식 그래프 설정 SSOT (Phase 4-0).
 
 환경 변수 키, 기본값, 유효 범위만 정의합니다.
-로딩·Clamping·Subsystem 등록은 GraphValidator(config_validator.py) 책임입니다.
+로딩·Clamping·Subsystem 등록은 GraphEngineConfig(config_validator.py) 책임입니다.
 """
 
 from dataclasses import dataclass
@@ -38,7 +38,7 @@ class GraphConfig:
     지식 그래프 런타임 설정 스키마 (인스턴스 필드만).
 
     상수(키·기본값·범위)는 이 모듈의 모듈 레벨 이름을 import하여 사용합니다.
-    OS 환경 변수 읽기는 GraphValidator에서만 수행합니다.
+    OS 환경 변수 읽기는 GraphEngineConfig에서만 수행합니다.
     """
 
     max_traversal_depth: int = DEFAULT_MAX_TRAVERSAL_DEPTH

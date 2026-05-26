@@ -30,7 +30,7 @@ from __future__ import annotations
 import logging
 import os
 from enum import Enum
-from typing import Callable, ClassVar, Dict
+from typing import Callable, ClassVar, Dict, Mapping
 
 # 프로젝트 공통 유틸 재사용 — 중복 구현 금지
 from backend.config import ConfigRange, _clamp
@@ -289,6 +289,19 @@ def _parse_float_clamped(
     return clamped
 
 
+def _log_disabled_subsystems(subsystem_ok: Mapping[Subsystem, bool]) -> None:
+    """비활성화된 서브시스템 운영 가시성 로깅 헬퍼."""
+    for sub, ok in subsystem_ok.items():
+        if not ok:
+            # sub는 Subsystem 타입임이 보장되므로, 명시적으로 .value를 호출하여 str로 변환
+            sub_name: str = sub.value
+            logger.error(
+                "[CONFIG][SUBSYSTEM DISABLED] '%s' subsystem is DISABLED due to "
+                "invalid configuration. Register via HealthRegistry for /health exposure.",
+                sub_name,
+            )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 2 통합 설정 클래스
 # ─────────────────────────────────────────────────────────────────────────────
@@ -342,7 +355,7 @@ class PersonalizedRAGConfig:
         # Clamped
         aws_wrapper_max_workers: int,
         # Subsystem health map
-        subsystem_ok: Dict[str, bool],
+        subsystem_ok: Dict[Subsystem, bool],
     ) -> None:
         self.storage_base_path = storage_base_path
         self.pbkdf2_iterations = pbkdf2_iterations
@@ -354,7 +367,7 @@ class PersonalizedRAGConfig:
         self.global_index_weight = global_index_weight
         self.aws_wrapper_max_workers = aws_wrapper_max_workers
         # 서브시스템 가동 여부 맵 (True=활성, False=비활성)
-        self.subsystem_ok: Dict[str, bool] = subsystem_ok
+        self.subsystem_ok: Dict[Subsystem, bool] = subsystem_ok
 
     @classmethod
     def from_env(cls) -> "PersonalizedRAGConfig":
@@ -367,8 +380,8 @@ class PersonalizedRAGConfig:
         pbkdf2_iterations = _parse_int_critical("PBKDF2_ITERATIONS", min_val=600_000)
 
         # ── 2. 서브시스템 설정 (Subsystem Hard Failure) ───────────────────
-        # subsystem_ok 키는 항상 str (Subsystem.value) 로 통일 — HealthRegistry 경계와 일치
-        subsystem_ok: Dict[str, bool] = {}
+        # subsystem_ok 키는 항상 Subsystem Enum으로 통일 — 타입 안전성 보장
+        subsystem_ok: Dict[Subsystem, bool] = {}
 
         faiss_threshold, ok_ft = _parse_int_subsystem(
             "FAISS_COMPACTION_VECTOR_THRESHOLD",
@@ -383,14 +396,14 @@ class PersonalizedRAGConfig:
             subsystem=Subsystem.FAISS_COMPACTION,
         )
         # 두 설정 중 하나라도 실패하면 FAISS Compaction 서브시스템 비활성화
-        subsystem_ok[Subsystem.FAISS_COMPACTION.value] = ok_ft and ok_fr
+        subsystem_ok[Subsystem.FAISS_COMPACTION] = ok_ft and ok_fr
 
         topic_ttl, ok_ttl = _parse_int_subsystem(
             "TOPIC_CLUSTER_CACHE_TTL",
             default=3600,
             subsystem=Subsystem.TOPIC_CLUSTERING,
         )
-        subsystem_ok[Subsystem.TOPIC_CLUSTERING.value] = ok_ttl
+        subsystem_ok[Subsystem.TOPIC_CLUSTERING] = ok_ttl
 
         p_weight, ok_pw = _parse_float_subsystem(
             "PERSONALIZED_INDEX_WEIGHT",
@@ -404,7 +417,7 @@ class PersonalizedRAGConfig:
             range_=cls._WEIGHT_RANGE,
             subsystem=Subsystem.HYBRID_SEARCH,
         )
-        subsystem_ok[Subsystem.HYBRID_SEARCH.value] = ok_pw and ok_gw
+        subsystem_ok[Subsystem.HYBRID_SEARCH] = ok_pw and ok_gw
 
         tolerance = _parse_float_clamped(
             "WEIGHT_SUM_TOLERANCE",
@@ -445,13 +458,7 @@ class PersonalizedRAGConfig:
         )
 
         # ── 4. 비활성화된 서브시스템 운영 가시성 로깅 ────────────────────
-        for sub, ok in subsystem_ok.items():
-            if not ok:
-                logger.error(
-                    "[CONFIG][SUBSYSTEM DISABLED] '%s' subsystem is DISABLED due to "
-                    "invalid configuration. Register via HealthRegistry for /health exposure.",
-                    sub,
-                )
+        _log_disabled_subsystems(subsystem_ok)
 
         return cls(
             storage_base_path=storage_base_path,
@@ -590,13 +597,7 @@ class RealtimeStreamingConfig:
         )
 
         # ── 비활성화된 서브시스템 운영 가시성 로깅 (경계에서 .value 변환) ──
-        for sub, ok in subsystem_ok.items():
-            if not ok:
-                logger.error(
-                    "[CONFIG][SUBSYSTEM DISABLED] '%s' subsystem is DISABLED due to "
-                    "invalid configuration. Register via HealthRegistry for /health exposure.",
-                    sub.value,  # HealthRegistry 인터페이스는 str — 경계에서만 변환
-                )
+        _log_disabled_subsystems(subsystem_ok)
 
         return cls(
             keepalive_interval_secs=keepalive,
@@ -612,12 +613,12 @@ class RealtimeStreamingConfig:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class GraphValidator:
+class GraphEngineConfig:
     """
     v9.0 Phase 4 Knowledge Graph 전용 검증 설정 클래스.
 
     사용법:
-        cfg = GraphValidator.from_env()  # bootstrap 단계에서 1회 호출
+        cfg = GraphEngineConfig.from_env()  # bootstrap 단계에서 1회 호출
 
     책임 (4-5 SSOT 정책 준수):
         - backend.core.config.graph 모듈에서 정의된 상수(ENV 키·기본값·범위)를
@@ -646,7 +647,7 @@ class GraphValidator:
         db_url: str,
         migration_node_threshold: int,
         migration_concurrency_threshold: int,
-        subsystem_ok: Dict[str, bool],
+        subsystem_ok: Dict[Subsystem, bool],
     ) -> None:
         self.max_traversal_depth = max_traversal_depth
         self.max_graph_nodes = max_graph_nodes
@@ -655,12 +656,12 @@ class GraphValidator:
         self.migration_node_threshold = migration_node_threshold
         self.migration_concurrency_threshold = migration_concurrency_threshold
         # 서브시스템 가동 여부 맵 (True=활성, False=DEGRADED)
-        self.subsystem_ok: Dict[str, bool] = subsystem_ok
+        self.subsystem_ok: Dict[Subsystem, bool] = subsystem_ok
 
     @classmethod
-    def from_env(cls) -> "GraphValidator":
+    def from_env(cls) -> "GraphEngineConfig":
         """
-        환경 변수에서 그래프 설정을 파싱하여 GraphValidator 인스턴스를 반환한다.
+        환경 변수에서 그래프 설정을 파싱하여 GraphEngineConfig 인스턴스를 반환한다.
 
         - 정수 파싱 실패(비정수 값): GRAPH_ENGINE 서브시스템 DEGRADED — Subsystem Hard Failure.
         - 정수 범위 이탈: Clamping 보정 + WARNING 로그 — Graceful Fallback.
@@ -685,8 +686,8 @@ class GraphValidator:
             MIGRATION_NODE_THRESHOLD_RANGE,
         )
 
-        # subsystem_ok 키는 항상 str (Subsystem.value) — HealthRegistry 경계와 일치
-        subsystem_ok: Dict[str, bool] = {}
+        # subsystem_ok 키는 항상 Subsystem Enum으로 통일 — 타입 안전성 보장
+        subsystem_ok: Dict[Subsystem, bool] = {}
 
         # ── 정수 설정: Clamp + WARNING (범위 이탈) / DEGRADED (파싱 불가) ─────
         max_depth, ok_depth = _parse_int_subsystem(
@@ -728,18 +729,12 @@ class GraphValidator:
         # ── 서브시스템 건강 판정: 하나라도 파싱 실패 시 DEGRADED ──────────
         # GRAPH_DB_URL 파싱 실패는 서브시스템 비활성화 조건에 포함하지 않음
         # (빈 값은 유효한 상태이므로)
-        subsystem_ok[Subsystem.GRAPH_ENGINE.value] = (
+        subsystem_ok[Subsystem.GRAPH_ENGINE] = (
             ok_depth and ok_nodes and ok_mn and ok_mc
         )
 
         # ── 비활성화된 서브시스템 운영 가시성 로깅 ───────────────────────
-        for sub, ok in subsystem_ok.items():
-            if not ok:
-                logger.error(
-                    "[CONFIG][SUBSYSTEM DISABLED] '%s' subsystem is DISABLED due to "
-                    "invalid configuration. Register via HealthRegistry for /health exposure.",
-                    sub,
-                )
+        _log_disabled_subsystems(subsystem_ok)
 
         return cls(
             max_traversal_depth=max_depth,
