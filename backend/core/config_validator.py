@@ -30,7 +30,7 @@ from __future__ import annotations
 import logging
 import os
 from enum import Enum
-from typing import Callable, ClassVar, Dict, Mapping
+from typing import Callable, ClassVar, Dict, Literal, Mapping
 
 # 프로젝트 공통 유틸 재사용 — 중복 구현 금지
 from backend.config import ConfigRange, _clamp
@@ -289,16 +289,28 @@ def _parse_float_clamped(
     return clamped
 
 
-def _log_disabled_subsystems(subsystem_ok: Mapping[Subsystem, bool]) -> None:
-    """비활성화된 서브시스템 운영 가시성 로깅 헬퍼."""
+def _log_disabled_subsystems(
+    subsystem_ok: Mapping[Subsystem, bool],
+    *,
+    state_label: Literal["DISABLED", "DEGRADED", "UNHEALTHY"] = "DISABLED",
+) -> None:
+    """비활성화된/저하된 서브시스템 운영 가시성 로깅 헬퍼.
+
+    Args:
+        subsystem_ok: 서브시스템별 상태 플래그 (True: 정상, False: 비정상/비활성/저하).
+        state_label: 서브시스템 상태 레이블. 예: "DISABLED", "DEGRADED", "UNHEALTHY".
+                     각 설정 클래스의 도메인 의미(비활성/저하 등)에 맞게 호출부에서 지정.
+    """
     for sub, ok in subsystem_ok.items():
         if not ok:
             # sub는 Subsystem 타입임이 보장되므로, 명시적으로 .value를 호출하여 str로 변환
             sub_name: str = sub.value
             logger.error(
-                "[CONFIG][SUBSYSTEM DISABLED] '%s' subsystem is DISABLED due to "
-                "invalid configuration. Register via HealthRegistry for /health exposure.",
+                "[CONFIG][SUBSYSTEM %s] '%s' subsystem is %s due to invalid "
+                "configuration. Register via HealthRegistry for /health exposure.",
+                state_label,
                 sub_name,
+                state_label,
             )
 
 
@@ -597,7 +609,7 @@ class RealtimeStreamingConfig:
         )
 
         # ── 비활성화된 서브시스템 운영 가시성 로깅 (경계에서 .value 변환) ──
-        _log_disabled_subsystems(subsystem_ok)
+        _log_disabled_subsystems(subsystem_ok, state_label="DEGRADED")
 
         return cls(
             keepalive_interval_secs=keepalive,
@@ -734,7 +746,7 @@ class GraphEngineConfig:
         )
 
         # ── 비활성화된 서브시스템 운영 가시성 로깅 ───────────────────────
-        _log_disabled_subsystems(subsystem_ok)
+        _log_disabled_subsystems(subsystem_ok, state_label="DEGRADED")
 
         return cls(
             max_traversal_depth=max_depth,
