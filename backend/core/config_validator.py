@@ -289,6 +289,18 @@ def _parse_float_clamped(
     return clamped
 
 
+def _log_disabled_subsystems(subsystem_ok: dict) -> None:
+    """비활성화된 서브시스템 운영 가시성 로깅 헬퍼."""
+    for sub, ok in subsystem_ok.items():
+        if not ok:
+            sub_name = sub.value if hasattr(sub, "value") else sub
+            logger.error(
+                "[CONFIG][SUBSYSTEM DISABLED] '%s' subsystem is DISABLED due to "
+                "invalid configuration. Register via HealthRegistry for /health exposure.",
+                sub_name,
+            )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 2 통합 설정 클래스
 # ─────────────────────────────────────────────────────────────────────────────
@@ -445,13 +457,7 @@ class PersonalizedRAGConfig:
         )
 
         # ── 4. 비활성화된 서브시스템 운영 가시성 로깅 ────────────────────
-        for sub, ok in subsystem_ok.items():
-            if not ok:
-                logger.error(
-                    "[CONFIG][SUBSYSTEM DISABLED] '%s' subsystem is DISABLED due to "
-                    "invalid configuration. Register via HealthRegistry for /health exposure.",
-                    sub,
-                )
+        _log_disabled_subsystems(subsystem_ok)
 
         return cls(
             storage_base_path=storage_base_path,
@@ -590,13 +596,7 @@ class RealtimeStreamingConfig:
         )
 
         # ── 비활성화된 서브시스템 운영 가시성 로깅 (경계에서 .value 변환) ──
-        for sub, ok in subsystem_ok.items():
-            if not ok:
-                logger.error(
-                    "[CONFIG][SUBSYSTEM DISABLED] '%s' subsystem is DISABLED due to "
-                    "invalid configuration. Register via HealthRegistry for /health exposure.",
-                    sub.value,  # HealthRegistry 인터페이스는 str — 경계에서만 변환
-                )
+        _log_disabled_subsystems(subsystem_ok)
 
         return cls(
             keepalive_interval_secs=keepalive,
@@ -612,12 +612,12 @@ class RealtimeStreamingConfig:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class GraphValidator:
+class GraphEngineConfig:
     """
     v9.0 Phase 4 Knowledge Graph 전용 검증 설정 클래스.
 
     사용법:
-        cfg = GraphValidator.from_env()  # bootstrap 단계에서 1회 호출
+        cfg = GraphEngineConfig.from_env()  # bootstrap 단계에서 1회 호출
 
     책임 (4-5 SSOT 정책 준수):
         - backend.core.config.graph 모듈에서 정의된 상수(ENV 키·기본값·범위)를
@@ -658,9 +658,9 @@ class GraphValidator:
         self.subsystem_ok: Dict[str, bool] = subsystem_ok
 
     @classmethod
-    def from_env(cls) -> "GraphValidator":
+    def from_env(cls) -> "GraphEngineConfig":
         """
-        환경 변수에서 그래프 설정을 파싱하여 GraphValidator 인스턴스를 반환한다.
+        환경 변수에서 그래프 설정을 파싱하여 GraphEngineConfig 인스턴스를 반환한다.
 
         - 정수 파싱 실패(비정수 값): GRAPH_ENGINE 서브시스템 DEGRADED — Subsystem Hard Failure.
         - 정수 범위 이탈: Clamping 보정 + WARNING 로그 — Graceful Fallback.
@@ -733,13 +733,7 @@ class GraphValidator:
         )
 
         # ── 비활성화된 서브시스템 운영 가시성 로깅 ───────────────────────
-        for sub, ok in subsystem_ok.items():
-            if not ok:
-                logger.error(
-                    "[CONFIG][SUBSYSTEM DISABLED] '%s' subsystem is DISABLED due to "
-                    "invalid configuration. Register via HealthRegistry for /health exposure.",
-                    sub,
-                )
+        _log_disabled_subsystems(subsystem_ok)
 
         return cls(
             max_traversal_depth=max_depth,
