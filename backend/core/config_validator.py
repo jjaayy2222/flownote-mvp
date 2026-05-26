@@ -59,7 +59,13 @@ class SubsystemHealthState(str, Enum):
 
     DISABLED = "DISABLED"
     DEGRADED = "DEGRADED"
-    UNHEALTHY = "UNHEALTHY"
+
+
+# OCP(Open-Closed Principle) 준수를 위한 상태별 로그 레벨 매핑
+_LEVEL_BY_STATE: Dict[SubsystemHealthState, int] = {
+    SubsystemHealthState.DISABLED: logging.ERROR,
+    SubsystemHealthState.DEGRADED: logging.WARNING,
+}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -302,7 +308,7 @@ def _log_subsystem_state(
     *,
     state_label: SubsystemHealthState = SubsystemHealthState.DISABLED,
 ) -> None:
-    """서브시스템 상태(비활성/저하/비정상) 운영 가시성 로깅 헬퍼.
+    """서브시스템 상태(비활성/저하) 운영 가시성 로깅 헬퍼.
 
     Args:
         subsystem_ok: 서브시스템별 상태 플래그 (True: 정상, False: 비정상/비활성/저하).
@@ -313,10 +319,8 @@ def _log_subsystem_state(
             # sub는 Subsystem 타입임이 보장되므로, 명시적으로 .value를 호출하여 str로 변환
             sub_name: str = sub.value
             
-            # 상태에 따른 동적 로그 레벨 할당
-            # DEGRADED, UNHEALTHY는 서비스가 유지되므로 WARNING, 
-            # DISABLED는 일부 기능이 정지되므로 ERROR 레벨 할당
-            log_level = logging.WARNING if state_label in (SubsystemHealthState.DEGRADED, SubsystemHealthState.UNHEALTHY) else logging.ERROR
+            # 상태에 따른 동적 로그 레벨 할당 (매핑 테이블 참조)
+            log_level = _LEVEL_BY_STATE.get(state_label, logging.ERROR)
             
             logger.log(
                 log_level,
