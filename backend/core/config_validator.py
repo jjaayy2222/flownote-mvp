@@ -54,24 +54,71 @@ class Subsystem(str, Enum):
     GRAPH_ENGINE = "graph_engine"  # Phase 4: 지식 그래프 엔진 서브시스템
 
 
+# 표준 logging 모듈 상수만 허용 (하드코딩된 임의 정수 금지)
+_KNOWN_SUBSYSTEM_LOG_LEVELS: frozenset[int] = frozenset(
+    {
+        logging.NOTSET,
+        logging.DEBUG,
+        logging.INFO,
+        logging.WARNING,
+        logging.ERROR,
+        logging.CRITICAL,
+    }
+)
+
+
 class SubsystemHealthState(str, Enum):
     """서브시스템 상태 식별자 및 로그 레벨 SSOT (로깅·가시성).
 
     각 멤버는 (label, log_level)을 함께 정의한다.
-    신규 상태 추가 시 __new__에 log_level을 반드시 지정해야 하며,
-    별도 전역 매핑 dict 없이 enum 정의만으로 Fail-fast·OCP를 만족한다.
+    신규 상태 추가 시 __new__에 표준 logging 레벨 상수를 반드시 지정한다.
+    log_level은 읽기 전용 property로만 노출된다.
     """
 
     DISABLED = ("DISABLED", logging.ERROR)
     DEGRADED = ("DEGRADED", logging.WARNING)
 
-    log_level: int
+    _log_level: int
 
     def __new__(cls, label: str, log_level: int) -> "SubsystemHealthState":
+        if not isinstance(log_level, int):
+            raise TypeError(
+                f"[CONFIG][SUBSYSTEM] SubsystemHealthState.{label!r} requires "
+                f"log_level to be int, got {type(log_level).__name__}."
+            )
+        if log_level not in _KNOWN_SUBSYSTEM_LOG_LEVELS:
+            raise ValueError(
+                f"[CONFIG][SUBSYSTEM] SubsystemHealthState.{label!r} has invalid "
+                f"log_level={log_level}. Use a standard logging.* constant."
+            )
         obj = str.__new__(cls, label)
         obj._value_ = label
-        obj.log_level = log_level
+        obj._log_level = log_level
         return obj
+
+    @property
+    def log_level(self) -> int:
+        """이 상태에 대응하는 표준 logging 레벨 (읽기 전용)."""
+        return self._log_level
+
+    @classmethod
+    def _validate_members(cls) -> None:
+        """모든 enum 멤버의 log_level 타입·값을 검증한다 (도메인 특화 Fail-fast)."""
+        for state in cls:
+            level = state.log_level
+            if not isinstance(level, int):
+                raise RuntimeError(
+                    f"[CONFIG][SUBSYSTEM][INVARIANT] {state.name}.log_level must be "
+                    f"int, got {type(level).__name__}."
+                )
+            if level not in _KNOWN_SUBSYSTEM_LOG_LEVELS:
+                raise RuntimeError(
+                    f"[CONFIG][SUBSYSTEM][INVARIANT] {state.name}.log_level={level} "
+                    "is not a recognized logging level constant."
+                )
+
+
+SubsystemHealthState._validate_members()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
