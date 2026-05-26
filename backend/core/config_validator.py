@@ -54,24 +54,64 @@ class Subsystem(str, Enum):
     GRAPH_ENGINE = "graph_engine"  # Phase 4: 지식 그래프 엔진 서브시스템
 
 
+# SubsystemHealthState 전용 — 표준 logging 모듈 상수만 허용 (임의 정수 하드코딩 금지)
+_SUBSYSTEM_HEALTH_KNOWN_LOG_LEVELS: frozenset[int] = frozenset(
+    {
+        logging.NOTSET,
+        logging.DEBUG,
+        logging.INFO,
+        logging.WARNING,
+        logging.ERROR,
+        logging.CRITICAL,
+    }
+)
+
+
 class SubsystemHealthState(str, Enum):
     """서브시스템 상태 식별자 및 로그 레벨 SSOT (로깅·가시성).
 
     각 멤버는 (label, log_level)을 함께 정의한다.
-    신규 상태 추가 시 __new__에 log_level을 반드시 지정해야 하며,
-    별도 전역 매핑 dict 없이 enum 정의만으로 Fail-fast·OCP를 만족한다.
+    신규 상태 추가 시 __new__에 표준 logging 레벨 상수를 반드시 지정한다.
+    log_level은 읽기 전용 property로만 노출된다.
+    허용 log_level 집합: _SUBSYSTEM_HEALTH_KNOWN_LOG_LEVELS (이 enum 전용).
     """
 
     DISABLED = ("DISABLED", logging.ERROR)
     DEGRADED = ("DEGRADED", logging.WARNING)
 
-    log_level: int
+    _log_level: int
+
+    @classmethod
+    def _ensure_valid_log_level(
+        cls,
+        label: str,
+        log_level: int,
+        exc_type: type[Exception],
+    ) -> int:
+        """log_level 타입·허용 값 검증 SSOT (__new__에서만 호출)."""
+        if not isinstance(log_level, int):
+            raise exc_type(
+                f"[CONFIG][SUBSYSTEM] SubsystemHealthState.{label!r} requires "
+                f"log_level to be int, got {type(log_level).__name__}."
+            )
+        if log_level not in _SUBSYSTEM_HEALTH_KNOWN_LOG_LEVELS:
+            raise exc_type(
+                f"[CONFIG][SUBSYSTEM] SubsystemHealthState.{label!r} has invalid "
+                f"log_level={log_level}. Use a standard logging.* constant."
+            )
+        return log_level
 
     def __new__(cls, label: str, log_level: int) -> "SubsystemHealthState":
+        validated_level = cls._ensure_valid_log_level(label, log_level, ValueError)
         obj = str.__new__(cls, label)
         obj._value_ = label
-        obj.log_level = log_level
+        obj._log_level = validated_level
         return obj
+
+    @property
+    def log_level(self) -> int:
+        """이 상태에 대응하는 표준 logging 레벨 (읽기 전용)."""
+        return self._log_level
 
 
 # ─────────────────────────────────────────────────────────────────────────────
