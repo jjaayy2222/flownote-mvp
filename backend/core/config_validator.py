@@ -30,7 +30,7 @@ from __future__ import annotations
 import logging
 import os
 from enum import Enum
-from typing import Callable, ClassVar, Dict, Mapping
+from typing import Callable, ClassVar, Dict, Literal, Mapping
 
 # 프로젝트 공통 유틸 재사용 — 중복 구현 금지
 from backend.config import ConfigRange, _clamp
@@ -52,6 +52,14 @@ class Subsystem(str, Enum):
     PERSONALIZED_INDEX = "personalized_index"
     REALTIME_STREAMING = "realtime_streaming"  # Phase 3: 실시간 스트리밍 서브시스템
     GRAPH_ENGINE = "graph_engine"  # Phase 4: 지식 그래프 엔진 서브시스템
+
+
+class SubsystemHealthState(str, Enum):
+    """서브시스템 상태 식별자 (로깅 및 가시성 목적)."""
+
+    DISABLED = "DISABLED"
+    DEGRADED = "DEGRADED"
+    UNHEALTHY = "UNHEALTHY"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -289,16 +297,34 @@ def _parse_float_clamped(
     return clamped
 
 
-def _log_disabled_subsystems(subsystem_ok: Mapping[Subsystem, bool]) -> None:
-    """비활성화된 서브시스템 운영 가시성 로깅 헬퍼."""
+def _log_subsystem_state(
+    subsystem_ok: Mapping[Subsystem, bool],
+    *,
+    state_label: SubsystemHealthState = SubsystemHealthState.DISABLED,
+) -> None:
+    """서브시스템 상태(비활성/저하/비정상) 운영 가시성 로깅 헬퍼.
+
+    Args:
+        subsystem_ok: 서브시스템별 상태 플래그 (True: 정상, False: 비정상/비활성/저하).
+        state_label: 서브시스템 상태 레이블. 각 설정 클래스의 도메인 의미(비활성/저하 등)에 맞게 호출부에서 지정.
+    """
     for sub, ok in subsystem_ok.items():
         if not ok:
             # sub는 Subsystem 타입임이 보장되므로, 명시적으로 .value를 호출하여 str로 변환
             sub_name: str = sub.value
-            logger.error(
-                "[CONFIG][SUBSYSTEM DISABLED] '%s' subsystem is DISABLED due to "
-                "invalid configuration. Register via HealthRegistry for /health exposure.",
+            
+            # 상태에 따른 동적 로그 레벨 할당
+            # DEGRADED, UNHEALTHY는 서비스가 유지되므로 WARNING, 
+            # DISABLED는 일부 기능이 정지되므로 ERROR 레벨 할당
+            log_level = logging.WARNING if state_label in (SubsystemHealthState.DEGRADED, SubsystemHealthState.UNHEALTHY) else logging.ERROR
+            
+            logger.log(
+                log_level,
+                "[CONFIG][SUBSYSTEM %s] '%s' subsystem is %s due to invalid "
+                "configuration. Register via HealthRegistry for /health exposure.",
+                state_label.value,
                 sub_name,
+                state_label.value,
             )
 
 
@@ -457,8 +483,8 @@ class PersonalizedRAGConfig:
             range_=cls._AWS_WORKERS_RANGE,
         )
 
-        # ── 4. 비활성화된 서브시스템 운영 가시성 로깅 ────────────────────
-        _log_disabled_subsystems(subsystem_ok)
+        # ── 4. 서브시스템 상태(비활성/저하/비정상) 운영 가시성 로깅 ──────────
+        _log_subsystem_state(subsystem_ok)
 
         return cls(
             storage_base_path=storage_base_path,
@@ -596,8 +622,8 @@ class RealtimeStreamingConfig:
             ok_ka and ok_buf and ok_to and ok_ver
         )
 
-        # ── 비활성화된 서브시스템 운영 가시성 로깅 (경계에서 .value 변환) ──
-        _log_disabled_subsystems(subsystem_ok)
+        # ── 서브시스템 상태(비활성/저하/비정상) 운영 가시성 로깅 (경계에서 .value 변환) ──
+        _log_subsystem_state(subsystem_ok, state_label=SubsystemHealthState.DEGRADED)
 
         return cls(
             keepalive_interval_secs=keepalive,
@@ -733,8 +759,8 @@ class GraphEngineConfig:
             ok_depth and ok_nodes and ok_mn and ok_mc
         )
 
-        # ── 비활성화된 서브시스템 운영 가시성 로깅 ───────────────────────
-        _log_disabled_subsystems(subsystem_ok)
+        # ── 서브시스템 상태(비활성/저하/비정상) 운영 가시성 로깅 ───────────────────────
+        _log_subsystem_state(subsystem_ok, state_label=SubsystemHealthState.DEGRADED)
 
         return cls(
             max_traversal_depth=max_depth,
