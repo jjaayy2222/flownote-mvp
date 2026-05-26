@@ -61,11 +61,37 @@ class SubsystemHealthState(str, Enum):
     DEGRADED = "DEGRADED"
 
 
-# OCP(Open-Closed Principle) 준수를 위한 상태별 로그 레벨 매핑
+# OCP(Open-Closed Principle): 상태별 로그 레벨 SSOT — Enum 멤버 추가 시 매핑 필수
 _LEVEL_BY_STATE: Dict[SubsystemHealthState, int] = {
     SubsystemHealthState.DISABLED: logging.ERROR,
     SubsystemHealthState.DEGRADED: logging.WARNING,
 }
+
+
+def _resolve_subsystem_log_level(state_label: SubsystemHealthState) -> int:
+    """
+    SubsystemHealthState에 대응하는 로그 레벨을 반환한다.
+
+    매핑 누락 시 조용히 ERROR로 폴백하지 않고 즉시 실패(Fail-fast)하여,
+    경미한 신규 상태가 과도한 심각도로 로깅되는 운영 사고를 방지한다.
+    """
+    try:
+        return _LEVEL_BY_STATE[state_label]
+    except KeyError as exc:
+        mapped = ", ".join(s.value for s in _LEVEL_BY_STATE)
+        raise RuntimeError(
+            f"[CONFIG][SUBSYSTEM] No log level mapping for state {state_label.value!r}. "
+            f"Add an entry to _LEVEL_BY_STATE. Currently mapped: {mapped}"
+        ) from exc
+
+
+for _state in SubsystemHealthState:
+    if _state not in _LEVEL_BY_STATE:
+        raise RuntimeError(
+            f"[CONFIG][SUBSYSTEM][INVARIANT ERROR] SubsystemHealthState."
+            f"{_state.name} is not mapped in _LEVEL_BY_STATE. "
+            "Every enum member must have an explicit log level."
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -308,19 +334,22 @@ def _log_subsystem_state(
     *,
     state_label: SubsystemHealthState = SubsystemHealthState.DISABLED,
 ) -> None:
-    """서브시스템 상태(비활성/저하) 운영 가시성 로깅 헬퍼.
+    """서브시스템 비정상 상태(DISABLED·DEGRADED) 운영 가시성 로깅 헬퍼.
+
+    지원 상태 (2종, SubsystemHealthState SSOT):
+      - DISABLED: 파싱 실패 등으로 서브시스템 비활성 → ERROR
+      - DEGRADED: Clamping 후 부분 격하 → WARNING
 
     Args:
-        subsystem_ok: 서브시스템별 상태 플래그 (True: 정상, False: 비정상/비활성/저하).
-        state_label: 서브시스템 상태 레이블. 각 설정 클래스의 도메인 의미(비활성/저하 등)에 맞게 호출부에서 지정.
+        subsystem_ok: 서브시스템별 상태 플래그 (True: 정상, False: state_label 해당).
+        state_label: 비정상 서브시스템에 부여할 상태 레이블 (호출부에서 DISABLED 또는 DEGRADED).
     """
+    log_level = _resolve_subsystem_log_level(state_label)
+
     for sub, ok in subsystem_ok.items():
         if not ok:
             # sub는 Subsystem 타입임이 보장되므로, 명시적으로 .value를 호출하여 str로 변환
             sub_name: str = sub.value
-            
-            # 상태에 따른 동적 로그 레벨 할당 (매핑 테이블 참조)
-            log_level = _LEVEL_BY_STATE.get(state_label, logging.ERROR)
             
             logger.log(
                 log_level,
@@ -487,7 +516,7 @@ class PersonalizedRAGConfig:
             range_=cls._AWS_WORKERS_RANGE,
         )
 
-        # ── 4. 서브시스템 상태(비활성/저하/비정상) 운영 가시성 로깅 ──────────
+        # ── 4. 서브시스템 상태(DISABLED) 운영 가시성 로깅 ──────────
         _log_subsystem_state(subsystem_ok)
 
         return cls(
@@ -626,7 +655,7 @@ class RealtimeStreamingConfig:
             ok_ka and ok_buf and ok_to and ok_ver
         )
 
-        # ── 서브시스템 상태(비활성/저하/비정상) 운영 가시성 로깅 (경계에서 .value 변환) ──
+        # ── 서브시스템 상태(DEGRADED) 운영 가시성 로깅 ──
         _log_subsystem_state(subsystem_ok, state_label=SubsystemHealthState.DEGRADED)
 
         return cls(
@@ -763,7 +792,7 @@ class GraphEngineConfig:
             ok_depth and ok_nodes and ok_mn and ok_mc
         )
 
-        # ── 서브시스템 상태(비활성/저하/비정상) 운영 가시성 로깅 ───────────────────────
+        # ── 서브시스템 상태(DEGRADED) 운영 가시성 로깅 ───────────────────────
         _log_subsystem_state(subsystem_ok, state_label=SubsystemHealthState.DEGRADED)
 
         return cls(
