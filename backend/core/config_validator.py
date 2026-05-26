@@ -51,6 +51,7 @@ class Subsystem(str, Enum):
     HYBRID_SEARCH = "hybrid_search"
     PERSONALIZED_INDEX = "personalized_index"
     REALTIME_STREAMING = "realtime_streaming"  # Phase 3: 실시간 스트리밍 서브시스템
+    GRAPH_ENGINE = "graph_engine"  # Phase 4: 지식 그래프 엔진 서브시스템
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -92,14 +93,14 @@ def _parse_int_critical(env_key: str, *, min_val: int | None = None) -> int:
 
     try:
         value = int(raw)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as exc:
         logger.critical(
             "[CONFIG][GLOBAL HARD FAILURE] '%s' must be an integer, got type=%s. "
             "Application startup aborted.",
             env_key,
             type(raw).__name__,
         )
-        raise SystemExit(1)
+        raise SystemExit(1) from exc
 
     if min_val is not None and value < min_val:
         logger.critical(
@@ -321,7 +322,7 @@ class PersonalizedRAGConfig:
     _FAISS_RATIO_RANGE: ClassVar[ConfigRange] = ConfigRange(min=0.0, max=1.0)
     _FAISS_THRESHOLD_RANGE: ClassVar[ConfigRange] = ConfigRange(min=100, max=100_000)
     _AWS_WORKERS_RANGE: ClassVar[ConfigRange] = ConfigRange(min=10, max=100)
-    
+
     _DEFAULT_WEIGHT_SUM_TOLERANCE: ClassVar[float] = 0.01
     _WEIGHT_SUM_TOLERANCE_RANGE: ClassVar[ConfigRange] = ConfigRange(min=0.0, max=1.0)
 
@@ -363,9 +364,7 @@ class PersonalizedRAGConfig:
         """
         # ── 1. Critical 설정 (Global Hard Failure) ────────────────────────
         storage_base_path = _parse_str_critical("STORAGE_BASE_PATH")
-        pbkdf2_iterations = _parse_int_critical(
-            "PBKDF2_ITERATIONS", min_val=600_000
-        )
+        pbkdf2_iterations = _parse_int_critical("PBKDF2_ITERATIONS", min_val=600_000)
 
         # ── 2. 서브시스템 설정 (Subsystem Hard Failure) ───────────────────
         # subsystem_ok 키는 항상 str (Subsystem.value) 로 통일 — HealthRegistry 경계와 일치
@@ -607,3 +606,146 @@ class RealtimeStreamingConfig:
             subsystem_ok=subsystem_ok,
         )
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 4 지식 그래프 설정 검증 클래스
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class GraphValidator:
+    """
+    v9.0 Phase 4 Knowledge Graph 전용 검증 설정 클래스.
+
+    사용법:
+        cfg = GraphValidator.from_env()  # bootstrap 단계에서 1회 호출
+
+    책임 (4-5 SSOT 정책 준수):
+        - backend.core.config.graph 모듈에서 정의된 상수(ENV 키·기본값·범위)를
+          참조하여 OS 환경 변수를 로드한다. (하드코딩 절대 금지)
+        - 정수 범위 이탈 시 경계값으로 Clamping 보정 + WARNING 구조화 로그 출력.
+        - GRAPH_DB_URL 미설정·빈 값 시 networkx 인메모리 폴백 (INFO 로그, 오류 아님).
+        - 정수 파싱 자체가 불가한 경우(비정수 값) GRAPH_ENGINE 서브시스템만
+          DEGRADED 처리 (Subsystem Fail-fast). 전체 서버 부팅은 유지.
+
+    검증 대상 환경 변수 (모두 GraphConfig SSOT 상수로 참조):
+        GRAPH_MAX_TRAVERSAL_DEPTH             (int, 기본: 3,     범위: 1~5)
+        NEXT_PUBLIC_MAX_GRAPH_NODES           (int, 기본: 500,   범위: 50~2000)
+        GRAPH_DB_URL                          (str, 기본: "",    빈 값 시 networkx Fallback)
+        GRAPH_MIGRATION_NODE_THRESHOLD        (int, 기본: 10000, 범위: 5000~50000)
+        GRAPH_MIGRATION_CONCURRENCY_THRESHOLD (int, 기본: 10,    범위: 5~100)
+
+    보안 원칙:
+        DB 연결 문자열(GRAPH_DB_URL) 값 자체는 절대 로그에 기록하지 않는다.
+    """
+
+    def __init__(
+        self,
+        *,
+        max_traversal_depth: int,
+        max_graph_nodes: int,
+        db_url: str,
+        migration_node_threshold: int,
+        migration_concurrency_threshold: int,
+        subsystem_ok: Dict[str, bool],
+    ) -> None:
+        self.max_traversal_depth = max_traversal_depth
+        self.max_graph_nodes = max_graph_nodes
+        # 보안: DB URL은 인스턴스 변수로만 보관, 절대 로그 출력 금지
+        self.db_url = db_url
+        self.migration_node_threshold = migration_node_threshold
+        self.migration_concurrency_threshold = migration_concurrency_threshold
+        # 서브시스템 가동 여부 맵 (True=활성, False=DEGRADED)
+        self.subsystem_ok: Dict[str, bool] = subsystem_ok
+
+    @classmethod
+    def from_env(cls) -> "GraphValidator":
+        """
+        환경 변수에서 그래프 설정을 파싱하여 GraphValidator 인스턴스를 반환한다.
+
+        - 정수 파싱 실패(비정수 값): GRAPH_ENGINE 서브시스템 DEGRADED — Subsystem Hard Failure.
+        - 정수 범위 이탈: Clamping 보정 + WARNING 로그 — Graceful Fallback.
+        - GRAPH_DB_URL 미설정·빈 값: networkx 인메모리 폴백 — INFO 로그 (오류 아님).
+        - 전체 서버 부팅은 어떠한 경우에도 중단하지 않는다.
+        """
+        # SSOT: 모든 상수를 graph.py에서 import — 하드코딩 금지
+        from backend.core.config.graph import (
+            DEFAULT_MAX_TRAVERSAL_DEPTH,
+            DEFAULT_MAX_GRAPH_NODES,
+            DEFAULT_DB_URL,
+            DEFAULT_MIGRATION_NODE_THRESHOLD,
+            DEFAULT_MIGRATION_CONCURRENCY_THRESHOLD,
+            ENV_DB_URL,
+            ENV_MAX_GRAPH_NODES,
+            ENV_MAX_TRAVERSAL_DEPTH,
+            ENV_MIGRATION_CONCURRENCY_THRESHOLD,
+            ENV_MIGRATION_NODE_THRESHOLD,
+            MAX_GRAPH_NODES_RANGE,
+            MAX_TRAVERSAL_DEPTH_RANGE,
+            MIGRATION_CONCURRENCY_THRESHOLD_RANGE,
+            MIGRATION_NODE_THRESHOLD_RANGE,
+        )
+
+        # subsystem_ok 키는 항상 str (Subsystem.value) — HealthRegistry 경계와 일치
+        subsystem_ok: Dict[str, bool] = {}
+
+        # ── 정수 설정: Clamp + WARNING (범위 이탈) / DEGRADED (파싱 불가) ─────
+        max_depth, ok_depth = _parse_int_subsystem(
+            ENV_MAX_TRAVERSAL_DEPTH,
+            default=DEFAULT_MAX_TRAVERSAL_DEPTH,
+            range_=MAX_TRAVERSAL_DEPTH_RANGE,
+            subsystem=Subsystem.GRAPH_ENGINE,
+        )
+        max_nodes, ok_nodes = _parse_int_subsystem(
+            ENV_MAX_GRAPH_NODES,
+            default=DEFAULT_MAX_GRAPH_NODES,
+            range_=MAX_GRAPH_NODES_RANGE,
+            subsystem=Subsystem.GRAPH_ENGINE,
+        )
+        migration_node, ok_mn = _parse_int_subsystem(
+            ENV_MIGRATION_NODE_THRESHOLD,
+            default=DEFAULT_MIGRATION_NODE_THRESHOLD,
+            range_=MIGRATION_NODE_THRESHOLD_RANGE,
+            subsystem=Subsystem.GRAPH_ENGINE,
+        )
+        migration_concurrency, ok_mc = _parse_int_subsystem(
+            ENV_MIGRATION_CONCURRENCY_THRESHOLD,
+            default=DEFAULT_MIGRATION_CONCURRENCY_THRESHOLD,
+            range_=MIGRATION_CONCURRENCY_THRESHOLD_RANGE,
+            subsystem=Subsystem.GRAPH_ENGINE,
+        )
+
+        # ── GRAPH_DB_URL: 빈 값 = networkx 폴백 (오류 아님) ───────────────
+        # 보안 원칙: DB URL 값 자체는 절대 로그에 기록하지 않음
+        raw_db_url = os.environ.get(ENV_DB_URL, DEFAULT_DB_URL).strip()
+        if not raw_db_url:
+            logger.info(
+                "[CONFIG][GRAPH] '%s' is not set or empty; "
+                "using networkx in-memory fallback (no external graph DB).",
+                ENV_DB_URL,
+            )
+        db_url = raw_db_url
+
+        # ── 서브시스템 건강 판정: 하나라도 파싱 실패 시 DEGRADED ──────────
+        # GRAPH_DB_URL 파싱 실패는 서브시스템 비활성화 조건에 포함하지 않음
+        # (빈 값은 유효한 상태이므로)
+        subsystem_ok[Subsystem.GRAPH_ENGINE.value] = (
+            ok_depth and ok_nodes and ok_mn and ok_mc
+        )
+
+        # ── 비활성화된 서브시스템 운영 가시성 로깅 ───────────────────────
+        for sub, ok in subsystem_ok.items():
+            if not ok:
+                logger.error(
+                    "[CONFIG][SUBSYSTEM DISABLED] '%s' subsystem is DISABLED due to "
+                    "invalid configuration. Register via HealthRegistry for /health exposure.",
+                    sub,
+                )
+
+        return cls(
+            max_traversal_depth=max_depth,
+            max_graph_nodes=max_nodes,
+            db_url=db_url,
+            migration_node_threshold=migration_node,
+            migration_concurrency_threshold=migration_concurrency,
+            subsystem_ok=subsystem_ok,
+        )
