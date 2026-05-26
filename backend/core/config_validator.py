@@ -55,43 +55,23 @@ class Subsystem(str, Enum):
 
 
 class SubsystemHealthState(str, Enum):
-    """서브시스템 상태 식별자 (로깅 및 가시성 목적)."""
+    """서브시스템 상태 식별자 및 로그 레벨 SSOT (로깅·가시성).
 
-    DISABLED = "DISABLED"
-    DEGRADED = "DEGRADED"
-
-
-# OCP(Open-Closed Principle): 상태별 로그 레벨 SSOT — Enum 멤버 추가 시 매핑 필수
-_LEVEL_BY_STATE: Dict[SubsystemHealthState, int] = {
-    SubsystemHealthState.DISABLED: logging.ERROR,
-    SubsystemHealthState.DEGRADED: logging.WARNING,
-}
-
-
-def _resolve_subsystem_log_level(state_label: SubsystemHealthState) -> int:
+    각 멤버는 (label, log_level)을 함께 정의한다.
+    신규 상태 추가 시 __new__에 log_level을 반드시 지정해야 하며,
+    별도 전역 매핑 dict 없이 enum 정의만으로 Fail-fast·OCP를 만족한다.
     """
-    SubsystemHealthState에 대응하는 로그 레벨을 반환한다.
 
-    매핑 누락 시 조용히 ERROR로 폴백하지 않고 즉시 실패(Fail-fast)하여,
-    경미한 신규 상태가 과도한 심각도로 로깅되는 운영 사고를 방지한다.
-    """
-    try:
-        return _LEVEL_BY_STATE[state_label]
-    except KeyError as exc:
-        mapped = ", ".join(s.value for s in _LEVEL_BY_STATE)
-        raise RuntimeError(
-            f"[CONFIG][SUBSYSTEM] No log level mapping for state {state_label.value!r}. "
-            f"Add an entry to _LEVEL_BY_STATE. Currently mapped: {mapped}"
-        ) from exc
+    DISABLED = ("DISABLED", logging.ERROR)
+    DEGRADED = ("DEGRADED", logging.WARNING)
 
+    log_level: int
 
-for _state in SubsystemHealthState:
-    if _state not in _LEVEL_BY_STATE:
-        raise RuntimeError(
-            f"[CONFIG][SUBSYSTEM][INVARIANT ERROR] SubsystemHealthState."
-            f"{_state.name} is not mapped in _LEVEL_BY_STATE. "
-            "Every enum member must have an explicit log level."
-        )
+    def __new__(cls, label: str, log_level: int) -> "SubsystemHealthState":
+        obj = str.__new__(cls, label)
+        obj._value_ = label
+        obj.log_level = log_level
+        return obj
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -344,7 +324,7 @@ def _log_subsystem_state(
         subsystem_ok: 서브시스템별 상태 플래그 (True: 정상, False: state_label 해당).
         state_label: 비정상 서브시스템에 부여할 상태 레이블 (호출부에서 DISABLED 또는 DEGRADED).
     """
-    log_level = _resolve_subsystem_log_level(state_label)
+    log_level = state_label.log_level
 
     for sub, ok in subsystem_ok.items():
         if not ok:
