@@ -378,7 +378,11 @@ class HealthRegistry:
 
     # ── 개별/전체 상태 판정 (SSOT 연동용) ────────────────────────────────
 
-    def is_ok(self, subsystem: str | Enum) -> bool:
+    def is_ok(
+        self,
+        subsystem: str | Enum,
+        precomputed_summary: Optional[Dict[str, str]] = None,
+    ) -> bool:
         """
         특정 서브시스템의 상태가 정상(HEALTHY)인지 단일 진실 공급원(SSOT)을 통해 확인한다.
         
@@ -388,14 +392,16 @@ class HealthRegistry:
 
         Args:
             subsystem: 확인할 서브시스템 식별자 (문자열 또는 Enum)
+            precomputed_summary: (선택) 최적화를 위한 사전 조회된 상태 요약 딕셔너리.
+                                 루프 내 등에서 반복 호출 시 Redis I/O를 최소화하기 위해 사용.
         """
         if isinstance(subsystem, Enum):
-            key = subsystem.value
+            # Enum의 값이 문자열이 아닐 경우(예: 정수형 Enum)를 대비하여 명시적으로 문자열 변환
+            key = str(subsystem.value)
         else:
-            # subsystem은 이미 str 또는 str로 취급 가능한 타입
-            key = subsystem
+            key = str(subsystem)
             
-        summary = self.get_summary()
+        summary = precomputed_summary if precomputed_summary is not None else self.get_summary()
         status = summary.get(key)
         
         return status is None or status == SubsystemStatus.HEALTHY.value
