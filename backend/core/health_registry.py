@@ -382,18 +382,20 @@ class HealthRegistry:
         self,
         subsystem: str | Enum,
         precomputed_summary: Optional[Dict[str, str]] = None,
+        strict: bool = False,
     ) -> bool:
         """
         특정 서브시스템의 상태가 정상(HEALTHY)인지 단일 진실 공급원(SSOT)을 통해 확인한다.
         
         - 라우터 및 애플리케이션 계층에서 서브시스템 가동 여부 판별에 사용 (Fail-fast 연결).
-        - 상태가 아직 보고되지 않은(None) 서브시스템은 기본적으로 정상(HEALTHY)으로 간주한다.
         - 명시적인 DEGRADED 또는 FAILED 상태일 경우 False를 반환한다.
 
         Args:
             subsystem: 확인할 서브시스템 식별자 (문자열 또는 Enum)
             precomputed_summary: (선택) 최적화를 위한 사전 조회된 상태 요약 딕셔너리.
                                  루프 내 등에서 반복 호출 시 Redis I/O를 최소화하기 위해 사용.
+            strict: (선택) True일 경우, 한 번도 보고되지 않은(None) 서브시스템은 비정상(False)으로 간주한다.
+                    오타나 설정 누락으로 인한 Wiring 실수를 방지할 때 유용하다. (기본값: False)
         """
         if isinstance(subsystem, Enum):
             # Enum의 값이 문자열이 아닐 경우(예: 정수형 Enum)를 대비하여 명시적으로 문자열 변환
@@ -404,7 +406,10 @@ class HealthRegistry:
         summary = precomputed_summary if precomputed_summary is not None else self.get_summary()
         status = summary.get(key)
         
-        return status is None or status == SubsystemStatus.HEALTHY.value
+        if status is None:
+            return not strict
+            
+        return status == SubsystemStatus.HEALTHY.value
 
     def is_healthy(self) -> bool:
         """
