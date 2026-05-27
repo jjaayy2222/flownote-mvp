@@ -376,7 +376,29 @@ class HealthRegistry:
         remaining = self._redis_fallback_ttl_secs - elapsed
         return max(0.0, remaining)
 
-    # ── 전체 상태 판정 (/health 응답용) ──────────────────────────────────
+    # ── 개별/전체 상태 판정 (SSOT 연동용) ────────────────────────────────
+
+    def is_ok(self, subsystem: str | Enum) -> bool:
+        """
+        특정 서브시스템의 상태가 정상(HEALTHY)인지 단일 진실 공급원(SSOT)을 통해 확인한다.
+        
+        - 라우터 및 애플리케이션 계층에서 서브시스템 가동 여부 판별에 사용 (Fail-fast 연결).
+        - 상태가 아직 보고되지 않은(None) 서브시스템은 기본적으로 정상(HEALTHY)으로 간주한다.
+        - 명시적인 DEGRADED 또는 FAILED 상태일 경우 False를 반환한다.
+
+        Args:
+            subsystem: 확인할 서브시스템 식별자 (문자열 또는 Enum)
+        """
+        if isinstance(subsystem, Enum):
+            key = subsystem.value
+        else:
+            # subsystem은 이미 str 또는 str로 취급 가능한 타입
+            key = subsystem
+            
+        summary = self.get_summary()
+        status = summary.get(key)
+        
+        return status is None or status == SubsystemStatus.HEALTHY.value
 
     def is_healthy(self) -> bool:
         """
