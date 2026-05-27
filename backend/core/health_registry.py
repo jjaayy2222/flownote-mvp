@@ -382,6 +382,7 @@ class HealthRegistry:
         self,
         subsystem: str | Enum,
         precomputed_summary: Optional[Dict[str, str]] = None,
+        *,
         strict: bool = False,
     ) -> bool:
         """
