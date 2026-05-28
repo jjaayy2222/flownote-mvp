@@ -404,8 +404,10 @@ class HealthRegistry:
         elif isinstance(subsystem, str):
             key = subsystem
         else:
-            # 런타임 방어적 코딩: 타입 힌트와 다른 타입이 예기치 않게 들어온 경우 문자열로 안전하게 강제 변환
-            key = str(subsystem)
+            raise TypeError(
+                f"[HEALTH_REGISTRY] Unsupported subsystem type: {type(subsystem).__name__}. "
+                "subsystem must be a string or Enum."
+            )
             
         summary = precomputed_summary if precomputed_summary is not None else self.get_summary()
         status = summary.get(key)
