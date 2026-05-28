@@ -402,15 +402,12 @@ class HealthRegistry:
             # Enum의 값이 문자열이 아닐 경우(예: 정수형 Enum)를 대비하여 명시적으로 문자열 변환
             key = str(subsystem.value)
         else:
-            key = str(subsystem)
+            key = subsystem
             
         summary = precomputed_summary if precomputed_summary is not None else self.get_summary()
         status = summary.get(key)
         
-        if status is None:
-            return not strict
-            
-        return status == SubsystemStatus.HEALTHY.value
+        return not strict if status is None else status == SubsystemStatus.HEALTHY.value
 
     def is_healthy(self) -> bool:
         """
