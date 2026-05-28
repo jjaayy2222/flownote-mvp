@@ -401,12 +401,18 @@ class HealthRegistry:
         if isinstance(subsystem, Enum):
             # Enum의 값이 문자열이 아닐 경우(예: 정수형 Enum)를 대비하여 명시적으로 문자열 변환
             key = str(subsystem.value)
+        elif isinstance(subsystem, str):
+            key = subsystem
         else:
-            key = str(subsystem)
+            raise TypeError(
+                f"[HEALTH_REGISTRY] Unsupported subsystem type: {type(subsystem).__name__}. "
+                "subsystem must be a string or Enum."
+            )
             
         summary = precomputed_summary if precomputed_summary is not None else self.get_summary()
         status = summary.get(key)
         
+        # sourcery skip: assign-if-exp
         if status is None:
             return not strict
             
