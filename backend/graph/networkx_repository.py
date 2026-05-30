@@ -141,9 +141,10 @@ class NetworkXGraphRepository(AbstractGraphRepository):
 
     def has_node(self, hashed_user_id: str, node_id: str) -> bool:
         """노드 존재 여부를 반환한다."""
-        with self._meta_lock:
+        lock = self._get_user_lock(hashed_user_id)
+        with lock:
             g = self._graphs.get(hashed_user_id)
-        return False if g is None else g.has_node(node_id)
+            return False if g is None else g.has_node(node_id)
 
     def get_node_attrs(
         self,
@@ -151,10 +152,11 @@ class NetworkXGraphRepository(AbstractGraphRepository):
         node_id: str,
     ) -> dict[str, Any] | None:
         """노드 속성 딕셔너리를 반환한다. 노드가 없으면 None."""
-        with self._meta_lock:
+        lock = self._get_user_lock(hashed_user_id)
+        with lock:
             g = self._graphs.get(hashed_user_id)
-        # 방어적 복사 — 내부 상태 외부 변경 방지
-        return None if g is None or not g.has_node(node_id) else dict(g.nodes[node_id])
+            # 방어적 복사 — 내부 상태 외부 변경 방지
+            return None if g is None or not g.has_node(node_id) else dict(g.nodes[node_id])
 
     # ─────────────────────────────────────────────────────────────────────
     # 엣지 뮤테이션
@@ -209,9 +211,22 @@ class NetworkXGraphRepository(AbstractGraphRepository):
         target_id: str,
     ) -> bool:
         """엣지 존재 여부를 반환한다."""
-        with self._meta_lock:
+        lock = self._get_user_lock(hashed_user_id)
+        with lock:
             g = self._graphs.get(hashed_user_id)
-        return False if g is None else g.has_edge(source_id, target_id)
+            return False if g is None else g.has_edge(source_id, target_id)
+
+    def get_edge_attrs(
+        self,
+        hashed_user_id: str,
+        source_id: str,
+        target_id: str,
+    ) -> dict[str, Any] | None:
+        """엣지 속성 딕셔너리를 반환한다. 엣지가 없으면 None."""
+        lock = self._get_user_lock(hashed_user_id)
+        with lock:
+            g = self._graphs.get(hashed_user_id)
+            return None if g is None or not g.has_edge(source_id, target_id) else dict(g.edges[source_id, target_id])
 
     # ─────────────────────────────────────────────────────────────────────
     # 탐색 (Traversal)
@@ -234,29 +249,30 @@ class NetworkXGraphRepository(AbstractGraphRepository):
         Returns:
             BFS 탐색 순서의 이웃 노드 ID 목록 (중복 없음)
         """
-        with self._meta_lock:
+        lock = self._get_user_lock(hashed_user_id)
+        with lock:
             g = self._graphs.get(hashed_user_id)
 
-        if g is None or not g.has_node(node_id):
-            return []
+            if g is None or not g.has_node(node_id):
+                return []
 
-        visited: set[str] = {node_id}
-        result: list[str] = []
-        frontier: list[str] = [node_id]
+            visited: set[str] = {node_id}
+            result: list[str] = []
+            frontier: list[str] = [node_id]
 
-        for _ in range(max_depth):
-            next_frontier: list[str] = []
-            for current in frontier:
-                for neighbor in g.successors(current):
-                    if neighbor not in visited:
-                        visited.add(neighbor)
-                        result.append(neighbor)
-                        next_frontier.append(neighbor)
-            if not next_frontier:
-                break
-            frontier = next_frontier
+            for _ in range(max_depth):
+                next_frontier: list[str] = []
+                for current in frontier:
+                    for neighbor in g.successors(current):
+                        if neighbor not in visited:
+                            visited.add(neighbor)
+                            result.append(neighbor)
+                            next_frontier.append(neighbor)
+                if not next_frontier:
+                    break
+                frontier = next_frontier
 
-        return result
+            return result
 
     # ─────────────────────────────────────────────────────────────────────
     # 통계
@@ -268,20 +284,23 @@ class NetworkXGraphRepository(AbstractGraphRepository):
 
         neo4j 마이그레이션 트리거(GRAPH_MIGRATION_NODE_THRESHOLD) 판단 근거로 사용.
         """
-        with self._meta_lock:
+        lock = self._get_user_lock(hashed_user_id)
+        with lock:
             g = self._graphs.get(hashed_user_id)
-        return g.number_of_nodes() if g is not None else 0
+            return g.number_of_nodes() if g is not None else 0
 
     def iter_nodes(
         self, hashed_user_id: str
     ) -> Iterator[tuple[str, dict[str, Any]]]:
         """모든 노드를 (node_id, attrs) 튜플로 순회한다."""
-        with self._meta_lock:
+        lock = self._get_user_lock(hashed_user_id)
+        with lock:
             g = self._graphs.get(hashed_user_id)
-        if g is None:
-            return
-        for node_id, attrs in g.nodes(data=True):
-            yield node_id, dict(attrs)
+            if g is None:
+                return iter([])
+            # 변이 중 순회 오류 방지를 위한 스냅샷 생성
+            snapshot = [(node_id, dict(attrs)) for node_id, attrs in g.nodes(data=True)]
+        return iter(snapshot)
 
     # ─────────────────────────────────────────────────────────────────────
     # 영속성 (Persistence)

@@ -156,6 +156,25 @@ class AbstractGraphRepository(abc.ABC):
             엣지 존재 여부 (bool)
         """
 
+    @abc.abstractmethod
+    def get_edge_attrs(
+        self,
+        hashed_user_id: str,
+        source_id: str,
+        target_id: str,
+    ) -> dict[str, Any] | None:
+        """
+        지정 엣지의 속성 딕셔너리를 반환한다.
+
+        Args:
+            hashed_user_id: 테넌트 식별자
+            source_id     : 출발 노드 식별자
+            target_id     : 도착 노드 식별자
+
+        Returns:
+            속성 딕셔너리, 또는 엣지가 없으면 None
+        """
+
     # ─────────────────────────────────────────────────────────────────────
     # 탐색 (Traversal)
     # ─────────────────────────────────────────────────────────────────────

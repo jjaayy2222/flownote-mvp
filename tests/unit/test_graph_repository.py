@@ -183,9 +183,18 @@ class TestEdgeCRUD:
     ) -> None:
         repo.add_node(_DUMMY_HASH_A, "src")
         repo.add_node(_DUMMY_HASH_A, "tgt")
+
+        # First add with initial attributes
         repo.add_edge(_DUMMY_HASH_A, "src", "tgt", weight=0.5)
+
+        # Second add should be idempotent for existence, but update attributes
         repo.add_edge(_DUMMY_HASH_A, "src", "tgt", weight=0.9)
         assert repo.has_edge(_DUMMY_HASH_A, "src", "tgt") is True
+
+        # Attribute should reflect the most recent call
+        attrs = repo.get_edge_attrs(_DUMMY_HASH_A, "src", "tgt")
+        assert attrs is not None
+        assert attrs["weight"] == 0.9
 
     def test_remove_edge_silent_noop_for_absent(
         self, repo: NetworkXGraphRepository
@@ -319,9 +328,19 @@ class TestPersistence:
         repo2 = NetworkXGraphRepository(storage_base_path=storage_path)
         repo2.load(_DUMMY_HASH_A)
 
+        # 구조 복원 확인
         assert repo2.has_node(_DUMMY_HASH_A, "n1")
         assert repo2.has_node(_DUMMY_HASH_A, "n2")
         assert repo2.has_edge(_DUMMY_HASH_A, "n1", "n2")
+
+        # 메타데이터(노드/엣지 속성) 복원 확인
+        node_attrs = repo2.get_node_attrs(_DUMMY_HASH_A, "n1")
+        assert node_attrs is not None
+        assert node_attrs["title"] == "Restored"
+
+        edge_attrs = repo2.get_edge_attrs(_DUMMY_HASH_A, "n1", "n2")
+        assert edge_attrs is not None
+        assert edge_attrs["weight"] == 0.7
 
     def test_load_absent_file_initializes_empty_graph(
         self, repo: NetworkXGraphRepository
