@@ -46,10 +46,8 @@ class NetworkXGraphRepository(AbstractGraphRepository):
         repo.persist(hashed_user_id)       # 파일시스템 영속화
 
     스레드 안전성:
-        뮤테이션(add_node/remove_node/add_edge/remove_edge/persist/load/clear) 호출은
-        사용자별 threading.Lock으로 직렬화된다.
-        읽기 전용 쿼리(has_node/has_edge/neighbors/node_count/iter_nodes)는
-        Lock 없이 호출 가능하지만, 동시 뮤테이션 중에는 일관성이 보장되지 않는다.
+        모든 뮤테이션 및 읽기 쿼리는 사용자별 threading.Lock으로 직렬화되어
+        동시 변이 중 일관성을 보장한다. (사용자 간에는 완전 병렬 처리 가능)
     """
 
     def __init__(self, storage_base_path: str) -> None:
@@ -86,14 +84,23 @@ class NetworkXGraphRepository(AbstractGraphRepository):
         """
         사용자 DiGraph를 반환한다. 없으면 빈 DiGraph를 생성하여 등록한다.
 
-        _meta_lock 없이 호출 가능 (이미 획득된 컨텍스트에서 호출).
+        _graphs 딕셔너리 변경은 _meta_lock으로 보호하여 스레드 안전성을 보장한다.
         """
-        if hashed_user_id not in self._graphs:
-            self._graphs[hashed_user_id] = nx.DiGraph()
-        return self._graphs[hashed_user_id]
+        g = self._graphs.get(hashed_user_id)
+        if g is not None:
+            return g
+        
+        with self._meta_lock:
+            if hashed_user_id not in self._graphs:
+                self._graphs[hashed_user_id] = nx.DiGraph()
+            return self._graphs[hashed_user_id]
 
     def _get_user_lock(self, hashed_user_id: str) -> threading.Lock:
-        """사용자별 Lock을 반환하고, 없으면 생성한다."""
+        """사용자별 Lock을 반환하고, 없으면 생성한다 (Double-checked locking)."""
+        lock = self._locks.get(hashed_user_id)
+        if lock is not None:
+            return lock
+            
         with self._meta_lock:
             if hashed_user_id not in self._locks:
                 self._locks[hashed_user_id] = threading.Lock()
@@ -327,9 +334,10 @@ class NetworkXGraphRepository(AbstractGraphRepository):
             # 디렉토리 보장 — 부모가 없으면 생성
             target_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # 원자적 쓰기: 임시 파일 → rename
-            tmp_suffix = f".graphml.{uuid.uuid4().hex}.tmp"
-            tmp_path = target_path.with_suffix(tmp_suffix)
+            # 원자적 쓰기: 임시 파일 → rename (확장자 로직과 독립적으로 이름 구성)
+            tmp_path = target_path.with_name(
+                f"{target_path.name}.{uuid.uuid4().hex}.tmp"
+            )
 
             try:
                 nx.write_graphml(g, str(tmp_path))
