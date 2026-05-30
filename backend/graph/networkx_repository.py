@@ -28,7 +28,7 @@ from typing import Any, Iterator
 
 import networkx as nx
 
-from backend.graph.base import AbstractGraphRepository
+from backend.graph.base import AbstractGraphRepository, GraphLoadError
 from backend.graph.path_utils import build_graph_path
 
 logger = logging.getLogger(__name__)
