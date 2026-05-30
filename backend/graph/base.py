@@ -21,6 +21,16 @@ import abc
 from typing import Any, Iterator
 
 
+class GraphError(Exception):
+    """그래프 도메인 관련 최상위 예외"""
+    pass
+
+
+class GraphLoadError(GraphError):
+    """그래프 데이터를 스토리지에서 불러오는 중 발생하는 예외"""
+    pass
+
+
 class AbstractGraphRepository(abc.ABC):
     """
     엔진 불가지론적 그래프 Repository 추상 기반 클래스.

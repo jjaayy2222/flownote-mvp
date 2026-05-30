@@ -27,7 +27,7 @@ from typing import Any
 import networkx as nx
 import pytest
 
-from backend.graph.base import AbstractGraphRepository
+from backend.graph.base import GraphLoadError, AbstractGraphRepository
 from backend.graph.networkx_repository import NetworkXGraphRepository
 from backend.graph.path_utils import build_graph_path
 
@@ -334,10 +334,8 @@ class TestPersistence:
         invalid_path.write_text("this is not valid GraphML", encoding="utf-8")
 
         # When the persisted GraphML is corrupted/invalid, load should propagate
-        # the underlying failure rather than silently succeeding.
-        import xml.etree.ElementTree as ET
-        import networkx as nx
-        with pytest.raises((ET.ParseError, nx.NetworkXError)):
+        # the underlying failure wrapped in a GraphLoadError, masking external details.
+        with pytest.raises(GraphLoadError):
             repo.load(_DUMMY_HASH_A)
 
     def test_persist_creates_file(
