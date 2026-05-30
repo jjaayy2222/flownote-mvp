@@ -23,6 +23,7 @@ import logging
 import os
 import threading
 import uuid
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -365,7 +366,16 @@ class NetworkXGraphRepository(AbstractGraphRepository):
         파일 시스템에서 GraphML을 읽어 인메모리 그래프를 복원한다.
 
         파일이 없는 경우: 빈 DiGraph 초기화 후 조용히 반환 (예외 없음).
-        파일이 손상된 경우: 예외를 상위로 전파하여 caller가 DEGRADED 처리를 결정한다.
+        파일이 손상된 경우: networkx/XML 파싱 예외를 GraphLoadError로 감싸
+            호출자가 스토리지 레이어의 구체적 예외에 노출되지 않도록 한다.
+            원본 예외는 __cause__ (from exc 체이닝)에 보존되어 디버깅 정보가 유지된다.
+            프로그래밍 버그(TypeError 등 파싱 무관 예외)는 의도적으로 통과시켜
+            근본 원인 파악을 방해하지 않는다.
+
+        Raises:
+            GraphLoadError: GraphML 파싱 실패 시 — 잘못된 XML 구문
+                (xml.etree.ElementTree.ParseError) 또는 GraphML 스키마 오류
+                (networkx.NetworkXError) 모두 포함.
         """
         lock = self._get_user_lock(hashed_user_id)
         with lock:
@@ -381,7 +391,21 @@ class NetworkXGraphRepository(AbstractGraphRepository):
                 )
                 return
 
-            loaded = nx.read_graphml(str(target_path))
+            try:
+                loaded = nx.read_graphml(str(target_path))
+            except (nx.NetworkXError, ET.ParseError) as exc:
+                # networkx/XML 파싱 관련 예외만 캡슐화한다.
+                # 프로그래밍 버그(TypeError 등)는 의도적으로 통과시켜
+                # GraphLoadError로 오해되지 않도록 한다.
+                # `from exc` 체이닝으로 원본 예외는 __cause__에 보존된다.
+                logger.exception(
+                    "[GRAPH][NX] Failed to load graph from file system (file=%s).",
+                    target_path.name,  # storage 내부 경로 비노출, 파일명만 기록
+                )
+                raise GraphLoadError(
+                    "Graph file could not be loaded from storage."
+                ) from exc
+
             # read_graphml은 Graph를 반환할 수 있으므로 방향성 보장
             if not isinstance(loaded, nx.DiGraph):
                 loaded = nx.DiGraph(loaded)
