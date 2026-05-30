@@ -365,7 +365,12 @@ class NetworkXGraphRepository(AbstractGraphRepository):
         파일 시스템에서 GraphML을 읽어 인메모리 그래프를 복원한다.
 
         파일이 없는 경우: 빈 DiGraph 초기화 후 조용히 반환 (예외 없음).
-        파일이 손상된 경우: 예외를 상위로 전파하여 caller가 DEGRADED 처리를 결정한다.
+        파일이 손상된 경우: networkx/XML 파싱 예외를 GraphLoadError로 감싸
+            호출자가 스토리지 레이어의 구체적 예외에 노출되지 않도록 한다.
+            원본 예외는 __cause__ (from exc 체이닝)에 보존되어 디버깅 정보가 유지된다.
+
+        Raises:
+            GraphLoadError: 파일이 손상되어 GraphML 파싱에 실패한 경우
         """
         lock = self._get_user_lock(hashed_user_id)
         with lock:
@@ -381,7 +386,20 @@ class NetworkXGraphRepository(AbstractGraphRepository):
                 )
                 return
 
-            loaded = nx.read_graphml(str(target_path))
+            try:
+                loaded = nx.read_graphml(str(target_path))
+            except Exception as exc:
+                # networkx / XML 파싱 예외를 도메인 예외로 캡슐화하여
+                # 호출자가 스토리지 레이어의 구체적 예외에 노출되지 않도록 한다.
+                # `from exc` 체이닝으로 원본 예외는 __cause__에 보존된다.
+                logger.exception(
+                    "[GRAPH][NX] Failed to load graph from file system (subdir=%s).",
+                    "graph_data",
+                )
+                raise GraphLoadError(
+                    f"Failed to load graph for user (subdir=graph_data): {exc}"
+                ) from exc
+
             # read_graphml은 Graph를 반환할 수 있으므로 방향성 보장
             if not isinstance(loaded, nx.DiGraph):
                 loaded = nx.DiGraph(loaded)
