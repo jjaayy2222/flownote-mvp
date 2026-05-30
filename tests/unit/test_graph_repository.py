@@ -208,6 +208,27 @@ class TestEdgeCRUD:
         assert repo.has_edge(_DUMMY_HASH_A, "a", "b") is True
         assert repo.has_edge(_DUMMY_HASH_A, "b", "a") is False
 
+    def test_get_edge_attrs_returns_none_for_absent(
+        self, repo: NetworkXGraphRepository
+    ) -> None:
+        assert repo.get_edge_attrs(_DUMMY_HASH_A, "ghost-src", "ghost-tgt") is None
+
+    def test_get_edge_attrs_returns_defensive_copy(
+        self, repo: NetworkXGraphRepository
+    ) -> None:
+        """반환된 dict 변경이 내부 상태에 영향을 주지 않아야 한다."""
+        repo.add_node(_DUMMY_HASH_A, "src")
+        repo.add_node(_DUMMY_HASH_A, "tgt")
+        repo.add_edge(_DUMMY_HASH_A, "src", "tgt", weight=1.0)
+        
+        attrs = repo.get_edge_attrs(_DUMMY_HASH_A, "src", "tgt")
+        assert attrs is not None
+        attrs["weight"] = 2.0
+        
+        attrs_again = repo.get_edge_attrs(_DUMMY_HASH_A, "src", "tgt")
+        assert attrs_again is not None
+        assert attrs_again["weight"] == 1.0
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # BFS 탐색 (neighbors)
@@ -223,9 +244,8 @@ class TestNeighbors:
     def _build_chain(self, repo: NetworkXGraphRepository) -> None:
         """A → B → C → D 체인 그래프."""
         self._add_abcd_nodes(repo)
-        repo.add_edge(_DUMMY_HASH_A, "A", "B")
-        repo.add_edge(_DUMMY_HASH_A, "B", "C")
-        repo.add_edge(_DUMMY_HASH_A, "C", "D")
+        for src, tgt in [("A", "B"), ("B", "C"), ("C", "D")]:
+            repo.add_edge(_DUMMY_HASH_A, src, tgt)
 
     def test_depth_1_returns_direct_successor(
         self, repo: NetworkXGraphRepository
@@ -255,10 +275,8 @@ class TestNeighbors:
     ) -> None:
         """A → B, A → C, B → D, C → D 다이아몬드 — D 중복 없음."""
         self._add_abcd_nodes(repo)
-        repo.add_edge(_DUMMY_HASH_A, "A", "B")
-        repo.add_edge(_DUMMY_HASH_A, "A", "C")
-        repo.add_edge(_DUMMY_HASH_A, "B", "D")
-        repo.add_edge(_DUMMY_HASH_A, "C", "D")
+        for src, tgt in [("A", "B"), ("A", "C"), ("B", "D"), ("C", "D")]:
+            repo.add_edge(_DUMMY_HASH_A, src, tgt)
         result = repo.neighbors(_DUMMY_HASH_A, "A", max_depth=2)
         assert result.count("D") == 1
 
@@ -308,6 +326,18 @@ class TestStatistics:
 
 
 class TestPersistence:
+    def test_load_raises_on_invalid_graphml(
+        self, repo: NetworkXGraphRepository, storage_path: str
+    ) -> None:
+        invalid_path = build_graph_path(_DUMMY_HASH_A, storage_path)
+        invalid_path.parent.mkdir(parents=True, exist_ok=True)
+        invalid_path.write_text("this is not valid GraphML", encoding="utf-8")
+
+        # When the persisted GraphML is corrupted/invalid, load should propagate
+        # the underlying failure rather than silently succeeding.
+        with pytest.raises(Exception):
+            repo.load(_DUMMY_HASH_A)
+
     def test_persist_creates_file(
         self, repo: NetworkXGraphRepository, storage_path: str
     ) -> None:
