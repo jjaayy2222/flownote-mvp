@@ -335,7 +335,9 @@ class TestPersistence:
 
         # When the persisted GraphML is corrupted/invalid, load should propagate
         # the underlying failure rather than silently succeeding.
-        with pytest.raises(Exception):
+        import xml.etree.ElementTree as ET
+        import networkx as nx
+        with pytest.raises((ET.ParseError, nx.NetworkXError)):
             repo.load(_DUMMY_HASH_A)
 
     def test_persist_creates_file(
