@@ -1,7 +1,7 @@
 import re
 import logging
 from typing import List, Tuple, Dict, Any
-from collections import Counter
+from collections import Counter, defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +17,13 @@ class EntityEdgeExtractor:
     # URL 파편화(예: http://example#section) 등에 매치되지 않도록 앞이 공백이거나 문자열의 시작점일 것 강제
     TAG_PATTERN = re.compile(r"(?:^|\s)#([a-zA-Z0-9_\uac00-\ud7a3]+)")
     
-    # LLM 토큰 초과(Context Window Overflow) 방지를 위한 최대 텍스트 길이 제한
-    # 문자 수 기준(약 1000~2000 토큰). LLM의 토큰 제한에 안전하도록 충분한 여유(Safety Margin)를 둡니다.
-    MAX_CONTENT_LENGTH = 4000
+    def __init__(self, max_content_length: int = 4000):
+        """
+        Args:
+            max_content_length: LLM 토큰 초과(Context Window Overflow) 방지를 위한 최대 텍스트 문자 수 제한.
+                                설정값에 따라 주입(Injection) 가능. (기본 4000자는 약 1000~2000 토큰 마진)
+        """
+        self.max_content_length = max_content_length
 
     def extract_explicit_edges(self, source_node_id: str, markdown_content: str) -> List[Tuple[str, str, Dict[str, Any]]]:
         """
@@ -40,7 +44,7 @@ class EntityEdgeExtractor:
         
         # 정규화된 canonical_target 리스트를 먼저 생성하여 동일한 타깃은 올바르게 집계되도록 함
         normalized_targets = []
-        aliases_map = {}
+        aliases_map = defaultdict(list)
         
         for raw_target in wikilink_matches:
             raw_target = raw_target.strip()
@@ -60,19 +64,20 @@ class EntityEdgeExtractor:
                 continue
             
             normalized_targets.append(canonical_target)
-            if alias:
-                # 가장 마지막에 발견된 별칭을 기록
-                aliases_map[canonical_target] = alias
+            if alias and alias not in aliases_map[canonical_target]:
+                # 결정론적이고 손실 없는 별칭 수집 (중복 방지 리스트 추가)
+                aliases_map[canonical_target].append(alias)
                 
         wikilink_counts = Counter(normalized_targets)
         for canonical_target, count in wikilink_counts.items():
-            attrs = {
+            attrs: Dict[str, Any] = {
                 "weight": float(count),
                 "edge_type": "explicit",
                 "relation": "wikilink"
             }
-            if canonical_target in aliases_map:
-                attrs["alias"] = aliases_map[canonical_target]
+            if canonical_target in aliases_map and aliases_map[canonical_target]:
+                # 여러 개의 별칭을 리스트 형태로 보존
+                attrs["aliases"] = aliases_map[canonical_target]
                 
             edges.append((source_node_id, canonical_target, attrs))
                 
@@ -118,12 +123,29 @@ class EntityEdgeExtractor:
             return edges
 
         # 긴 노트로 인한 LLM 토큰 초과 방어적 코딩 (Truncation)
-        if len(content) > self.MAX_CONTENT_LENGTH:
+        original_length = len(content)
+        is_truncated = original_length > self.max_content_length
+
+        if is_truncated:
+            truncated_length = self.max_content_length
             logger.warning(
-                f"[Graph Extraction] Note '{source_node_id}' exceeds MAX_CONTENT_LENGTH "
-                f"({self.MAX_CONTENT_LENGTH} chars). Truncating content for LLM safety."
+                "[Graph Extraction] Note '%s' exceeds max_content_length (%d chars). "
+                "Truncating content for LLM safety (original_length=%d, truncated_length=%d).",
+                source_node_id,
+                self.max_content_length,
+                original_length,
+                truncated_length,
             )
-        truncated_content = content[:self.MAX_CONTENT_LENGTH]
+            truncated_content = content[: self.max_content_length]
+        else:
+            truncated_content = content
+
+        # Downstream consumers(로그 및 트레이싱)를 위해 관측 가능한(Observable) 메타데이터 구성
+        truncation_metadata = {
+            "is_truncated": is_truncated,
+            "original_length": original_length,
+            "used_length": len(truncated_content),
+        }
 
         # LLM 프롬프트 구성 (System / User Message 형태로 확장을 고려)
         prompt_text = (
@@ -135,6 +157,12 @@ class EntityEdgeExtractor:
         try:
             # 의존성으로 주입받은 LLM 클라이언트를 통해 키워드 추출 (비동기 연동)
             from langchain_core.messages import HumanMessage
+            
+            # 구조화된 로깅(Structured Logging)에 메타데이터를 추가하여 디버깅 가시성 극대화
+            logger.info(
+                f"[Graph Extraction] Invoking LLM for implicit edges (Node: {source_node_id})",
+                extra={"truncation_metadata": truncation_metadata}
+            )
             
             response = await llm_client.ainvoke([HumanMessage(content=prompt_text)])
             response_text = str(response.content).strip()
