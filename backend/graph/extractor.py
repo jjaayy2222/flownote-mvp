@@ -1,6 +1,7 @@
 import re
 import logging
 from typing import List, Tuple, Dict, Any
+from collections import Counter
 
 logger = logging.getLogger(__name__)
 
@@ -15,10 +16,14 @@ class EntityEdgeExtractor:
     # 해시태그 정규식 (예: #tag_name)
     # URL 파편화(예: http://example#section) 등에 매치되지 않도록 앞이 공백이거나 문자열의 시작점일 것 강제
     TAG_PATTERN = re.compile(r"(?:^|\s)#([a-zA-Z0-9_\uac00-\ud7a3]+)")
+    
+    # LLM 토큰 초과(Context Window Overflow) 방지를 위한 최대 텍스트 길이 제한
+    MAX_CONTENT_LENGTH = 4000
 
     def extract_explicit_edges(self, source_node_id: str, markdown_content: str) -> List[Tuple[str, str, Dict[str, Any]]]:
         """
         마크다운 본문에서 위키링크와 태그를 파싱하여 명시적 엣지를 생성합니다.
+        중복된 위키링크나 태그는 엣지의 가중치(weight)에 등장 빈도로 반영됩니다.
         
         Args:
             source_node_id: 출발 노드 ID (현재 노트 등)
@@ -29,9 +34,11 @@ class EntityEdgeExtractor:
         """
         edges = []
         
-        # 1. 위키링크 추출
-        wikilinks = set(self.WIKILINK_PATTERN.findall(markdown_content))
-        for raw_target in wikilinks:
+        # 1. 위키링크 추출 (등장 빈도 기반 가중치 부여)
+        wikilink_matches = self.WIKILINK_PATTERN.findall(markdown_content)
+        wikilink_counts = Counter(wikilink_matches)
+        
+        for raw_target, occurrence_count in wikilink_counts.items():
             raw_target = raw_target.strip()
             if not raw_target:
                 continue
@@ -49,7 +56,7 @@ class EntityEdgeExtractor:
                 continue
                 
             attrs = {
-                "weight": 1.0,
+                "weight": float(occurrence_count),
                 "edge_type": "explicit",
                 "relation": "wikilink"
             }
@@ -58,16 +65,25 @@ class EntityEdgeExtractor:
                 
             edges.append((source_node_id, canonical_target, attrs))
                 
-        # 2. 태그 추출
-        tags = set(self.TAG_PATTERN.findall(markdown_content))
-        for tag in tags:
-            if tag := tag.strip():
-                # 태그 노드 식별을 위해 '#' 접두사 유지
-                edges.append((
+        # 2. 태그 추출 (등장 빈도 기반 가중치 부여)
+        if tag_matches := self.TAG_PATTERN.findall(markdown_content):
+            tag_counts = Counter(
+                tag.strip()
+                for tag in tag_matches
+                if tag and tag.strip()
+            )
+            edges.extend(
+                (
                     source_node_id, 
                     f"#{tag}", 
-                    {"weight": 1.0, "edge_type": "explicit", "relation": "tag"}
-                ))
+                    {
+                        "weight": float(count), 
+                        "edge_type": "explicit", 
+                        "relation": "tag"
+                    }
+                )
+                for tag, count in tag_counts.items()
+            )
                 
         return edges
 
@@ -89,11 +105,14 @@ class EntityEdgeExtractor:
         if not content.strip() or not llm_client:
             return edges
 
+        # 긴 노트로 인한 LLM 토큰 초과 방어적 코딩 (Truncation)
+        truncated_content = content[:self.MAX_CONTENT_LENGTH]
+
         # LLM 프롬프트 구성 (System / User Message 형태로 확장을 고려)
         prompt_text = (
             "Analyze the following text and extract up to 3 core related keywords or entities. "
             "Return ONLY a comma-separated list of keywords, without any extra text.\n\n"
-            f"Text: {content}"
+            f"Text: {truncated_content}"
         )
         
         try:
