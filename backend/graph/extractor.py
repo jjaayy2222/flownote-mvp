@@ -2,6 +2,7 @@ import re
 import logging
 from typing import List, Tuple, Dict, Any
 from collections import Counter, defaultdict
+from langchain_core.messages import HumanMessage
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ class EntityEdgeExtractor:
         
         # 정규화된 canonical_target 리스트를 먼저 생성하여 동일한 타깃은 올바르게 집계되도록 함
         normalized_targets = []
-        aliases_map = defaultdict(list)
+        aliases_map: defaultdict[str, List[str]] = defaultdict(list)
         
         for raw_target in wikilink_matches:
             raw_target = raw_target.strip()
@@ -157,13 +158,13 @@ class EntityEdgeExtractor:
         )
         
         try:
-            # 의존성으로 주입받은 LLM 클라이언트를 통해 키워드 추출 (비동기 연동)
-            from langchain_core.messages import HumanMessage
-            
             # 구조화된 로깅(Structured Logging)에 메타데이터를 추가하여 디버깅 가시성 극대화
             logger.info(
-                f"[Graph Extraction] Invoking LLM for implicit edges (Node: {source_node_id})",
-                extra={"truncation_metadata": truncation_metadata}
+                "[Graph Extraction] Invoking LLM for implicit edges",
+                extra={
+                    "node_id": source_node_id,
+                    "truncation_metadata": truncation_metadata
+                }
             )
             
             response = await llm_client.ainvoke([HumanMessage(content=prompt_text)])
