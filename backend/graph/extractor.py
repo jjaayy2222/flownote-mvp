@@ -1,6 +1,7 @@
 import re
 import logging
 from typing import List, Tuple, Dict, Any
+from collections import Counter
 
 logger = logging.getLogger(__name__)
 
@@ -15,10 +16,15 @@ class EntityEdgeExtractor:
     # 해시태그 정규식 (예: #tag_name)
     # URL 파편화(예: http://example#section) 등에 매치되지 않도록 앞이 공백이거나 문자열의 시작점일 것 강제
     TAG_PATTERN = re.compile(r"(?:^|\s)#([a-zA-Z0-9_\uac00-\ud7a3]+)")
+    
+    # LLM 토큰 초과(Context Window Overflow) 방지를 위한 최대 텍스트 길이 제한
+    # 문자 수 기준(약 1000~2000 토큰). LLM의 토큰 제한에 안전하도록 충분한 여유(Safety Margin)를 둡니다.
+    MAX_CONTENT_LENGTH = 4000
 
     def extract_explicit_edges(self, source_node_id: str, markdown_content: str) -> List[Tuple[str, str, Dict[str, Any]]]:
         """
         마크다운 본문에서 위키링크와 태그를 파싱하여 명시적 엣지를 생성합니다.
+        중복된 위키링크나 태그는 정규화(Normalization) 후 엣지의 가중치(weight)에 등장 빈도로 반영됩니다.
         
         Args:
             source_node_id: 출발 노드 ID (현재 노트 등)
@@ -29,9 +35,14 @@ class EntityEdgeExtractor:
         """
         edges = []
         
-        # 1. 위키링크 추출
-        wikilinks = set(self.WIKILINK_PATTERN.findall(markdown_content))
-        for raw_target in wikilinks:
+        # 1. 위키링크 추출 (등장 빈도 기반 가중치 부여)
+        wikilink_matches = self.WIKILINK_PATTERN.findall(markdown_content)
+        
+        # 정규화된 canonical_target 리스트를 먼저 생성하여 동일한 타깃은 올바르게 집계되도록 함
+        normalized_targets = []
+        aliases_map = {}
+        
+        for raw_target in wikilink_matches:
             raw_target = raw_target.strip()
             if not raw_target:
                 continue
@@ -47,27 +58,44 @@ class EntityEdgeExtractor:
                 
             if not canonical_target:
                 continue
+            
+            normalized_targets.append(canonical_target)
+            if alias:
+                # 가장 마지막에 발견된 별칭을 기록
+                aliases_map[canonical_target] = alias
                 
+        wikilink_counts = Counter(normalized_targets)
+        for canonical_target, count in wikilink_counts.items():
             attrs = {
-                "weight": 1.0,
+                "weight": float(count),
                 "edge_type": "explicit",
                 "relation": "wikilink"
             }
-            if alias:
-                attrs["alias"] = alias
+            if canonical_target in aliases_map:
+                attrs["alias"] = aliases_map[canonical_target]
                 
             edges.append((source_node_id, canonical_target, attrs))
                 
-        # 2. 태그 추출
-        tags = set(self.TAG_PATTERN.findall(markdown_content))
-        for tag in tags:
-            if tag := tag.strip():
-                # 태그 노드 식별을 위해 '#' 접두사 유지
-                edges.append((
+        # 2. 태그 추출 (등장 빈도 기반 가중치 부여)
+        # 생성기 표현식에서 이미 tag.strip() 정규화가 선행되어 카운트 됨
+        if tag_matches := self.TAG_PATTERN.findall(markdown_content):
+            tag_counts = Counter(
+                tag.strip()
+                for tag in tag_matches
+                if tag and tag.strip()
+            )
+            edges.extend(
+                (
                     source_node_id, 
                     f"#{tag}", 
-                    {"weight": 1.0, "edge_type": "explicit", "relation": "tag"}
-                ))
+                    {
+                        "weight": float(count), 
+                        "edge_type": "explicit", 
+                        "relation": "tag"
+                    }
+                )
+                for tag, count in tag_counts.items()
+            )
                 
         return edges
 
@@ -89,11 +117,19 @@ class EntityEdgeExtractor:
         if not content.strip() or not llm_client:
             return edges
 
+        # 긴 노트로 인한 LLM 토큰 초과 방어적 코딩 (Truncation)
+        if len(content) > self.MAX_CONTENT_LENGTH:
+            logger.warning(
+                f"[Graph Extraction] Note '{source_node_id}' exceeds MAX_CONTENT_LENGTH "
+                f"({self.MAX_CONTENT_LENGTH} chars). Truncating content for LLM safety."
+            )
+        truncated_content = content[:self.MAX_CONTENT_LENGTH]
+
         # LLM 프롬프트 구성 (System / User Message 형태로 확장을 고려)
         prompt_text = (
             "Analyze the following text and extract up to 3 core related keywords or entities. "
             "Return ONLY a comma-separated list of keywords, without any extra text.\n\n"
-            f"Text: {content}"
+            f"Text: {truncated_content}"
         )
         
         try:
