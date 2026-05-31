@@ -1,5 +1,8 @@
 import re
+import logging
 from typing import List, Tuple, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 class EntityEdgeExtractor:
     """
@@ -9,9 +12,9 @@ class EntityEdgeExtractor:
     # 위키링크 정규식 (예: [[Note Title]])
     WIKILINK_PATTERN = re.compile(r"\[\[(.*?)\]\]")
     
-    # 해시태그 정규식 (예: #tag_name, 공백이나 구두점으로 끝남)
-    # 영문, 숫자, 한글, 언더바 등 지원
-    TAG_PATTERN = re.compile(r"#([a-zA-Z0-9_\uac00-\ud7a3]+)")
+    # 해시태그 정규식 (예: #tag_name)
+    # URL 파편화(예: http://example#section) 등에 매치되지 않도록 앞이 공백이거나 문자열의 시작점일 것 강제
+    TAG_PATTERN = re.compile(r"(?:^|\s)#([a-zA-Z0-9_\uac00-\ud7a3]+)")
 
     def extract_explicit_edges(self, source_node_id: str, markdown_content: str) -> List[Tuple[str, str, Dict[str, Any]]]:
         """
@@ -28,13 +31,32 @@ class EntityEdgeExtractor:
         
         # 1. 위키링크 추출
         wikilinks = set(self.WIKILINK_PATTERN.findall(markdown_content))
-        for target in wikilinks:
-            if target := target.strip():
-                edges.append((
-                    source_node_id, 
-                    target, 
-                    {"weight": 1.0, "edge_type": "explicit", "relation": "wikilink"}
-                ))
+        for raw_target in wikilinks:
+            raw_target = raw_target.strip()
+            if not raw_target:
+                continue
+                
+            # [[Title|Alias]] 형태 지원: 좌측을 canonical ID로 사용
+            if "|" in raw_target:
+                canonical_target, alias = raw_target.split("|", 1)
+                canonical_target = canonical_target.strip()
+                alias = alias.strip()
+            else:
+                canonical_target = raw_target
+                alias = None
+                
+            if not canonical_target:
+                continue
+                
+            attrs = {
+                "weight": 1.0,
+                "edge_type": "explicit",
+                "relation": "wikilink"
+            }
+            if alias:
+                attrs["alias"] = alias
+                
+            edges.append((source_node_id, canonical_target, attrs))
                 
         # 2. 태그 추출
         tags = set(self.TAG_PATTERN.findall(markdown_content))
@@ -76,17 +98,18 @@ class EntityEdgeExtractor:
         
         try:
             # 의존성으로 주입받은 LLM 클라이언트를 통해 키워드 추출 (비동기 연동)
-            # Langchain BaseChatModel의 ainvoke 지원 가정 (프로젝트의 ChatOpenAI 등)
             from langchain_core.messages import HumanMessage
             
             response = await llm_client.ainvoke([HumanMessage(content=prompt_text)])
             response_text = str(response.content).strip()
             
-            # 파싱 로직 (쉼표 분리)
-            extracted_keywords = [kw.strip() for kw in response_text.split(",") if kw.strip()]
+            # 파싱 로직 (쉼표 분리) 및 중복 제거
+            raw_keywords = [kw.strip() for kw in response_text.split(",") if kw.strip()]
+            
+            # 프롬프트 제약 보장: 최대 3개 키워드만 제한 및 순서 유지 중복 제거 방어 로직
+            extracted_keywords = list(dict.fromkeys(raw_keywords))[:3]
             
             # 암묵적 엣지에는 명시적 엣지보다 낮은 기본 가중치 부여 (예: 0.5)
-            # 추후 LLM 응답에 weight까지 포함시키도록 프롬프트 고도화 가능
             edges.extend(
                 (
                     source_node_id,
@@ -98,8 +121,8 @@ class EntityEdgeExtractor:
                 
         except Exception as exc:
             # LLM 연동 실패 시 애플리케이션의 중단을 막기 위해 예외 캡처 및 로깅
-            # 프로젝트 컨벤션에 따라 GraphLoadError 등으로 래핑할 수 있음
-            import logging
-            logging.error(f"[Graph Extraction] Failed to extract implicit edges for node {source_node_id}: {exc}")
+            # ai_bot_review_summary 체크리스트에 따라 logger.exception()을 사용하여 Stack Trace 기록
+            logger.exception(f"[Graph Extraction] Failed to extract implicit edges for node {source_node_id}")
             
         return edges
+
