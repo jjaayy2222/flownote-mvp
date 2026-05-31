@@ -160,7 +160,8 @@ class EntityEdgeExtractor:
         try:
             # 구조화된 로깅(Structured Logging)에 메타데이터를 추가하여 디버깅 가시성 극대화
             logger.info(
-                "[Graph Extraction] Invoking LLM for implicit edges",
+                "[Graph Extraction] Invoking LLM for implicit edges (node_id=%s)",
+                source_node_id,
                 extra={
                     "node_id": source_node_id,
                     "truncation_metadata": truncation_metadata
