@@ -76,7 +76,9 @@ class EntityEdgeExtractor:
                 "relation": "wikilink"
             }
             if canonical_target in aliases_map and aliases_map[canonical_target]:
-                # 여러 개의 별칭을 리스트 형태로 보존
+                # 하위 호환성(Backwards Compatibility) 보장: 단일 스칼라 타입(가장 처음 발견된 별칭)
+                attrs["alias"] = aliases_map[canonical_target][0]
+                # 결정론적이고 손실 없는 전체 별칭 리스트 보존
                 attrs["aliases"] = aliases_map[canonical_target]
                 
             edges.append((source_node_id, canonical_target, attrs))
