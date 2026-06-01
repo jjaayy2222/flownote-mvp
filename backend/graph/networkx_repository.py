@@ -435,7 +435,7 @@ class NetworkXGraphRepository(AbstractGraphRepository):
             )
 
     @contextmanager
-    def stateless_load(self, hashed_user_id: str) -> Generator[None, None, None]:
+    def stateless_load(self, hashed_user_id: str) -> Generator["NetworkXGraphRepository", None, None]:
         """
         일회성 조회를 위해 그래프를 메모리에 로드하고, 블록 종료 시 안전하게 해제하는 컨텍스트 매니저.
         load() 실패 시(예: 파일 손상) 부작용이 발생하지 않도록 is_loaded 상태를 내부에서 관리한다.
@@ -444,7 +444,13 @@ class NetworkXGraphRepository(AbstractGraphRepository):
         try:
             self.load(hashed_user_id)
             is_loaded = True
-            yield
+            yield self
         finally:
             if is_loaded:
-                self.clear(hashed_user_id)
+                try:
+                    self.clear(hashed_user_id)
+                except Exception:
+                    logger.exception(
+                        "[GRAPH][NX] Failed to clear in-memory graph after stateless load (user_id_prefix=%s).",
+                        hashed_user_id[:8]
+                    )
