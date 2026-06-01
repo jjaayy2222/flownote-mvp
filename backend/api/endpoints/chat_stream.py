@@ -30,6 +30,9 @@ import uuid
 from itertools import islice
 from typing import Any, AsyncGenerator
 
+import anyio
+import anyio.to_thread
+from cachetools import TTLCache  # type: ignore[import, import-untyped]
 from fastapi import APIRouter, Request, Depends
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
@@ -43,7 +46,6 @@ from backend.core.config_validator import GraphEngineConfig, PersonalizedRAGConf
 from backend.graph import NetworkXGraphRepository
 from backend.services.personalized_index_service import compute_hashed_user_id
 from backend.core.aws_client_wrapper import fetch_global_pepper
-import threading
 
 logger = logging.getLogger(__name__)
 
@@ -60,21 +62,41 @@ _rag_cfg = PersonalizedRAGConfig.from_env()
 # SSE 동시성 모니터링 상태 (Per-worker)
 # ─────────────────────────────────────────────────────────────────────────────
 _active_sse_sessions: int = 0
-_sse_sessions_lock = threading.Lock()
+_sse_sessions_lock = asyncio.Lock()
 
 async def sse_session_tracker() -> AsyncGenerator[int, None]:
     """
     FastAPI Depends: 워커 인스턴스(Per-worker) 내부 SSE 세션 수를 추적합니다.
     """
     global _active_sse_sessions
-    with _sse_sessions_lock:
+    async with _sse_sessions_lock:
         _active_sse_sessions += 1
     
     try:
         yield _active_sse_sessions
     finally:
-        with _sse_sessions_lock:
+        async with _sse_sessions_lock:
             _active_sse_sessions -= 1
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 전역 의존성 캐싱 (Per-worker)
+# ─────────────────────────────────────────────────────────────────────────────
+_pepper_cache: TTLCache = TTLCache(maxsize=1, ttl=300)  # 5분 단위 갱신
+_pepper_lock = asyncio.Lock()
+_graph_repo = NetworkXGraphRepository(storage_base_path=_rag_cfg.storage_base_path)
+
+async def get_cached_global_pepper() -> str:
+    """KMS 지연시간 감소를 위한 global_pepper 메모리 캐싱"""
+    async with _pepper_lock:
+        if "pepper" in _pepper_cache:
+            return _pepper_cache["pepper"]
+        pepper = await fetch_global_pepper()
+        _pepper_cache["pepper"] = pepper
+        return pepper
+
+def get_graph_repository() -> NetworkXGraphRepository:
+    """그래프 리포지토리 재사용 의존성 주입"""
+    return _graph_repo
 
 # SSE 이벤트 이름 상수 (클라이언트 API 계약 — 하드코딩 방지)
 # 프론트엔드와 동기화된 표준 이벤트 이름이므로, 변경 시 이 상수만 수정하면 됩니다.
@@ -159,6 +181,7 @@ async def stream_chat_endpoint(
     request: Request,
     body: ChatQueryRequest,
     current_sse_count: int = Depends(sse_session_tracker),
+    repo: NetworkXGraphRepository = Depends(get_graph_repository),
 ) -> EventSourceResponse:
     """
     SSE 기반 스트리밍 엔드포인트 (2단계: 어댑터 연결).
@@ -180,11 +203,12 @@ async def stream_chat_endpoint(
     try:
         # [설계결정] DB 연동 전까지 user_id를 이용해 임시 salt 구성
         per_user_salt = f"mock_salt_{body.user_id}"
-        global_pepper = await fetch_global_pepper()
+        global_pepper = await get_cached_global_pepper()
         
         hashed_uid = compute_hashed_user_id(body.user_id, per_user_salt, global_pepper)
-        repo = NetworkXGraphRepository(storage_base_path=_rag_cfg.storage_base_path)
-        current_node_count = repo.node_count(hashed_uid)
+        
+        # [설계결정] node_count는 디스크 I/O를 유발하므로 이벤트 루프 블로킹을 피하기 위해 스레드 풀에서 실행
+        current_node_count = await anyio.to_thread.run_sync(repo.node_count, hashed_uid)
     except Exception as exc:
         logger.warning(
             "%s[MIGRATION] Failed to fetch node count for trigger: %s",
