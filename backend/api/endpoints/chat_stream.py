@@ -86,14 +86,16 @@ _pepper_lock = asyncio.Lock()
 
 async def get_cached_global_pepper() -> str:
     """KMS 지연시간 감소를 위한 global_pepper 메모리 캐싱"""
-    # Fast path: lock-free read
-    if "pepper" in _pepper_cache:
-        return _pepper_cache["pepper"]
+    # Fast path: lock-free atomic read (TOCTOU 방지)
+    cached_pepper = _pepper_cache.get("pepper")
+    if cached_pepper is not None:
+        return cached_pepper
 
     # Slow path: 잠금 기반 double-checked 패턴으로 KMS 호출
     async with _pepper_lock:
-        if "pepper" in _pepper_cache:
-            return _pepper_cache["pepper"]
+        cached_pepper = _pepper_cache.get("pepper")
+        if cached_pepper is not None:
+            return cached_pepper
         pepper = await fetch_global_pepper()
         _pepper_cache["pepper"] = pepper
         return pepper
@@ -210,8 +212,12 @@ async def stream_chat_endpoint(
         # 스레드 안전성(Thread-safety) 확보 및 상태 공유 차단을 위해 스레드 내부에서 리포지토리 독립 인스턴스를 생성
         def _get_node_count() -> int:
             local_repo = NetworkXGraphRepository(storage_base_path=_rag_cfg.storage_base_path)
-            local_repo.load(hashed_uid)
-            return local_repo.node_count(hashed_uid)
+            try:
+                local_repo.load(hashed_uid)
+                return local_repo.node_count(hashed_uid)
+            finally:
+                # 명시적 메모리 해제를 통해 인스턴스 소멸 전 GC 부담 경감
+                local_repo.clear(hashed_uid)
             
         current_node_count = await anyio.to_thread.run_sync(_get_node_count)
     except Exception as exc:
