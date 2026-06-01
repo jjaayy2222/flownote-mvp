@@ -212,12 +212,15 @@ async def stream_chat_endpoint(
         # 스레드 안전성(Thread-safety) 확보 및 상태 공유 차단을 위해 스레드 내부에서 리포지토리 독립 인스턴스를 생성
         def _get_node_count() -> int:
             local_repo = NetworkXGraphRepository(storage_base_path=_rag_cfg.storage_base_path)
+            is_loaded = False
             try:
                 local_repo.load(hashed_uid)
+                is_loaded = True
                 return local_repo.node_count(hashed_uid)
             finally:
-                # 명시적 메모리 해제를 통해 인스턴스 소멸 전 GC 부담 경감
-                local_repo.clear(hashed_uid)
+                # [설계결정] load 성공 시에만 명시적 메모리 해제 수행 (오류 시 부작용 방지)
+                if is_loaded:
+                    local_repo.clear(hashed_uid)
             
         current_node_count = await anyio.to_thread.run_sync(_get_node_count)
     except Exception as exc:
