@@ -30,7 +30,10 @@ import uuid
 from itertools import islice
 from typing import Any, AsyncGenerator
 
-from fastapi import APIRouter, Request
+import anyio
+import anyio.to_thread
+from cachetools import TTLCache  # type: ignore[import, import-untyped]
+from fastapi import APIRouter, Request, Depends
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
@@ -39,6 +42,10 @@ from backend.api.models import ChatQueryRequest
 from backend.core.config.streaming import StreamingConfig
 from backend.schemas.streaming import DoneChunk, ErrorChunk, StreamChunk, TokenChunk
 from backend.utils import get_chat_log_extra
+from backend.core.config_validator import GraphEngineConfig, PersonalizedRAGConfig
+from backend.graph import NetworkXGraphRepository
+from backend.services.personalized_index_service import compute_hashed_user_id
+from backend.core.aws_client_wrapper import fetch_global_pepper
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +55,50 @@ router = APIRouter(prefix="/chat", tags=["chat-stream"])
 # 모듈 로드 시점 설정 로드 (환경 변수 반영 + Clamp 보장)
 # ─────────────────────────────────────────────────────────────────────────────
 _cfg = StreamingConfig.load()
+_graph_cfg = GraphEngineConfig.from_env()
+_rag_cfg = PersonalizedRAGConfig.from_env()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SSE 동시성 모니터링 상태 (Per-worker)
+# ─────────────────────────────────────────────────────────────────────────────
+_active_sse_sessions: int = 0
+_sse_sessions_lock = asyncio.Lock()
+
+async def sse_session_tracker() -> AsyncGenerator[int, None]:
+    """
+    FastAPI Depends: 워커 인스턴스(Per-worker) 내부 SSE 세션 수를 추적합니다.
+    """
+    global _active_sse_sessions
+    async with _sse_sessions_lock:
+        _active_sse_sessions += 1
+    
+    try:
+        yield _active_sse_sessions
+    finally:
+        async with _sse_sessions_lock:
+            _active_sse_sessions -= 1
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 전역 의존성 캐싱 (Per-worker)
+# ─────────────────────────────────────────────────────────────────────────────
+_pepper_cache: TTLCache = TTLCache(maxsize=1, ttl=300)  # 5분 단위 갱신
+_pepper_lock = asyncio.Lock()
+
+async def get_cached_global_pepper() -> str:
+    """KMS 지연시간 감소를 위한 global_pepper 메모리 캐싱"""
+    # Fast path: lock-free atomic read (TOCTOU 방지)
+    cached_pepper = _pepper_cache.get("pepper")
+    if cached_pepper is not None:
+        return cached_pepper
+
+    # Slow path: 잠금 기반 double-checked 패턴으로 KMS 호출
+    async with _pepper_lock:
+        cached_pepper = _pepper_cache.get("pepper")
+        if cached_pepper is not None:
+            return cached_pepper
+        pepper = await fetch_global_pepper()
+        _pepper_cache["pepper"] = pepper
+        return pepper
 
 # SSE 이벤트 이름 상수 (클라이언트 API 계약 — 하드코딩 방지)
 # 프론트엔드와 동기화된 표준 이벤트 이름이므로, 변경 시 이 상수만 수정하면 됩니다.
@@ -131,6 +182,7 @@ def _safe_repr(obj: Any, _depth: int = 0) -> str:
 async def stream_chat_endpoint(
     request: Request,
     body: ChatQueryRequest,
+    current_sse_count: int = Depends(sse_session_tracker),
 ) -> EventSourceResponse:
     """
     SSE 기반 스트리밍 엔드포인트 (2단계: 어댑터 연결).
@@ -147,6 +199,44 @@ async def stream_chat_endpoint(
         _LOG_TAG,
         extra=get_chat_log_extra(body),
     )
+
+    # ── 마이그레이션 트리거 모니터링 (3단계) ──────────────────────────────────────────
+    try:
+        # [설계결정] DB 연동 전까지 user_id를 이용해 임시 salt 구성
+        per_user_salt = f"mock_salt_{body.user_id}"
+        global_pepper = await get_cached_global_pepper()
+        
+        hashed_uid = compute_hashed_user_id(body.user_id, per_user_salt, global_pepper)
+        
+        # [설계결정] node_count는 디스크 I/O를 유발하므로 이벤트 루프 블로킹을 방지하고, 
+        # 스레드 안전성(Thread-safety) 확보 및 상태 공유 차단을 위해 스레드 내부에서 리포지토리 독립 인스턴스를 생성
+        def _get_node_count() -> int:
+            # 리포지토리 레벨에 캡슐화된 컨텍스트 매니저를 통해 안전하게 로드 후 해제
+            with NetworkXGraphRepository(storage_base_path=_rag_cfg.storage_base_path).stateless_load(hashed_uid) as local_repo:
+                return local_repo.node_count(hashed_uid)
+            
+        current_node_count = await anyio.to_thread.run_sync(_get_node_count)
+    except Exception as exc:
+        logger.warning(
+            "%s[MIGRATION] Failed to fetch node count for trigger: %s",
+            _LOG_TAG,
+            exc,
+        )
+        current_node_count = 0
+
+    if (
+        current_node_count > _graph_cfg.migration_node_threshold
+        or current_sse_count > _graph_cfg.migration_concurrency_threshold
+    ):
+        logger.warning(
+            "%s[MIGRATION_TRIGGER] Neo4j migration recommended. "
+            "node_count=%d (threshold=%d), sse_sessions=%d (threshold=%d)",
+            _LOG_TAG,
+            current_node_count,
+            _graph_cfg.migration_node_threshold,
+            current_sse_count,
+            _graph_cfg.migration_concurrency_threshold,
+        )
 
     async def event_generator() -> AsyncGenerator[dict, None]:
         # ── 설정값 로컬 바인딩 ────────────────────────────────────────────────
