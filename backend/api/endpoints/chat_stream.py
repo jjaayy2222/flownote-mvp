@@ -83,20 +83,22 @@ async def sse_session_tracker() -> AsyncGenerator[int, None]:
 # ─────────────────────────────────────────────────────────────────────────────
 _pepper_cache: TTLCache = TTLCache(maxsize=1, ttl=300)  # 5분 단위 갱신
 _pepper_lock = asyncio.Lock()
-_graph_repo = NetworkXGraphRepository(storage_base_path=_rag_cfg.storage_base_path)
 
 async def get_cached_global_pepper() -> str:
     """KMS 지연시간 감소를 위한 global_pepper 메모리 캐싱"""
+    # Fast path: lock-free atomic read (TOCTOU 방지)
+    cached_pepper = _pepper_cache.get("pepper")
+    if cached_pepper is not None:
+        return cached_pepper
+
+    # Slow path: 잠금 기반 double-checked 패턴으로 KMS 호출
     async with _pepper_lock:
-        if "pepper" in _pepper_cache:
-            return _pepper_cache["pepper"]
+        cached_pepper = _pepper_cache.get("pepper")
+        if cached_pepper is not None:
+            return cached_pepper
         pepper = await fetch_global_pepper()
         _pepper_cache["pepper"] = pepper
         return pepper
-
-def get_graph_repository() -> NetworkXGraphRepository:
-    """그래프 리포지토리 재사용 의존성 주입"""
-    return _graph_repo
 
 # SSE 이벤트 이름 상수 (클라이언트 API 계약 — 하드코딩 방지)
 # 프론트엔드와 동기화된 표준 이벤트 이름이므로, 변경 시 이 상수만 수정하면 됩니다.
@@ -181,7 +183,6 @@ async def stream_chat_endpoint(
     request: Request,
     body: ChatQueryRequest,
     current_sse_count: int = Depends(sse_session_tracker),
-    repo: NetworkXGraphRepository = Depends(get_graph_repository),
 ) -> EventSourceResponse:
     """
     SSE 기반 스트리밍 엔드포인트 (2단계: 어댑터 연결).
@@ -207,8 +208,18 @@ async def stream_chat_endpoint(
         
         hashed_uid = compute_hashed_user_id(body.user_id, per_user_salt, global_pepper)
         
-        # [설계결정] node_count는 디스크 I/O를 유발하므로 이벤트 루프 블로킹을 피하기 위해 스레드 풀에서 실행
-        current_node_count = await anyio.to_thread.run_sync(repo.node_count, hashed_uid)
+        # [설계결정] node_count는 디스크 I/O를 유발하므로 이벤트 루프 블로킹을 방지하고, 
+        # 스레드 안전성(Thread-safety) 확보 및 상태 공유 차단을 위해 스레드 내부에서 리포지토리 독립 인스턴스를 생성
+        def _get_node_count() -> int:
+            local_repo = NetworkXGraphRepository(storage_base_path=_rag_cfg.storage_base_path)
+            try:
+                local_repo.load(hashed_uid)
+                return local_repo.node_count(hashed_uid)
+            finally:
+                # 명시적 메모리 해제를 통해 인스턴스 소멸 전 GC 부담 경감
+                local_repo.clear(hashed_uid)
+            
+        current_node_count = await anyio.to_thread.run_sync(_get_node_count)
     except Exception as exc:
         logger.warning(
             "%s[MIGRATION] Failed to fetch node count for trigger: %s",
