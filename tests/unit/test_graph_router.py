@@ -490,12 +490,12 @@ class TestStatelessLoadLifecycle:
 
 
 class TestExceptionIsolation:
-    def test_exception_in_traversal_falls_back_to_vector_results(
+    def test_exception_in_traversal_returns_partial_results(
         self,
         healthy_registry: MagicMock,
         simple_vector_results: List[Dict[str, Any]],
     ) -> None:
-        """탐색 중 예외 발생 시 vector_results 원본 반환, 예외 전파 없음."""
+        """탐색 중 예외 발생 시 예외 전파 없이 수집된 부분 결과(또는 vector_results 원본)를 반환."""
         broken_repo = MagicMock()
         # stateless_load를 컨텍스트 매니저처럼 동작하되 내부에서 예외 발생
         broken_repo.stateless_load.side_effect = RuntimeError("Simulated IO failure")
