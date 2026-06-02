@@ -92,7 +92,7 @@ def _load_traversal_depth() -> int:
 COERCION_WARNING_THRESHOLD = 0.5
 
 
-def _get_node_id_and_source(result: Dict[str, Any]) -> tuple[Any, Optional[str]]:
+def _get_node_id_and_source(result: Dict[str, Any]) -> tuple[Optional[Any], Optional[str]]:
     """결과 딕셔너리에서 node_id와 출처(source_field)를 추출한다."""
     if "id" in result and result["id"] is not None:
         return result["id"], "id"
