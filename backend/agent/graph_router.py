@@ -14,7 +14,10 @@ class GraphHybridRouter:
     """
     
     def __init__(self, health_registry: Optional[HealthRegistry] = None) -> None:
-        self.health_registry = health_registry or HealthRegistry.get_instance()
+        if health_registry is None:
+            self.health_registry = HealthRegistry.get_instance()
+        else:
+            self.health_registry = health_registry
 
     def route_query(self, query: str, vector_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
