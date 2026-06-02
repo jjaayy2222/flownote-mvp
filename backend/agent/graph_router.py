@@ -51,5 +51,6 @@ def run_hybrid_search(
     """
     하이브리드 검색을 실행하는 헬퍼 함수
     """
-    router = router or GraphHybridRouter()
+    if router is None:
+        router = GraphHybridRouter()
     return router.route_query(query, vector_results)
