@@ -89,7 +89,28 @@ def _load_traversal_depth() -> int:
     return _clamp_depth(DEFAULT_MAX_TRAVERSAL_DEPTH)
 
 
-def _extract_seed_node_ids(vector_results: List[Dict[str, Any]]) -> List[str]:
+COERCION_WARNING_THRESHOLD = 0.5
+
+
+def _get_node_id_and_source(result: Dict[str, Any]) -> tuple[Optional[Any], Optional[str]]:
+    """결과 딕셔너리에서 node_id와 출처(source_field)를 추출한다."""
+    if "id" in result and result["id"] is not None:
+        return result["id"], "id"
+    
+    metadata = result.get("metadata")
+    if isinstance(metadata, dict):
+        if metadata.get("id") is not None:
+            return metadata["id"], "metadata.id"
+        if metadata.get("source") is not None:
+            return metadata["source"], "metadata.source"
+            
+    return None, None
+
+
+def _extract_seed_node_ids(
+    vector_results: List[Dict[str, Any]],
+    hashed_user_id: Optional[str] = None,
+) -> List[str]:
     """
     vector_results에서 고유한 Seed Node ID 목록을 추출한다.
 
@@ -117,24 +138,7 @@ def _extract_seed_node_ids(vector_results: List[Dict[str, Any]]) -> List[str]:
     coerced_count = 0
 
     for idx, result in enumerate(vector_results):
-        node_id = None
-        source_field = None
-
-        # 1) result['id']
-        if "id" in result and result["id"] is not None:
-            node_id = result["id"]
-            source_field = "id"
-        else:
-            metadata = result.get("metadata")
-            if isinstance(metadata, dict):
-                # 2) result['metadata']['id']
-                if metadata.get("id") is not None:
-                    node_id = metadata["id"]
-                    source_field = "metadata.id"
-                # 3) result['metadata']['source']
-                elif metadata.get("source") is not None:
-                    node_id = metadata["source"]
-                    source_field = "metadata.source"
+        node_id, source_field = _get_node_id_and_source(result)
 
         if node_id is None:
             # No usable ID for this result; silently skip to preserve previous behavior.
@@ -178,12 +182,13 @@ def _extract_seed_node_ids(vector_results: List[Dict[str, Any]]) -> List[str]:
             coerced_count,
             total,
         )
-        if total > 0 and (coerced_count / total) >= 0.5:
+        if total > 0 and (coerced_count / total) >= COERCION_WARNING_THRESHOLD:
             logger.warning(
                 "[GRAPH_ROUTER] High coercion rate: %d out of %d seed node IDs were non-string. "
-                "Check upstream vector store data quality.",
+                "Check upstream vector store data quality. (tenant=%s)",
                 coerced_count,
                 total,
+                hashed_user_id or "unknown",
             )
 
     return seed_node_ids
@@ -311,7 +316,7 @@ class GraphHybridRouter:
             return vector_results
 
         # ── 3단계: Seed Node 추출 ────────────────────────────────────────────
-        seed_ids = _extract_seed_node_ids(vector_results)
+        seed_ids = _extract_seed_node_ids(vector_results, hashed_user_id=hashed_user_id)
 
         if not seed_ids:
             logger.debug(
