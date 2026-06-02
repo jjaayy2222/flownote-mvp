@@ -16,7 +16,7 @@ class GraphHybridRouter:
     def __init__(self, health_registry: Optional[HealthRegistry] = None) -> None:
         self.health_registry = health_registry or HealthRegistry.get_instance()
 
-    def route_query(self, query: str, vector_results: List[Dict[str, Any]], **kwargs: Any) -> List[Dict[str, Any]]:
+    def route_query(self, query: str, vector_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         벡터 검색 결과(vector_results)를 입력받아 그래프 탐색과 결합하여 하이브리드 결과를 반환한다.
         """
@@ -24,10 +24,14 @@ class GraphHybridRouter:
         if not self.health_registry.is_ok(Subsystem.GRAPH_ENGINE):
             summary = self.health_registry.get_summary()
             current_status = summary.get(Subsystem.GRAPH_ENGINE.value, "UNKNOWN")
-            logger.info(
+            logger.warning(
                 "[GRAPH_ROUTER] GRAPH_ENGINE subsystem is %s. "
                 "Skipping graph traversal and silently falling back to Vector RAG.",
-                current_status
+                current_status,
+                extra={
+                    "subsystem": Subsystem.GRAPH_ENGINE.value,
+                    "status": current_status,
+                }
             )
             # 그래프 로직 스킵하고 조용히(Silent Fallback) Vector RAG 결과 반환
             return vector_results
@@ -39,9 +43,13 @@ class GraphHybridRouter:
         # 임시로 기존 vector_results 반환 (뼈대 단계)
         return vector_results
 
-def run_hybrid_search(query: str, vector_results: List[Dict[str, Any]], **kwargs: Any) -> List[Dict[str, Any]]:
+def run_hybrid_search(
+    query: str, 
+    vector_results: List[Dict[str, Any]], 
+    router: Optional[GraphHybridRouter] = None
+) -> List[Dict[str, Any]]:
     """
     하이브리드 검색을 실행하는 헬퍼 함수
     """
-    router = GraphHybridRouter()
-    return router.route_query(query, vector_results, **kwargs)
+    router = router or GraphHybridRouter()
+    return router.route_query(query, vector_results)
