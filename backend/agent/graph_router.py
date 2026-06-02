@@ -173,7 +173,9 @@ def _extract_seed_node_ids(vector_results: List[Dict[str, Any]]) -> List[str]:
 
     if coerced_count > 0:
         logger.info(
-            "[GRAPH_ROUTER] Coerced %d non-string seed node IDs to str.", coerced_count
+            "[GRAPH_ROUTER] Coerced %d out of %d seed node IDs to str.",
+            coerced_count,
+            len(vector_results),
         )
 
     return seed_node_ids
