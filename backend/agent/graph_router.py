@@ -1,7 +1,7 @@
 # backend/agent/graph_router.py
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from backend.core.health_registry import HealthRegistry
 from backend.core.config_validator import Subsystem
@@ -13,8 +13,8 @@ class GraphHybridRouter:
     기존 벡터 검색(Vector RAG) 결과와 지식 그래프 탐색 결과를 결합하는 하이브리드 쿼리 라우터.
     """
     
-    def __init__(self) -> None:
-        self.health_registry = HealthRegistry.get_instance()
+    def __init__(self, health_registry: Optional[HealthRegistry] = None) -> None:
+        self.health_registry = health_registry or HealthRegistry.get_instance()
 
     def route_query(self, query: str, vector_results: List[Dict[str, Any]], **kwargs: Any) -> List[Dict[str, Any]]:
         """
@@ -22,9 +22,12 @@ class GraphHybridRouter:
         """
         # [핵심] 매 쿼리마다 HealthRegistry.is_ok(Subsystem.GRAPH_ENGINE)를 최우선 검사
         if not self.health_registry.is_ok(Subsystem.GRAPH_ENGINE):
+            summary = self.health_registry.get_summary()
+            current_status = summary.get(Subsystem.GRAPH_ENGINE.value, "UNKNOWN")
             logger.info(
-                "[GRAPH_ROUTER] GRAPH_ENGINE subsystem is DEGRADED. "
-                "Skipping graph traversal and silently falling back to Vector RAG."
+                "[GRAPH_ROUTER] GRAPH_ENGINE subsystem is %s. "
+                "Skipping graph traversal and silently falling back to Vector RAG.",
+                current_status
             )
             # 그래프 로직 스킵하고 조용히(Silent Fallback) Vector RAG 결과 반환
             return vector_results
