@@ -172,11 +172,19 @@ def _extract_seed_node_ids(vector_results: List[Dict[str, Any]]) -> List[str]:
             seed_node_ids.append(node_id_str)
 
     if coerced_count > 0:
+        total = len(vector_results)
         logger.debug(
             "[GRAPH_ROUTER] Coerced %d out of %d seed node IDs to str.",
             coerced_count,
-            len(vector_results),
+            total,
         )
+        if total > 0 and (coerced_count / total) >= 0.5:
+            logger.warning(
+                "[GRAPH_ROUTER] High coercion rate: %d out of %d seed node IDs were non-string. "
+                "Check upstream vector store data quality.",
+                coerced_count,
+                total,
+            )
 
     return seed_node_ids
 
