@@ -172,7 +172,7 @@ def _extract_seed_node_ids(vector_results: List[Dict[str, Any]]) -> List[str]:
             seed_node_ids.append(node_id_str)
 
     if coerced_count > 0:
-        logger.info(
+        logger.debug(
             "[GRAPH_ROUTER] Coerced %d out of %d seed node IDs to str.",
             coerced_count,
             len(vector_results),
