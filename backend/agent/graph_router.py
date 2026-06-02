@@ -114,6 +114,7 @@ def _extract_seed_node_ids(vector_results: List[Dict[str, Any]]) -> List[str]:
     """
     seed_node_ids: List[str] = []
     seen_ids: set[str] = set()
+    coerced_count = 0
 
     for idx, result in enumerate(vector_results):
         node_id = None
@@ -141,7 +142,7 @@ def _extract_seed_node_ids(vector_results: List[Dict[str, Any]]) -> List[str]:
 
         # Normalize non-string IDs and log for observability.
         if not isinstance(node_id, str):
-            logger.warning(
+            logger.debug(
                 "[GRAPH_ROUTER] Non-string seed node id from %s at index %d: %r (type=%s); coercing to str.",
                 source_field or "<unknown>",
                 idx,
@@ -150,6 +151,7 @@ def _extract_seed_node_ids(vector_results: List[Dict[str, Any]]) -> List[str]:
             )
             try:
                 node_id_str = str(node_id)
+                coerced_count += 1
             except Exception:
                 logger.error(
                     "[GRAPH_ROUTER] Failed to coerce seed node id from %s at index %d to str; skipping.",
@@ -168,6 +170,13 @@ def _extract_seed_node_ids(vector_results: List[Dict[str, Any]]) -> List[str]:
         if node_id_str not in seen_ids:
             seen_ids.add(node_id_str)
             seed_node_ids.append(node_id_str)
+
+    if coerced_count > 0:
+        logger.info(
+            "[GRAPH_ROUTER] Coerced %d out of %d seed node IDs to str.",
+            coerced_count,
+            len(vector_results),
+        )
 
     return seed_node_ids
 
@@ -265,7 +274,7 @@ class GraphHybridRouter:
 
         Returns:
             vector_results + 그래프 이웃 노드 결과가 결합된 리스트.
-            탐색 실패 또는 헬스 이상 시 원본 vector_results 반환.
+            탐색 실패 또는 헬스 이상 시 원본 vector_results(또는 예외 발생 직전까지 수집된 부분 결과) 반환.
         """
         # ── 1단계: SSOT 상태 검사 (최우선 가드레일) ─────────────────────────
         if not self.health_registry.is_ok(Subsystem.GRAPH_ENGINE):
@@ -342,9 +351,9 @@ class GraphHybridRouter:
         except Exception:
             logger.exception(
                 "[GRAPH_ROUTER] Unexpected error during graph traversal. "
-                "Falling back to vector_results only."
+                "Returning partially enriched results (or original vector_results)."
             )
-            return vector_results
+            return graph_enriched
 
         logger.debug(
             "[GRAPH_ROUTER] Graph traversal complete. "
@@ -382,6 +391,12 @@ def run_hybrid_search(
     Returns:
         vector_results + 그래프 탐색 결과가 결합된 리스트.
     """
+    if router is not None and graph_repository is not None:
+        logger.warning(
+            "[GRAPH_ROUTER] Custom router provided along with graph_repository to run_hybrid_search. "
+            "The graph_repository argument will be ignored."
+        )
+
     if router is None:
         router = GraphHybridRouter(graph_repository=graph_repository)
     return router.route_query(
