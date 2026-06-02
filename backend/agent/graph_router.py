@@ -92,23 +92,30 @@ def _load_traversal_depth() -> int:
 COERCION_WARNING_THRESHOLD = 0.5
 
 
+def _is_valid_identifier(val: Any) -> bool:
+    """ID가 유효한 문자열 또는 정수인지 검증하며, bool 타입이나 빈 문자열은 제외한다."""
+    if isinstance(val, bool):
+        return False
+    return isinstance(val, (str, int)) and bool(str(val).strip())
+
+
 def _get_node_id_and_source(result: Dict[str, Any]) -> tuple[Optional[Union[str, int]], Optional[str]]:
     """결과 딕셔너리에서 node_id와 출처(source_field)를 추출한다.
     
     유효한 ID는 문자열(str) 또는 정수(int) 형태이며, 빈 문자열은 허용하지 않는다.
     """
     val_id = result.get("id")
-    if isinstance(val_id, (str, int)) and str(val_id).strip():
+    if _is_valid_identifier(val_id):
         return val_id, "id"
     
     metadata = result.get("metadata")
     if isinstance(metadata, dict):
         val_meta_id = metadata.get("id")
-        if isinstance(val_meta_id, (str, int)) and str(val_meta_id).strip():
+        if _is_valid_identifier(val_meta_id):
             return val_meta_id, "metadata.id"
             
         val_meta_source = metadata.get("source")
-        if isinstance(val_meta_source, (str, int)) and str(val_meta_source).strip():
+        if _is_valid_identifier(val_meta_source):
             return val_meta_source, "metadata.source"
             
     return None, None
