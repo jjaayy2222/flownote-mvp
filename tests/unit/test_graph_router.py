@@ -201,6 +201,13 @@ class TestExtractSeedNodeIds:
     def test_empty_input_returns_empty_list(self) -> None:
         assert _extract_seed_node_ids([]) == []
 
+    def test_coerces_non_string_ids_to_string(self) -> None:
+        results = [
+            {"id": 123, "content": "...", "score": 0.9},
+            {"id": None, "metadata": {"id": 456}, "score": 0.8},
+        ]
+        assert _extract_seed_node_ids(results) == ["123", "456"]
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # _serialize_neighbor_node 단위 테스트
@@ -297,7 +304,6 @@ class TestRouteQuerySkipConditions:
             "query",
             simple_vector_results,
             hashed_user_id=_DUMMY_HASH,
-            graph_repository=None,
         )
         assert result is simple_vector_results
 
@@ -343,12 +349,11 @@ class TestRouteQueryBFSTraversal:
         repo.add_edge(_DUMMY_HASH, "B", "C")
         repo.persist(_DUMMY_HASH)
 
-        router = GraphHybridRouter(health_registry=healthy_registry)
+        router = GraphHybridRouter(health_registry=healthy_registry, graph_repository=repo)
         results = router.route_query(
             "query",
             self._make_vector_results("A"),
             hashed_user_id=_DUMMY_HASH,
-            graph_repository=repo,
         )
         result_ids = {r.get("metadata", {}).get("id") or r.get("id") for r in results}
         assert "B" in result_ids
@@ -370,12 +375,11 @@ class TestRouteQueryBFSTraversal:
         repo.add_edge(_DUMMY_HASH, "C", "D")
         repo.persist(_DUMMY_HASH)
 
-        router = GraphHybridRouter(health_registry=healthy_registry)
+        router = GraphHybridRouter(health_registry=healthy_registry, graph_repository=repo)
         results = router.route_query(
             "query",
             self._make_vector_results("A"),
             hashed_user_id=_DUMMY_HASH,
-            graph_repository=repo,
         )
         neighbor_ids = [
             r.get("metadata", {}).get("id")
@@ -399,13 +403,12 @@ class TestRouteQueryBFSTraversal:
         repo.add_edge(_DUMMY_HASH, "C", "A")
         repo.persist(_DUMMY_HASH)
 
-        router = GraphHybridRouter(health_registry=healthy_registry)
+        router = GraphHybridRouter(health_registry=healthy_registry, graph_repository=repo)
         # 무한 루프라면 여기서 타임아웃 발생 — 통과하면 안전함
         results = router.route_query(
             "query",
             self._make_vector_results("A"),
             hashed_user_id=_DUMMY_HASH,
-            graph_repository=repo,
         )
         assert len(results) > 0
 
@@ -418,13 +421,12 @@ class TestRouteQueryBFSTraversal:
         repo.add_node(_DUMMY_HASH, "isolated", title="Lonely Node")
         repo.persist(_DUMMY_HASH)
 
-        router = GraphHybridRouter(health_registry=healthy_registry)
+        router = GraphHybridRouter(health_registry=healthy_registry, graph_repository=repo)
         vector_in = self._make_vector_results("isolated")
         results = router.route_query(
             "query",
             vector_in,
             hashed_user_id=_DUMMY_HASH,
-            graph_repository=repo,
         )
         assert results == vector_in
 
@@ -439,12 +441,11 @@ class TestRouteQueryBFSTraversal:
         repo.add_edge(_DUMMY_HASH, "A", "B")
         repo.persist(_DUMMY_HASH)
 
-        router = GraphHybridRouter(health_registry=healthy_registry)
+        router = GraphHybridRouter(health_registry=healthy_registry, graph_repository=repo)
         results = router.route_query(
             "query",
             self._make_vector_results("A"),
             hashed_user_id=_DUMMY_HASH,
-            graph_repository=repo,
         )
         graph_nodes = [r for r in results if r.get("metadata", {}).get("id") == "B"]
         assert len(graph_nodes) == 1
@@ -472,13 +473,12 @@ class TestStatelessLoadLifecycle:
         repo.add_edge(_DUMMY_HASH, "A", "B")
         repo.persist(_DUMMY_HASH)
 
-        router = GraphHybridRouter(health_registry=healthy_registry)
+        router = GraphHybridRouter(health_registry=healthy_registry, graph_repository=repo)
         vector_in = [{"id": "A", "content": "Seed", "metadata": {}, "score": 0.9}]
         router.route_query(
             "query",
             vector_in,
             hashed_user_id=_DUMMY_HASH,
-            graph_repository=repo,
         )
         # 탐색 완료 후 node_count()는 0이어야 한다 (clear 호출됨)
         assert repo.node_count(_DUMMY_HASH) == 0
@@ -500,12 +500,11 @@ class TestExceptionIsolation:
         # stateless_load를 컨텍스트 매니저처럼 동작하되 내부에서 예외 발생
         broken_repo.stateless_load.side_effect = RuntimeError("Simulated IO failure")
 
-        router = GraphHybridRouter(health_registry=healthy_registry)
+        router = GraphHybridRouter(health_registry=healthy_registry, graph_repository=broken_repo)
         result = router.route_query(
             "query",
             simple_vector_results,
             hashed_user_id=_DUMMY_HASH,
-            graph_repository=broken_repo,
         )
         assert result is simple_vector_results
 
@@ -526,12 +525,12 @@ class TestDependencyInjection:
         router.route_query("q", simple_vector_results)
         degraded_registry.is_ok.assert_called()
 
-    def test_route_query_repo_overrides_constructor_repo(
+    def test_constructor_repo_is_used(
         self,
         healthy_registry: MagicMock,
         repo: NetworkXGraphRepository,
     ) -> None:
-        """route_query의 graph_repository 인자가 생성자 주입보다 우선한다."""
+        """생성자로 주입한 graph_repository가 사용된다."""
         fallback_repo = MagicMock()
         fallback_repo.stateless_load.return_value.__enter__ = MagicMock(return_value=fallback_repo)
         fallback_repo.stateless_load.return_value.__exit__ = MagicMock(return_value=False)
@@ -541,17 +540,13 @@ class TestDependencyInjection:
             health_registry=healthy_registry,
             graph_repository=fallback_repo,  # 생성자 주입
         )
-        # route_query에서 다른 repo를 전달하면 이쪽이 사용되어야 함
-        # (repo는 실제 NetworkXGraphRepository — 데이터 없어 이웃도 없음)
         vector_in = [{"id": "A", "content": "seed", "metadata": {}, "score": 0.9}]
         router.route_query(
             "q",
             vector_in,
             hashed_user_id=_DUMMY_HASH,
-            graph_repository=repo,  # 인자 우선
         )
-        # fallback_repo.stateless_load은 호출되지 않아야 함
-        fallback_repo.stateless_load.assert_not_called()
+        fallback_repo.stateless_load.assert_called_once_with(_DUMMY_HASH)
 
     def test_none_registry_uses_global_singleton(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """health_registry=None이면 HealthRegistry.get_instance()를 호출한다."""
@@ -599,12 +594,12 @@ class TestRunHybridSearch:
         run_hybrid_search("q", simple_vector_results, router=mock_router)
         mock_router.route_query.assert_called_once()
 
-    def test_passes_hashed_user_id_and_repo_to_route_query(
+    def test_passes_hashed_user_id_to_route_query(
         self,
         simple_vector_results: List[Dict[str, Any]],
         repo: NetworkXGraphRepository,
     ) -> None:
-        """hashed_user_id와 graph_repository가 route_query에 전달된다."""
+        """hashed_user_id가 route_query에 전달된다."""
         mock_router = MagicMock()
         mock_router.route_query.return_value = simple_vector_results
 
@@ -617,7 +612,23 @@ class TestRunHybridSearch:
         )
         call_kwargs = mock_router.route_query.call_args
         assert call_kwargs.kwargs.get("hashed_user_id") == _DUMMY_HASH
-        assert call_kwargs.kwargs.get("graph_repository") is repo
+
+    @patch("backend.agent.graph_router.GraphHybridRouter")
+    def test_run_hybrid_search_passes_repo_to_constructor(
+        self,
+        mock_router_cls: MagicMock,
+        simple_vector_results: List[Dict[str, Any]],
+        repo: NetworkXGraphRepository,
+    ) -> None:
+        mock_instance = mock_router_cls.return_value
+        run_hybrid_search(
+            "q",
+            simple_vector_results,
+            router=None,
+            graph_repository=repo,
+        )
+        mock_router_cls.assert_called_once_with(graph_repository=repo)
+        mock_instance.route_query.assert_called_once()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -639,13 +650,12 @@ class TestTenantIsolation:
         repo.persist(_DUMMY_HASH)
 
         # 사용자 B: 그래프 없음 (빈 그래프)
-        router = GraphHybridRouter(health_registry=healthy_registry)
+        router = GraphHybridRouter(health_registry=healthy_registry, graph_repository=repo)
         vector_in_b = [{"id": "A", "content": "B's query", "metadata": {}, "score": 0.9}]
         result_b = router.route_query(
             "query",
             vector_in_b,
             hashed_user_id=_DUMMY_HASH_B,  # 사용자 B
-            graph_repository=repo,
         )
         # 사용자 B의 결과에 사용자 A의 "B" 노드가 포함되어선 안 됨
         neighbor_ids = [

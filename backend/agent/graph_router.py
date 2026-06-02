@@ -97,29 +97,79 @@ def _extract_seed_node_ids(vector_results: List[Dict[str, Any]]) -> List[str]:
     순서로 탐색하여 Seed Node를 식별한다. 원래 스코어 순서(내림차순)를 보존하며
     중복을 제거한다.
 
+    ID는 다음 우선순위로 추출되며, 문자열이 아닌 ID는 str()로 정규화된다.
+    - result['id']
+    - result['metadata']['id']
+    - result['metadata']['source']
+
+    비문자열 ID를 발견하면 경고 로그를 남기고, str() 변환에 실패하는 경우에만
+    해당 항목을 건너뛴다.
+
     Args:
-        vector_results: 벡터 검색 결과 리스트. 각 항목은 {'content': ..., 'metadata': ..., 'score': ...} 형식.
+        vector_results: 벡터 검색 결과 리스트. 각 항목은
+            {'content': ..., 'metadata': ..., 'score': ...} 형식.
 
     Returns:
-        중복 없는 Seed Node ID 목록 (스코어 순서 보존)
+        스코어 순서를 보존한 고유 Seed Node ID 문자열 리스트.
     """
-    seen: set[str] = set()
-    seed_ids: List[str] = []
+    seed_node_ids: List[str] = []
+    seen_ids: set[str] = set()
 
-    for result in vector_results:
-        # 1순위: 최상위 'id' 필드
-        node_id = result.get("id")
+    for idx, result in enumerate(vector_results):
+        node_id = None
+        source_field = None
 
-        # 2순위: metadata 내의 'id' 또는 'source' 필드
-        if not node_id:
-            metadata = result.get("metadata") or {}
-            node_id = metadata.get("id") or metadata.get("source")
+        # 1) result['id']
+        if "id" in result and result["id"] is not None:
+            node_id = result["id"]
+            source_field = "id"
+        else:
+            metadata = result.get("metadata")
+            if isinstance(metadata, dict):
+                # 2) result['metadata']['id']
+                if metadata.get("id") is not None:
+                    node_id = metadata["id"]
+                    source_field = "metadata.id"
+                # 3) result['metadata']['source']
+                elif metadata.get("source") is not None:
+                    node_id = metadata["source"]
+                    source_field = "metadata.source"
 
-        if node_id and isinstance(node_id, str) and node_id not in seen:
-            seen.add(node_id)
-            seed_ids.append(node_id)
+        if node_id is None:
+            # No usable ID for this result; silently skip to preserve previous behavior.
+            continue
 
-    return seed_ids
+        # Normalize non-string IDs and log for observability.
+        if not isinstance(node_id, str):
+            logger.warning(
+                "[GRAPH_ROUTER] Non-string seed node id from %s at index %d: %r (type=%s); coercing to str.",
+                source_field or "<unknown>",
+                idx,
+                node_id,
+                type(node_id).__name__,
+            )
+            try:
+                node_id_str = str(node_id)
+            except Exception:
+                logger.error(
+                    "[GRAPH_ROUTER] Failed to coerce seed node id from %s at index %d to str; skipping.",
+                    source_field or "<unknown>",
+                    idx,
+                    exc_info=True,
+                )
+                continue
+        else:
+            node_id_str = node_id
+
+        # Skip empty strings after normalization
+        if not node_id_str:
+            continue
+
+        if node_id_str not in seen_ids:
+            seen_ids.add(node_id_str)
+            seed_node_ids.append(node_id_str)
+
+    return seed_node_ids
 
 
 def _serialize_neighbor_node(
@@ -148,9 +198,13 @@ def _serialize_neighbor_node(
     return {
         "content": str(content),
         "metadata": {
+            **{
+                k: v
+                for k, v in attrs.items()
+                if k not in ("content", "text", "source", "id")
+            },
             "id": node_id,
             "source": attrs.get("source", node_id),
-            **{k: v for k, v in attrs.items() if k not in ("content", "text", "source")},
         },
         "score": graph_score,
     }
@@ -193,7 +247,6 @@ class GraphHybridRouter:
         query: str,
         vector_results: List[Dict[str, Any]],
         hashed_user_id: Optional[str] = None,
-        graph_repository: Optional[AbstractGraphRepository] = None,
     ) -> List[Dict[str, Any]]:
         """
         벡터 검색 결과(vector_results)를 입력받아 그래프 탐색과 결합하여 하이브리드 결과를 반환한다.
@@ -209,7 +262,6 @@ class GraphHybridRouter:
             query           : 사용자 쿼리 (로깅 목적, 현재 탐색 로직에는 미사용)
             vector_results  : 벡터 검색 결과 리스트
             hashed_user_id  : 테넌트 식별자 (SHA-256 hex, PII 미포함). None이면 탐색 스킵.
-            graph_repository: 이 호출에서만 사용할 Repository (생성자 주입보다 우선).
 
         Returns:
             vector_results + 그래프 이웃 노드 결과가 결합된 리스트.
@@ -231,16 +283,13 @@ class GraphHybridRouter:
             return vector_results
 
         # ── 2단계: 탐색 가능 여부 사전 검사 ────────────────────────────────
-        # 인자로 전달된 repository를 우선 사용, 없으면 생성자 주입 repository 사용
-        effective_repo = graph_repository if graph_repository is not None else self.graph_repository
-
-        if not hashed_user_id or effective_repo is None:
+        if not hashed_user_id or self.graph_repository is None:
             logger.debug(
                 "[GRAPH_ROUTER] Graph traversal skipped: "
                 "hashed_user_id=%s, repository_available=%s. "
                 "Returning vector_results as-is.",
                 "provided" if hashed_user_id else "missing",
-                effective_repo is not None,
+                self.graph_repository is not None,
             )
             return vector_results
 
@@ -258,11 +307,23 @@ class GraphHybridRouter:
         max_depth = _load_traversal_depth()
 
         # ── 5단계: BFS 탐색 및 결과 수집 ─────────────────────────────────────
+        return self._traverse_and_enrich(
+            seed_ids, vector_results, hashed_user_id, max_depth
+        )
+
+    def _traverse_and_enrich(
+        self,
+        seed_ids: List[str],
+        vector_results: List[Dict[str, Any]],
+        hashed_user_id: str,
+        max_depth: int,
+    ) -> List[Dict[str, Any]]:
         graph_enriched: List[Dict[str, Any]] = list(vector_results)
-        visited_neighbor_ids: set[str] = set(seed_ids)  # Seed 자체는 중복 추가 방지
+        visited_neighbor_ids: set[str] = set(seed_ids)
 
         try:
-            with effective_repo.stateless_load(hashed_user_id) as repo:
+            assert self.graph_repository is not None  # guarded earlier
+            with self.graph_repository.stateless_load(hashed_user_id) as repo:
                 for seed_id in seed_ids:
                     neighbors = repo.neighbors(
                         hashed_user_id,
@@ -278,9 +339,7 @@ class GraphHybridRouter:
                         graph_enriched.append(
                             _serialize_neighbor_node(neighbor_id, attrs)
                         )
-
         except Exception:
-            # 그래프 탐색 중 예기치 못한 오류 발생 시 원본 결과로 Silent Fallback
             logger.exception(
                 "[GRAPH_ROUTER] Unexpected error during graph traversal. "
                 "Falling back to vector_results only."
@@ -329,5 +388,4 @@ def run_hybrid_search(
         query,
         vector_results,
         hashed_user_id=hashed_user_id,
-        graph_repository=graph_repository,
     )
