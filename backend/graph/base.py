@@ -18,7 +18,8 @@
 from __future__ import annotations
 
 import abc
-from typing import Any, Iterator
+from contextlib import contextmanager
+from typing import Any, Generator, Iterator
 
 
 class GraphError(Exception):
@@ -274,4 +275,30 @@ class AbstractGraphRepository(abc.ABC):
 
         Args:
             hashed_user_id: 테넌트 식별자
+        """
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 유틸리티 (Utility)
+    # ─────────────────────────────────────────────────────────────────────
+
+    @contextmanager
+    @abc.abstractmethod
+    def stateless_load(
+        self,
+        hashed_user_id: str,
+    ) -> Generator["AbstractGraphRepository", None, None]:
+        """
+        일회성 조회를 위해 그래프를 메모리에 로드하고, 블록 종료 시 안전하게 해제하는 컨텍스트 매니저.
+
+        계약:
+            - `with repo.stateless_load(hashed_user_id) as r:` 블록 진입 시
+              load()를 호출하여 그래프를 인메모리로 복원한다.
+            - 블록 정상 종료 및 예외 발생 시 모두 clear()를 호출하여 메모리를 해제한다.
+            - load() 실패 시(예: 파일 손상) 부작용 없이 예외를 상위로 전파한다.
+
+        Args:
+            hashed_user_id: 테넌트 식별자 (PII 미포함)
+
+        Yields:
+            self — 로드 완료된 Repository 인스턴스
         """
