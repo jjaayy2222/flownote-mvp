@@ -198,6 +198,13 @@ async def _process_single_tool_call(
     source_documents: List[dict]
 ) -> None:
     """단일 도구 호출을 처리하고 결과를 컨텍스트 및 소스 문서 목록에 추가하는 헬퍼 함수."""
+    if not isinstance(tool_call, dict):
+        logger.warning(
+            "[Tool Dispatch] tool_call이 dict 타입이 아니므로 무시합니다.",
+            extra={"tool_call_type": type(tool_call).__name__}
+        )
+        return
+
     tool_name = tool_call.get("name")
     raw_args = tool_call.get("args")
 
@@ -498,11 +505,12 @@ async def standard_rag_node(state: AgentState) -> PlannerResult:
     )
 
     result = await _run_search_agent(plan_messages, base_context, search_documents_tool, "search_documents_tool")
+    docs = result.get("source_documents")
     return {
         "search_context": result["search_context"],
         "planner_failed": result["planner_failed"],
         "planner_error_message": result["planner_error_message"],
-        "source_documents": result.get("source_documents") or [],
+        "source_documents": docs if isinstance(docs, list) else [],
     }
 
 
@@ -535,11 +543,12 @@ async def fallback_search_node(state: AgentState) -> PlannerResult:
     )
 
     result = await _run_search_agent(plan_messages, base_context, deep_web_search_tool, "deep_web_search_tool")
+    docs = result.get("source_documents")
     return {
         "search_context": result["search_context"],
         "planner_failed": result["planner_failed"],
         "planner_error_message": result["planner_error_message"],
-        "source_documents": result.get("source_documents") or [],
+        "source_documents": docs if isinstance(docs, list) else [],
     }
 
 
