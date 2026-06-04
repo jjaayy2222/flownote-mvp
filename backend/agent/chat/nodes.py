@@ -120,6 +120,15 @@ class PlannerResult(TypedDict):
     source_documents: list[dict]
 
 
+def _ensure_str(val: Any) -> str:
+    """
+    런타임 타입 누수를 방지하기 위한 강제 문자열 변환 헬퍼 (IDE 정적 분석 경고 우회)
+    정적 타입 체커가 이미 str로 인식하더라도, 런타임에 딕셔너리에서 예기치 않은 타입이 
+    조회될 가능성을 차단합니다.
+    """
+    return val if isinstance(val, str) else str(val)
+
+
 def _is_simple_greeting(cleaned_query: str) -> bool:
     """
     공백 기준으로 토큰화하여 단순 인사말인지 판별하는 헬퍼 함수.
@@ -128,13 +137,11 @@ def _is_simple_greeting(cleaned_query: str) -> bool:
     if len(cleaned_query) >= _MAX_GREETING_LENGTH:
         return False
     cleaned_query = cleaned_query.lower()
-    tokens = cleaned_query.split()
-    if not tokens:
-        return False
-    if any(token in _KOREAN_GREETING_FORMS for token in tokens):
-        return True
-    if any(token in _LATIN_GREETING_SET for token in tokens):
-        return True
+    if tokens := cleaned_query.split():
+        return any(
+            token in _KOREAN_GREETING_FORMS or token in _LATIN_GREETING_SET
+            for token in tokens
+        )
     return False
 
 
@@ -154,9 +161,8 @@ def _truncate_context(raw_context: str) -> str:
     # [Pyre2 Workaround] [:N] 슬라이스 대신 itertools.islice 사용.
     # Pyre2가 [:N]을 slice[int,int,int]로 고정 추론해 str/__getitem__ 시그니처와 불일치하는 버그 우회.
     # 런타임 동작은 [:_MAX_SEARCH_CONTEXT_CHARS]와 100% 동일.
-    suffix = "...(검색 결과가 길어 자동 잘림)"
     head = "".join(islice(raw_context, _MAX_SEARCH_CONTEXT_CHARS))
-    return head + suffix
+    return f"{head}...(검색 결과가 길어 자동 잘림)"
 
 
 def _sanitize_pii_in_text(text: str) -> str:
@@ -182,6 +188,63 @@ def _safe_truncate_error_msg(e: Exception, max_chars: int = _MAX_ERROR_MSG_CHARS
     sanitized = _sanitize_pii_in_text(str(e))
     # Pyre2 String Slicing TypeError 우회를 위해 islice 사용
     return "".join(islice(sanitized, max_chars))
+
+
+async def _process_single_tool_call(
+    tool_call: Any,
+    search_tool: Any,
+    expected_tool_name: str,
+    ctx_parts: List[str],
+    source_documents: List[dict]
+) -> None:
+    """단일 도구 호출을 처리하고 결과를 컨텍스트 및 소스 문서 목록에 추가하는 헬퍼 함수."""
+    tool_name = tool_call.get("name")
+    raw_args = tool_call.get("args")
+
+    if raw_args is None:
+        logger.debug(
+            "[Tool Dispatch] 전달된 args가 없어 빈 dict로 초기화합니다.",
+            extra={"tool_name": tool_name},
+        )
+        tool_args = {}
+    elif not isinstance(raw_args, dict):
+        logger.warning(
+            "[Tool Dispatch] 예상치 못한 args 타입 무시",
+            extra={
+                "tool_name": tool_name,
+                "args_type": type(raw_args).__name__,
+            },
+        )
+        return
+    else:
+        tool_args = raw_args
+
+    if tool_name != expected_tool_name:
+        logger.debug(
+            "[Tool Dispatch] 미지원 도구 요청 무시",
+            extra={"tool_name": tool_name},
+        )
+        return
+
+    query_arg = str(tool_args.get("query", ""))
+    logger.info(
+        f"[Planner] -> {expected_tool_name} 호출",
+        extra={"query_length": len(query_arg)},
+    )
+    
+    tool_res_raw = await search_tool.ainvoke(tool_args)
+    
+    if isinstance(tool_res_raw, dict):
+        tool_res = str(tool_res_raw.get("context", ""))
+        docs_chunk = tool_res_raw.get("docs", [])
+        if isinstance(docs_chunk, list):
+            source_documents.extend(docs_chunk)
+    else:
+        tool_res = str(tool_res_raw)
+
+    ctx_parts.append(
+        f"\n[검색 결과 (쿼리 길이: {len(query_arg)}자)]\n{tool_res}\n"
+    )
 
 
 async def _run_search_agent(
@@ -212,51 +275,8 @@ async def _run_search_agent(
                 extra={"tool_call_count": len(typed_response.tool_calls)},
             )
             for tool_call in typed_response.tool_calls:
-                tool_name = tool_call.get("name")
-                raw_args = tool_call.get("args")
-
-                if raw_args is None:
-                    logger.debug(
-                        "[Tool Dispatch] 전달된 args가 없어 빈 dict로 초기화합니다.",
-                        extra={"tool_name": tool_name},
-                    )
-                    tool_args = {}
-                elif not isinstance(raw_args, dict):
-                    logger.warning(
-                        "[Tool Dispatch] 예상치 못한 args 타입 무시",
-                        extra={
-                            "tool_name": tool_name,
-                            "args_type": type(raw_args).__name__,
-                        },
-                    )
-                    continue
-                else:
-                    tool_args = raw_args
-
-                if tool_name != expected_tool_name:
-                    logger.debug(
-                        "[Tool Dispatch] 미지원 도구 요청 무시",
-                        extra={"tool_name": tool_name},
-                    )
-                    continue
-
-                query_arg = str(tool_args.get("query", ""))
-                logger.info(
-                    f"[Planner] -> {expected_tool_name} 호출",
-                    extra={"query_length": len(query_arg)},
-                )
-                tool_res_raw = await search_tool.ainvoke(tool_args)
-                tool_res: str = ""
-                if isinstance(tool_res_raw, dict):
-                    tool_res = str(tool_res_raw.get("context", ""))
-                    docs_chunk = tool_res_raw.get("docs", [])
-                    if isinstance(docs_chunk, list):
-                        source_documents.extend(docs_chunk)
-                else:
-                    tool_res = str(tool_res_raw)
-
-                ctx_parts.append(
-                    f"\n[검색 결과 (쿼리 길이: {len(query_arg)}자)]\n{tool_res}\n"
+                await _process_single_tool_call(
+                    tool_call, search_tool, expected_tool_name, ctx_parts, source_documents
                 )
         else:
             logger.info("[Planner] LLM이 도구 없이 자체 판단 가능으로 결론내렸습니다.")
@@ -290,14 +310,14 @@ def _build_responder_system_message(
     """
     Responder용 시스템 프롬프트를 조립하는 헬퍼.
     """
-    context_block = ""
-    if context:
-        context_block = f"\n\nContext:\n{context}"
+    context_block = f"\n\nContext:\n{context}" if context else ""
 
     system_template = f"""{user_context_msg}
 
 Answer the user's question clearly and accurately, summarizing the information logically.
 If you are provided with context below, use ONLY the provided context to answer.
+When utilizing the context, pay special attention to the graph connections and the 'relationships between notes'. 
+Ensure your response synthesizes these relationships to provide a comprehensive explanation rather than just listing fragmented information.
 If the given context does not contain the answer, politely state that you cannot find the answer in the provided internal documents, and then answer cautiously based on your general knowledge.
 Do not mention the words "context" or "provided text" explicitly to the user.
 If you used any document from the context, YOU MUST use inline citations in the format [1], [2] at the end of the sentence.{context_block}
@@ -323,8 +343,7 @@ def should_fallback(state: AgentState) -> FallbackRoute:
     recent_feedbacks = feedback_history[-FALLBACK_WINDOW_SIZE:] if feedback_history else []
     
     negative_count = sum(
-        1 for f in recent_feedbacks 
-        if isinstance(f, dict) and f.get("rating") == RATING_DOWN
+        isinstance(f, dict) and f.get("rating") == RATING_DOWN for f in recent_feedbacks
     )
     
     if negative_count >= FALLBACK_THRESHOLD:
@@ -356,17 +375,20 @@ def router_edge(state: AgentState) -> Literal["standard_rag", "fallback_search",
         logger.debug("[Router] 메시지가 없어 responder로 라우팅")
         return "responder"
 
-    user_query = ""
-    for msg in reversed(messages):
-        if getattr(msg, "type", None) == "human" and hasattr(msg, "content"):
-            user_query = str(cast(BaseMessage, msg).content)
-            break
+    user_query = next(
+        (
+            str(msg.content)
+            for msg in reversed(messages)
+            if getattr(msg, "type", None) == "human" and hasattr(msg, "content")
+        ),
+        "",
+    )
 
     if not user_query:
         logger.debug("[Router] 사용자 메시지를 찾을 수 없어 responder로 라우팅")
         return "responder"
 
-    user_query_str = str(user_query).strip().lower()
+    user_query_str = user_query.strip().lower()
     cleaned_query = re.sub(r"[^\w가-힣\s]", " ", user_query_str)
     cleaned_query = re.sub(r"\s+", " ", cleaned_query).strip()
     is_simple_greeting = _is_simple_greeting(cleaned_query)
@@ -394,7 +416,7 @@ def _resolve_base_context(state: AgentState, override: Any) -> str:
     base_context_override 파라미터의 센티널 확인, None 폴백 및 타입 검증을 수행하는 헬퍼 함수입니다.
     """
     if override is _USE_STATE_CONTEXT:
-        return str(state.get("search_context", "") or "")
+        return _ensure_str(state.get("search_context", "") or "")
     
     if override is None:
         return ""
@@ -480,7 +502,7 @@ async def standard_rag_node(state: AgentState) -> PlannerResult:
         "search_context": result["search_context"],
         "planner_failed": result["planner_failed"],
         "planner_error_message": result["planner_error_message"],
-        "source_documents": cast(list[dict], result.get("source_documents", [])),
+        "source_documents": result.get("source_documents") or [],
     }
 
 
@@ -517,7 +539,7 @@ async def fallback_search_node(state: AgentState) -> PlannerResult:
         "search_context": result["search_context"],
         "planner_failed": result["planner_failed"],
         "planner_error_message": result["planner_error_message"],
-        "source_documents": cast(list[dict], result.get("source_documents", [])),
+        "source_documents": result.get("source_documents") or [],
     }
 
 
@@ -532,9 +554,9 @@ async def responder_node(state: AgentState) -> Dict[str, Any]:
     """
     logger.info("[Responder Node] 실행 중... (최종 응답 조립 및 생성)")
 
-    context: str = str(state.get("search_context", "") or "")
+    context: str = _ensure_str(state.get("search_context", "") or "")
     planner_failed: bool = bool(state.get("planner_failed", False))
-    planner_error_msg: str = str(state.get("planner_error_message", "") or "")
+    planner_error_msg: str = _ensure_str(state.get("planner_error_message", "") or "")
 
     if context:
         logger.info(
@@ -548,7 +570,7 @@ async def responder_node(state: AgentState) -> Dict[str, Any]:
         )
 
     messages = state.get("messages", [])
-    user_id: str = str(state.get("user_id", "default_user") or "default_user")
+    user_id: str = _ensure_str(state.get("user_id", "default_user") or "default_user")
 
     chat_svc = get_chat_service()
     user_context_msg = chat_svc._get_user_context_prompt_text(user_id)
