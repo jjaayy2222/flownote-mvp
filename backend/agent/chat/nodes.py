@@ -33,6 +33,10 @@ _TRUNCATION_SUFFIX: str = "...(truncated)"
 FALLBACK_WINDOW_SIZE: int = 3
 FALLBACK_THRESHOLD: int = 2
 
+# [Engineering Decision] source_documents 정규화 시 비-dict 요소 필터링 로그 임계치
+# skipped 개수가 이 값을 초과할 때만 DEBUG 로그를 남겨 고빈도 호출 환경에서 로그 노이즈를 억제한다.
+_NORMALIZE_SKIP_LOG_MIN_COUNT: int = 0
+
 # 구성 오류 방지를 위한 불변 조건(Invariant): threshold는 window size를 초과할 수 없음
 if FALLBACK_THRESHOLD > FALLBACK_WINDOW_SIZE:
     raise ValueError(
@@ -134,16 +138,21 @@ def _normalize_source_docs(raw: Any) -> List[dict]:
     """
     PlannerResult의 source_documents 필드를 안전하게 정규화하는 헬퍼.
 
-    처리 규칙:
-    - list 또는 기타 Sequence(tuple 등)이면 dict 요소만 필터링하여 list로 변환합니다.
-    - str은 문자 이터러블로 오인될 수 있으므로 명시적으로 제외합니다.
-    - 그 외 모든 타입(None 등)은 빈 리스트로 정규화하여 하위 로직의 크래시를 방지합니다.
-    - dict가 아닌 요소는 개별적으로 걸러내며, 이 경우 DEBUG 레벨로 로그를 남깁니다.
+    제외 타입 (명시적 가드):
+    - str: 문자 이터러블로 오인될 수 있으므로 제외.
+    - bytes / bytearray: 바이너리 데이터는 문서 목록으로 취급할 수 없으므로 제외.
+
+    허용 타입 (Sequence 하위집합 필터링):
+    - list, tuple 등 일반적인 Sequence이면 dict 요소만 필터링하여 list로 반환.
+    - dict가 아닌 요소는 개별 코어로 걷러내며, skipped 개수가 _NORMALIZE_SKIP_LOG_MIN_COUNT를
+      완전히 안넘으면 로그를 발생하지 않아 고빈도 환경의 로그 노이즈를 억제.
+
+    그 외 모든 타입(None 등)은 빈 리스트로 정규화하여 하위 로직의 크래시를 방지합니다.
     """
-    # str은 Sequence이지만 문서 목록으로 취급해서는 안 되므로 먼저 제외
-    if isinstance(raw, str):
+    # [Explicit Exclusion] str/bytes/bytearray는 Sequence이지만 문서 목록으로 취급할 수 없음
+    if isinstance(raw, (str, bytes, bytearray)):
         logger.debug(
-            "[Normalize] source_documents가 str 타입이어서 빈 리스트로 정규화됩니다.",
+            "[Normalize] source_documents가 문서 컨테이너가 아니어서 빈 리스트로 정규화됩니다.",
             extra={"actual_type": type(raw).__name__},
         )
         return []
@@ -151,7 +160,8 @@ def _normalize_source_docs(raw: Any) -> List[dict]:
     if isinstance(raw, Sequence):
         valid_docs = [item for item in raw if isinstance(item, dict)]
         skipped = len(raw) - len(valid_docs)
-        if skipped > 0:
+        # [Engineering Decision] _NORMALIZE_SKIP_LOG_MIN_COUNT 초과 시에만 로그 남겨 고빈도 호출 환경에서의 노이즈 억제
+        if skipped > _NORMALIZE_SKIP_LOG_MIN_COUNT:
             logger.debug(
                 "[Normalize] source_documents 내 dict가 아닌 요소를 제거했습니다.",
                 extra={"skipped_count": skipped, "total_count": len(raw)},
