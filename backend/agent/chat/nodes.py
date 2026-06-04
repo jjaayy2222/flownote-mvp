@@ -3,6 +3,7 @@
 import re
 import logging
 import numbers
+from collections.abc import Mapping, Sequence
 from itertools import islice
 from typing import Dict, Any, Literal, cast, List, TypedDict, Optional
 from langchain_core.messages import AIMessage, SystemMessage, BaseMessage  # type: ignore[import, import-untyped, reportMissingImports]
@@ -132,13 +133,33 @@ def _ensure_str(val: Any) -> str:
 def _normalize_source_docs(raw: Any) -> List[dict]:
     """
     PlannerResult의 source_documents 필드를 안전하게 정규화하는 헬퍼.
-    - 값이 list이면 그대로 반환합니다.
-    - 그 외 모든 타입(None, str 등)은 빈 리스트로 정규화하여 하위 로직의 크래시를 방지합니다.
+
+    처리 규칙:
+    - list 또는 기타 Sequence(tuple 등)이면 dict 요소만 필터링하여 list로 변환합니다.
+    - str은 문자 이터러블로 오인될 수 있으므로 명시적으로 제외합니다.
+    - 그 외 모든 타입(None 등)은 빈 리스트로 정규화하여 하위 로직의 크래시를 방지합니다.
+    - dict가 아닌 요소는 개별적으로 걸러내며, 이 경우 DEBUG 레벨로 로그를 남깁니다.
     """
-    if isinstance(raw, list):
-        return raw
+    # str은 Sequence이지만 문서 목록으로 취급해서는 안 되므로 먼저 제외
+    if isinstance(raw, str):
+        logger.debug(
+            "[Normalize] source_documents가 str 타입이어서 빈 리스트로 정규화됩니다.",
+            extra={"actual_type": type(raw).__name__},
+        )
+        return []
+
+    if isinstance(raw, Sequence):
+        valid_docs = [item for item in raw if isinstance(item, dict)]
+        skipped = len(raw) - len(valid_docs)
+        if skipped > 0:
+            logger.debug(
+                "[Normalize] source_documents 내 dict가 아닌 요소를 제거했습니다.",
+                extra={"skipped_count": skipped, "total_count": len(raw)},
+            )
+        return valid_docs
+
     logger.debug(
-        "[Normalize] source_documents가 list 타입이 아니어서 빈 리스트로 정규화됩니다.",
+        "[Normalize] source_documents가 Sequence 타입이 아니어서 빈 리스트로 정규화됩니다.",
         extra={"actual_type": type(raw).__name__},
     )
     return []
@@ -213,9 +234,9 @@ async def _process_single_tool_call(
     source_documents: List[dict]
 ) -> None:
     """단일 도구 호출을 처리하고 결과를 컨텍스트 및 소스 문서 목록에 추가하는 헬퍼 함수."""
-    if not isinstance(tool_call, dict):
+    if not isinstance(tool_call, Mapping):
         logger.warning(
-            "[Tool Dispatch] tool_call이 dict 타입이 아니므로 무시합니다.",
+            "[Tool Dispatch] tool_call이 Mapping 타입이 아니므로 무시합니다.",
             extra={
                 "tool_call_type": type(tool_call).__name__,
                 "tool_call_repr": repr(tool_call)[:80],  # 추적을 위한 제한적 식별자 (최대 80자)
