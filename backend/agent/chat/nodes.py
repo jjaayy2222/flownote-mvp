@@ -3,6 +3,7 @@
 import re
 import logging
 import numbers
+from collections.abc import Mapping, Sequence
 from itertools import islice
 from typing import Dict, Any, Literal, cast, List, TypedDict, Optional
 from langchain_core.messages import AIMessage, SystemMessage, BaseMessage  # type: ignore[import, import-untyped, reportMissingImports]
@@ -31,6 +32,10 @@ _TRUNCATION_SUFFIX: str = "...(truncated)"
 # Fallback Routing 관련 임계치 및 윈도우 사이즈
 FALLBACK_WINDOW_SIZE: int = 3
 FALLBACK_THRESHOLD: int = 2
+
+# [Engineering Decision] source_documents 정규화 시 비-dict 요소 필터링 로그 임계치
+# skipped 개수가 이 값을 초과할 때만 DEBUG 로그를 남겨 고빈도 호출 환경에서 로그 노이즈를 억제한다.
+_NORMALIZE_SKIP_LOG_MIN_COUNT: int = 0
 
 # 구성 오류 방지를 위한 불변 조건(Invariant): threshold는 window size를 초과할 수 없음
 if FALLBACK_THRESHOLD > FALLBACK_WINDOW_SIZE:
@@ -132,13 +137,39 @@ def _ensure_str(val: Any) -> str:
 def _normalize_source_docs(raw: Any) -> List[dict]:
     """
     PlannerResult의 source_documents 필드를 안전하게 정규화하는 헬퍼.
-    - 값이 list이면 그대로 반환합니다.
-    - 그 외 모든 타입(None, str 등)은 빈 리스트로 정규화하여 하위 로직의 크래시를 방지합니다.
+
+    제외 타입 (명시적 가드):
+    - str: 문자 이터러블로 오인될 수 있으므로 제외.
+    - bytes / bytearray: 바이너리 데이터는 문서 목록으로 취급할 수 없으므로 제외.
+
+    허용 타입 (Sequence 하위집합 필터링):
+    - list, tuple 등 일반적인 Sequence이면 dict 요소만 필터링하여 list로 반환.
+    - dict가 아닌 요소는 개별 코어로 걷러내며, skipped 개수가 _NORMALIZE_SKIP_LOG_MIN_COUNT를
+      완전히 안넘으면 로그를 발생하지 않아 고빈도 환경의 로그 노이즈를 억제.
+
+    그 외 모든 타입(None 등)은 빈 리스트로 정규화하여 하위 로직의 크래시를 방지합니다.
     """
-    if isinstance(raw, list):
-        return raw
+    # [Explicit Exclusion] str/bytes/bytearray는 Sequence이지만 문서 목록으로 취급할 수 없음
+    if isinstance(raw, (str, bytes, bytearray)):
+        logger.debug(
+            "[Normalize] source_documents가 문서 컨테이너가 아니어서 빈 리스트로 정규화됩니다.",
+            extra={"actual_type": type(raw).__name__},
+        )
+        return []
+
+    if isinstance(raw, Sequence):
+        valid_docs = [item for item in raw if isinstance(item, dict)]
+        skipped = len(raw) - len(valid_docs)
+        # [Engineering Decision] _NORMALIZE_SKIP_LOG_MIN_COUNT 초과 시에만 로그 남겨 고빈도 호출 환경에서의 노이즈 억제
+        if skipped > _NORMALIZE_SKIP_LOG_MIN_COUNT:
+            logger.debug(
+                "[Normalize] source_documents 내 dict가 아닌 요소를 제거했습니다.",
+                extra={"skipped_count": skipped, "total_count": len(raw)},
+            )
+        return valid_docs
+
     logger.debug(
-        "[Normalize] source_documents가 list 타입이 아니어서 빈 리스트로 정규화됩니다.",
+        "[Normalize] source_documents가 Sequence 타입이 아니어서 빈 리스트로 정규화됩니다.",
         extra={"actual_type": type(raw).__name__},
     )
     return []
@@ -213,9 +244,9 @@ async def _process_single_tool_call(
     source_documents: List[dict]
 ) -> None:
     """단일 도구 호출을 처리하고 결과를 컨텍스트 및 소스 문서 목록에 추가하는 헬퍼 함수."""
-    if not isinstance(tool_call, dict):
+    if not isinstance(tool_call, Mapping):
         logger.warning(
-            "[Tool Dispatch] tool_call이 dict 타입이 아니므로 무시합니다.",
+            "[Tool Dispatch] tool_call이 Mapping 타입이 아니므로 무시합니다.",
             extra={
                 "tool_call_type": type(tool_call).__name__,
                 "tool_call_repr": repr(tool_call)[:80],  # 추적을 위한 제한적 식별자 (최대 80자)
