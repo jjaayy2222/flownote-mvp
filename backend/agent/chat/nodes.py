@@ -120,6 +120,15 @@ class PlannerResult(TypedDict):
     source_documents: list[dict]
 
 
+def _ensure_str(val: Any) -> str:
+    """
+    런타임 타입 누수를 방지하기 위한 강제 문자열 변환 헬퍼 (IDE 정적 분석 경고 우회)
+    정적 타입 체커가 이미 str로 인식하더라도, 런타임에 딕셔너리에서 예기치 않은 타입이 
+    조회될 가능성을 차단합니다.
+    """
+    return val if isinstance(val, str) else str(val)
+
+
 def _is_simple_greeting(cleaned_query: str) -> bool:
     """
     공백 기준으로 토큰화하여 단순 인사말인지 판별하는 헬퍼 함수.
@@ -181,6 +190,63 @@ def _safe_truncate_error_msg(e: Exception, max_chars: int = _MAX_ERROR_MSG_CHARS
     return "".join(islice(sanitized, max_chars))
 
 
+async def _process_single_tool_call(
+    tool_call: Any,
+    search_tool: Any,
+    expected_tool_name: str,
+    ctx_parts: List[str],
+    source_documents: List[dict]
+) -> None:
+    """단일 도구 호출을 처리하고 결과를 컨텍스트 및 소스 문서 목록에 추가하는 헬퍼 함수."""
+    tool_name = tool_call.get("name")
+    raw_args = tool_call.get("args")
+
+    if raw_args is None:
+        logger.debug(
+            "[Tool Dispatch] 전달된 args가 없어 빈 dict로 초기화합니다.",
+            extra={"tool_name": tool_name},
+        )
+        tool_args = {}
+    elif not isinstance(raw_args, dict):
+        logger.warning(
+            "[Tool Dispatch] 예상치 못한 args 타입 무시",
+            extra={
+                "tool_name": tool_name,
+                "args_type": type(raw_args).__name__,
+            },
+        )
+        return
+    else:
+        tool_args = raw_args
+
+    if tool_name != expected_tool_name:
+        logger.debug(
+            "[Tool Dispatch] 미지원 도구 요청 무시",
+            extra={"tool_name": tool_name},
+        )
+        return
+
+    query_arg = str(tool_args.get("query", ""))
+    logger.info(
+        f"[Planner] -> {expected_tool_name} 호출",
+        extra={"query_length": len(query_arg)},
+    )
+    
+    tool_res_raw = await search_tool.ainvoke(tool_args)
+    
+    if isinstance(tool_res_raw, dict):
+        tool_res = str(tool_res_raw.get("context", ""))
+        docs_chunk = tool_res_raw.get("docs", [])
+        if isinstance(docs_chunk, list):
+            source_documents.extend(docs_chunk)
+    else:
+        tool_res = str(tool_res_raw)
+
+    ctx_parts.append(
+        f"\n[검색 결과 (쿼리 길이: {len(query_arg)}자)]\n{tool_res}\n"
+    )
+
+
 async def _run_search_agent(
     plan_messages: List[BaseMessage],
     base_context: str,
@@ -209,51 +275,8 @@ async def _run_search_agent(
                 extra={"tool_call_count": len(typed_response.tool_calls)},
             )
             for tool_call in typed_response.tool_calls:
-                tool_name = tool_call.get("name")
-                raw_args = tool_call.get("args")
-
-                if raw_args is None:
-                    logger.debug(
-                        "[Tool Dispatch] 전달된 args가 없어 빈 dict로 초기화합니다.",
-                        extra={"tool_name": tool_name},
-                    )
-                    tool_args = {}
-                elif not isinstance(raw_args, dict):
-                    logger.warning(
-                        "[Tool Dispatch] 예상치 못한 args 타입 무시",
-                        extra={
-                            "tool_name": tool_name,
-                            "args_type": type(raw_args).__name__,
-                        },
-                    )
-                    continue
-                else:
-                    tool_args = raw_args
-
-                if tool_name != expected_tool_name:
-                    logger.debug(
-                        "[Tool Dispatch] 미지원 도구 요청 무시",
-                        extra={"tool_name": tool_name},
-                    )
-                    continue
-
-                query_arg = str(tool_args.get("query", ""))
-                logger.info(
-                    f"[Planner] -> {expected_tool_name} 호출",
-                    extra={"query_length": len(query_arg)},
-                )
-                tool_res_raw = await search_tool.ainvoke(tool_args)
-                tool_res: str = ""
-                if isinstance(tool_res_raw, dict):
-                    tool_res = str(tool_res_raw.get("context", ""))
-                    docs_chunk = tool_res_raw.get("docs", [])
-                    if isinstance(docs_chunk, list):
-                        source_documents.extend(docs_chunk)
-                else:
-                    tool_res = str(tool_res_raw)
-
-                ctx_parts.append(
-                    f"\n[검색 결과 (쿼리 길이: {len(query_arg)}자)]\n{tool_res}\n"
+                await _process_single_tool_call(
+                    tool_call, search_tool, expected_tool_name, ctx_parts, source_documents
                 )
         else:
             logger.info("[Planner] LLM이 도구 없이 자체 판단 가능으로 결론내렸습니다.")
@@ -393,7 +416,7 @@ def _resolve_base_context(state: AgentState, override: Any) -> str:
     base_context_override 파라미터의 센티널 확인, None 폴백 및 타입 검증을 수행하는 헬퍼 함수입니다.
     """
     if override is _USE_STATE_CONTEXT:
-        return state.get("search_context", "") or ""
+        return _ensure_str(state.get("search_context", "") or "")
     
     if override is None:
         return ""
@@ -479,7 +502,7 @@ async def standard_rag_node(state: AgentState) -> PlannerResult:
         "search_context": result["search_context"],
         "planner_failed": result["planner_failed"],
         "planner_error_message": result["planner_error_message"],
-        "source_documents": result.get("source_documents", []),
+        "source_documents": result.get("source_documents") or [],
     }
 
 
@@ -516,7 +539,7 @@ async def fallback_search_node(state: AgentState) -> PlannerResult:
         "search_context": result["search_context"],
         "planner_failed": result["planner_failed"],
         "planner_error_message": result["planner_error_message"],
-        "source_documents": result.get("source_documents", []),
+        "source_documents": result.get("source_documents") or [],
     }
 
 
@@ -531,9 +554,9 @@ async def responder_node(state: AgentState) -> Dict[str, Any]:
     """
     logger.info("[Responder Node] 실행 중... (최종 응답 조립 및 생성)")
 
-    context: str = state.get("search_context", "") or ""
+    context: str = _ensure_str(state.get("search_context", "") or "")
     planner_failed: bool = bool(state.get("planner_failed", False))
-    planner_error_msg: str = state.get("planner_error_message", "") or ""
+    planner_error_msg: str = _ensure_str(state.get("planner_error_message", "") or "")
 
     if context:
         logger.info(
@@ -547,7 +570,7 @@ async def responder_node(state: AgentState) -> Dict[str, Any]:
         )
 
     messages = state.get("messages", [])
-    user_id: str = state.get("user_id", "default_user") or "default_user"
+    user_id: str = _ensure_str(state.get("user_id", "default_user") or "default_user")
 
     chat_svc = get_chat_service()
     user_context_msg = chat_svc._get_user_context_prompt_text(user_id)
