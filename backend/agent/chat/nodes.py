@@ -129,6 +129,21 @@ def _ensure_str(val: Any) -> str:
     return val if isinstance(val, str) else str(val)
 
 
+def _normalize_source_docs(raw: Any) -> List[dict]:
+    """
+    PlannerResult의 source_documents 필드를 안전하게 정규화하는 헬퍼.
+    - 값이 list이면 그대로 반환합니다.
+    - 그 외 모든 타입(None, str 등)은 빈 리스트로 정규화하여 하위 로직의 크래시를 방지합니다.
+    """
+    if isinstance(raw, list):
+        return raw
+    logger.debug(
+        "[Normalize] source_documents가 list 타입이 아니어서 빈 리스트로 정규화됩니다.",
+        extra={"actual_type": type(raw).__name__},
+    )
+    return []
+
+
 def _is_simple_greeting(cleaned_query: str) -> bool:
     """
     공백 기준으로 토큰화하여 단순 인사말인지 판별하는 헬퍼 함수.
@@ -198,6 +213,16 @@ async def _process_single_tool_call(
     source_documents: List[dict]
 ) -> None:
     """단일 도구 호출을 처리하고 결과를 컨텍스트 및 소스 문서 목록에 추가하는 헬퍼 함수."""
+    if not isinstance(tool_call, dict):
+        logger.warning(
+            "[Tool Dispatch] tool_call이 dict 타입이 아니므로 무시합니다.",
+            extra={
+                "tool_call_type": type(tool_call).__name__,
+                "tool_call_repr": repr(tool_call)[:80],  # 추적을 위한 제한적 식별자 (최대 80자)
+            }
+        )
+        return
+
     tool_name = tool_call.get("name")
     raw_args = tool_call.get("args")
 
@@ -502,7 +527,7 @@ async def standard_rag_node(state: AgentState) -> PlannerResult:
         "search_context": result["search_context"],
         "planner_failed": result["planner_failed"],
         "planner_error_message": result["planner_error_message"],
-        "source_documents": result.get("source_documents") or [],
+        "source_documents": _normalize_source_docs(result.get("source_documents")),
     }
 
 
@@ -539,7 +564,7 @@ async def fallback_search_node(state: AgentState) -> PlannerResult:
         "search_context": result["search_context"],
         "planner_failed": result["planner_failed"],
         "planner_error_message": result["planner_error_message"],
-        "source_documents": result.get("source_documents") or [],
+        "source_documents": _normalize_source_docs(result.get("source_documents")),
     }
 
 
