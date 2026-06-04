@@ -34,7 +34,10 @@ FALLBACK_WINDOW_SIZE: int = 3
 FALLBACK_THRESHOLD: int = 2
 
 # [Engineering Decision] source_documents 정규화 시 비-dict 요소 필터링 로그 임계치
-# skipped 개수가 이 값을 초과할 때만 DEBUG 로그를 남겨 고빈도 호출 환경에서 로그 노이즈를 억제한다.
+# 기본값 0 = "모든 skip을 로깅"하는 안전한 기본값(Safe Default). 정보 손실 없이 완전한 가시성을 보장한다.
+# - 0: skip이 1개라도 발생하면 로그를 남긴다 (기본값. 디버깅 완전 가시성 보장).
+# - N>0: skip이 N개를 초과할 때만 로그를 남긴다 (고빈도 환경에서 운영자가 임계치를 높여 노이즈 억제 가능).
+# [Note] 이 상수의 목적은 "현재 노이즈를 줄이는 것"이 아니라 "향후 운영 환경에 맞게 코드 변경 없이 조정 가능한 구조"를 제공하는 것.
 _NORMALIZE_SKIP_LOG_MIN_COUNT: int = 0
 
 # 구성 오류 방지를 위한 불변 조건(Invariant): threshold는 window size를 초과할 수 없음
