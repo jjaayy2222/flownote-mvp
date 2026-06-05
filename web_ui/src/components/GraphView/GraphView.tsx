@@ -58,9 +58,9 @@ type FGMethods = ForceGraphMethods<NodeObj, LinkObj>;
 // ─────────────────────────────────────────
 // 헬퍼: 개발 환경 전용 로깅 (DRY 패턴)
 // ─────────────────────────────────────────
-function devWarn(message: string) {
+function devWarn(...args: unknown[]) {
   if (process.env.NODE_ENV !== "production") {
-    console.warn(message);
+    console.warn(...args);
   }
 }
 
@@ -185,7 +185,9 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
       setSelectedNodeId((prev) => (prev === node.id ? null : node.id));
 
       if (onNodeClick) {
-        // ForceGraphNode 는 GraphNode 를 상속하므로 안전하게 캐스팅
+        // [Confirm] NodeObj(NodeObject<ForceGraphNode>)는 원래 백엔드 모델인 GraphNode를 상속한 
+        // ForceGraphNode의 모든 속성을 그대로 유지한 채 물리 엔진 속성(x, y 등)만 추가된 슈퍼셋입니다.
+        // 구조적 타이핑(Structural Typing)에 의해 GraphNode로의 다운캐스팅은 런타임에 완벽히 안전합니다.
         onNodeClick(node as GraphNode);
       }
     },
