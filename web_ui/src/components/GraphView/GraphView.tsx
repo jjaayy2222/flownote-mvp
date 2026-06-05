@@ -190,11 +190,13 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
 
       if (onNodeClick) {
         // [Confirm] 백엔드 스키마 변경(Schema drift)으로 인한 필수 필드 누락 위험을 방어하는 런타임 가드
-        if (typeof node.id !== "string" || !node.node_type) {
+        if (typeof node.id !== "string" || typeof node.node_type !== "string") {
           devWarn("Clicked node is missing required GraphNode fields", {
             id: node.id,
             node_type: node.node_type,
           });
+          // Silent failure 방지: 클릭 시 아무 반응이 없는 UX 문제를 막기 위한 Fallback
+          alert("데이터 오류: 유효하지 않은 노드입니다. 페이지를 새로고침해 주세요.");
           return;
         }
 
