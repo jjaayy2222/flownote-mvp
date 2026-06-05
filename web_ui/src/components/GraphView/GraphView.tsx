@@ -63,9 +63,11 @@ function resolveNodeColor(nodeType: NodeType): string {
       return GRAPH_NODE_COLOR_TAG;
     case NodeType.CATEGORY:
       return GRAPH_NODE_COLOR_CATEGORY;
-    default:
-      // 백엔드에서 새 NodeType 이 추가될 경우의 안전한 폴백
+    default: {
+      const _exhaustiveCheck: never = nodeType;
+      console.warn(`[GraphView] Unknown nodeType: ${_exhaustiveCheck}`);
       return GRAPH_NODE_COLOR_NOTE;
+    }
   }
 }
 
@@ -156,11 +158,8 @@ export interface GraphViewProps {
  */
 export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewProps) {
   const graphRef = useRef<
-    ForceGraphMethods<
-      NodeObject<ForceGraphNode>,
-      LinkObject<ForceGraphNode, ForceGraphLink>
-    > | undefined
-  >(undefined);
+    ForceGraphMethods<ForceGraphNode, ForceGraphLink> | null
+  >(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   // SSOT 에서 변환한 데이터 (재계산 방지를 위해 메모이제이션)
@@ -182,8 +181,7 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
 
   // ── 노드 캔버스 렌더러 ───────────────────────────────────
   const paintNode = useCallback(
-    (rawNode: NodeObject<ForceGraphNode>, ctx: CanvasRenderingContext2D) => {
-      const node = rawNode as ForceGraphNode;
+    (node: NodeObject<ForceGraphNode>, ctx: CanvasRenderingContext2D) => {
       const nx = node.x ?? 0;
       const ny = node.y ?? 0;
       const isSelected = node.id === selectedNodeId;
@@ -217,24 +215,23 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
 
   return (
     <ForceGraph2D<ForceGraphNode, ForceGraphLink>
-      ref={graphRef}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ref={graphRef as any}
       graphData={{ nodes, links }}
       width={width}
       height={height}
       backgroundColor={GRAPH_BG_COLOR}
       // 링크 스타일
       linkColor={() => GRAPH_LINK_COLOR}
-      linkWidth={(link: unknown) => {
-        const l = link as ForceGraphLink;
+      linkWidth={(link: LinkObject<ForceGraphNode, ForceGraphLink>) => {
         // 엣지 weight(0~1)를 링크 두께(0.5~3px)에 선형 매핑
-        return 0.5 + (l.weight ?? 1) * 2.5;
+        return 0.5 + (link.weight ?? 1) * 2.5;
       }}
       // 노드 커스텀 렌더러
       nodeCanvasObject={paintNode}
       nodeCanvasObjectMode={() => "replace"}
       // 노드 포인터 영역 — 라벨 영역까지 포함하도록 반경 확장
-      nodePointerAreaPaint={(rawNode: unknown, color: string, ctx: CanvasRenderingContext2D) => {
-        const node = rawNode as ForceGraphNode;
+      nodePointerAreaPaint={(node: NodeObject<ForceGraphNode>, color: string, ctx: CanvasRenderingContext2D) => {
         const nx = node.x ?? 0;
         const ny = node.y ?? 0;
         const radius = GRAPH_NODE_RADIUS * GRAPH_NODE_SELECTED_SCALE + 6;
