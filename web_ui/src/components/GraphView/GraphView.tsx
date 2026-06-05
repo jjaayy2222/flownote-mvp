@@ -69,6 +69,13 @@ function devWarn(message: string, payload?: Record<string, unknown>) {
 }
 
 // ─────────────────────────────────────────
+// 헬퍼: 런타임 스키마 방어용 커스텀 타입 가드(Type Guard)
+// ─────────────────────────────────────────
+function isValidGraphNode(node: Partial<GraphNode>): node is GraphNode {
+  return typeof node.id === "string" && typeof node.node_type === "string";
+}
+
+// ─────────────────────────────────────────
 // 헬퍼: NodeType → 색상 매핑
 // ─────────────────────────────────────────
 
@@ -105,7 +112,18 @@ function adaptGraphData(data: GraphViewData): {
   nodes: ForceGraphNode[];
   links: ForceGraphLink[];
 } {
-  const rawNodes = data.nodes;
+  // [Confirm] 스키마 변경(Schema drift)에 대비하여 렌더링 전 유효하지 않은 노드(불량 데이터)를 원천 차단
+  const rawNodes = data.nodes.filter((node) => {
+    if (!isValidGraphNode(node)) {
+      devWarn("Dropped invalid node missing required fields before rendering", {
+        id: (node as Record<string, unknown>).id,
+        node_type: (node as Record<string, unknown>).node_type,
+      });
+      return false; // 불량 노드 렌더링 및 클릭 이벤트 대상에서 완전 제외
+    }
+    return true;
+  });
+
   const truncated = rawNodes.length > MAX_GRAPH_NODES;
 
   let allowedNodes = rawNodes;
@@ -134,11 +152,18 @@ function adaptGraphData(data: GraphViewData): {
     allowedNodes = sortedNodes.slice(0, MAX_GRAPH_NODES);
   }
 
+  // 제한된 노드 ID Set
   const allowedNodeIds = new Set(allowedNodes.map((n) => n.id));
 
-  // 양 끝점 노드가 모두 허용 범위 내에 있는 엣지만 포함
+  // [Confirm] allowedNodeIds를 기반으로 양 끝단(Source/Target)을 검사하므로, 
+  // 사전 필터링(불량 노드 제거)으로 인해 삭제된 노드를 참조하는 고아 엣지(Orphan edges)는 
+  // 렌더링되지 않고 안전하게 함께 소거(Cascade)됩니다.
   const links: ForceGraphLink[] = data.edges
-    .filter((e) => allowedNodeIds.has(e.source) && allowedNodeIds.has(e.target))
+    .filter((e) => {
+      const sourceId = typeof e.source === "object" ? (e.source as NodeObj).id : e.source;
+      const targetId = typeof e.target === "object" ? (e.target as NodeObj).id : e.target;
+      return allowedNodeIds.has(sourceId as string) && allowedNodeIds.has(targetId as string);
+    })
     .map((e) => ({ ...e }));
 
   return {
@@ -189,18 +214,8 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
       setSelectedNodeId((prev) => (prev === node.id ? null : node.id));
 
       if (onNodeClick) {
-        // [Confirm] 백엔드 스키마 변경(Schema drift)으로 인한 필수 필드 누락 위험을 방어하는 런타임 가드
-        if (typeof node.id !== "string" || typeof node.node_type !== "string") {
-          devWarn("Clicked node is missing required GraphNode fields", {
-            id: node.id,
-            node_type: node.node_type,
-          });
-          // Silent failure 방지: 클릭 시 아무 반응이 없는 UX 문제를 막기 위한 Fallback
-          alert("데이터 오류: 유효하지 않은 노드입니다. 페이지를 새로고침해 주세요.");
-          return;
-        }
-
-        // 필수 필드 검증을 통과했으므로 다운캐스팅은 런타임에 안전합니다.
+        // [Confirm] adaptGraphData 에서 불량 데이터를 사전 차단(Pre-filter)하므로,
+        // 이곳으로 전달된 노드의 필수 필드 무결성은 100% 보장됩니다.
         onNodeClick(node as GraphNode);
       }
     },
