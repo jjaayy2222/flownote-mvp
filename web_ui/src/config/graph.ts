@@ -46,7 +46,8 @@ export const GRAPH_NODES_DEFAULT = 500;
  * - 유효 범위(GRAPH_NODES_MIN ~ GRAPH_NODES_MAX) 를 벗어날 경우: Clamping 후 경고 로그 출력.
  */
 function loadMaxGraphNodes(): number {
-  const raw = process.env[ENV_KEY_MAX_GRAPH_NODES];
+  // Next.js 환경에서는 동적 키(process.env[Key])가 빌드 타임에 치환되지 않으므로 직접 명시해야 합니다.
+  const raw = process.env.NEXT_PUBLIC_MAX_GRAPH_NODES;
   if (raw === undefined || raw === "") {
     return GRAPH_NODES_DEFAULT;
   }

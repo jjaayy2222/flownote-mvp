@@ -19,10 +19,11 @@
 //
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useRef, useState, useMemo } from "react";
 import ForceGraph2D, {
   type ForceGraphMethods,
   type NodeObject,
+  type LinkObject,
 } from "react-force-graph-2d";
 
 import type { GraphNode } from "@/types/websocket";
@@ -75,8 +76,8 @@ function resolveNodeColor(nodeType: NodeType): string {
 /**
  * 백엔드 GraphDataResponse 를 react-force-graph 입력 형태로 변환합니다.
  *
- * MAX_GRAPH_NODES 초과 시 앞에서부터 자르며, 자른 경우 콘솔 경고를 출력합니다.
- * (Phase 4-3 2단계의 중심 노드 우선 슬라이싱은 별도 구현 예정)
+ * MAX_GRAPH_NODES 초과 시, OOM(Out of Memory) 방지를 위해
+ * 연결 수(Degree)가 높은 중심 노드 위주로 상위 N개만 필터링합니다.
  */
 function adaptGraphData(data: GraphViewData): {
   nodes: ForceGraphNode[];
@@ -154,11 +155,16 @@ export interface GraphViewProps {
  * ```
  */
 export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewProps) {
-  const graphRef = useRef<ForceGraphMethods | undefined>(undefined);
+  const graphRef = useRef<
+    ForceGraphMethods<
+      NodeObject<ForceGraphNode>,
+      LinkObject<ForceGraphNode, ForceGraphLink>
+    > | undefined
+  >(undefined);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
-  // SSOT 에서 변환한 데이터
-  const { nodes, links } = adaptGraphData(data);
+  // SSOT 에서 변환한 데이터 (재계산 방지를 위해 메모이제이션)
+  const { nodes, links } = useMemo(() => adaptGraphData(data), [data]);
 
   // ── 노드 클릭 핸들러 ──────────────────────────────────────
   const handleNodeClick = useCallback(
