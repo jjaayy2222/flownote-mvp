@@ -72,7 +72,9 @@ function resolveNodeColor(nodeType: NodeType): string {
       return GRAPH_NODE_COLOR_CATEGORY;
     default: {
       const _exhaustiveCheck: never = nodeType;
-      console.warn(`[GraphView] Unknown nodeType: ${_exhaustiveCheck}`);
+      if (process.env.NODE_ENV !== "production") {
+        console.warn(`[GraphView] Unknown nodeType: ${_exhaustiveCheck}`);
+      }
       return GRAPH_NODE_COLOR_NOTE;
     }
   }
@@ -172,8 +174,7 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
 
   // ── 노드 클릭 핸들러 ──────────────────────────────────────
   const handleNodeClick = useCallback(
-    (rawNode: NodeObj) => {
-      const node = rawNode as ForceGraphNode;
+    (node: NodeObj) => {
       setSelectedNodeId((prev) => (prev === node.id ? null : node.id));
 
       if (onNodeClick) {
