@@ -56,11 +56,15 @@ type LinkObj = LinkObject<ForceGraphNode, ForceGraphLink>;
 type FGMethods = ForceGraphMethods<NodeObj, LinkObj>;
 
 // ─────────────────────────────────────────
-// 헬퍼: 개발 환경 전용 로깅 (DRY 패턴)
+// 헬퍼: 구조화된 개발 환경 전용 로깅 (DRY 패턴 & 민감정보 보호)
 // ─────────────────────────────────────────
-function devWarn(...args: unknown[]) {
+function devWarn(message: string, payload?: Record<string, unknown>) {
   if (process.env.NODE_ENV !== "production") {
-    console.warn(...args);
+    if (payload) {
+      console.warn(`[GraphView] ${message}`, payload);
+    } else {
+      console.warn(`[GraphView] ${message}`);
+    }
   }
 }
 
@@ -81,7 +85,7 @@ function resolveNodeColor(nodeType: NodeType): string {
       return GRAPH_NODE_COLOR_CATEGORY;
     default: {
       const _exhaustiveCheck: never = nodeType;
-      devWarn(`[GraphView] Unknown nodeType: ${_exhaustiveCheck}`);
+      devWarn(`Unknown nodeType: ${_exhaustiveCheck}`);
       return GRAPH_NODE_COLOR_NOTE;
     }
   }
@@ -108,7 +112,7 @@ function adaptGraphData(data: GraphViewData): {
 
   if (truncated) {
     devWarn(
-      `[GraphView] 노드 수(${rawNodes.length})가 MAX_GRAPH_NODES(${MAX_GRAPH_NODES})를 초과합니다. ` +
+      `노드 수(${rawNodes.length})가 MAX_GRAPH_NODES(${MAX_GRAPH_NODES})를 초과합니다. ` +
         `연결 수(Degree)가 높은 중심 노드 위주로 ${MAX_GRAPH_NODES}개만 필터링하여 렌더링합니다.`
     );
 
@@ -185,9 +189,18 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
       setSelectedNodeId((prev) => (prev === node.id ? null : node.id));
 
       if (onNodeClick) {
-        // [Confirm] NodeObj(NodeObject<ForceGraphNode>)는 원래 백엔드 모델인 GraphNode를 상속한 
-        // ForceGraphNode의 모든 속성을 그대로 유지한 채 물리 엔진 속성(x, y 등)만 추가된 슈퍼셋입니다.
-        // 구조적 타이핑(Structural Typing)에 의해 GraphNode로의 다운캐스팅은 런타임에 완벽히 안전합니다.
+        // [Confirm] 백엔드 스키마 변경(Schema drift)으로 인한 필수 필드 누락 위험을 방어하는 런타임 가드
+        if (typeof node.id !== "string" || typeof node.node_type !== "string") {
+          devWarn("Clicked node is missing required GraphNode fields", {
+            id: node.id,
+            node_type: node.node_type,
+          });
+          // Silent failure 방지: 클릭 시 아무 반응이 없는 UX 문제를 막기 위한 Fallback
+          alert("데이터 오류: 유효하지 않은 노드입니다. 페이지를 새로고침해 주세요.");
+          return;
+        }
+
+        // 필수 필드 검증을 통과했으므로 다운캐스팅은 런타임에 안전합니다.
         onNodeClick(node as GraphNode);
       }
     },
