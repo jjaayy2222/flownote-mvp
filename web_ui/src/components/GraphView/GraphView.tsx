@@ -78,14 +78,16 @@ function isValidGraphNode(node: Partial<GraphNode>): node is GraphNode {
 function isValidGraphLink(link: unknown): link is ForceGraphLink {
   if (typeof link !== "object" || link === null) return false;
   const l = link as Partial<ForceGraphLink>;
-  return l.source !== undefined && l.target !== undefined;
+  // [Confirm] null과 undefined를 모두 차단 (nullish check)
+  return l.source != null && l.target != null;
 }
 
 // ─────────────────────────────────────────
 // 헬퍼: Link의 source/target 식별자 안전 추출
 // ─────────────────────────────────────────
 function getLinkId(endpoint: string | NodeObj | unknown): string {
-  if (!endpoint) return "";
+  // [Confirm] !endpoint 대신 == null 을 사용하여 0, false 등 유효한 falsy 값이 누락되는 버그(Bug Risk) 차단
+  if (endpoint == null) return "";
   return typeof endpoint === "object" && endpoint !== null ? (endpoint as NodeObj).id : String(endpoint);
 }
 
