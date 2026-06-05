@@ -75,6 +75,22 @@ function isValidGraphNode(node: Partial<GraphNode>): node is GraphNode {
   return typeof node.id === "string" && typeof node.node_type === "string";
 }
 
+function isValidGraphLink(link: unknown): link is ForceGraphLink {
+  if (typeof link !== "object" || link === null) return false;
+  const l = link as Partial<ForceGraphLink>;
+  // [Confirm] null과 undefined를 모두 차단 (nullish check)
+  return l.source != null && l.target != null;
+}
+
+// ─────────────────────────────────────────
+// 헬퍼: Link의 source/target 식별자 안전 추출
+// ─────────────────────────────────────────
+function getLinkId(endpoint: string | NodeObj | unknown): string {
+  // [Confirm] !endpoint 대신 == null 을 사용하여 0, false 등 유효한 falsy 값이 누락되는 버그(Bug Risk) 차단
+  if (endpoint == null) return "";
+  return typeof endpoint === "object" && endpoint !== null ? (endpoint as NodeObj).id : String(endpoint);
+}
+
 // ─────────────────────────────────────────
 // 헬퍼: NodeType → 색상 매핑
 // ─────────────────────────────────────────
@@ -160,9 +176,20 @@ function adaptGraphData(data: GraphViewData): {
   // 렌더링되지 않고 안전하게 함께 소거(Cascade)됩니다.
   const links: ForceGraphLink[] = data.edges
     .filter((e) => {
-      const sourceId = typeof e.source === "object" ? (e.source as NodeObj).id : e.source;
-      const targetId = typeof e.target === "object" ? (e.target as NodeObj).id : e.target;
-      return allowedNodeIds.has(sourceId as string) && allowedNodeIds.has(targetId as string);
+      // 1. 엣지 자체의 스키마 유효성 검증
+      if (!isValidGraphLink(e)) {
+        devWarn("Dropped invalid edge missing source or target", {
+          edge: e as Record<string, unknown>,
+        });
+        return false;
+      }
+      
+      // 2. 헬퍼를 사용한 안전한 식별자 추출
+      const sourceId = getLinkId(e.source);
+      const targetId = getLinkId(e.target);
+      
+      // 3. 고아 엣지 방어
+      return allowedNodeIds.has(sourceId) && allowedNodeIds.has(targetId);
     })
     .map((e) => ({ ...e }));
 
