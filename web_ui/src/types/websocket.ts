@@ -180,6 +180,8 @@ export interface WsConflict {
 export enum NodeType {
   CATEGORY = "category",
   NOTE = "note",
+  KEYWORD = "keyword",
+  TAG = "tag",
 }
 
 /**
