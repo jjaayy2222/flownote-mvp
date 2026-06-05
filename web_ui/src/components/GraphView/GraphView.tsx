@@ -60,7 +60,8 @@ type FGMethods = ForceGraphMethods<NodeObj, LinkObj>;
 // ─────────────────────────────────────────
 function devWarn(message: string, payload?: unknown) {
   if (process.env.NODE_ENV !== "production") {
-    if (payload) {
+    // [Confirm] payload가 0, false, "" 등 falsy 값이어도 정상 출력되도록 명시적 undefined 체크
+    if (payload !== undefined) {
       console.warn(`[GraphView] ${message}`, payload);
     } else {
       console.warn(`[GraphView] ${message}`);
@@ -88,13 +89,30 @@ function isValidGraphLink(link: unknown): link is ForceGraphLink {
 function getLinkId(endpoint: unknown): string | null {
   if (endpoint == null) return null;
 
-  if (typeof endpoint === "object") {
-    const { id } = endpoint as { id?: unknown };
-    return id == null ? null : String(id);
+  // 1. 원시 타입(Primitive)인 경우 안전하게 직접 변환
+  if (
+    typeof endpoint === "string" ||
+    typeof endpoint === "number" ||
+    typeof endpoint === "boolean" ||
+    typeof endpoint === "symbol" ||
+    typeof endpoint === "bigint"
+  ) {
+    return String(endpoint);
   }
 
-  // 원시 타입(string, number, boolean 등) 안전 변환
-  return String(endpoint);
+  // 2. 객체인 경우: 내부의 `id` 속성 또한 원시 타입이어야만 허용
+  if (typeof endpoint === "object") {
+    const { id } = endpoint as { id?: unknown };
+    if (id == null) return null;
+    
+    // [Confirm] id 자체가 객체나 함수인 경우 (예: id: {}) [object Object] 반환을 막기 위해 철저히 거부
+    if (typeof id === "object" || typeof id === "function") return null;
+    
+    return String(id);
+  }
+
+  // 3. 함수 등 전혀 예상치 못한 타입은 명시적 드롭
+  return null;
 }
 
 // ─────────────────────────────────────────
