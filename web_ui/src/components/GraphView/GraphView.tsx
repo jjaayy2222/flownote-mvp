@@ -56,6 +56,15 @@ type LinkObj = LinkObject<ForceGraphNode, ForceGraphLink>;
 type FGMethods = ForceGraphMethods<NodeObj, LinkObj>;
 
 // ─────────────────────────────────────────
+// 헬퍼: 개발 환경 전용 로깅 (DRY 패턴)
+// ─────────────────────────────────────────
+function devWarn(message: string) {
+  if (process.env.NODE_ENV !== "production") {
+    console.warn(message);
+  }
+}
+
+// ─────────────────────────────────────────
 // 헬퍼: NodeType → 색상 매핑
 // ─────────────────────────────────────────
 
@@ -72,9 +81,7 @@ function resolveNodeColor(nodeType: NodeType): string {
       return GRAPH_NODE_COLOR_CATEGORY;
     default: {
       const _exhaustiveCheck: never = nodeType;
-      if (process.env.NODE_ENV !== "production") {
-        console.warn(`[GraphView] Unknown nodeType: ${_exhaustiveCheck}`);
-      }
+      devWarn(`[GraphView] Unknown nodeType: ${_exhaustiveCheck}`);
       return GRAPH_NODE_COLOR_NOTE;
     }
   }
@@ -100,7 +107,7 @@ function adaptGraphData(data: GraphViewData): {
   let allowedNodes = rawNodes;
 
   if (truncated) {
-    console.warn(
+    devWarn(
       `[GraphView] 노드 수(${rawNodes.length})가 MAX_GRAPH_NODES(${MAX_GRAPH_NODES})를 초과합니다. ` +
         `연결 수(Degree)가 높은 중심 노드 위주로 ${MAX_GRAPH_NODES}개만 필터링하여 렌더링합니다.`
     );
