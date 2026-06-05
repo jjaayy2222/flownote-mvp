@@ -89,29 +89,25 @@ function isValidGraphLink(link: unknown): link is ForceGraphLink {
 function getLinkId(endpoint: unknown): string | null {
   if (endpoint == null) return null;
 
-  // 1. 원시 타입(Primitive)인 경우 안전하게 직접 변환
-  if (
-    typeof endpoint === "string" ||
-    typeof endpoint === "number" ||
-    typeof endpoint === "boolean" ||
-    typeof endpoint === "symbol" ||
-    typeof endpoint === "bigint"
-  ) {
-    return String(endpoint);
-  }
-
-  // 2. 객체인 경우: 내부의 `id` 속성 또한 원시 타입이어야만 허용
+  // 1. 객체인 경우: 내부의 `id` 속성 추출
   if (typeof endpoint === "object") {
     const { id } = endpoint as { id?: unknown };
     if (id == null) return null;
     
-    // [Confirm] id 자체가 객체나 함수인 경우 (예: id: {}) [object Object] 반환을 막기 위해 철저히 거부
-    if (typeof id === "object" || typeof id === "function") return null;
-    
-    return String(id);
+    // [Confirm] 왕복 변환(Round-trip)이 불가능한 symbol/bigint 및 객체/함수 등은 모두 거부하고, 
+    // 오직 직렬화 가능한 string, number, boolean 만 허용
+    if (typeof id === "string" || typeof id === "number" || typeof id === "boolean") {
+      return String(id);
+    }
+    return null;
   }
 
-  // 3. 함수 등 전혀 예상치 못한 타입은 명시적 드롭
+  // 2. 원시 타입(Primitive)이 직접 사용된 경우
+  if (typeof endpoint === "string" || typeof endpoint === "number" || typeof endpoint === "boolean") {
+    return String(endpoint);
+  }
+
+  // 3. 함수, symbol, bigint 등 기타 모든 예상치 못한 타입은 명시적 드롭
   return null;
 }
 
