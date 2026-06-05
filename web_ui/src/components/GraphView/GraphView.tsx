@@ -87,7 +87,10 @@ function isValidGraphLink(link: unknown): link is ForceGraphLink {
 // 헬퍼: 직렬화 가능한 원시 타입(Primitive) 여부 확인
 // ─────────────────────────────────────────
 function isSerializablePrimitive(val: unknown): val is string | number | boolean {
-  return typeof val === "string" || typeof val === "number" || typeof val === "boolean";
+  if (typeof val === "string" || typeof val === "boolean") return true;
+  // [Confirm] number인 경우, NaN과 Infinity를 제외하여 "NaN", "Infinity" 등 예측 불가능한 ID 붕괴 방어
+  if (typeof val === "number" && Number.isFinite(val)) return true;
+  return false;
 }
 
 // ─────────────────────────────────────────
