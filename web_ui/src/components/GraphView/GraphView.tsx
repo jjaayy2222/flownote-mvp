@@ -84,6 +84,13 @@ function isValidGraphLink(link: unknown): link is ForceGraphLink {
 }
 
 // ─────────────────────────────────────────
+// 헬퍼: 직렬화 가능한 원시 타입(Primitive) 여부 확인
+// ─────────────────────────────────────────
+function isSerializablePrimitive(val: unknown): val is string | number | boolean {
+  return typeof val === "string" || typeof val === "number" || typeof val === "boolean";
+}
+
+// ─────────────────────────────────────────
 // 헬퍼: Link의 source/target 식별자 엄격한 추출
 // ─────────────────────────────────────────
 function getLinkId(endpoint: unknown): string | null {
@@ -96,14 +103,14 @@ function getLinkId(endpoint: unknown): string | null {
     
     // [Confirm] 왕복 변환(Round-trip)이 불가능한 symbol/bigint 및 객체/함수 등은 모두 거부하고, 
     // 오직 직렬화 가능한 string, number, boolean 만 허용
-    if (typeof id === "string" || typeof id === "number" || typeof id === "boolean") {
+    if (isSerializablePrimitive(id)) {
       return String(id);
     }
     return null;
   }
 
   // 2. 원시 타입(Primitive)이 직접 사용된 경우
-  if (typeof endpoint === "string" || typeof endpoint === "number" || typeof endpoint === "boolean") {
+  if (isSerializablePrimitive(endpoint)) {
     return String(endpoint);
   }
 
