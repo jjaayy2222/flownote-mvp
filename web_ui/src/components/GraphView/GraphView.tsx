@@ -49,6 +49,13 @@ import type {
 } from "./types";
 
 // ─────────────────────────────────────────
+// 로컬 타입 별칭 (가독성 향상 및 런타임 캐스팅 방지)
+// ─────────────────────────────────────────
+type NodeObj = NodeObject<ForceGraphNode>;
+type LinkObj = LinkObject<ForceGraphNode, ForceGraphLink>;
+type FGMethods = ForceGraphMethods<NodeObj, LinkObj>;
+
+// ─────────────────────────────────────────
 // 헬퍼: NodeType → 색상 매핑
 // ─────────────────────────────────────────
 
@@ -157,9 +164,7 @@ export interface GraphViewProps {
  * ```
  */
 export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewProps) {
-  const graphRef = useRef<
-    ForceGraphMethods<ForceGraphNode, ForceGraphLink> | null
-  >(null);
+  const graphRef = useRef<FGMethods | undefined>(undefined);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   // SSOT 에서 변환한 데이터 (재계산 방지를 위해 메모이제이션)
@@ -167,7 +172,7 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
 
   // ── 노드 클릭 핸들러 ──────────────────────────────────────
   const handleNodeClick = useCallback(
-    (rawNode: NodeObject<ForceGraphNode>) => {
+    (rawNode: NodeObj) => {
       const node = rawNode as ForceGraphNode;
       setSelectedNodeId((prev) => (prev === node.id ? null : node.id));
 
@@ -181,7 +186,7 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
 
   // ── 노드 캔버스 렌더러 ───────────────────────────────────
   const paintNode = useCallback(
-    (node: NodeObject<ForceGraphNode>, ctx: CanvasRenderingContext2D) => {
+    (node: NodeObj, ctx: CanvasRenderingContext2D) => {
       const nx = node.x ?? 0;
       const ny = node.y ?? 0;
       const isSelected = node.id === selectedNodeId;
@@ -215,15 +220,14 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
 
   return (
     <ForceGraph2D<ForceGraphNode, ForceGraphLink>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ref={graphRef as any}
+      ref={graphRef}
       graphData={{ nodes, links }}
       width={width}
       height={height}
       backgroundColor={GRAPH_BG_COLOR}
       // 링크 스타일
       linkColor={() => GRAPH_LINK_COLOR}
-      linkWidth={(link: LinkObject<ForceGraphNode, ForceGraphLink>) => {
+      linkWidth={(link: LinkObj) => {
         // 엣지 weight(0~1)를 링크 두께(0.5~3px)에 선형 매핑
         return 0.5 + (link.weight ?? 1) * 2.5;
       }}
@@ -231,7 +235,7 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
       nodeCanvasObject={paintNode}
       nodeCanvasObjectMode={() => "replace"}
       // 노드 포인터 영역 — 라벨 영역까지 포함하도록 반경 확장
-      nodePointerAreaPaint={(node: NodeObject<ForceGraphNode>, color: string, ctx: CanvasRenderingContext2D) => {
+      nodePointerAreaPaint={(node: NodeObj, color: string, ctx: CanvasRenderingContext2D) => {
         const nx = node.x ?? 0;
         const ny = node.y ?? 0;
         const radius = GRAPH_NODE_RADIUS * GRAPH_NODE_SELECTED_SCALE + 6;
