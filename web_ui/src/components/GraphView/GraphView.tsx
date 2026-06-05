@@ -105,7 +105,18 @@ function adaptGraphData(data: GraphViewData): {
   nodes: ForceGraphNode[];
   links: ForceGraphLink[];
 } {
-  const rawNodes = data.nodes;
+  // [Confirm] 스키마 변경(Schema drift)에 대비하여 렌더링 전 유효하지 않은 노드(불량 데이터)를 원천 차단
+  const rawNodes = data.nodes.filter((node) => {
+    if (typeof node.id !== "string" || typeof node.node_type !== "string") {
+      devWarn("Dropped invalid node missing required fields before rendering", {
+        id: node.id,
+        node_type: node.node_type,
+      });
+      return false; // 불량 노드 렌더링 및 클릭 이벤트 대상에서 완전 제외
+    }
+    return true;
+  });
+
   const truncated = rawNodes.length > MAX_GRAPH_NODES;
 
   let allowedNodes = rawNodes;
@@ -189,18 +200,8 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
       setSelectedNodeId((prev) => (prev === node.id ? null : node.id));
 
       if (onNodeClick) {
-        // [Confirm] 백엔드 스키마 변경(Schema drift)으로 인한 필수 필드 누락 위험을 방어하는 런타임 가드
-        if (typeof node.id !== "string" || typeof node.node_type !== "string") {
-          devWarn("Clicked node is missing required GraphNode fields", {
-            id: node.id,
-            node_type: node.node_type,
-          });
-          // Silent failure 방지: 클릭 시 아무 반응이 없는 UX 문제를 막기 위한 Fallback
-          alert("데이터 오류: 유효하지 않은 노드입니다. 페이지를 새로고침해 주세요.");
-          return;
-        }
-
-        // 필수 필드 검증을 통과했으므로 다운캐스팅은 런타임에 안전합니다.
+        // [Confirm] adaptGraphData 에서 불량 데이터를 사전 차단(Pre-filter)하므로,
+        // 이곳으로 전달된 노드의 필수 필드 무결성은 100% 보장됩니다.
         onNodeClick(node as GraphNode);
       }
     },
