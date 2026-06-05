@@ -58,7 +58,7 @@ type FGMethods = ForceGraphMethods<NodeObj, LinkObj>;
 // ─────────────────────────────────────────
 // 헬퍼: 구조화된 개발 환경 전용 로깅 (DRY 패턴 & 민감정보 보호)
 // ─────────────────────────────────────────
-function devWarn(message: string, payload?: Record<string, unknown>) {
+function devWarn(message: string, payload?: unknown) {
   if (process.env.NODE_ENV !== "production") {
     if (payload) {
       console.warn(`[GraphView] ${message}`, payload);
@@ -83,12 +83,18 @@ function isValidGraphLink(link: unknown): link is ForceGraphLink {
 }
 
 // ─────────────────────────────────────────
-// 헬퍼: Link의 source/target 식별자 안전 추출
+// 헬퍼: Link의 source/target 식별자 엄격한 추출
 // ─────────────────────────────────────────
-function getLinkId(endpoint: string | NodeObj | unknown): string {
-  // [Confirm] !endpoint 대신 == null 을 사용하여 0, false 등 유효한 falsy 값이 누락되는 버그(Bug Risk) 차단
-  if (endpoint == null) return "";
-  return typeof endpoint === "object" && endpoint !== null ? (endpoint as NodeObj).id : String(endpoint);
+function getLinkId(endpoint: unknown): string | null {
+  if (endpoint == null) return null;
+
+  if (typeof endpoint === "object") {
+    const { id } = endpoint as { id?: unknown };
+    return id == null ? null : String(id);
+  }
+
+  // 원시 타입(string, number, boolean 등) 안전 변환
+  return String(endpoint);
 }
 
 // ─────────────────────────────────────────
@@ -178,17 +184,21 @@ function adaptGraphData(data: GraphViewData): {
     .filter((e) => {
       // 1. 엣지 자체의 스키마 유효성 검증
       if (!isValidGraphLink(e)) {
-        devWarn("Dropped invalid edge missing source or target", {
-          edge: e as Record<string, unknown>,
-        });
+        devWarn("Dropped invalid edge missing source or target", { edge: e });
         return false;
       }
       
-      // 2. 헬퍼를 사용한 안전한 식별자 추출
+      // 2. 헬퍼를 사용한 엄격한 식별자 추출
       const sourceId = getLinkId(e.source);
       const targetId = getLinkId(e.target);
       
-      // 3. 고아 엣지 방어
+      // 3. 조기 종료(Short-circuit): 식별자를 추출할 수 없는 구조적 결함이 있으면 명시적 드롭
+      if (sourceId === null || targetId === null) {
+        devWarn("Dropped edge due to unresolvable or malformed source/target IDs", { edge: e });
+        return false;
+      }
+
+      // 4. 고아 엣지 방어
       return allowedNodeIds.has(sourceId) && allowedNodeIds.has(targetId);
     })
     .map((e) => ({ ...e }));
