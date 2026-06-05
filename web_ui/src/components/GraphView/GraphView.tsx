@@ -83,12 +83,22 @@ function isValidGraphLink(link: unknown): link is ForceGraphLink {
 }
 
 // ─────────────────────────────────────────
-// 헬퍼: Link의 source/target 식별자 안전 추출
+// 헬퍼: Link의 source/target 식별자 엄격한 추출
 // ─────────────────────────────────────────
-function getLinkId(endpoint: string | NodeObj | unknown): string {
-  // [Confirm] !endpoint 대신 == null 을 사용하여 0, false 등 유효한 falsy 값이 누락되는 버그(Bug Risk) 차단
-  if (endpoint == null) return "";
-  return typeof endpoint === "object" && endpoint !== null ? (endpoint as NodeObj).id : String(endpoint);
+function getLinkId(endpoint: unknown): string | null {
+  if (endpoint == null) return null;
+
+  // 원시 타입 허용
+  if (typeof endpoint === "string") return endpoint;
+  if (typeof endpoint === "number" || typeof endpoint === "boolean") return String(endpoint);
+
+  // 객체인 경우 id 속성이 존재할 때만 추출
+  if (typeof endpoint === "object" && "id" in endpoint && (endpoint as Record<string, unknown>).id != null) {
+    return String((endpoint as Record<string, unknown>).id);
+  }
+
+  // [Confirm] 예상치 못한 객체([object Object] 등)는 암묵적 형변환을 막고 즉시 null 반환
+  return null;
 }
 
 // ─────────────────────────────────────────
@@ -179,16 +189,24 @@ function adaptGraphData(data: GraphViewData): {
       // 1. 엣지 자체의 스키마 유효성 검증
       if (!isValidGraphLink(e)) {
         devWarn("Dropped invalid edge missing source or target", {
-          edge: e as Record<string, unknown>,
+          edge: e as unknown as Record<string, unknown>,
         });
         return false;
       }
       
-      // 2. 헬퍼를 사용한 안전한 식별자 추출
+      // 2. 헬퍼를 사용한 엄격한 식별자 추출
       const sourceId = getLinkId(e.source);
       const targetId = getLinkId(e.target);
       
-      // 3. 고아 엣지 방어
+      // 3. 조기 종료(Short-circuit): 식별자를 추출할 수 없는 구조적 결함이 있으면 명시적 드롭
+      if (sourceId === null || targetId === null) {
+        devWarn("Dropped edge due to unresolvable or malformed source/target IDs", {
+          edge: e as unknown as Record<string, unknown>,
+        });
+        return false;
+      }
+
+      // 4. 고아 엣지 방어
       return allowedNodeIds.has(sourceId) && allowedNodeIds.has(targetId);
     })
     .map((e) => ({ ...e }));
