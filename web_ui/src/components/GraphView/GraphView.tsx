@@ -58,7 +58,7 @@ type FGMethods = ForceGraphMethods<NodeObj, LinkObj>;
 // ─────────────────────────────────────────
 // 헬퍼: 구조화된 개발 환경 전용 로깅 (DRY 패턴 & 민감정보 보호)
 // ─────────────────────────────────────────
-function devWarn(message: string, payload?: Record<string, unknown>) {
+function devWarn(message: string, payload?: unknown) {
   if (process.env.NODE_ENV !== "production") {
     if (payload) {
       console.warn(`[GraphView] ${message}`, payload);
@@ -88,17 +88,13 @@ function isValidGraphLink(link: unknown): link is ForceGraphLink {
 function getLinkId(endpoint: unknown): string | null {
   if (endpoint == null) return null;
 
-  // 원시 타입 허용
-  if (typeof endpoint === "string") return endpoint;
-  if (typeof endpoint === "number" || typeof endpoint === "boolean") return String(endpoint);
-
-  // 객체인 경우 id 속성이 존재할 때만 추출
-  if (typeof endpoint === "object" && "id" in endpoint && (endpoint as Record<string, unknown>).id != null) {
-    return String((endpoint as Record<string, unknown>).id);
+  if (typeof endpoint === "object") {
+    const { id } = endpoint as { id?: unknown };
+    return id == null ? null : String(id);
   }
 
-  // [Confirm] 예상치 못한 객체([object Object] 등)는 암묵적 형변환을 막고 즉시 null 반환
-  return null;
+  // 원시 타입(string, number, boolean 등) 안전 변환
+  return String(endpoint);
 }
 
 // ─────────────────────────────────────────
@@ -188,9 +184,7 @@ function adaptGraphData(data: GraphViewData): {
     .filter((e) => {
       // 1. 엣지 자체의 스키마 유효성 검증
       if (!isValidGraphLink(e)) {
-        devWarn("Dropped invalid edge missing source or target", {
-          edge: e as unknown as Record<string, unknown>,
-        });
+        devWarn("Dropped invalid edge missing source or target", { edge: e });
         return false;
       }
       
@@ -200,9 +194,7 @@ function adaptGraphData(data: GraphViewData): {
       
       // 3. 조기 종료(Short-circuit): 식별자를 추출할 수 없는 구조적 결함이 있으면 명시적 드롭
       if (sourceId === null || targetId === null) {
-        devWarn("Dropped edge due to unresolvable or malformed source/target IDs", {
-          edge: e as unknown as Record<string, unknown>,
-        });
+        devWarn("Dropped edge due to unresolvable or malformed source/target IDs", { edge: e });
         return false;
       }
 
