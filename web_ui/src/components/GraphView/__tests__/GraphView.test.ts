@@ -12,7 +12,7 @@ vi.mock("@/config/graph", async (importOriginal) => {
   };
 });
 
-import { _adaptGraphData } from "../GraphView";
+import { adaptGraphData } from "../graphViewAdapter";
 import { NodeType } from "@/types/websocket";
 import type { GraphNode, GraphEdge } from "@/types/websocket";
 import type { GraphViewData } from "../types";
@@ -47,7 +47,7 @@ function createMockEdge(
   };
 }
 
-describe("_adaptGraphData", () => {
+describe("adaptGraphData", () => {
   it("should filter out invalid nodes and links", () => {
     const data: GraphViewData = {
       nodes: [
@@ -65,7 +65,7 @@ describe("_adaptGraphData", () => {
       ],
     };
 
-    const result = _adaptGraphData(data);
+    const result = adaptGraphData(data);
     
     // node2 is dropped because it is malformed
     expect(result.nodes).toHaveLength(1);
@@ -103,7 +103,7 @@ describe("_adaptGraphData", () => {
       ],
     };
 
-    const result = _adaptGraphData(data);
+    const result = adaptGraphData(data);
 
     // Top 3 nodes should be allowed
     expect(result.nodes).toHaveLength(3);
@@ -148,7 +148,7 @@ describe("_adaptGraphData", () => {
       ],
     };
 
-    const result = _adaptGraphData(data);
+    const result = adaptGraphData(data);
 
     expect(result.nodes).toHaveLength(3);
     const nodeIds = result.nodes.map((n) => n.id);
@@ -156,5 +156,49 @@ describe("_adaptGraphData", () => {
     expect(nodeIds).toContain("node2"); // deg 1
     expect(nodeIds).toContain("node3"); // deg 1
     expect(nodeIds).not.toContain("node4"); // deg 0 (skipped invalid degrees)
+  });
+
+  it("should not truncate nodes if node count is <= MAX_GRAPH_NODES (happy path)", () => {
+    // MAX_GRAPH_NODES is mocked to 3.
+    const data: GraphViewData = {
+      nodes: [
+        createMockNode("node1", "N1"),
+        createMockNode("node2", "N2"),
+      ],
+      edges: [
+        createMockEdge("e1", "node1", "node2"),
+      ],
+    };
+
+    const result = adaptGraphData(data);
+
+    expect(result.nodes).toHaveLength(2);
+    expect(result.links).toHaveLength(1);
+    const nodeIds = result.nodes.map((n) => n.id);
+    expect(nodeIds).toEqual(["node1", "node2"]);
+  });
+
+  it("should have deterministic truncation behavior when degreeMap is empty (all edges invalid)", () => {
+    // 4 nodes, all edges invalid so degrees are 0.
+    // Should sort alphabetically by ID: node1, node2, node3, node4 -> take top 3.
+    const data: GraphViewData = {
+      nodes: [
+        createMockNode("node4", "N4"),
+        createMockNode("node1", "N1"),
+        createMockNode("node3", "N3"),
+        createMockNode("node2", "N2"),
+      ],
+      edges: [
+        createMockEdge("e1", "invalid_source", "invalid_target"),
+      ],
+    };
+
+    const result = adaptGraphData(data);
+
+    expect(result.nodes).toHaveLength(3);
+    const nodeIds = result.nodes.map((n) => n.id);
+    // Because degree is 0 for all, the fallback is ID sorting.
+    // So N1, N2, N3 should be picked regardless of input order.
+    expect(nodeIds).toEqual(["node1", "node2", "node3"]);
   });
 });
