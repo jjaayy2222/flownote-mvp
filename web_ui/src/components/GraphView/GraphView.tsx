@@ -160,7 +160,7 @@ function resolveNodeColor(nodeType: NodeType): string {
  * MAX_GRAPH_NODES 초과 시, OOM(Out of Memory) 방지를 위해
  * 연결 수(Degree)가 높은 중심 노드 위주로 상위 N개만 필터링합니다.
  */
-function adaptGraphData(data: GraphViewData): {
+export function _adaptGraphData(data: GraphViewData): {
   nodes: ForceGraphNode[];
   links: ForceGraphLink[];
 } {
@@ -186,11 +186,16 @@ function adaptGraphData(data: GraphViewData): {
         `연결 수(Degree)가 높은 중심 노드 위주로 ${MAX_GRAPH_NODES}개만 필터링하여 렌더링합니다.`
     );
 
-    // 1. 각 노드의 Degree(연결된 엣지 수) 계산
+    // 1. 각 노드의 Degree(연결된 엣지 수) 계산 (유효한 엣지와 식별자만 카운트)
     const degreeMap = new Map<string, number>();
     for (const edge of data.edges) {
-      degreeMap.set(edge.source, (degreeMap.get(edge.source) || 0) + 1);
-      degreeMap.set(edge.target, (degreeMap.get(edge.target) || 0) + 1);
+      if (!isValidGraphLink(edge)) continue;
+      const sourceId = getLinkId(edge.source);
+      const targetId = getLinkId(edge.target);
+      if (sourceId !== null && targetId !== null) {
+        degreeMap.set(sourceId, (degreeMap.get(sourceId) || 0) + 1);
+        degreeMap.set(targetId, (degreeMap.get(targetId) || 0) + 1);
+      }
     }
 
     // 2. Degree 기준 내림차순 정렬 후 최대 개수만큼 슬라이싱
@@ -273,7 +278,7 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   // SSOT 에서 변환한 데이터 (재계산 방지를 위해 메모이제이션)
-  const { nodes, links } = useMemo(() => adaptGraphData(data), [data]);
+  const { nodes, links } = useMemo(() => _adaptGraphData(data), [data]);
 
   // ── 노드 클릭 핸들러 ──────────────────────────────────────
   const handleNodeClick = useCallback(
