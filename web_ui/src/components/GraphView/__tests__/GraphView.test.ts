@@ -1,0 +1,240 @@
+// web_ui/src/components/GraphView/__tests__/GraphView.test.ts
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { describe, it, expect, vi } from "vitest";
+
+// Mock MAX_GRAPH_NODES to 3 for testing truncation
+vi.mock("@/config/graph", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/config/graph")>();
+  return {
+    ...original,
+    MAX_GRAPH_NODES: 3,
+  };
+});
+
+import { adaptGraphData } from "../graphViewAdapter";
+import { NodeType } from "@/types/websocket";
+import type { GraphNode, GraphEdge } from "@/types/websocket";
+import type { GraphViewData } from "../types";
+
+// Helper functions for clean mocking
+function createMockNode(id: string, label: string, nodeType: NodeType = NodeType.NOTE): GraphNode {
+  return {
+    id,
+    label,
+    node_type: nodeType,
+    properties: {},
+    position_x: null,
+    position_y: null,
+    user_id_hash: null,
+  };
+}
+
+function createMockEdge(
+  id: string,
+  source: any,
+  target: any,
+  relType: string = "related_to",
+  weight: number = 1
+): GraphEdge {
+  return {
+    id,
+    source,
+    target,
+    relationship_type: relType as any,
+    weight,
+    properties: {},
+  };
+}
+
+/**
+ * 테스트 전용 딥 카피(Deep Copy) 유틸리티.
+ * structuredClone이 지원되면 사용하고, 미지원 환경에서는 JSON 직렬화로 폴백합니다.
+ * (GraphViewData는 JSON-safe 값만 포함하므로 폴백도 안전합니다.)
+ */
+function deepClone<T>(val: T): T {
+  if (typeof structuredClone === "function") {
+    return structuredClone(val);
+  }
+  return JSON.parse(JSON.stringify(val)) as T;
+}
+
+describe("adaptGraphData", () => {
+  it("should filter out invalid nodes and links", () => {
+    const data: GraphViewData = {
+      nodes: [
+        createMockNode("node1", "Node 1", NodeType.NOTE),
+        // Malformed node: missing node_type
+        { id: "node2", label: "Node 2" } as any,
+      ],
+      edges: [
+        // Valid link
+        createMockEdge("edge1", "node1", "node3"),
+        // Invalid link: target is nullish
+        createMockEdge("edge2", "node1", null),
+        // Invalid link: source is unresolvable object structure without id
+        createMockEdge("edge3", { name: "no-id" }, "node1"),
+      ],
+    };
+
+    const result = adaptGraphData(data);
+    
+    // node2 is dropped because it is malformed
+    expect(result.nodes).toHaveLength(1);
+    expect(result.nodes[0].id).toBe("node1");
+
+    // edge2 and edge3 are dropped because of invalid endpoints
+    // edge1 is dropped because "node3" is not in the allowedNodeIds (not present in nodes)
+    expect(result.links).toHaveLength(0);
+  });
+
+  it("should not mutate the input nodes and edges", () => {
+    const node1Fixture = createMockNode("node1", "Node 1", NodeType.NOTE);
+    const node2Fixture = createMockNode("node2", "Node 2", NodeType.NOTE);
+    const edge1Fixture = createMockEdge("edge1", "node1", "node2");
+
+    const data: GraphViewData = {
+      nodes: [node1Fixture, node2Fixture],
+      edges: [edge1Fixture],
+    };
+
+    const originalSnapshot = deepClone(data);
+
+    const result = adaptGraphData(data);
+
+    // Input data must remain unchanged after the adapter runs
+    expect(data).toEqual(originalSnapshot);
+
+    // Result must not share array or object references with the input
+    expect(result.nodes).not.toBe(data.nodes);
+    expect(result.links).not.toBe(data.edges);
+    expect(result.nodes[0]).not.toBe(node1Fixture);
+    expect(result.links[0]).not.toBe(edge1Fixture);
+  });
+
+  it("should truncate nodes exceeding MAX_GRAPH_NODES based on degree", () => {
+    // MAX_GRAPH_NODES is mocked to 3.
+    // We provide 5 nodes: node1 (deg 3), node2 (deg 2), node3 (deg 1), node4 (deg 0), node5 (deg 4)
+    // node5 has degree 4 (connected to node1, node2, node3, node4)
+    // node1 has degree 3 (connected to node5, node2, node3)
+    // node2 has degree 2 (connected to node5, node1)
+    // node3 has degree 1 (connected to node5)
+    // node4 has degree 0
+    // Expected top 3: node5 (4), node1 (3), node2 (2)
+    const data: GraphViewData = {
+      nodes: [
+        createMockNode("node1", "N1"),
+        createMockNode("node2", "N2"),
+        createMockNode("node3", "N3"),
+        createMockNode("node4", "N4"),
+        createMockNode("node5", "N5"),
+      ],
+      edges: [
+        createMockEdge("e1", "node5", "node1"),
+        createMockEdge("e2", "node5", "node2"),
+        createMockEdge("e3", "node5", "node3"),
+        createMockEdge("e4", "node5", "node4"),
+        createMockEdge("e5", "node1", "node2"),
+        createMockEdge("e6", "node1", "node3"),
+      ],
+    };
+
+    const result = adaptGraphData(data);
+
+    // Top 3 nodes should be allowed
+    expect(result.nodes).toHaveLength(3);
+    
+    const nodeIds = result.nodes.map((n) => n.id);
+    expect(nodeIds).toContain("node5"); // deg 4
+    expect(nodeIds).toContain("node1"); // deg 3
+    expect(nodeIds).toContain("node2"); // deg 2
+    expect(nodeIds).not.toContain("node3"); // deg 1 (sliced out)
+    expect(nodeIds).not.toContain("node4"); // deg 0 (sliced out)
+
+    // Edges should only exist between node5, node1, node2
+    // Valid edges: e1 (node5-node1), e2 (node5-node2), e5 (node1-node2)
+    expect(result.links).toHaveLength(3);
+    const edgeIds = result.links.map((l) => l.id);
+    expect(edgeIds).toContain("e1");
+    expect(edgeIds).toContain("e2");
+    expect(edgeIds).toContain("e5");
+  });
+
+  it("should secure degree calculation loop against malformed edges", () => {
+    // MAX_GRAPH_NODES is mocked to 3.
+    // node1, node2, node3, node4 (4 nodes > 3 limit)
+    // We add invalid edges targeting node4, which should NOT count towards its degree.
+    // If invalid edges counted, node4 degree would be high and it wouldn't be sliced.
+    const data: GraphViewData = {
+      nodes: [
+        createMockNode("node1", "N1"),
+        createMockNode("node2", "N2"),
+        createMockNode("node3", "N3"),
+        createMockNode("node4", "N4"),
+      ],
+      edges: [
+        // Valid edge: node1 to node2 (deg 1 each)
+        createMockEdge("e1", "node1", "node2"),
+        // Valid edge: node1 to node3 (deg of node1=2, node3=1)
+        createMockEdge("e2", "node1", "node3"),
+        // Invalid edge targeting node4 (should be skipped)
+        createMockEdge("e3", "node4", null),
+        // Invalid edge targeting node4 (should be skipped)
+        createMockEdge("e4", "node4", { invalid: true }),
+      ],
+    };
+
+    const result = adaptGraphData(data);
+
+    expect(result.nodes).toHaveLength(3);
+    const nodeIds = result.nodes.map((n) => n.id);
+    expect(nodeIds).toContain("node1"); // deg 2
+    expect(nodeIds).toContain("node2"); // deg 1
+    expect(nodeIds).toContain("node3"); // deg 1
+    expect(nodeIds).not.toContain("node4"); // deg 0 (skipped invalid degrees)
+  });
+
+  it("should not truncate nodes if node count is <= MAX_GRAPH_NODES (happy path)", () => {
+    // MAX_GRAPH_NODES is mocked to 3.
+    const data: GraphViewData = {
+      nodes: [
+        createMockNode("node1", "N1"),
+        createMockNode("node2", "N2"),
+      ],
+      edges: [
+        createMockEdge("e1", "node1", "node2"),
+      ],
+    };
+
+    const result = adaptGraphData(data);
+
+    expect(result.nodes).toHaveLength(2);
+    expect(result.links).toHaveLength(1);
+    const nodeIds = result.nodes.map((n) => n.id);
+    expect(nodeIds).toEqual(["node1", "node2"]);
+  });
+
+  it("should have deterministic truncation behavior when degreeMap is empty (all edges invalid)", () => {
+    // 4 nodes, all edges invalid so degrees are 0.
+    // Should sort alphabetically by ID: node1, node2, node3, node4 -> take top 3.
+    const data: GraphViewData = {
+      nodes: [
+        createMockNode("node4", "N4"),
+        createMockNode("node1", "N1"),
+        createMockNode("node3", "N3"),
+        createMockNode("node2", "N2"),
+      ],
+      edges: [
+        createMockEdge("e1", "invalid_source", "invalid_target"),
+      ],
+    };
+
+    const result = adaptGraphData(data);
+
+    expect(result.nodes).toHaveLength(3);
+    const nodeIds = result.nodes.map((n) => n.id);
+    // Because degree is 0 for all, the fallback is ID sorting.
+    // So N1, N2, N3 should be picked regardless of input order.
+    expect(nodeIds).toEqual(["node1", "node2", "node3"]);
+  });
+});
