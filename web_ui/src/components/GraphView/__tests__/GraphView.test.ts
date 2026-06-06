@@ -76,6 +76,35 @@ describe("adaptGraphData", () => {
     expect(result.links).toHaveLength(0);
   });
 
+  it("should not mutate the input nodes and edges", () => {
+    const data: GraphViewData = {
+      nodes: [
+        createMockNode("node1", "Node 1", NodeType.NOTE),
+        createMockNode("node2", "Node 2", NodeType.NOTE),
+      ],
+      edges: [
+        createMockEdge("edge1", "node1", "node2"),
+      ],
+    };
+
+    // [Confirm] JSON.parse(JSON.stringify())는 undefined, Symbol, Date, Infinity, NaN 등을 조용히 누락시키므로,
+    // structuredClone을 사용하여 안전하고 완전한 딥 카피를 수행합니다.
+    const originalSnapshot: GraphViewData = structuredClone(data);
+
+    const result = adaptGraphData(data);
+
+    // Input should remain deeply equal to the original snapshot
+    expect(data).toEqual(originalSnapshot);
+
+    // Verify that the adapted structures do not reuse the same references.
+    // 테스트 픽스처에 node 2개, edge 1개가 명확히 보장되어 있으므로,
+    // 조건문 없이 무조건적으로 단언하여 테스트를 더 엄격하게 유지합니다.
+    expect(result.nodes).not.toBe(data.nodes);
+    expect(result.links).not.toBe(data.edges as any);
+    expect(result.nodes[0]).not.toBe(data.nodes[0]);
+    expect(result.links[0]).not.toBe(data.edges[0] as any);
+  });
+
   it("should truncate nodes exceeding MAX_GRAPH_NODES based on degree", () => {
     // MAX_GRAPH_NODES is mocked to 3.
     // We provide 5 nodes: node1 (deg 3), node2 (deg 2), node3 (deg 1), node4 (deg 0), node5 (deg 4)
