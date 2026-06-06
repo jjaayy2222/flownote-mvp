@@ -15,7 +15,7 @@ vi.mock("@/config/graph", async (importOriginal) => {
 import { adaptGraphData } from "../graphViewAdapter";
 import { NodeType } from "@/types/websocket";
 import type { GraphNode, GraphEdge } from "@/types/websocket";
-import type { GraphViewData } from "../types";
+import type { GraphViewData, ForceGraphLink } from "../types";
 
 // Helper functions for clean mocking
 function createMockNode(id: string, label: string, nodeType: NodeType = NodeType.NOTE): GraphNode {
@@ -87,8 +87,9 @@ describe("adaptGraphData", () => {
       ],
     };
 
-    // [Confirm] JSON.parse(JSON.stringify())는 undefined, Symbol, Date, Infinity, NaN 등을 조용히 누락시키므로,
-    // structuredClone을 사용하여 안전하고 완전한 딥 카피를 수행합니다.
+    // [Confirm] structuredClone은 Node.js 17.0.0+(현재: v22+)에서 전역 지원되며,
+    // JSON.parse(JSON.stringify())와 달리 undefined, Symbol, Date, Infinity, NaN 등의
+    // 비-JSON 값도 안전하게 복제합니다.
     const originalSnapshot: GraphViewData = structuredClone(data);
 
     const result = adaptGraphData(data);
@@ -99,10 +100,12 @@ describe("adaptGraphData", () => {
     // Verify that the adapted structures do not reuse the same references.
     // 테스트 픽스처에 node 2개, edge 1개가 명확히 보장되어 있으므로,
     // 조건문 없이 무조건적으로 단언하여 테스트를 더 엄격하게 유지합니다.
+    // [Confirm] 'as any' 대신 'as ForceGraphLink'를 사용하여,
+    // adaptGraphData 반환 타입과 입력 타입의 구조적 차이를 명시적으로 캐스팅합니다.
     expect(result.nodes).not.toBe(data.nodes);
-    expect(result.links).not.toBe(data.edges as any);
+    expect(result.links).not.toBe(data.edges as ForceGraphLink[]);
     expect(result.nodes[0]).not.toBe(data.nodes[0]);
-    expect(result.links[0]).not.toBe(data.edges[0] as any);
+    expect(result.links[0]).not.toBe(data.edges[0] as ForceGraphLink);
   });
 
   it("should truncate nodes exceeding MAX_GRAPH_NODES based on degree", () => {
