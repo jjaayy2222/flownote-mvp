@@ -47,6 +47,18 @@ function createMockEdge(
   };
 }
 
+/**
+ * 테스트 전용 딥 카피(Deep Copy) 유틸리티.
+ * structuredClone이 지원되면 사용하고, 미지원 환경에서는 JSON 직렬화로 폴백합니다.
+ * (GraphViewData는 JSON-safe 값만 포함하므로 폴백도 안전합니다.)
+ */
+function deepClone<T>(val: T): T {
+  if (typeof structuredClone === "function") {
+    return structuredClone(val);
+  }
+  return JSON.parse(JSON.stringify(val)) as T;
+}
+
 describe("adaptGraphData", () => {
   it("should filter out invalid nodes and links", () => {
     const data: GraphViewData = {
@@ -77,8 +89,6 @@ describe("adaptGraphData", () => {
   });
 
   it("should not mutate the input nodes and edges", () => {
-    // [Confirm] 픽스처 요소를 이름 있는 변수로 추출하여,
-    // assertion 본문에서 타입 캐스팅 없이 직접 참조 비교를 수행합니다.
     const node1Fixture = createMockNode("node1", "Node 1", NodeType.NOTE);
     const node2Fixture = createMockNode("node2", "Node 2", NodeType.NOTE);
     const edge1Fixture = createMockEdge("edge1", "node1", "node2");
@@ -88,21 +98,14 @@ describe("adaptGraphData", () => {
       edges: [edge1Fixture],
     };
 
-    // [Confirm] structuredClone은 Node.js 17.0.0+ 전역으로 지원됩니다.
-    // 이 프로젝트의 Vitest는 jsdom 환경에서 실행되지만, jsdom은 Node.js(v22+) 위에서
-    // 동작하므로 Node.js 전역 structuredClone이 정상 작동합니다.
-    // JSON.parse(JSON.stringify())와 달리 undefined, Symbol, Date, NaN 등 비-JSON 값도
-    // 안전하게 복제합니다.
-    const originalSnapshot: GraphViewData = structuredClone(data);
+    const originalSnapshot = deepClone(data);
 
     const result = adaptGraphData(data);
 
-    // Input should remain deeply equal to the original snapshot
+    // Input data must remain unchanged after the adapter runs
     expect(data).toEqual(originalSnapshot);
 
-    // Verify that the adapted structures do not reuse the same references.
-    // 픽스처 변수를 직접 참조하므로 타입 캐스팅이 불필요합니다.
-    // toBe()는 unknown을 허용하므로 ForceGraphLink vs GraphEdge 타입 불일치가 없습니다.
+    // Result must not share array or object references with the input
     expect(result.nodes).not.toBe(data.nodes);
     expect(result.links).not.toBe(data.edges);
     expect(result.nodes[0]).not.toBe(node1Fixture);
