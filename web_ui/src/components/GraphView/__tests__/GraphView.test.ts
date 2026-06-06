@@ -15,7 +15,7 @@ vi.mock("@/config/graph", async (importOriginal) => {
 import { adaptGraphData } from "../graphViewAdapter";
 import { NodeType } from "@/types/websocket";
 import type { GraphNode, GraphEdge } from "@/types/websocket";
-import type { GraphViewData, ForceGraphLink } from "../types";
+import type { GraphViewData } from "../types";
 
 // Helper functions for clean mocking
 function createMockNode(id: string, label: string, nodeType: NodeType = NodeType.NOTE): GraphNode {
@@ -77,19 +77,22 @@ describe("adaptGraphData", () => {
   });
 
   it("should not mutate the input nodes and edges", () => {
+    // [Confirm] 픽스처 요소를 이름 있는 변수로 추출하여,
+    // assertion 본문에서 타입 캐스팅 없이 직접 참조 비교를 수행합니다.
+    const node1Fixture = createMockNode("node1", "Node 1", NodeType.NOTE);
+    const node2Fixture = createMockNode("node2", "Node 2", NodeType.NOTE);
+    const edge1Fixture = createMockEdge("edge1", "node1", "node2");
+
     const data: GraphViewData = {
-      nodes: [
-        createMockNode("node1", "Node 1", NodeType.NOTE),
-        createMockNode("node2", "Node 2", NodeType.NOTE),
-      ],
-      edges: [
-        createMockEdge("edge1", "node1", "node2"),
-      ],
+      nodes: [node1Fixture, node2Fixture],
+      edges: [edge1Fixture],
     };
 
-    // [Confirm] structuredClone은 Node.js 17.0.0+(현재: v22+)에서 전역 지원되며,
-    // JSON.parse(JSON.stringify())와 달리 undefined, Symbol, Date, Infinity, NaN 등의
-    // 비-JSON 값도 안전하게 복제합니다.
+    // [Confirm] structuredClone은 Node.js 17.0.0+ 전역으로 지원됩니다.
+    // 이 프로젝트의 Vitest는 jsdom 환경에서 실행되지만, jsdom은 Node.js(v22+) 위에서
+    // 동작하므로 Node.js 전역 structuredClone이 정상 작동합니다.
+    // JSON.parse(JSON.stringify())와 달리 undefined, Symbol, Date, NaN 등 비-JSON 값도
+    // 안전하게 복제합니다.
     const originalSnapshot: GraphViewData = structuredClone(data);
 
     const result = adaptGraphData(data);
@@ -98,14 +101,12 @@ describe("adaptGraphData", () => {
     expect(data).toEqual(originalSnapshot);
 
     // Verify that the adapted structures do not reuse the same references.
-    // 테스트 픽스처에 node 2개, edge 1개가 명확히 보장되어 있으므로,
-    // 조건문 없이 무조건적으로 단언하여 테스트를 더 엄격하게 유지합니다.
-    // [Confirm] 'as any' 대신 'as ForceGraphLink'를 사용하여,
-    // adaptGraphData 반환 타입과 입력 타입의 구조적 차이를 명시적으로 캐스팅합니다.
+    // 픽스처 변수를 직접 참조하므로 타입 캐스팅이 불필요합니다.
+    // toBe()는 unknown을 허용하므로 ForceGraphLink vs GraphEdge 타입 불일치가 없습니다.
     expect(result.nodes).not.toBe(data.nodes);
-    expect(result.links).not.toBe(data.edges as ForceGraphLink[]);
-    expect(result.nodes[0]).not.toBe(data.nodes[0]);
-    expect(result.links[0]).not.toBe(data.edges[0] as ForceGraphLink);
+    expect(result.links).not.toBe(data.edges);
+    expect(result.nodes[0]).not.toBe(node1Fixture);
+    expect(result.links[0]).not.toBe(edge1Fixture);
   });
 
   it("should truncate nodes exceeding MAX_GRAPH_NODES based on degree", () => {
