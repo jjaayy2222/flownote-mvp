@@ -4,5 +4,6 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export { GraphViewLoader as GraphView } from "./GraphViewLoader";
+export { GraphContainer } from "./GraphContainer";
 export type { GraphViewProps } from "./GraphView";
 export type { GraphViewData, OnNodeClickCallback } from "./types";
