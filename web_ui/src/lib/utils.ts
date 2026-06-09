@@ -41,8 +41,22 @@ export const assertNever = (x: never, context?: string): never => {
 };
 
 /**
- * 통신 취소(AbortError) 여부를 확인하는 타입 가드
+ * AbortError의 구조적 계약(Structural Contract)을 나타내는 타입 별칭.
+ * isAbortError 타입 가드와 호출 측에서 동일한 계약을 일관되게 참조할 수 있습니다.
  */
-export const isAbortError = (error: unknown): error is { name: "AbortError" } => {
-  return typeof error === "object" && error !== null && "name" in error && (error as { name: unknown }).name === "AbortError";
+export type AbortErrorLike = { name: "AbortError" };
+
+/**
+ * 통신 취소(AbortError) 여부를 확인하는 타입 가드.
+ * name 프로퍼티가 문자열 "AbortError"인 모든 객체를 감지하여
+ * Error·DOMException 이외의 크로스-렐름 AbortError도 포착합니다.
+ */
+export const isAbortError = (error: unknown): error is AbortErrorLike => {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    typeof (error as { name: unknown }).name === "string" &&
+    (error as { name: string }).name === "AbortError"
+  );
 };
