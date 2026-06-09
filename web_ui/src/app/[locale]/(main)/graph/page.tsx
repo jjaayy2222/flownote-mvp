@@ -1,8 +1,7 @@
 // web_ui/src/app/[locale]/graph/page.tsx
 
 import { getTranslations } from 'next-intl/server';
-import GraphView from "@/components/para/GraphView";
-
+import { GraphContainer } from "@/components/GraphView";
 
 export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
   const { locale } = await params;
@@ -20,7 +19,7 @@ export default async function GraphPage() {
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-3xl font-bold tracking-tight">{t('title')}</h2>
       </div>
-      <GraphView />
+      <GraphContainer />
     </div>
   );
 }
