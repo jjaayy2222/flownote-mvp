@@ -114,11 +114,11 @@ export interface GraphViewProps {
 export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewProps) {
   const graphRef = useRef<FGMethods | undefined>(undefined);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [hoverNodeId, setHoverNodeId] = useState<string | null>(null);
 
   // SSOT 에서 변환한 데이터 (재계산 방지를 위해 메모이제이션)
   const { nodes, links } = useMemo(() => adaptGraphData(data), [data]);
 
-  // ── 노드 클릭 핸들러 ──────────────────────────────────────
   const handleNodeClick = useCallback(
     (node: NodeObj) => {
       setSelectedNodeId((prev) => (prev === node.id ? null : node.id));
@@ -132,20 +132,31 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
     [onNodeClick]
   );
 
-  // ── 노드 캔버스 렌더러 ───────────────────────────────────
+  // ── 노드 호버 핸들러 ──────────────────────────────────────
+  const handleNodeHover = useCallback((node: NodeObj | null) => {
+    setHoverNodeId(node ? String(node.id) : null);
+  }, []);
+
   const paintNode = useCallback(
     (node: NodeObj, ctx: CanvasRenderingContext2D) => {
       const nx = node.x ?? 0;
       const ny = node.y ?? 0;
       const isSelected = node.id === selectedNodeId;
-      const radius = GRAPH_NODE_RADIUS * (isSelected ? GRAPH_NODE_SELECTED_SCALE : 1);
+      const isHovered = node.id === hoverNodeId;
+      
+      // 스케일 계산 (선택되었거나 호버되었을 때 확대)
+      let scale = 1;
+      if (isSelected) scale = GRAPH_NODE_SELECTED_SCALE;
+      else if (isHovered) scale = GRAPH_NODE_SELECTED_SCALE * 0.8; // 약간만 확대
+      
+      const radius = GRAPH_NODE_RADIUS * scale;
       const color = resolveNodeColor(node.node_type);
 
-      // 선택 시 후광(glow) 효과
-      if (isSelected) {
+      // 선택 시 또는 호버 시 후광(glow) 효과
+      if (isSelected || isHovered) {
         ctx.beginPath();
-        ctx.arc(nx, ny, radius + 4, 0, Math.PI * 2);
-        ctx.fillStyle = `${GRAPH_HIGHLIGHT_COLOR}22`;
+        ctx.arc(nx, ny, radius + (isSelected ? 4 : 2), 0, Math.PI * 2);
+        ctx.fillStyle = isSelected ? `${GRAPH_HIGHLIGHT_COLOR}22` : `${color}33`;
         ctx.fill();
       }
 
@@ -155,15 +166,25 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
       ctx.fillStyle = isSelected ? GRAPH_HIGHLIGHT_COLOR : color;
       ctx.fill();
 
+      if (isHovered && !isSelected) {
+        // 호버 시 외곽선 추가
+        ctx.save();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = GRAPH_HIGHLIGHT_COLOR;
+        ctx.stroke();
+        ctx.restore();
+      }
+
       // 라벨 (작은 폰트로 노드 아래에 표시)
+      // 호버되거나 선택된 노드는 라벨을 더 선명하게 표시
       const fontSize = Math.max(4, radius * 0.9);
       ctx.font = `${fontSize}px Inter, sans-serif`;
-      ctx.fillStyle = isSelected ? GRAPH_HIGHLIGHT_COLOR : "rgba(220,220,240,0.85)";
+      ctx.fillStyle = (isSelected || isHovered) ? GRAPH_HIGHLIGHT_COLOR : "rgba(220,220,240,0.85)";
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
       ctx.fillText(node.label, nx, ny + radius + 2);
     },
-    [selectedNodeId]
+    [selectedNodeId, hoverNodeId]
   );
 
   return (
@@ -194,6 +215,7 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
       }}
       // 이벤트
       onNodeClick={handleNodeClick}
+      onNodeHover={handleNodeHover}
       // 물리 시뮬레이션 설정
       cooldownTicks={GRAPH_COOLDOWN_TICKS}
       // 성능: 줌/패닝 시 라벨 렌더링 일시 중단

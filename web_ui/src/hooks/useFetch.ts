@@ -1,6 +1,7 @@
 // web_ui/src/hooks/useFetch.ts
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { isAbortError } from '@/lib/utils';
 
 interface FetchState<T> {
   data: T | null;
@@ -57,7 +58,7 @@ export function useFetch<T>(
       }
     } catch (err) {
       // Ignore abort errors
-      if (err instanceof Error && err.name === 'AbortError') {
+      if (isAbortError(err)) {
         return;
       }
       

@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Search, Loader2, AlertCircle, FileSearch, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { isAbortError } from '@/lib/utils';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Constants
@@ -190,7 +191,7 @@ export function HybridSearch() {
       setLatencyMs(elapsed);
       setResults(data.results);
     } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
+      if (isAbortError(err)) {
         // 사용자가 취소한 경우 — 에러 표시 불필요
         return;
       }

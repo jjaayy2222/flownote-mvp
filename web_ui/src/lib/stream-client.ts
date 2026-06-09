@@ -17,17 +17,7 @@ export interface StreamChatRequest {
   alpha?: number;
 }
 
-/**
- * AbortError 여부를 안전하게 판별하는 타입 가드 헬퍼.
- *
- * - 브라우저에서 AbortController.abort() 시 DOMException이 던져질 수 있으므로 두 케이스 모두 커버.
- * - SSR(Next.js) 또는 테스트(Vitest) 환경에서 DOMException이 없는 경우를 대비해 typeof 가드 적용.
- */
-function isAbortError(err: unknown): boolean {
-  if (err instanceof Error && err.name === 'AbortError') return true;
-  if (typeof DOMException !== 'undefined' && err instanceof DOMException && err.name === 'AbortError') return true;
-  return false;
-}
+import { isAbortError } from '@/lib/utils';
 
 /**
  * 표준 fetch API를 사용하여 백엔드의 SSE(Server-Sent Events) 스트림을 소비합니다.
