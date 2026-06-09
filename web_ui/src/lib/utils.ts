@@ -44,5 +44,7 @@ export const assertNever = (x: never, context?: string): never => {
  * 통신 취소(AbortError) 여부를 확인하는 타입 가드
  */
 export const isAbortError = (error: unknown): error is Error & { name: "AbortError" } => {
-  return error instanceof Error && error.name === "AbortError";
+  if (error instanceof Error && error.name === "AbortError") return true;
+  if (typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "AbortError") return true;
+  return typeof error === "object" && error !== null && "name" in error && (error as { name: unknown }).name === "AbortError";
 };
