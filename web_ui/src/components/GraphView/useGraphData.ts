@@ -25,13 +25,14 @@ export function useGraphData() {
       const fetchedData: GraphViewData = await res.json();
       setData(fetchedData);
     } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") return; // Ignore abort errors
+      if ((error as Error).name === "AbortError") return; // Ignore abort errors
       console.error("Error fetching graph data:", error);
       toast.error("Failed to load graph data");
     } finally {
-      // 현재 실행 중인 요청과 완료된 요청이 일치할 때만 로딩 상태 해제
+      // 현재 실행 중인 요청과 완료된 요청이 일치할 때만 로딩 상태 해제 및 참조 초기화
       if (abortControllerRef.current === controller) {
         setLoading(false);
+        abortControllerRef.current = null;
       }
     }
   }, []);
