@@ -53,11 +53,16 @@ export const assertNever = (x: never, context?: string): never => {
 export type AbortErrorLike = { name: "AbortError" };
 
 /**
- * error의 name 속성이 문자열 "AbortError"인지 확인하는 내부 헬퍼.
- * isAbortError 내부의 반복적인 타입 단언을 한 곳에 집중시켜 일관성을 보장합니다.
+ * error가 문자열 "AbortError" name 속성을 가진 객체인지 확인하는 내부 헬퍼.
+ * null/object 검사부터 name 문자열 검사까지 모든 가드를 한 곳에 집중시켜
+ * isAbortError가 단순 위임(pure delegation)만 하도록 합니다.
+ * 'name' in error → { name: unknown } 패턴으로 Record 광범위 캐스트 없이
+ * 필요한 속성만 타입 안전하게 좁힙니다.
  */
-function hasAbortErrorName(error: object): error is AbortErrorLike {
-  const name = (error as Record<string, unknown>)["name"];
+function hasAbortErrorName(error: unknown): error is AbortErrorLike {
+  if (typeof error !== "object" || error === null) return false;
+  if (!("name" in error)) return false;
+  const { name } = error as { name: unknown };
   return typeof name === "string" && name === "AbortError";
 }
 
@@ -66,6 +71,4 @@ function hasAbortErrorName(error: object): error is AbortErrorLike {
  * name 프로퍼티가 문자열 "AbortError"인 모든 객체를 감지하여
  * Error·DOMException 이외의 크로스-렐름 AbortError도 포착합니다.
  */
-export const isAbortError = (error: unknown): error is AbortErrorLike => {
-  return typeof error === "object" && error !== null && hasAbortErrorName(error);
-};
+export const isAbortError = (error: unknown): error is AbortErrorLike => hasAbortErrorName(error);
