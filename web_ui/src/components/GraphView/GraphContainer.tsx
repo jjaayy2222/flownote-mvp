@@ -10,9 +10,10 @@ import { logger } from "@/lib/logger";
 import { UI_CONFIG } from "@/config/ui";
 import { API_BASE } from "@/lib/api";
 import { getToastThrottleDelay } from "@/lib/ui";
-import { GraphView } from "./index";
+import { GraphViewLoader as GraphView } from "./GraphViewLoader";
 import { GraphViewData } from "./types";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
 
 const GRAPH_UPDATE_THROTTLE = getToastThrottleDelay("GRAPH_UPDATE");
 
@@ -95,6 +96,19 @@ export function GraphContainer() {
         <div className="flex flex-col items-center gap-4 text-muted-foreground">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           <p>Loading Graph...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!loading && !data) {
+    return (
+      <div className="flex h-[600px] w-full items-center justify-center p-10 bg-white border border-gray-200 rounded-lg shadow-sm">
+        <div className="flex flex-col items-center gap-4 text-muted-foreground">
+          <p>Failed to load graph data.</p>
+          <Button variant="outline" onClick={fetchData}>
+            Retry
+          </Button>
         </div>
       </div>
     );

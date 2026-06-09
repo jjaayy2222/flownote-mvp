@@ -166,9 +166,11 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
       ctx.fillStyle = isSelected ? GRAPH_HIGHLIGHT_COLOR : color;
       if (isHovered && !isSelected) {
         // 호버 시 외곽선 추가
+        ctx.save();
         ctx.lineWidth = 1.5;
         ctx.strokeStyle = GRAPH_HIGHLIGHT_COLOR;
         ctx.stroke();
+        ctx.restore();
       }
       ctx.fill();
 
