@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useRef } from "react";
 import { toast } from "sonner";
-import { API_BASE } from "@/lib/api";
+import { API_BASE, isAbortError } from "@/lib/api";
 import type { GraphViewData } from "./types";
 
 export function useGraphData() {
@@ -25,8 +25,7 @@ export function useGraphData() {
       const fetchedData: GraphViewData = await res.json();
       setData(fetchedData);
     } catch (error) {
-      // 안전한 타입 가드: error가 객체이고 name 속성이 존재하는지 확인
-      if (error && typeof error === "object" && "name" in error && (error as Error).name === "AbortError") {
+      if (isAbortError(error)) {
         return;
       }
       console.error("Error fetching graph data:", error);
