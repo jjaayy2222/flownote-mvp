@@ -48,7 +48,7 @@ export function GraphContainer() {
       <div className="flex h-[600px] w-full items-center justify-center p-10 bg-white border border-gray-200 rounded-lg shadow-sm">
         <div className="flex flex-col items-center gap-4 text-muted-foreground">
           <p>Failed to load graph data.</p>
-          <Button variant="outline" onClick={reload}>
+          <Button variant="outline" onClick={() => reload()} disabled={loading}>
             Retry
           </Button>
         </div>

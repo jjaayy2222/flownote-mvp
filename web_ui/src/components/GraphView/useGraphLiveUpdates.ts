@@ -16,13 +16,18 @@ export function useGraphLiveUpdates(onGraphUpdated: () => void) {
   });
 
   const lastToastTimeRef = useRef<number>(0);
+  const onGraphUpdatedRef = useRef(onGraphUpdated);
+
+  useEffect(() => {
+    onGraphUpdatedRef.current = onGraphUpdated;
+  }, [onGraphUpdated]);
 
   useEffect(() => {
     if (!lastMessage || !isWebSocketEvent(lastMessage)) return;
     if (lastMessage.type !== WS_EVENT_TYPE.GRAPH_UPDATED) return;
 
     logger.debug("[GraphView] Graph updated event received, reloading data...");
-    onGraphUpdated();
+    onGraphUpdatedRef.current();
 
     const now = Date.now();
     if (now - lastToastTimeRef.current > GRAPH_UPDATE_THROTTLE) {
@@ -32,7 +37,7 @@ export function useGraphLiveUpdates(onGraphUpdated: () => void) {
       });
       lastToastTimeRef.current = now;
     }
-  }, [lastMessage, onGraphUpdated]);
+  }, [lastMessage]);
 
   return { isConnected };
 }
