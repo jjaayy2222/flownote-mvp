@@ -164,6 +164,8 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
       ctx.beginPath();
       ctx.arc(nx, ny, radius, 0, Math.PI * 2);
       ctx.fillStyle = isSelected ? GRAPH_HIGHLIGHT_COLOR : color;
+      ctx.fill();
+
       if (isHovered && !isSelected) {
         // 호버 시 외곽선 추가
         ctx.save();
@@ -172,7 +174,6 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
         ctx.stroke();
         ctx.restore();
       }
-      ctx.fill();
 
       // 라벨 (작은 폰트로 노드 아래에 표시)
       // 호버되거나 선택된 노드는 라벨을 더 선명하게 표시

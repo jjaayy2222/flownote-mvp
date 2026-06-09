@@ -1,77 +1,19 @@
 "use client";
 
-import React, { useCallback, useEffect, useState, useRef } from "react";
-import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
-import { useWebSocket } from "@/hooks/useWebSocket";
-import { getWebSocketUrl } from "@/config/websocket";
-import { isWebSocketEvent, WS_EVENT_TYPE, NodeType, GraphNode } from "@/types/websocket";
-import { logger } from "@/lib/logger";
-import { UI_CONFIG } from "@/config/ui";
-import { API_BASE } from "@/lib/api";
-import { getToastThrottleDelay } from "@/lib/ui";
-import { GraphViewLoader as GraphView } from "./GraphViewLoader";
-import { GraphViewData } from "./types";
+import React, { useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-
-const GRAPH_UPDATE_THROTTLE = getToastThrottleDelay("GRAPH_UPDATE");
+import { toast } from "sonner";
+import { NodeType, GraphNode } from "@/types/websocket";
+import { GraphViewLoader as GraphView } from "./GraphViewLoader";
+import { useGraphData } from "./useGraphData";
+import { useGraphLiveUpdates } from "./useGraphLiveUpdates";
 
 export function GraphContainer() {
   const router = useRouter();
-  const [data, setData] = useState<GraphViewData | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const fetchData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await fetch(`${API_BASE}/api/graph/data`);
-      if (!res.ok) {
-        throw new Error("Failed to fetch graph data");
-      }
-      const fetchedData: GraphViewData = await res.json();
-      setData(fetchedData);
-    } catch (error) {
-      console.error("Error fetching graph data:", error);
-      toast.error("Failed to load graph data");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  // WebSocket Integration
-  const { isConnected, lastMessage } = useWebSocket(getWebSocketUrl(), {
-    autoConnect: true,
-    reconnect: true,
-  });
-
-  const lastToastTimeRef = useRef<number>(0);
-
-  useEffect(() => {
-    if (!lastMessage) return;
-
-    if (!isWebSocketEvent(lastMessage)) return;
-
-    if (lastMessage.type === WS_EVENT_TYPE.GRAPH_UPDATED) {
-      logger.debug("[GraphView] Graph updated event received, reloading data...");
-      
-      fetchData();
-
-      const now = Date.now();
-      
-      if (now - lastToastTimeRef.current > GRAPH_UPDATE_THROTTLE) {
-        toast.info("Graph data updated", {
-          description: "Real-time sync from backend",
-          id: UI_CONFIG.TOAST.IDS.GRAPH_UPDATE,
-        });
-        lastToastTimeRef.current = now;
-      }
-    }
-  }, [lastMessage, fetchData]);
+  const { data, loading, reload } = useGraphData();
+  const { isConnected } = useGraphLiveUpdates(reload);
 
   const handleNodeClick = useCallback(
     (node: GraphNode) => {
@@ -106,7 +48,7 @@ export function GraphContainer() {
       <div className="flex h-[600px] w-full items-center justify-center p-10 bg-white border border-gray-200 rounded-lg shadow-sm">
         <div className="flex flex-col items-center gap-4 text-muted-foreground">
           <p>Failed to load graph data.</p>
-          <Button variant="outline" onClick={fetchData}>
+          <Button variant="outline" onClick={() => reload()} disabled={loading}>
             Retry
           </Button>
         </div>
