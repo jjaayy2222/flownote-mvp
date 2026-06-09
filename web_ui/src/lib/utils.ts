@@ -43,8 +43,23 @@ export const assertNever = (x: never, context?: string): never => {
 /**
  * AbortError의 구조적 계약(Structural Contract)을 나타내는 타입 별칭.
  * isAbortError 타입 가드와 호출 측에서 동일한 계약을 일관되게 참조할 수 있습니다.
+ *
+ * [호출 지점 감사(Caller Audit) 결과]
+ * 모든 호출 측(useFetch, useStreamingChat, stream-client, HybridSearch,
+ * websocket-monitor, useGraphData, chat/route)은 isAbortError 통과 후
+ * 즉시 early return 패턴만 사용하며 .message / .stack 등의 Error 전용
+ * 속성에 접근하지 않습니다. 따라서 현재 { name: "AbortError" } 계약으로 충분합니다.
  */
 export type AbortErrorLike = { name: "AbortError" };
+
+/**
+ * error의 name 속성이 문자열 "AbortError"인지 확인하는 내부 헬퍼.
+ * isAbortError 내부의 반복적인 타입 단언을 한 곳에 집중시켜 일관성을 보장합니다.
+ */
+function hasAbortErrorName(error: object): error is AbortErrorLike {
+  const name = (error as Record<string, unknown>)["name"];
+  return typeof name === "string" && name === "AbortError";
+}
 
 /**
  * 통신 취소(AbortError) 여부를 확인하는 타입 가드.
@@ -52,11 +67,5 @@ export type AbortErrorLike = { name: "AbortError" };
  * Error·DOMException 이외의 크로스-렐름 AbortError도 포착합니다.
  */
 export const isAbortError = (error: unknown): error is AbortErrorLike => {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "name" in error &&
-    typeof (error as { name: unknown }).name === "string" &&
-    (error as { name: string }).name === "AbortError"
-  );
+  return typeof error === "object" && error !== null && hasAbortErrorName(error);
 };
