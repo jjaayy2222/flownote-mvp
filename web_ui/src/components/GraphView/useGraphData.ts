@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useRef } from "react";
 import { toast } from "sonner";
-import { API_BASE } from "@/lib/api";
+import { API_BASE, isAbortError } from "@/lib/api";
 import type { GraphViewData } from "./types";
 
 export function useGraphData() {
@@ -25,7 +25,9 @@ export function useGraphData() {
       const fetchedData: GraphViewData = await res.json();
       setData(fetchedData);
     } catch (error) {
-      if ((error as Error).name === "AbortError") return; // Ignore abort errors
+      if (isAbortError(error)) {
+        return;
+      }
       console.error("Error fetching graph data:", error);
       toast.error("Failed to load graph data");
     } finally {
