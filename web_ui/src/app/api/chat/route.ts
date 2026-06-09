@@ -3,6 +3,7 @@ import { createUIMessageStreamResponse, streamText } from 'ai';
 import type { UIMessage, UIMessageChunk, ModelMessage } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { CHAT_CONFIG } from '@/lib/constants';
+import { isAbortError } from '@/lib/utils';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
 /** Nginx 스타일의 비표준 상태 코드: 클라이언트가 연결을 조기에 닫았음을 나타냄 */
@@ -20,12 +21,7 @@ function isDebugChatEnabled(): boolean {
   return val === 'true' || val === '1' || val === 'yes';
 }
 
-function isAbortError(err: unknown): err is Error & { name: 'AbortError' } {
-  return (
-    (err instanceof Error && err.name === 'AbortError') ||
-    (err as { name?: string })?.name === 'AbortError'
-  );
-}
+
 
 function getOnlyTextFromMessage(message: UIMessage): string {
   const parts = message.parts ?? [];
