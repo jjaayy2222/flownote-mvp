@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useRef } from "react";
 import { toast } from "sonner";
-import { API_BASE, isAbortError } from "@/lib/api";
+import { API_BASE } from "@/lib/api";
+import { isAbortError } from "@/lib/utils";
 import type { GraphViewData } from "./types";
 
 export function useGraphData() {
