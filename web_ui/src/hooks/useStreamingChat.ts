@@ -7,6 +7,7 @@ import {
   type StreamChunkError,
 } from '@/lib/stream-client';
 import type { SourceItem } from '@/types/chat';
+import { isAbortError } from '@/lib/utils';
 
 // =============================================================================
 // 타입 정의
@@ -210,11 +211,7 @@ export function useStreamingChat(options: UseStreamingChatOptions = {}): UseStre
           if (abortControllerRef.current !== controller) return;
 
           // AbortError는 사용자가 직접 cancelStream()을 호출한 정상 흐름
-          const isAbort =
-            (err instanceof Error && err.name === 'AbortError') ||
-            (typeof DOMException !== 'undefined' &&
-              err instanceof DOMException &&
-              err.name === 'AbortError');
+          const isAbort = isAbortError(err);
 
           if (isAbort) {
             handleInterrupt();
