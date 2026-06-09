@@ -25,7 +25,10 @@ export function useGraphData() {
       const fetchedData: GraphViewData = await res.json();
       setData(fetchedData);
     } catch (error) {
-      if ((error as Error).name === "AbortError") return; // Ignore abort errors
+      // 안전한 타입 가드: error가 객체이고 name 속성이 존재하는지 확인
+      if (error && typeof error === "object" && "name" in error && (error as Error).name === "AbortError") {
+        return;
+      }
       console.error("Error fetching graph data:", error);
       toast.error("Failed to load graph data");
     } finally {
