@@ -227,12 +227,13 @@ async def get_orphan_notes() -> OrphanNotesResponse:
         if node.node_type != NodeType.CATEGORY
     ]
 
+    threshold = get_orphan_degree_threshold()
+
     orphans = find_orphan_nodes(
         nodes=graph_data.nodes,
         edges=graph_data.edges,
+        degree_threshold=threshold,
     )
-
-    threshold = get_orphan_degree_threshold()
 
     return OrphanNotesResponse(
         orphans=orphans,
