@@ -147,6 +147,11 @@ def find_orphan_nodes(
     """
     if degree_threshold is None:
         degree_threshold = get_orphan_degree_threshold()
+    else:
+        degree_threshold = max(
+            _MIN_ORPHAN_DEGREE_THRESHOLD,
+            min(_MAX_ORPHAN_DEGREE_THRESHOLD, degree_threshold),
+        )
 
     degree_map = _build_degree_map(edges)
 
