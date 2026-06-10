@@ -43,17 +43,29 @@ _MAX_ORPHAN_DEGREE_THRESHOLD: int = 100
 # ─────────────────────────────────────────
 
 
-def clamp_orphan_degree_threshold(value: int) -> int:
+def _clamp_orphan_degree_threshold(value: int, source: str = "환경 변수") -> int:
     """
     주어진 임계값을 안전한 [MIN, MAX] 범위 내로 정규화(Clamp)한다.
+    값이 변경되었을 경우 경고 로그를 출력한다.
 
     Args:
         value: 클램프할 원본 정수 값
+        source: 로깅 시 표시할 값의 출처 (예: "환경 변수", "전달된 인자")
 
     Returns:
-        최소 0, 최대 100 사이로 보정된 정수 값
+        설정된 최소/최대 고립 노드 차수 임계값 상수를 기반으로 보정된 정수 값
     """
-    return max(_MIN_ORPHAN_DEGREE_THRESHOLD, min(_MAX_ORPHAN_DEGREE_THRESHOLD, value))
+    clamped = max(_MIN_ORPHAN_DEGREE_THRESHOLD, min(_MAX_ORPHAN_DEGREE_THRESHOLD, value))
+    if clamped != value:
+        logger.warning(
+            "[GRAPH][ORPHAN] %s 기준 임계값 %d 는 허용 범위 [%d, %d] 를 벗어났습니다. %d 로 Clamp 처리합니다.",
+            source,
+            value,
+            _MIN_ORPHAN_DEGREE_THRESHOLD,
+            _MAX_ORPHAN_DEGREE_THRESHOLD,
+            clamped,
+        )
+    return clamped
 
 
 def get_orphan_degree_threshold() -> int:
@@ -84,17 +96,7 @@ def get_orphan_degree_threshold() -> int:
         )
         return _DEFAULT_ORPHAN_DEGREE_THRESHOLD
 
-    clamped = clamp_orphan_degree_threshold(value)
-    if clamped != value:
-        logger.warning(
-            "[GRAPH][ORPHAN] %s=%d 는 허용 범위 [%d, %d] 를 벗어났습니다. %d 로 Clamp 처리합니다.",
-            _ENV_ORPHAN_DEGREE_THRESHOLD,
-            value,
-            _MIN_ORPHAN_DEGREE_THRESHOLD,
-            _MAX_ORPHAN_DEGREE_THRESHOLD,
-            clamped,
-        )
-    return clamped
+    return _clamp_orphan_degree_threshold(value, source=f"환경 변수({_ENV_ORPHAN_DEGREE_THRESHOLD})")
 
 
 def _build_degree_map(edges: Sequence[GraphEdge]) -> dict[str, int]:
@@ -161,7 +163,7 @@ def find_orphan_nodes(
     if degree_threshold is None:
         degree_threshold = get_orphan_degree_threshold()
     else:
-        degree_threshold = clamp_orphan_degree_threshold(degree_threshold)
+        degree_threshold = _clamp_orphan_degree_threshold(degree_threshold, source="전달된 인자(degree_threshold)")
 
     degree_map = _build_degree_map(edges)
 
@@ -201,4 +203,4 @@ def find_orphan_nodes(
     return orphans
 
 
-__all__ = ["find_orphan_nodes", "get_orphan_degree_threshold", "clamp_orphan_degree_threshold"]
+__all__ = ["find_orphan_nodes", "get_orphan_degree_threshold"]
