@@ -11,7 +11,7 @@
     find_orphan_nodes         — 고립 노트(Orphan Notes) 감지 알고리즘 (Phase 4-4)
 """
 
-from backend.graph.analysis import clamp_orphan_degree_threshold, find_orphan_nodes, get_orphan_degree_threshold
+from backend.graph.analysis import find_orphan_nodes, get_orphan_degree_threshold
 from backend.graph.base import AbstractGraphRepository
 from backend.graph.networkx_repository import NetworkXGraphRepository
 from backend.graph.path_utils import build_graph_path
@@ -24,6 +24,5 @@ __all__ = [
     "EntityEdgeExtractor",
     "find_orphan_nodes",
     "get_orphan_degree_threshold",
-    "clamp_orphan_degree_threshold",
 ]
 
