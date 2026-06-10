@@ -195,6 +195,89 @@ class GraphDataResponse(BaseModel):
 
 
 # ─────────────────────────────────────────
+# Phase 4-4: 고립 노트 감지 모델 (v1)
+# ─────────────────────────────────────────
+
+
+class OrphanNode(BaseModel):
+    """
+    고립 노트(Orphan Note) 모델 — 연결 차수가 낮거나 없는 노드. [SSOT - v1]
+
+    find_orphan_nodes() 알고리즘이 반환하는 분석 결과 단위.
+
+    [PII 보안 정책]
+    GraphNode와 동일한 user_id_hash 보안 정책을 적용합니다.
+    user_id 원문은 절대 저장/직렬화되지 않습니다.
+    """
+
+    id: str = Field(..., description="노드 고유 식별자")
+    label: str = Field(..., description="시각화 UI에 표시될 노드 이름")
+    node_type: NodeType = Field(
+        default=NodeType.NOTE,
+        description="노드 종류. NodeType enum 참조.",
+    )
+    properties: dict[str, Any] = Field(
+        default_factory=dict,
+        description="노드에 연결된 추가 메타데이터.",
+    )
+    degree: int = Field(
+        ...,
+        ge=0,
+        description=(
+            "이 노드의 전체 차수 (in-degree + out-degree). "
+            "0이면 완전 고립 노드(Isolated Node)."
+        ),
+    )
+    user_id_hash: Optional[str] = Field(
+        default=None,
+        description=(
+            "소유자 해시 ID (mask_pii_id() 반환값만 허용, PII 원문 금지)."
+        ),
+    )
+
+    @field_validator("user_id_hash")
+    @classmethod
+    def ensure_user_id_is_hashed(cls, v: Optional[str]) -> Optional[str]:
+        """
+        [보안 강화] GraphNode와 동일한 PII 보안 정책 — 해싱된 값만 허용.
+        """
+        if v is None:
+            return None
+        if v == INVALID_PII_SENTINEL:
+            return v
+        if not USER_ID_HASH_PATTERN.fullmatch(v):
+            raise ValueError(
+                "PII 보안 경고: user_id_hash 필드에 안전하지 않은 값이 입력되었습니다. "
+                "반드시 mask_pii_id(raw_user_id)를 통해 해싱된 값을 전달해야 합니다."
+            )
+        return v
+
+
+class OrphanNotesResponse(BaseModel):
+    """
+    고립 노트 감지 API 엔드포인트의 표준 응답 모델. [SSOT - v1]
+
+    [OpenAPI 동기화]
+    이 모델은 FastAPI의 response_model에 반드시 지정되어야 합니다.
+    """
+
+    orphans: list[OrphanNode] = Field(
+        default_factory=list,
+        description="감지된 고립 노드 목록 (차수 오름차순 정렬).",
+    )
+    total_nodes: int = Field(
+        ...,
+        ge=0,
+        description="분석 대상 전체 노드 수 (CATEGORY 노드 제외).",
+    )
+    degree_threshold: int = Field(
+        ...,
+        ge=0,
+        description="고립 노드 판별에 사용된 차수 임계값 (ORPHAN_DEGREE_THRESHOLD 환경 변수).",
+    )
+
+
+# ─────────────────────────────────────────
 # v1 Versioning Namespace (Breaking Change 대비)
 # ─────────────────────────────────────────
 #
@@ -222,6 +305,9 @@ __all__ = [
     "GraphNode",
     "GraphEdge",
     "GraphDataResponse",
+    # Phase 4-4: 고립 노트 감지 모델
+    "OrphanNode",
+    "OrphanNotesResponse",
     # v1 Versioning Aliases
     "GraphNodeV1",
     "GraphEdgeV1",

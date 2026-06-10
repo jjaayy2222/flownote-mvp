@@ -23,18 +23,26 @@ import logging
 from fastapi import APIRouter
 
 from backend.database.connection import DatabaseConnection
+from backend.graph.analysis import find_orphan_nodes, get_orphan_degree_threshold
 from backend.schemas.graph import (
     EdgeRelationshipType,
     GraphDataResponse,
     GraphEdge,
     GraphNode,
     NodeType,
+    OrphanNotesResponse,
 )
 from backend.utils.common import mask_pii_id
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/graph", tags=["Knowledge Graph (v1)"])
+
+
+# ─────────────────────────────────────────
+# 내부 헬퍼
+# ─────────────────────────────────────────
+
 
 def _is_valid_raw_user_id(raw_id: Any) -> bool:
     """
@@ -45,42 +53,38 @@ def _is_valid_raw_user_id(raw_id: Any) -> bool:
     return raw_id is not None and (not isinstance(raw_id, str) or bool(raw_id.strip()))
 
 
-@router.get(
-    "/data",
-    response_model=GraphDataResponse,
-    summary="PARA 기반 지식 그래프 데이터 조회",
-    description=(
-        "PARA 방법론(Projects/Areas/Resources/Archive) 기반으로 구성된 "
-        "노트 간의 노드-엣지 데이터를 반환합니다. "
-        "프론트엔드 react-force-graph 시각화에 사용됩니다.\n\n"
-        "[SSOT] 응답 스키마는 `backend.schemas.graph.GraphDataResponse`를 단일 진실 공급원으로 합니다."
-    ),
-)
-async def get_graph_data() -> GraphDataResponse:
-    """
-    PARA Graph View를 위한 노드와 엣지 데이터를 SSOT 스키마 형식으로 반환합니다.
+# PARA 카테고리 좌표 — 레이아웃 안정성을 위해 모듈 수준 상수로 관리
+# 하드코딩으로 보일 수 있으나, 이 값들은 PARA 방법론의 고정 구조를 표현하는
+# 디자인 상수(Design Constants)로, 환경 변수화 대상이 아닙니다.
+_PARA_CATEGORY_POSITIONS: dict[str, dict[str, float]] = {
+    "Projects": {"x": 0.0, "y": 0.0},
+    "Areas": {"x": 600.0, "y": 0.0},
+    "Resources": {"x": 0.0, "y": 600.0},
+    "Archive": {"x": 600.0, "y": 600.0},
+}
 
-    [v1] 현재는 PARA 카테고리 계층 관계(EdgeRelationshipType.PARA_CATEGORY)만 표현합니다.
-    Phase 4-1에서 명시적/암묵적 관계 추출 파이프라인이 연동되면 확장됩니다.
+
+def _build_graph_data() -> GraphDataResponse:
+    """
+    PARA 기반 지식 그래프 데이터를 DB에서 조회하여 GraphDataResponse를 빌드한다.
+
+    [책임 분리]
+    - get_graph_data()와 get_orphan_notes() 양쪽에서 재사용하여 중복 로직을 제거합니다.
+    - DB 연결 실패 시 CATEGORY 노드만 포함한 빈 응답을 반환합니다 (조용한 폴백).
+
+    Returns:
+        GraphDataResponse (nodes + edges)
     """
     # ─── PARA 카테고리 노드 (고정 시드 노드) ───────────────────────────────
-    # 기존 graph.py의 하드코딩 레이아웃을 기반으로 고정 좌표 부여
-    category_positions = {
-        "Projects": {"x": 0.0, "y": 0.0},
-        "Areas": {"x": 600.0, "y": 0.0},
-        "Resources": {"x": 0.0, "y": 600.0},
-        "Archive": {"x": 600.0, "y": 600.0},
-    }
-
     nodes: list[GraphNode] = []
-    
-    for cat in category_positions:
+    for cat, pos in _PARA_CATEGORY_POSITIONS.items():
         try:
-            pos_x = category_positions[cat]["x"]
-            pos_y = category_positions[cat]["y"]
+            pos_x = pos["x"]
+            pos_y = pos["y"]
         except KeyError as e:
-            # 설정 누락 시 런타임 에러 추적을 용이하게 하기 위한 Descriptive Error
-            raise RuntimeError(f"지식 그래프 설정 오류: 카테고리 '{cat}'의 좌표({e})가 누락되었습니다.") from e
+            raise RuntimeError(
+                f"지식 그래프 설정 오류: 카테고리 '{cat}'의 좌표({e})가 누락되었습니다."
+            ) from e
 
         nodes.append(
             GraphNode(
@@ -92,7 +96,7 @@ async def get_graph_data() -> GraphDataResponse:
                 position_y=pos_y,
             )
         )
-        
+
     edges: list[GraphEdge] = []
 
     # ─── 파일 노드 및 카테고리→파일 엣지 생성 ────────────────────────────────
@@ -103,7 +107,7 @@ async def get_graph_data() -> GraphDataResponse:
         logger.exception("그래프 데이터 조회 중 DB 연결 실패. 빈 그래프를 반환합니다.")
         return GraphDataResponse(nodes=nodes, edges=edges)
 
-    valid_category_ids = set(category_positions)
+    valid_category_ids = set(_PARA_CATEGORY_POSITIONS)
 
     file_nodes: list[GraphNode] = []
     file_edges: list[GraphEdge] = []
@@ -130,12 +134,8 @@ async def get_graph_data() -> GraphDataResponse:
         if abs(offset_x) < 80 and abs(offset_y) < 80:
             offset_x += 100 if offset_x >= 0 else -100
 
-        # 중심 카테고리 좌표를 기준으로 난수 오프셋 연산
-        base_x = category_positions.get(category, {}).get("x", 0.0)
-        base_y = category_positions.get(category, {}).get("y", 0.0)
-        
-        pos_x = base_x + offset_x
-        pos_y = base_y + offset_y
+        base_x = _PARA_CATEGORY_POSITIONS.get(category, {}).get("x", 0.0)
+        base_y = _PARA_CATEGORY_POSITIONS.get(category, {}).get("y", 0.0)
 
         file_nodes.append(
             GraphNode(
@@ -145,8 +145,8 @@ async def get_graph_data() -> GraphDataResponse:
                 properties={
                     "para_category": category,
                 },
-                position_x=pos_x,
-                position_y=pos_y,
+                position_x=base_x + offset_x,
+                position_y=base_y + offset_y,
                 user_id_hash=hashed_uid,
             )
         )
@@ -164,3 +164,78 @@ async def get_graph_data() -> GraphDataResponse:
     edges.extend(file_edges)
 
     return GraphDataResponse(nodes=nodes, edges=edges)
+
+
+# ─────────────────────────────────────────
+# 엔드포인트
+# ─────────────────────────────────────────
+
+
+@router.get(
+    "/data",
+    response_model=GraphDataResponse,
+    summary="PARA 기반 지식 그래프 데이터 조회",
+    description=(
+        "PARA 방법론(Projects/Areas/Resources/Archive) 기반으로 구성된 "
+        "노트 간의 노드-엣지 데이터를 반환합니다. "
+        "프론트엔드 react-force-graph 시각화에 사용됩니다.\n\n"
+        "[SSOT] 응답 스키마는 `backend.schemas.graph.GraphDataResponse`를 단일 진실 공급원으로 합니다."
+    ),
+)
+async def get_graph_data() -> GraphDataResponse:
+    """
+    PARA Graph View를 위한 노드와 엣지 데이터를 SSOT 스키마 형식으로 반환합니다.
+
+    [v1] 현재는 PARA 카테고리 계층 관계(EdgeRelationshipType.PARA_CATEGORY)만 표현합니다.
+    Phase 4-1에서 명시적/암묵적 관계 추출 파이프라인이 연동되면 확장됩니다.
+    """
+    return _build_graph_data()
+
+
+@router.get(
+    "/orphans",
+    response_model=OrphanNotesResponse,
+    summary="고립 노트(Orphan Notes) 감지",
+    description=(
+        "전체 그래프에서 엣지 차수(Degree)가 0이거나 극도로 낮은 "
+        "'고립 노트(Orphan Notes)'를 감지하여 반환합니다.\n\n"
+        "임계값은 ORPHAN_DEGREE_THRESHOLD 환경 변수(기본값: 0)로 제어합니다.\n\n"
+        "[SSOT] 응답 스키마는 `backend.schemas.graph.OrphanNotesResponse`를 "
+        "단일 진실 공급원으로 합니다."
+    ),
+)
+async def get_orphan_notes() -> OrphanNotesResponse:
+    """
+    고립 노트(Orphan Notes)를 감지하여 OrphanNotesResponse로 반환합니다.
+
+    [알고리즘]
+    1. _build_graph_data()로 현재 그래프의 전체 노드/엣지를 로드.
+    2. find_orphan_nodes()로 ORPHAN_DEGREE_THRESHOLD 이하 차수의 노드를 필터링.
+    3. CATEGORY 노드는 구조적 루트이므로 고립 감지에서 제외.
+    4. 차수 오름차순으로 정렬하여 반환.
+
+    [ORPHAN_DEGREE_THRESHOLD]
+    - 기본값: 0 (완전 고립 노드만 감지)
+    - 범위: 0~100
+    - 파싱 실패 시: 기본값 폴백 + WARNING 로그
+    """
+    graph_data = _build_graph_data()
+
+    # CATEGORY 노드를 total_nodes 카운트에서 제외 (분석 대상 노드만 집계)
+    analyzable_nodes = [
+        node for node in graph_data.nodes
+        if node.node_type != NodeType.CATEGORY
+    ]
+
+    orphans = find_orphan_nodes(
+        nodes=graph_data.nodes,
+        edges=graph_data.edges,
+    )
+
+    threshold = get_orphan_degree_threshold()
+
+    return OrphanNotesResponse(
+        orphans=orphans,
+        total_nodes=len(analyzable_nodes),
+        degree_threshold=threshold,
+    )
