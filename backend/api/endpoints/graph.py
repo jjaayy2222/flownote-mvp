@@ -230,7 +230,7 @@ async def get_orphan_notes() -> OrphanNotesResponse:
     threshold = get_orphan_degree_threshold()
 
     orphans = find_orphan_nodes(
-        nodes=graph_data.nodes,
+        nodes=analyzable_nodes,
         edges=graph_data.edges,
         degree_threshold=threshold,
     )
