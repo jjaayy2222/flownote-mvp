@@ -52,4 +52,9 @@ app.conf.beat_schedule = {
         "task": "backend.celery_app.tasks.maintenance.cleanup_old_logs",
         "schedule": crontab(hour=4, minute=0, day_of_week=0),
     },
+    # 8. 고립 노트 스캔 (Daily - 매일 새벽 5시)
+    "daily-orphan-notes-scan": {
+        "task": "backend.celery_app.tasks.graph.detect_orphan_notes_for_all_users",
+        "schedule": crontab(hour=5, minute=0),
+    },
 }
