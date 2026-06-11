@@ -278,6 +278,131 @@ class OrphanNotesResponse(BaseModel):
 
 
 # ─────────────────────────────────────────
+# Phase 4-4 (3단계): 연결 추천 모델 (v1)
+# ─────────────────────────────────────────
+
+
+class LinkRecommendation(BaseModel):
+    """
+    고립 노트와 기존 노드 간의 연결 추천 쌍 모델. [SSOT - v1]
+
+    find_link_recommendations() 알고리즘이 반환하는 단일 추천 결과 단위.
+
+    [PII 보안 정책]
+    GraphNode와 동일한 user_id_hash 보안 정책을 적용합니다.
+    user_id 원문은 절대 저장/직렬화되지 않습니다.
+    """
+
+    orphan_node_id: str = Field(..., description="고립 노드의 고유 식별자")
+    orphan_node_label: str = Field(..., description="고립 노드의 표시 이름")
+    candidate_node_id: str = Field(..., description="연결 추천 후보 노드의 고유 식별자")
+    candidate_node_label: str = Field(..., description="연결 추천 후보 노드의 표시 이름")
+    similarity_score: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="두 노드 간 코사인 유사도 (0.0 ~ 1.0). 높을수록 연관성이 강함.",
+    )
+    user_id_hash: Optional[str] = Field(
+        default=None,
+        description="고립 노드 소유자의 해시된 사용자 ID (PII 원문 금지).",
+    )
+
+    @field_validator("user_id_hash")
+    @classmethod
+    def ensure_user_id_is_hashed(cls, v: Optional[str]) -> Optional[str]:
+        """[보안 강화] GraphNode와 동일한 PII 보안 정책 — 해싱된 값만 허용."""
+        if v is None:
+            return None
+        if v == INVALID_PII_SENTINEL:
+            return v
+        if not USER_ID_HASH_PATTERN.fullmatch(v):
+            raise ValueError(
+                "PII 보안 경고: user_id_hash 필드에 안전하지 않은 값이 입력되었습니다. "
+                "반드시 mask_pii_id(raw_user_id)를 통해 해싱된 값을 전달해야 합니다."
+            )
+        return v
+
+
+class LinkNotification(BaseModel):
+    """
+    사용자에게 전달할 연결 추천 앱 내 알림 모델. [SSOT - v1]
+
+    send_link_recommendations()가 생성하는 알림 단위.
+    현재는 로그 채널로 전송되며, 향후 WebSocket/Email/Slack 채널 확장 시 이 모델을 재사용한다.
+
+    [PII 보안 정책]
+    알림 메시지(title, body)에 user_id 원문이 포함되어서는 안 됩니다.
+    """
+
+    title: str = Field(..., description="알림 제목 — UI에 표시될 짧은 요약")
+    body: str = Field(..., description="알림 본문 — 상세 추천 이유 및 행동 유도 메시지")
+    orphan_node_id: str = Field(..., description="알림 대상 고립 노드 ID")
+    candidate_node_id: str = Field(..., description="알림 대상 추천 후보 노드 ID")
+    similarity_score: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="두 노드 간 코사인 유사도",
+    )
+    user_id_hash: Optional[str] = Field(
+        default=None,
+        description="알림 수신 대상 사용자의 해시된 ID (PII 원문 금지).",
+    )
+
+    @field_validator("user_id_hash")
+    @classmethod
+    def ensure_user_id_is_hashed(cls, v: Optional[str]) -> Optional[str]:
+        """[보안 강화] GraphNode와 동일한 PII 보안 정책 — 해싱된 값만 허용."""
+        if v is None:
+            return None
+        if v == INVALID_PII_SENTINEL:
+            return v
+        if not USER_ID_HASH_PATTERN.fullmatch(v):
+            raise ValueError(
+                "PII 보안 경고: user_id_hash 필드에 안전하지 않은 값이 입력되었습니다. "
+                "반드시 mask_pii_id(raw_user_id)를 통해 해싱된 값을 전달해야 합니다."
+            )
+        return v
+
+
+class LinkRecommendationResult(BaseModel):
+    """
+    연결 추천 파이프라인 전체 실행 결과 집계 모델. [SSOT - v1]
+
+    Celery 태스크(detect_orphan_notes_for_all_users)의 추천 파이프라인 완료 후
+    전체 통계를 집계하는 데 사용된다.
+    """
+
+    total_orphans_analyzed: int = Field(
+        ...,
+        ge=0,
+        description="유사도 분석 대상 고립 노드 수 (임베딩이 존재하는 경우만 포함).",
+    )
+    total_candidates_analyzed: int = Field(
+        ...,
+        ge=0,
+        description="연결 후보로 분석된 비고립 노드 수.",
+    )
+    total_recommendations: int = Field(
+        ...,
+        ge=0,
+        description="임계값 이상으로 발굴된 전체 추천 쌍 수.",
+    )
+    total_notifications_sent: int = Field(
+        ...,
+        ge=0,
+        description="실제 전송된 알림 건수.",
+    )
+    similarity_threshold: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="사용된 코사인 유사도 임계값.",
+    )
+
+
+# ─────────────────────────────────────────
 # v1 Versioning Namespace (Breaking Change 대비)
 # ─────────────────────────────────────────
 #
@@ -308,6 +433,10 @@ __all__ = [
     # Phase 4-4: 고립 노트 감지 모델
     "OrphanNode",
     "OrphanNotesResponse",
+    # Phase 4-4 (3단계): 연결 추천 모델
+    "LinkRecommendation",
+    "LinkNotification",
+    "LinkRecommendationResult",
     # v1 Versioning Aliases
     "GraphNodeV1",
     "GraphEdgeV1",
