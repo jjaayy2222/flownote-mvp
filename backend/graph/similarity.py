@@ -55,15 +55,18 @@ _MAX_MAX_RECOMMENDATIONS_PER_ORPHAN: int = 50
 # ─────────────────────────────────────────
 
 
-def _clamp_float(value: float, min_val: float, max_val: float, source: str, label: str) -> float:
-    """
-    float 값을 [min_val, max_val] 범위 내로 Clamp한다.
-    값이 변경되었을 경우 경고 로그를 출력한다.
-    """
+def _clamp(
+    value: float | int,
+    min_val: float | int,
+    max_val: float | int,
+    source: str,
+    label: str,
+    fmt: str,
+) -> float | int:
     clamped = max(min_val, min(max_val, value))
     if clamped != value:
         logger.warning(
-            "[GRAPH][SIMILARITY] %s 기준 %s=%.4f 는 허용 범위 [%.4f, %.4f] 를 벗어났습니다. %.4f 로 Clamp 처리합니다.",
+            f"[GRAPH][SIMILARITY] %s 기준 %s={fmt} 는 허용 범위 [{fmt}, {fmt}] 를 벗어났습니다. {fmt} 로 Clamp 처리합니다.",
             source,
             label,
             value,
@@ -72,25 +75,16 @@ def _clamp_float(value: float, min_val: float, max_val: float, source: str, labe
             clamped,
         )
     return clamped
+
+
+def _clamp_float(value: float, min_val: float, max_val: float, source: str, label: str) -> float:
+    """float 값을 [min_val, max_val] 범위 내로 Clamp한다."""
+    return float(_clamp(value, min_val, max_val, source, label, "%.4f"))
 
 
 def _clamp_int(value: int, min_val: int, max_val: int, source: str, label: str) -> int:
-    """
-    int 값을 [min_val, max_val] 범위 내로 Clamp한다.
-    값이 변경되었을 경우 경고 로그를 출력한다.
-    """
-    clamped = max(min_val, min(max_val, value))
-    if clamped != value:
-        logger.warning(
-            "[GRAPH][SIMILARITY] %s 기준 %s=%d 는 허용 범위 [%d, %d] 를 벗어났습니다. %d 로 Clamp 처리합니다.",
-            source,
-            label,
-            value,
-            min_val,
-            max_val,
-            clamped,
-        )
-    return clamped
+    """int 값을 [min_val, max_val] 범위 내로 Clamp한다."""
+    return int(_clamp(value, min_val, max_val, source, label, "%d"))
 
 
 def get_link_similarity_threshold() -> float:
@@ -182,6 +176,33 @@ def _cosine_similarity(vec_a: np.ndarray, vec_b: np.ndarray) -> float:
 # ─────────────────────────────────────────
 
 
+def _score_candidates_for_orphan(
+    orphan_id: str,
+    orphan_vec: np.ndarray,
+    a_candidate_vecs: dict[str, np.ndarray],
+    similarity_threshold: float,
+) -> list[tuple[float, str]]:
+    """고립 노드에 대해 유사도 임계값을 넘는 후보들을 평가하여 반환한다."""
+    scored: list[tuple[float, str]] = []
+    
+    for candidate_id, candidate_vec in a_candidate_vecs.items():
+        if candidate_id == orphan_id:
+            continue
+            
+        if len(orphan_vec) != len(candidate_vec):
+            logger.debug(
+                "[GRAPH][SIMILARITY] 차원 불일치로 건너뜀: orphan(%d) != candidate(%d)",
+                len(orphan_vec), len(candidate_vec)
+            )
+            continue
+            
+        sim = _cosine_similarity(orphan_vec, candidate_vec)
+        if sim >= similarity_threshold:
+            scored.append((sim, candidate_id))
+            
+    return scored
+
+
 def find_link_recommendations(
     orphan_nodes: Sequence[OrphanNode],
     candidate_nodes: Sequence[GraphNode],
@@ -251,32 +272,34 @@ def find_link_recommendations(
     # 후보 노드 ID → GraphNode 빠른 조회 맵
     candidate_map: dict[str, GraphNode] = {n.id: n for n in candidate_nodes}
     
-    # 사전에 후보 임베딩을 np.ndarray로 변환하여 캐싱 (성능 최적화)
+    # 사전에 후보/고립 임베딩을 np.ndarray로 변환하여 캐싱 (성능 최적화 및 대칭성 확보)
     a_candidate_vecs: dict[str, np.ndarray] = {
         cid: np.array(vec_raw, dtype=np.float32)
         for cid, vec_raw in candidate_embeddings.items()
     }
+    a_orphan_vecs: dict[str, np.ndarray] = {
+        oid: np.array(vec_raw, dtype=np.float32)
+        for oid, vec_raw in orphan_embeddings.items()
+    }
+
+    # 데이터 일관성 검사: 임베딩 맵에 존재하지만 실제 노드 목록에 없는 경우 경고 (Data Inconsistency 방어)
+    if missing_candidates := set(a_candidate_vecs.keys()) - set(candidate_map.keys()):
+        logger.debug(
+            "[GRAPH][SIMILARITY] candidate_embeddings에 %d개의 식별되지 않은 노드 ID가 있습니다. (무시됨)",
+            len(missing_candidates)
+        )
 
     for orphan in orphan_nodes:
-        orphan_vec_raw = orphan_embeddings.get(orphan.id)
-        if orphan_vec_raw is None:
-            # 임베딩 없는 고립 노드는 조용히 건너뜀
+        # 임베딩 없는 고립 노드는 조용히 건너뜀
+        if (orphan_vec := a_orphan_vecs.get(orphan.id)) is None:
             continue
 
-        orphan_vec = np.array(orphan_vec_raw, dtype=np.float32)
-
-        # 이 orphan에 대해 유사도 높은 후보를 수집
-        scored: list[tuple[float, str]] = []  # (similarity, candidate_id)
-
-        for candidate_id, candidate_vec in a_candidate_vecs.items():
-            # 자기 자신 제외
-            if candidate_id == orphan.id:
-                continue
-
-            sim = _cosine_similarity(orphan_vec, candidate_vec)
-
-            if sim >= similarity_threshold:
-                scored.append((sim, candidate_id))
+        scored = _score_candidates_for_orphan(
+            orphan_id=orphan.id,
+            orphan_vec=orphan_vec,
+            a_candidate_vecs=a_candidate_vecs,
+            similarity_threshold=similarity_threshold,
+        )
 
         # 유사도 내림차순 정렬
         scored.sort(key=lambda x: x[0], reverse=True)

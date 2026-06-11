@@ -1,7 +1,9 @@
 # backend/celery_app/tasks/graph.py
 
 import logging
+import os
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from backend.celery_app.celery import app
@@ -24,6 +26,9 @@ from backend.schemas.graph import (
 
 logger = logging.getLogger(__name__)
 
+# 임베딩 파이프라인 기능 플래그 (현재 DB 임베딩 부재로 False)
+_EMBEDDINGS_ENABLED = os.environ.get("FEATURE_ENABLE_LINK_RECOMMENDATIONS", "false").lower() == "true"
+
 # ─────────────────────────────────────────
 # 내부 헬퍼
 # ─────────────────────────────────────────
@@ -36,18 +41,15 @@ def _collect_category_ids(graph_data: GraphDataResponse) -> set[str]:
     return {n.id for n in graph_data.nodes if n.node_type == NodeType.CATEGORY}
 
 
-def _group_nodes_by_user(
-    graph_data: GraphDataResponse,
-) -> tuple[Dict[str, List[GraphNode]], int, List[str]]:
-    """
-    비CATEGORY 노드를 user_id_hash 기준으로 그룹화한다.
+@dataclass
+class UserGroupingResult:
+    nodes_by_user: Dict[str, List[GraphNode]]
+    missing_count: int
+    missing_samples: List[str]
 
-    Returns:
-        (nodes_by_user, missing_count, missing_samples)
-        - nodes_by_user: {user_id_hash: [GraphNode, ...]}
-        - missing_count: user_id_hash가 없는 노드 수
-        - missing_samples: 샘플 node_id 목록 (최대 _MAX_MISSING_UID_SAMPLES개)
-    """
+
+def _group_nodes_by_user(graph_data: GraphDataResponse) -> UserGroupingResult:
+    """비CATEGORY 노드를 user_id_hash 기준으로 그룹화한다."""
     nodes_by_user: Dict[str, List[GraphNode]] = defaultdict(list)
     missing_count = 0
     missing_samples: List[str] = []
@@ -62,7 +64,7 @@ def _group_nodes_by_user(
             continue
         nodes_by_user[node.user_id_hash].append(node)
 
-    return nodes_by_user, missing_count, missing_samples
+    return UserGroupingResult(nodes_by_user, missing_count, missing_samples)
 
 
 def _filter_user_edges(
@@ -79,20 +81,10 @@ def _filter_user_edges(
 
 
 def _load_embeddings_for_nodes(node_ids: list[str]) -> dict[str, list[float]]:
-    """
-    [임베딩 로더 스텁]
-    주어진 노드 ID 목록에 대한 임베딩 벡터를 로드한다.
+    """Return {node_id: embedding_vector} for given IDs.
 
-    [현재 구현]
-    현재 DB 스키마에 임베딩 컬럼이 없으므로 빈 딕셔너리를 반환한다.
-
-    [확장 가이드 — 임베딩 파이프라인 연동 시]
-    1. DB에 `file_embeddings` 테이블 추가 (file_id, embedding JSON/BLOB)
-    2. 이 함수에서 DB 조회 후 {node_id: embedding_vector} 반환
-    3. 임베딩이 없는 노드는 자연스럽게 건너뜀 (KeyError 없이 조용히 제외)
-
-    Returns:
-        {node_id: embedding_vector} — 현재는 항상 빈 딕셔너리.
+    현재는 임베딩 컬럼/테이블이 없어 빈 딕셔너리를 반환합니다.
+    추후 DB/캐시에서 임베딩을 조회하도록 교체합니다.
     """
     # TODO: DB/캐시에서 임베딩 로드 로직으로 교체
     return {}
@@ -176,8 +168,6 @@ def detect_orphan_notes_for_all_users(self):
     similarity_threshold = get_link_similarity_threshold()
     max_per_orphan = get_max_recommendations_per_orphan()
 
-    # 임베딩 파이프라인 기능 플래그 (현재 DB 임베딩 부재로 False)
-    _EMBEDDINGS_ENABLED = False
     if not _EMBEDDINGS_ENABLED:
         logger.info(
             "[%s] 임베딩 파이프라인이 비활성화되어 있습니다. "
@@ -186,16 +176,17 @@ def detect_orphan_notes_for_all_users(self):
         )
 
     category_ids = _collect_category_ids(graph_data)
-    nodes_by_user, missing_count, missing_samples = _group_nodes_by_user(graph_data)
+    grouping = _group_nodes_by_user(graph_data)
+    nodes_by_user = grouping.nodes_by_user
 
-    if missing_count > 0:
+    if grouping.missing_count > 0:
         logger.warning(
             "[%s] user_id_hash가 없는 노드가 총 %d개 발견되었습니다. "
             "보안 격리를 위해 스캔에서 제외합니다. (샘플 node_id: %s%s)",
             task_name,
-            missing_count,
-            missing_samples,
-            " ..." if missing_count > _MAX_MISSING_UID_SAMPLES else "",
+            grouping.missing_count,
+            grouping.missing_samples,
+            " ..." if grouping.missing_count > _MAX_MISSING_UID_SAMPLES else "",
         )
 
     users_scanned = len(nodes_by_user)
@@ -223,6 +214,10 @@ def detect_orphan_notes_for_all_users(self):
         )
         total_orphans_found += len(orphans)
 
+        if not _EMBEDDINGS_ENABLED:
+            # 추천이 비활성화된 경우, 고립 노트 감지만 수행
+            continue
+
         if pipeline_result := _run_recommendation_pipeline(
             uid=uid,
             orphans=orphans,
@@ -234,14 +229,23 @@ def detect_orphan_notes_for_all_users(self):
             agg_recommendations += pipeline_result.total_recommendations
             agg_notifications_sent += pipeline_result.total_notifications_sent
 
-    logger.info(
-        "[%s] 전역 스캔 완료: users=%d, orphans=%d, recommendations=%d, notifications=%d",
-        task_name, users_scanned, total_orphans_found, agg_recommendations, agg_notifications_sent,
-    )
-
-    return (
-        f"Success: {users_scanned} users scanned, "
-        f"{total_orphans_found} orphans found, "
-        f"{agg_recommendations} link recommendations generated, "
-        f"{agg_notifications_sent} notifications sent."
-    )
+    if _EMBEDDINGS_ENABLED:
+        logger.info(
+            "[%s] 전역 스캔 완료: users=%d, orphans=%d, recommendations=%d, notifications=%d",
+            task_name, users_scanned, total_orphans_found, agg_recommendations, agg_notifications_sent,
+        )
+        return (
+            f"Success: {users_scanned} users scanned, "
+            f"{total_orphans_found} orphans found, "
+            f"{agg_recommendations} link recommendations generated, "
+            f"{agg_notifications_sent} notifications sent."
+        )
+    else:
+        logger.info(
+            "[%s] 전역 스캔 완료: users=%d, orphans=%d (연결 추천 비활성화)",
+            task_name, users_scanned, total_orphans_found,
+        )
+        return (
+            f"Success: {users_scanned} users scanned, "
+            f"{total_orphans_found} orphans found (link recommendations disabled)."
+        )
