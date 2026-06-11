@@ -33,6 +33,12 @@ _PARA_CATEGORY_POSITIONS: dict[str, dict[str, float]] = {
     "Archive": {"x": 600.0, "y": 600.0},
 }
 
+for cat, pos in _PARA_CATEGORY_POSITIONS.items():
+    if "x" not in pos or "y" not in pos:
+        raise RuntimeError(
+            f"지식 그래프 설정 오류: 카테고리 '{cat}'의 좌표('x' 또는 'y')가 누락되었습니다."
+        )
+
 def build_graph_data() -> GraphDataResponse:
     """
     PARA 기반 지식 그래프 데이터를 DB에서 조회하여 GraphDataResponse를 빌드한다.
@@ -47,13 +53,8 @@ def build_graph_data() -> GraphDataResponse:
     # ─── PARA 카테고리 노드 (고정 시드 노드) ───────────────────────────────
     nodes: list[GraphNode] = []
     for cat, pos in _PARA_CATEGORY_POSITIONS.items():
-        try:
-            pos_x = pos["x"]
-            pos_y = pos["y"]
-        except KeyError as e:
-            raise RuntimeError(
-                f"지식 그래프 설정 오류: 카테고리 '{cat}'의 좌표({e})가 누락되었습니다."
-            ) from e
+        pos_x = pos["x"]
+        pos_y = pos["y"]
 
         nodes.append(
             GraphNode(
@@ -103,8 +104,8 @@ def build_graph_data() -> GraphDataResponse:
         if abs(offset_x) < 80 and abs(offset_y) < 80:
             offset_x += 100 if offset_x >= 0 else -100
 
-        base_x = _PARA_CATEGORY_POSITIONS.get(category, {}).get("x", 0.0)
-        base_y = _PARA_CATEGORY_POSITIONS.get(category, {}).get("y", 0.0)
+        base_pos = _PARA_CATEGORY_POSITIONS[category]
+        base_x, base_y = base_pos["x"], base_pos["y"]
 
         file_nodes.append(
             GraphNode(
