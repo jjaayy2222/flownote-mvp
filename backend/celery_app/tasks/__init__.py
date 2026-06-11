@@ -10,4 +10,5 @@ from . import (
     monitoring,
     maintenance,
     classification,  # Added classification task
+    graph,           # Knowledge Graph background tasks
 )
