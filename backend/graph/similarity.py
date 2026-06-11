@@ -299,7 +299,7 @@ def find_link_recommendations(
             len(missing_candidates)
         )
         for missing_id in missing_candidates:
-            del a_candidate_vecs[missing_id]
+            a_candidate_vecs.pop(missing_id, None)
 
     for orphan in orphan_nodes:
         # 임베딩 없는 고립 노드는 조용히 건너뜀
