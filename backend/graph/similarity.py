@@ -55,18 +55,22 @@ _MAX_MAX_RECOMMENDATIONS_PER_ORPHAN: int = 50
 # ─────────────────────────────────────────
 
 
-def _clamp(
-    value: float | int,
-    min_val: float | int,
-    max_val: float | int,
-    source: str,
-    label: str,
-    fmt: str,
-) -> float | int:
-    clamped = max(min_val, min(max_val, value))
+from typing import TypeVar
+
+T = TypeVar("T", int, float)
+
+
+def _clamp_core(value: T, min_val: T, max_val: T) -> T:
+    """값을 [min_val, max_val] 범위 내로 Clamp한다."""
+    return max(min_val, min(max_val, value))
+
+
+def _clamp_float(value: float, min_val: float, max_val: float, source: str, label: str) -> float:
+    """float 값을 [min_val, max_val] 범위 내로 Clamp한다."""
+    clamped = _clamp_core(value, min_val, max_val)
     if clamped != value:
         logger.warning(
-            f"[GRAPH][SIMILARITY] %s 기준 %s={fmt} 는 허용 범위 [{fmt}, {fmt}] 를 벗어났습니다. {fmt} 로 Clamp 처리합니다.",
+            "[GRAPH][SIMILARITY] %s 기준 %s=%.4f 는 허용 범위 [%.4f, %.4f] 를 벗어났습니다. %.4f 로 Clamp 처리합니다.",
             source,
             label,
             value,
@@ -77,14 +81,20 @@ def _clamp(
     return clamped
 
 
-def _clamp_float(value: float, min_val: float, max_val: float, source: str, label: str) -> float:
-    """float 값을 [min_val, max_val] 범위 내로 Clamp한다."""
-    return float(_clamp(value, min_val, max_val, source, label, "%.4f"))
-
-
 def _clamp_int(value: int, min_val: int, max_val: int, source: str, label: str) -> int:
     """int 값을 [min_val, max_val] 범위 내로 Clamp한다."""
-    return int(_clamp(value, min_val, max_val, source, label, "%d"))
+    clamped = _clamp_core(value, min_val, max_val)
+    if clamped != value:
+        logger.warning(
+            "[GRAPH][SIMILARITY] %s 기준 %s=%d 는 허용 범위 [%d, %d] 를 벗어났습니다. %d 로 Clamp 처리합니다.",
+            source,
+            label,
+            value,
+            min_val,
+            max_val,
+            clamped,
+        )
+    return clamped
 
 
 def get_link_similarity_threshold() -> float:
