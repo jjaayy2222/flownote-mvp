@@ -250,6 +250,12 @@ def find_link_recommendations(
 
     # 후보 노드 ID → GraphNode 빠른 조회 맵
     candidate_map: dict[str, GraphNode] = {n.id: n for n in candidate_nodes}
+    
+    # 사전에 후보 임베딩을 np.ndarray로 변환하여 캐싱 (성능 최적화)
+    a_candidate_vecs: dict[str, np.ndarray] = {
+        cid: np.array(vec_raw, dtype=np.float32)
+        for cid, vec_raw in candidate_embeddings.items()
+    }
 
     for orphan in orphan_nodes:
         orphan_vec_raw = orphan_embeddings.get(orphan.id)
@@ -262,12 +268,11 @@ def find_link_recommendations(
         # 이 orphan에 대해 유사도 높은 후보를 수집
         scored: list[tuple[float, str]] = []  # (similarity, candidate_id)
 
-        for candidate_id, candidate_vec_raw in candidate_embeddings.items():
+        for candidate_id, candidate_vec in a_candidate_vecs.items():
             # 자기 자신 제외
             if candidate_id == orphan.id:
                 continue
 
-            candidate_vec = np.array(candidate_vec_raw, dtype=np.float32)
             sim = _cosine_similarity(orphan_vec, candidate_vec)
 
             if sim >= similarity_threshold:

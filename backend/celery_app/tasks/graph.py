@@ -176,6 +176,15 @@ def detect_orphan_notes_for_all_users(self):
     similarity_threshold = get_link_similarity_threshold()
     max_per_orphan = get_max_recommendations_per_orphan()
 
+    # 임베딩 파이프라인 기능 플래그 (현재 DB 임베딩 부재로 False)
+    _EMBEDDINGS_ENABLED = False
+    if not _EMBEDDINGS_ENABLED:
+        logger.info(
+            "[%s] 임베딩 파이프라인이 비활성화되어 있습니다. "
+            "고립 노드 감지만 수행하며, 연결 추천은 건너뜁니다.",
+            task_name
+        )
+
     category_ids = _collect_category_ids(graph_data)
     nodes_by_user, missing_count, missing_samples = _group_nodes_by_user(graph_data)
 

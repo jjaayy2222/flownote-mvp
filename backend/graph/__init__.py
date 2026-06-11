@@ -20,16 +20,8 @@ from backend.graph.extractor import EntityEdgeExtractor
 from backend.graph.similarity import find_link_recommendations, get_link_similarity_threshold
 from backend.graph.notifications import send_link_recommendations
 
-# NetworkXGraphRepository는 networkx 패키지가 설치된 경우에만 로드
-# (requirements.txt에 networkx가 없는 환경에서도 나머지 모듈이 정상 동작하도록 보호)
-try:
-    from backend.graph.networkx_repository import NetworkXGraphRepository
-except ImportError:
-    NetworkXGraphRepository = None  # type: ignore[assignment,misc]
-
 __all__ = [
     "AbstractGraphRepository",
-    "NetworkXGraphRepository",
     "build_graph_path",
     "EntityEdgeExtractor",
     "find_orphan_nodes",
@@ -38,3 +30,12 @@ __all__ = [
     "get_link_similarity_threshold",
     "send_link_recommendations",
 ]
+
+from contextlib import suppress
+
+# NetworkXGraphRepository는 networkx 패키지가 설치된 경우에만 로드
+# (requirements.txt에 networkx가 없는 환경에서도 나머지 모듈이 정상 동작하도록 보호)
+with suppress(ImportError):
+    from backend.graph.networkx_repository import NetworkXGraphRepository
+    __all__.append("NetworkXGraphRepository")
+

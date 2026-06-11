@@ -71,6 +71,24 @@ class NodeType(str, Enum):
 # ─────────────────────────────────────────
 
 
+def validate_user_id_hash(v: Optional[str]) -> Optional[str]:
+    """
+    [보안 강화] PII 보안 정책 공유 헬퍼.
+    user_id_hash 필드에 원본 ID가 실수로 주입되는 것을 차단합니다.
+    오직 mask_pii_id()를 통과한 해시 문자열(12자리/64자리 Hex) 또는 INVALID_PII_SENTINEL만 허용합니다.
+    """
+    if v is None:
+        return None
+    if v == INVALID_PII_SENTINEL:
+        return v
+    if not USER_ID_HASH_PATTERN.fullmatch(v):
+        raise ValueError(
+            "PII 보안 경고: user_id_hash 필드에 안전하지 않은 값이 입력되었습니다. "
+            "반드시 mask_pii_id(raw_user_id)를 통해 해싱된 값을 전달해야 합니다."
+        )
+    return v
+
+
 class GraphNode(BaseModel):
     """
     지식 그래프의 노드(정점) 모델. [SSOT - v1]
@@ -114,26 +132,7 @@ class GraphNode(BaseModel):
         ),
     )
 
-    @field_validator("user_id_hash")
-    @classmethod
-    def ensure_user_id_is_hashed(cls, v: Optional[str]) -> Optional[str]:
-        """
-        [보안 강화] user_id_hash 필드에 원본 ID가 실수로 주입되는 것을 차단합니다.
-        오직 mask_pii_id()를 통과한 해시 문자열(12자리/64자리 Hex) 또는 INVALID_PII_SENTINEL만 허용합니다.
-        """
-        if v is None:
-            return None
-        
-        if v == INVALID_PII_SENTINEL:
-            return v
-            
-        # 정확히 소문자 a-f, 0-9 로 구성된 12자리(truncate) 또는 64자리(full sha256)만 허용
-        if not USER_ID_HASH_PATTERN.fullmatch(v):
-            raise ValueError(
-                "PII 보안 경고: user_id_hash 필드에 안전하지 않은 값이 입력되었습니다. "
-                "반드시 mask_pii_id(raw_user_id)를 통해 해싱된 값을 전달해야 합니다."
-            )
-        return v
+    _ensure_user_id_is_hashed = field_validator("user_id_hash")(validate_user_id_hash)
 
 
 class GraphEdge(BaseModel):
@@ -308,20 +307,7 @@ class LinkRecommendation(BaseModel):
         description="고립 노드 소유자의 해시된 사용자 ID (PII 원문 금지).",
     )
 
-    @field_validator("user_id_hash")
-    @classmethod
-    def ensure_user_id_is_hashed(cls, v: Optional[str]) -> Optional[str]:
-        """[보안 강화] GraphNode와 동일한 PII 보안 정책 — 해싱된 값만 허용."""
-        if v is None:
-            return None
-        if v == INVALID_PII_SENTINEL:
-            return v
-        if not USER_ID_HASH_PATTERN.fullmatch(v):
-            raise ValueError(
-                "PII 보안 경고: user_id_hash 필드에 안전하지 않은 값이 입력되었습니다. "
-                "반드시 mask_pii_id(raw_user_id)를 통해 해싱된 값을 전달해야 합니다."
-            )
-        return v
+    _ensure_user_id_is_hashed = field_validator("user_id_hash")(validate_user_id_hash)
 
 
 class LinkNotification(BaseModel):
@@ -350,20 +336,7 @@ class LinkNotification(BaseModel):
         description="알림 수신 대상 사용자의 해시된 ID (PII 원문 금지).",
     )
 
-    @field_validator("user_id_hash")
-    @classmethod
-    def ensure_user_id_is_hashed(cls, v: Optional[str]) -> Optional[str]:
-        """[보안 강화] GraphNode와 동일한 PII 보안 정책 — 해싱된 값만 허용."""
-        if v is None:
-            return None
-        if v == INVALID_PII_SENTINEL:
-            return v
-        if not USER_ID_HASH_PATTERN.fullmatch(v):
-            raise ValueError(
-                "PII 보안 경고: user_id_hash 필드에 안전하지 않은 값이 입력되었습니다. "
-                "반드시 mask_pii_id(raw_user_id)를 통해 해싱된 값을 전달해야 합니다."
-            )
-        return v
+    _ensure_user_id_is_hashed = field_validator("user_id_hash")(validate_user_id_hash)
 
 
 class LinkRecommendationResult(BaseModel):
