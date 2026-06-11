@@ -30,7 +30,9 @@ def detect_orphan_notes_for_all_users(self):
     
     # 2. 사용자별 노드 그룹화 (보안 필수 요건: hashed_user_id 기반 컨텍스트 주입 및 격리)
     nodes_by_user: Dict[str, List[GraphNode]] = defaultdict(list)
-    nodes_missing_user_id_hash: List[GraphNode] = []
+    missing_user_id_count = 0
+    missing_user_id_samples: List[str] = []
+    MAX_SAMPLES = 5
     
     for node in graph_data.nodes:
         if node.node_type == NodeType.CATEGORY:
@@ -39,22 +41,22 @@ def detect_orphan_notes_for_all_users(self):
         # 보안 장치: PII 마스킹된 hashed_user_id를 기준 키로 사용
         # 식별되지 않은 파일의 경우 분석 대상에서 제외하여 테넌트 믹스(Data Leakage) 원천 차단
         if not node.user_id_hash:
-            nodes_missing_user_id_hash.append(node)
+            missing_user_id_count += 1
+            if len(missing_user_id_samples) < MAX_SAMPLES:
+                missing_user_id_samples.append(node.id)
             continue
             
         uid = node.user_id_hash
         nodes_by_user[uid].append(node)
         
-    if nodes_missing_user_id_hash:
-        sample_size = 5
-        sample_ids = [n.id for n in nodes_missing_user_id_hash[:sample_size]]
+    if missing_user_id_count > 0:
         logger.warning(
             "[%s] user_id_hash가 없는 노드가 총 %d개 발견되었습니다. "
             "보안 격리를 위해 스캔에서 제외합니다. (샘플 node_id: %s%s)",
             task_name,
-            len(nodes_missing_user_id_hash),
-            sample_ids,
-            " ..." if len(nodes_missing_user_id_hash) > sample_size else "",
+            missing_user_id_count,
+            missing_user_id_samples,
+            " ..." if missing_user_id_count > MAX_SAMPLES else "",
         )
         
     total_orphans_found = 0
