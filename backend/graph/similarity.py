@@ -201,8 +201,8 @@ def _score_candidates_for_orphan(
             
         if len(orphan_vec) != len(candidate_vec):
             logger.debug(
-                "[GRAPH][SIMILARITY] 차원 불일치로 건너뜀: orphan(%d) != candidate(%d)",
-                len(orphan_vec), len(candidate_vec)
+                "[GRAPH][SIMILARITY] 차원 불일치로 건너뜀: orphan(id=%s, dim=%d) != candidate(id=%s, dim=%d)",
+                orphan_id[:8], len(orphan_vec), candidate_id[:8], len(candidate_vec)
             )
             continue
             
@@ -298,6 +298,8 @@ def find_link_recommendations(
             "[GRAPH][SIMILARITY] candidate_embeddings에 %d개의 식별되지 않은 노드 ID가 있습니다. (무시됨)",
             len(missing_candidates)
         )
+        for missing_id in missing_candidates:
+            del a_candidate_vecs[missing_id]
 
     for orphan in orphan_nodes:
         # 임베딩 없는 고립 노드는 조용히 건너뜀
