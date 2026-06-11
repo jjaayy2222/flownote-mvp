@@ -165,8 +165,6 @@ def detect_orphan_notes_for_all_users(self):
 
     graph_data = build_graph_data()
     orphan_threshold = get_orphan_degree_threshold()
-    similarity_threshold = get_link_similarity_threshold()
-    max_per_orphan = get_max_recommendations_per_orphan()
 
     if not _EMBEDDINGS_ENABLED:
         logger.info(
@@ -174,6 +172,11 @@ def detect_orphan_notes_for_all_users(self):
             "고립 노드 감지만 수행하며, 연결 추천은 건너뜁니다.",
             task_name
         )
+        similarity_threshold = 0.0
+        max_per_orphan = 0
+    else:
+        similarity_threshold = get_link_similarity_threshold()
+        max_per_orphan = get_max_recommendations_per_orphan()
 
     category_ids = _collect_category_ids(graph_data)
     grouping = _group_nodes_by_user(graph_data)
