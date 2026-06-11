@@ -25,8 +25,12 @@ def detect_orphan_notes_for_all_users(self):
     graph_data = build_graph_data()
     threshold = get_orphan_degree_threshold()
     
+    # 글로벌 CATEGORY 노드 ID 수집 (교차 테넌트 접근 방지 시 허용할 공용 엔드포인트)
+    category_ids = {n.id for n in graph_data.nodes if n.node_type == NodeType.CATEGORY}
+    
     # 2. 사용자별 노드 그룹화 (보안 필수 요건: hashed_user_id 기반 컨텍스트 주입 및 격리)
     nodes_by_user: Dict[str, List[GraphNode]] = defaultdict(list)
+    nodes_missing_user_id_hash: List[GraphNode] = []
     
     for node in graph_data.nodes:
         if node.node_type == NodeType.CATEGORY:
@@ -35,11 +39,23 @@ def detect_orphan_notes_for_all_users(self):
         # 보안 장치: PII 마스킹된 hashed_user_id를 기준 키로 사용
         # 식별되지 않은 파일의 경우 분석 대상에서 제외하여 테넌트 믹스(Data Leakage) 원천 차단
         if not node.user_id_hash:
-            logger.warning("[%s] user_id_hash가 없는 노드(%s) 발견. 보안 격리를 위해 스캔에서 제외합니다.", task_name, node.id)
+            nodes_missing_user_id_hash.append(node)
             continue
             
         uid = node.user_id_hash
         nodes_by_user[uid].append(node)
+        
+    if nodes_missing_user_id_hash:
+        sample_size = 5
+        sample_ids = [n.id for n in nodes_missing_user_id_hash[:sample_size]]
+        logger.warning(
+            "[%s] user_id_hash가 없는 노드가 총 %d개 발견되었습니다. "
+            "보안 격리를 위해 스캔에서 제외합니다. (샘플 node_id: %s%s)",
+            task_name,
+            len(nodes_missing_user_id_hash),
+            sample_ids,
+            " ..." if len(nodes_missing_user_id_hash) > sample_size else "",
+        )
         
     total_orphans_found = 0
     users_scanned = len(nodes_by_user)
@@ -50,11 +66,14 @@ def detect_orphan_notes_for_all_users(self):
     for uid, user_nodes in nodes_by_user.items():
         logger.debug("[%s] 사용자 컨텍스트 스캔 시작 (user_id_hash=%s, 노드 수=%d)", task_name, uid, len(user_nodes))
         
-        # 엣지 필터링: 해당 사용자의 노드 간 연결만 추출 (교차 접근 차단)
+        # 엣지 필터링: 해당 사용자의 노드 간 연결이거나, 글로벌 CATEGORY 노드와의 연결인 경우만 추출
+        # (타 사용자의 노트 식별자인 경우 교차 접근 차단됨)
         user_node_ids = {n.id for n in user_nodes}
+        valid_endpoint_ids = user_node_ids | category_ids
+        
         user_edges = [
             e for e in graph_data.edges 
-            if e.source in user_node_ids and e.target in user_node_ids
+            if e.source in valid_endpoint_ids and e.target in valid_endpoint_ids
         ]
         
         # 해당 사용자 컨텍스트 안에서만 orphan 판별
