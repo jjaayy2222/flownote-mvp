@@ -634,7 +634,7 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
   - [x] 로깅 인프라 표준화 및 예약 키 기반 데이터 무결성 가드
 - [x] **Phase 2: Personalized RAG** ✨
   - [x] 사용자 컨텍스트 기반 쿼리 확장을 통한 맞춤형 검색
-- [x] **Phase 3: Realtime Streaming** ✨
+- [x] **Phase 3: Real-time Streaming** ✨
   - [x] LLM 추론 지연 해결을 위한 SSE 스트리밍 구현
 - [x] **Phase 4: Knowledge Graph (GraphRAG)** ✨
   - [x] 엔티티 및 관계 자동 추출 (위키링크 및 태그 파싱)

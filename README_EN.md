@@ -552,7 +552,7 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 | [#11.2.12] | 03/02 | v7.0 Phase 2 (Hybrid RAG) | ✅ |
 | [#11.3.13] | 03/12 | v7.0 Phase 2-3 (Hybrid RAG & AI Assistant) | ✅ |
 | [#867] | 03/25 | v8.0 Phase 1-3 (Advanced RAG Eval & Performance) | ✅ |
-| [#1045] | 06/13 | v9.0 Phase 1-4 (Adaptive Intelligence & GraphRAG) | ✅ |
+| [#1045] | 06/13 | v9.0 Phase 1-4 (Adaptive Intelligence & GraphRAG) | ✅ [Done](docs/AR/v9.0/v9.0_roadmap.md) |
 
 ### Major Commit History
 - `v5.0` - MCP Server, Next.js Dashboard, Graph View
@@ -631,7 +631,7 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
   - [x] Standardized logging & data integrity guards
 - [x] **Phase 2: Personalized RAG** ✨
   - [x] Customized search via user context-based query expansion
-- [x] **Phase 3: Realtime Streaming** ✨
+- [x] **Phase 3: Real-time Streaming** ✨
   - [x] SSE streaming implementation to resolve LLM latency
 - [x] **Phase 4: Knowledge Graph (GraphRAG)** ✨
   - [x] Auto entity/edge extraction (Wiki links and tags)
