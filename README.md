@@ -191,10 +191,10 @@
 - **평가 프레임워크**: RAG vs. Hallucination 정밀 평가 및 벤치마킹 시스템
 - **성능 고도화**: LLM 클라이언트 캐싱 및 Redis I/O 최적화를 통한 응답 속도 관리
 
-### 2.15 🧠 **Adaptive Intelligence (자가 적응 지능)** (v9.0 진행 중) ✨
+### 2.15 🧠 **Adaptive Intelligence (자가 적응 지능)** (v9.0) ✨
 - **자율 파인튜닝 (Adaptive Fine-tuning)**: 모델이 스스로 학습 데이터를 정제하고 파인튜닝된 모델로 핫스왑(Hot-swap) 연동
-- **폴링 고도화**: OpenAI Fine-tuning API 연동 및 상태 변화 자동 추적 시스템
-- **관측성 강화**: `meta_intentional_warning` 등 기계 판독용 로깅 태그를 통한 운영 무결성 확보
+- **개인화 RAG (Personalized RAG)**: 사용자별 컨텍스트 및 선호도를 반영한 맞춤형 검색 품질 향상
+- **GraphRAG & 지식 맵 시각화**: Vector RAG에 노트 간 연결망(Edge)을 더한 하이브리드 추론 및 `react-force-graph` 기반 지식 그래프 탐색
 
 ---
 
@@ -342,9 +342,9 @@ flownote-mvp/
 │   │   ├── v5.0/                       # v5.0 (MCP, Frontend 등)
 │   │   ├── v6.0/                       # v6.0 (WebSocket, Diff, i18n)
 │   │   ├── v7.0/                       # v7.0 (Hybrid RAG)
-│   │   └── v8.0/                       # v8.0 (Data Flywheel)
+│   │   ├── v8.0/                       # v8.0 (Data Flywheel)
+│   │   └── v9.0/                       # v9.0 (Adaptive Intelligence) ✨
 │   ├── P/                              # 진행 중인 페이즈 문서
-│   │   └── v9.0/                       # v9.0 자가 적응형 지능 (진행 중) ✨
 │   ├── A/                              # 분석 및 명세 (Practices, Specs)
 │   └── R/                              # 리소스 (Troubleshooting 등)
 ├── README.md                           # 본 문서 (한국어)
@@ -555,7 +555,7 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 | [#11.2.12] | 03/02 | v7.0 Phase 2 (Hybrid RAG) | ✅ |
 | [#11.3.13] | 03/12 | v7.0 Phase 2-3 (Hybrid RAG & AI Assistant) | ✅ |
 | [#867] | 03/25 | v8.0 Phase 1-3 (Advanced RAG Eval & Performance) | ✅ |
-| [#1045] | 04/12 | v9.0 Phase 1 (Adaptive Fine-tuning Service) | 🚧 [진행 중](docs/P/v9.0/v9.0_roadmap.md) |
+| [#1045] | 06/13 | v9.0 Phase 1-4 (Adaptive Intelligence & GraphRAG) | ✅ [완료](docs/AR/v9.0/v9.0_roadmap.md) |
 
 ### 주요 커밋 히스토리
 - `v5.0` - MCP 서버, Next.js 대시보드, Graph View
@@ -564,7 +564,7 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 - `v6.0 Phase 3` - 다국어 지원 (i18n)
 - `v7.0` - 하이브리드 RAG 검색 엔진 및 AI 어시스턴트
 - `v8.0` - RAG 품질 평가 파이프라인 및 성능 최적화 ✅
-- `v9.0` - 자율 모델 파인튜닝 및 적응형 지능 서비스 엔진 (진행 중) 🚧
+- `v9.0` - 자가 적응 지능(Adaptive Intelligence) 및 GraphRAG 도입 ✅
 
 ---
 
@@ -628,14 +628,18 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
   - [x] LLM 클라이언트 인스턴스 캐싱
   - [x] Redis I/O 최적화 및 비동기 파이프라이닝
 
-### 🚧 진행 중 (v9.0)
-- [ ] **Phase 1: Adaptive Fine-tuning** ✨
-  - [x] OpenAI Fine-tuning 자율 호출 시스템
-  - [x] 벽시계 오차 없는 Monotonic 기반 폴링
-  - [x] 로깅 인프라 표준화 (ObsEvent, ObsMetaTag)
-  - [x] 예약 키 보호 및 데이터 무결성 가드
-  - [ ] 모델 핫스왑(Hot-swap) 메커니즘 고도화
-- [ ] Phase 2-4: 지식 그래프 및 개인화 고도화 예정
+### ✅ 완료된 기능 (v9.0)
+- [x] **Phase 1: Adaptive Fine-tuning** ✨
+  - [x] OpenAI Fine-tuning 자율 호출 시스템 및 Monotonic 상태 폴링
+  - [x] 로깅 인프라 표준화 및 예약 키 기반 데이터 무결성 가드
+- [x] **Phase 2: Personalized RAG** ✨
+  - [x] 사용자 컨텍스트 기반 쿼리 확장을 통한 맞춤형 검색
+- [x] **Phase 3: Real-time Streaming** ✨
+  - [x] LLM 추론 지연 해결을 위한 SSE 스트리밍 구현
+- [x] **Phase 4: Knowledge Graph (GraphRAG)** ✨
+  - [x] 엔티티 및 관계 자동 추출 (위키링크 및 태그 파싱)
+  - [x] `react-force-graph` 기반 프론트엔드 지식 맵 시각화
+  - [x] 벡터 유사도 기반 고립 노트(Orphan Notes) 연결 추천 스케줄러 (Celery)
 
 ### 🚧 진행 예정 (v9.0+)
 - [ ] 추가 언어 지원 (일본어, 중국어)

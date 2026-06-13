@@ -188,10 +188,10 @@
 - **Evaluation Framework**: Precision benchmarking system for RAG vs. Hallucination analysis
 - **Performance Hardening**: Response speed management via LLM client caching and Redis I/O optimization
 
-### 2.15 🧠 **Adaptive Intelligence** (v9.0 (In Progress)) ✨
+### 2.15 🧠 **Adaptive Intelligence** (v9.0) ✨
 - **Adaptive Fine-tuning**: Autonomous model training loop with automated data purification and hot-swap integration
-- **Advanced Polling**: Automatic state tracking via OpenAI Fine-tuning API with high precision
-- **Observability Hardening**: Operational integrity via machine-readable logging tags like \`meta_intentional_warning\`
+- **Personalized RAG**: Customized search quality reflecting individual user context and preferences
+- **GraphRAG & Knowledge Map**: Hybrid reasoning combining Vector RAG with explicit knowledge edges, and `react-force-graph` based visualization
 
 ---
 
@@ -339,9 +339,9 @@ flownote-mvp/
 │   │   ├── v5.0/                       # v5.0 (MCP, Frontend, etc.)
 │   │   ├── v6.0/                       # v6.0 (WebSocket, Diff, i18n)
 │   │   ├── v7.0/                       # v7.0 (Hybrid RAG)
-│   │   └── v8.0/                       # v8.0 (Data Flywheel)
+│   │   ├── v8.0/                       # v8.0 (Data Flywheel)
+│   │   └── v9.0/                       # v9.0 (Adaptive Intelligence)
 │   ├── P/                              # In-progress phase documentation
-│   │   └── v9.0/                       # v9.0 Adaptive Intelligence (In Progress) ✨
 │   ├── A/                              # Analysis & Specs (Practices, Specs)
 │   └── R/                              # Resources (Troubleshooting, etc.)
 ├── README.md                           # Korean documentation
@@ -552,16 +552,16 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
 | [#11.2.12] | 03/02 | v7.0 Phase 2 (Hybrid RAG) | ✅ |
 | [#11.3.13] | 03/12 | v7.0 Phase 2-3 (Hybrid RAG & AI Assistant) | ✅ |
 | [#867] | 03/25 | v8.0 Phase 1-3 (Advanced RAG Eval & Performance) | ✅ |
-| [#1045] | 04/12 | v9.0 Phase 1 (Adaptive Fine-tuning Service) | 🚧 [In Progress](docs/P/v9.0/v9.0_roadmap.md) |
+| [#1045] | 06/13 | v9.0 Phase 1-4 (Adaptive Intelligence & GraphRAG) | ✅ [Done](docs/AR/v9.0/v9.0_roadmap.md) |
 
 ### Major Commit History
-- \`v5.0\` - MCP Server, Next.js Dashboard, Graph View
-- \`v6.0 Phase 1\` - WebSocket Real-time Updates
-- \`v6.0 Phase 2\` - Conflict Diff Viewer
-- \`v6.0 Phase 3\` - Internationalization (i18n)
-- \`v7.0\` - Hybrid RAG Search & AI Assistant
-- \`v8.0\` - RAG Evaluation Pipeline & Performance Optimization ✅
-- \`v9.0\` - Autonomous Model Fine-tuning & Adaptive Intelligence Engine (In Progress) 🚧
+- `v5.0` - MCP Server, Next.js Dashboard, Graph View
+- `v6.0 Phase 1` - WebSocket Real-time Updates
+- `v6.0 Phase 2` - Conflict Diff Viewer
+- `v6.0 Phase 3` - Internationalization (i18n)
+- `v7.0` - Hybrid RAG Search & AI Assistant
+- `v8.0` - RAG Evaluation Pipeline & Performance Optimization ✅
+- `v9.0` - Adaptive Intelligence & GraphRAG Knowledge Map Integration ✅
 
 ---
 
@@ -625,14 +625,18 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
   - [x] LLM client instance caching
   - [x] Redis I/O optimization and async pipelining
 
-### 🚧 In Progress (v9.0)
-- [ ] **Phase 1: Adaptive Fine-tuning** ✨
-  - [x] Autonomous OpenAI Fine-tuning invocation system
-  - [x] Monotonic time-based polling (drift-free)
-  - [x] Standardized logging infrastructure (ObsEvent, ObsMetaTag)
-  - [x] Reserved key protection and data integrity guards
-  - [ ] Advanced Model Hot-swap mechanism
-- [ ] Phase 2-4: Knowledge Graph & Advanced Personalization (Planned)
+### ✅ Completed Features (v9.0)
+- [x] **Phase 1: Adaptive Fine-tuning** ✨
+  - [x] Autonomous OpenAI Fine-tuning invocation & Monotonic polling
+  - [x] Standardized logging & data integrity guards
+- [x] **Phase 2: Personalized RAG** ✨
+  - [x] Customized search via user context-based query expansion
+- [x] **Phase 3: Real-time Streaming** ✨
+  - [x] SSE streaming implementation to resolve LLM latency
+- [x] **Phase 4: Knowledge Graph (GraphRAG)** ✨
+  - [x] Auto entity/edge extraction (Wiki links and tags)
+  - [x] `react-force-graph` based frontend knowledge map visualization
+  - [x] Celery-based vector similarity recommendations for Orphan Notes
 
 ### 🚧 Planned (v9.0+)
 - [ ] Additional language support (Japanese, Chinese)
