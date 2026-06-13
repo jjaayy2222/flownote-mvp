@@ -6,22 +6,511 @@
 리뷰 피드백 반영:
 1. lru_cache를 이용한 Thread-safe 싱글톤 패턴 적용
 2. PARACategory Enum 및 DTO(HybridSearchResult) 도입으로 타입 안전성 강화
+
+[Step 2-3 - Phase 2.3] 개인화 컨텍스트 가중치 라우팅
+  - 1단계: 가중치 설정 레이어 (Configuration Layer)
+    - 환경 변수 기반 개인화/전역 인덱스 혼합 비율 설정 (하드코딩 금지)
+    - Cold Start 연동 단락(Short-circuit) 가중치 결정 함수 제공
+    - PII-마스킹 로그 및 범위 Clamp(0.0~1.0) 포함
+
+설계 원칙 (개인정보 보호 우선):
+  - user_id는 절대 로그에 평문으로 기록하지 않는다.
+  - 로그에 user_id를 출력해야 하는 경우 반드시 mask_pii_id() 헬퍼를 사용한다.
+
+[설계 노트: 가중치 재정규화 허용치와 정밀도]
+  _WEIGHT_SUM_NORMALIZATION_TOLERANCE와 _WEIGHT_NORMALIZATION_PRECISION은
+  항상 수학적 일관성을 유지해야 한다.
+  (근거) round(..., p) 2개의 합산 시 최대 오차는 10**(-p) 이며, 
+  재정규화 직후 다시 허용치를 벗어나 무한 진동(oscillation)하는 것을 방지하려면
+  TOLERANCE >= 10**(-PRECISION) 이어야 한다.
 """
 
+import asyncio
+import hashlib
+import json
 import logging
 import re
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 from backend.faiss_search import FAISSRetriever
 from backend.bm25_search import BM25Retriever
 from backend.hybrid_search import HybridSearcher, Retriever
 from backend.api.models import PARACategory
 from backend.services.search_cache_service import search_cache_service
+from backend.services import topic_clustering_service  # type: ignore[import]
+from backend.utils.common import mask_pii_id, safe_parse_env_float  # type: ignore[import]
 from fastapi.concurrency import run_in_threadpool
 
 logger = logging.getLogger(__name__)
+
+# [리뷰반영] 하드코딩 제거: 로깅 타임아웃을 환경 변수에서 가져오도록 설정 (기본값 3.0초)
+# [리뷰반영] import 시점 크래시 방지: safe_parse_env_float 헬퍼를 사용하여 비정상 값 방어 및 0.1초 이상 강제
+_LOG_SEARCH_HISTORY_TIMEOUT = safe_parse_env_float("SEARCH_HISTORY_LOG_TIMEOUT", 3.0, min_val=0.1)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [Step 2-3 / Phase 2.3] 1단계: 가중치 설정 레이어 (Configuration Layer)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 개인화 인덱스 가중치 환경 변수 (하드코딩 금지 — 모두 여기서 중앙 관리)
+_PERSONALIZED_WEIGHT_ENV_KEY = "PERSONALIZED_INDEX_WEIGHT"
+_PERSONALIZED_WEIGHT_DEFAULT = 0.6
+_PERSONALIZED_WEIGHT_MIN = 0.0
+_PERSONALIZED_WEIGHT_MAX = 1.0
+
+# 전역 인덱스 가중치 환경 변수
+_GLOBAL_WEIGHT_ENV_KEY = "GLOBAL_INDEX_WEIGHT"
+_GLOBAL_WEIGHT_DEFAULT = 0.4
+_GLOBAL_WEIGHT_MIN = 0.0
+_GLOBAL_WEIGHT_MAX = 1.0
+
+# Cold Start 시 전역 인덱스 100% 편향
+_COLD_START_PERSONALIZED_WEIGHT = 0.0
+_COLD_START_GLOBAL_WEIGHT = 1.0
+
+# ── [그룹 A] ZeroDivision 가드 ──────────────────────────────────────────────
+# 두 가중치 합이 이 값 미만이면 나눗셈 자체가 불가능(ZeroDivision 위험)하므로
+# 정규화 대신 기본값으로 즉시 폴백한다.
+# 역할: "합이 사실상 0인가?" 판단 (정규화 허용치와 개념 분리)
+_WEIGHT_SUM_ZERO_EPSILON: float = 1e-9
+
+# ── [그룹 B] 재정규화 허용치 & 반올림 정밀도 ────────────────────────────────
+# 두 상수는 쌍으로 작동하며, 정밀도(PRECISION)에 따른 최대 오차가 허용치(TOLERANCE)를 
+# 넘지 않도록 런타임에 강제된다 (모듈 레벨 주석의 [설계 노트] 참조).
+_WEIGHT_SUM_NORMALIZATION_TOLERANCE: float = 1e-6
+_WEIGHT_NORMALIZATION_PRECISION: int = 6
+
+_MAX_WEIGHT_SUM_ROUNDING_ERROR = 10 ** (-_WEIGHT_NORMALIZATION_PRECISION)
+if _MAX_WEIGHT_SUM_ROUNDING_ERROR > _WEIGHT_SUM_NORMALIZATION_TOLERANCE:
+    raise RuntimeError(
+        f"Invariant violated: _WEIGHT_SUM_NORMALIZATION_TOLERANCE({_WEIGHT_SUM_NORMALIZATION_TOLERANCE}) "
+        f"must be >= max rounding error({_MAX_WEIGHT_SUM_ROUNDING_ERROR}) "
+        f"implied by _WEIGHT_NORMALIZATION_PRECISION({_WEIGHT_NORMALIZATION_PRECISION})."
+    )
+
+
+def _parse_bounded_weight(env_key: str, default: float, min_val: float, max_val: float) -> float:
+    """
+    가중치 환경 변수를 안전하게 파싱하고 [min_val, max_val] 범위로 Clamp하는 헬퍼.
+
+    동작 우선순위:
+      1) 미설정(None)       → 조용히 기본값 반환
+      2) 빈값/공백         → 운영자 오설정 의심 → WARNING + 기본값
+      3) 파싱 실패         → WARNING + 기본값
+      4) 비정상 부동소수점  → NaN·±inf → WARNING + 기본값
+      5) 범위 이탈         → Clamp + WARNING
+      6) 정상             → 파싱된 값 반환
+    """
+    raw = os.environ.get(env_key)
+
+    # 1) 미설정: 조용히 기본값 사용
+    if raw is None:
+        return default
+
+    # 2) 빈값/공백: 운영자 오설정 의심
+    stripped = raw.strip()
+    if not stripped:
+        logger.warning(
+            "[HYBRID_SEARCH] %s 가 설정됐으나 빈값/공백입니다 (운영자 오설정 의심). "
+            "기본값 %r로 폴백합니다.",
+            env_key,
+            default,
+        )
+        return default
+
+    # 3) 파싱 실패
+    try:
+        value = float(stripped)
+    except (ValueError, TypeError):
+        logger.warning(
+            "[HYBRID_SEARCH] %s 파싱 실패 (값=%r). 기본값 %r로 폴백합니다.",
+            env_key,
+            stripped,
+            default,
+        )
+        return default
+
+    # 4) 비정상 부동소수점 (NaN·±inf)
+    if not math.isfinite(value):
+        logger.warning(
+            "[HYBRID_SEARCH] %s 값이 비정상 부동소수점(NaN 또는 ±inf)입니다 (운영자 오설정 의심). "
+            "기본값 %r로 폴백합니다.",
+            env_key,
+            default,
+        )
+        return default
+
+    # 5) 범위 Clamp
+    if value < min_val:
+        logger.warning(
+            "[HYBRID_SEARCH] %s=%r 가 최솟값(%r) 미만입니다. %r로 보정합니다.",
+            env_key, value, min_val, min_val,
+        )
+        return min_val
+
+    if value > max_val:
+        logger.warning(
+            "[HYBRID_SEARCH] %s=%r 가 최댓값(%r) 초과입니다. %r로 보정합니다.",
+            env_key, value, max_val, max_val,
+        )
+        return max_val
+
+    return value
+
+
+def _load_index_weights() -> Tuple[float, float]:
+    """
+    환경 변수에서 개인화/전역 인덱스 가중치를 로드하고 합산 보정(재정규화)을 수행한다.
+
+    합산 보정 정책:
+      - 두 가중치의 합이 0에 가까운 경우: 기본값(0.6 / 0.4)으로 폴백 (ZeroDivision 방지)
+      - 두 가중치의 합이 1.0이 아닌 경우: 합계로 나눠 재정규화하고 WARNING 로그 기록
+    """
+    personalized = _parse_bounded_weight(
+        _PERSONALIZED_WEIGHT_ENV_KEY,
+        _PERSONALIZED_WEIGHT_DEFAULT,
+        _PERSONALIZED_WEIGHT_MIN,
+        _PERSONALIZED_WEIGHT_MAX,
+    )
+    global_w = _parse_bounded_weight(
+        _GLOBAL_WEIGHT_ENV_KEY,
+        _GLOBAL_WEIGHT_DEFAULT,
+        _GLOBAL_WEIGHT_MIN,
+        _GLOBAL_WEIGHT_MAX,
+    )
+
+    total = personalized + global_w
+
+    # 합산이 0에 가까운 경우 (ZeroDivision 방지): 기본값으로 폴백
+    if total < _WEIGHT_SUM_ZERO_EPSILON:
+        logger.warning(
+            "[HYBRID_SEARCH] %s + %s 의 합계가 0에 가깝습니다 (운영자 오설정 의심). "
+            "기본값 (%.1f / %.1f)으로 폴백합니다.",
+            _PERSONALIZED_WEIGHT_ENV_KEY,
+            _GLOBAL_WEIGHT_ENV_KEY,
+            _PERSONALIZED_WEIGHT_DEFAULT,
+            _GLOBAL_WEIGHT_DEFAULT,
+        )
+        return _PERSONALIZED_WEIGHT_DEFAULT, _GLOBAL_WEIGHT_DEFAULT
+
+    # abs_tol 전용 판단: "1.0 근처에서 절대 오차만으로 판단"
+    # rel_tol=0.0 명시로 기본값(1e-9)의 암묵적 적용을 차단 → 주석과 코드 완전 일치
+    # (rel_tol=_WEIGHT_SUM_ZERO_EPSILON은 ZeroDivision 가드 전용 개념과 분리)
+    if not math.isclose(total, 1.0, rel_tol=0.0, abs_tol=_WEIGHT_SUM_NORMALIZATION_TOLERANCE):
+        normalized_p = round(personalized / total, _WEIGHT_NORMALIZATION_PRECISION)
+        normalized_g = round(global_w / total, _WEIGHT_NORMALIZATION_PRECISION)
+        logger.warning(
+            "[HYBRID_SEARCH] %s=%.4f + %s=%.4f 의 합계가 1.0이 아닙니다 (합계=%.4f). "
+            "재정규화합니다: personalized=%.4f, global=%.4f.",
+            _PERSONALIZED_WEIGHT_ENV_KEY, personalized,
+            _GLOBAL_WEIGHT_ENV_KEY, global_w,
+            total,
+            normalized_p, normalized_g,
+        )
+        return normalized_p, normalized_g
+
+    return personalized, global_w
+
+
+# 모듈 로드 시 1회 계산 (런타임 환경 변수 변경은 재시작 또는 reload_index_weights() 호출로 반영)
+_PERSONALIZED_INDEX_WEIGHT: float
+_GLOBAL_INDEX_WEIGHT: float
+_PERSONALIZED_INDEX_WEIGHT, _GLOBAL_INDEX_WEIGHT = _load_index_weights()
+
+
+def reload_index_weights() -> Tuple[float, float]:
+    """
+    환경 변수에서 가중치를 다시 로드하여 모듈 레벨 싱글톤을 갱신한다.
+
+    주주의 대상: 장수명 워커(Celery, 초로드 프로세스) 또는 운영 중 실험(A/B 테스트)에서
+    프로세스 재시작 없이 약치를 적용할 때.
+
+    동작 계약:
+      - PERSONALIZED_INDEX_WEIGHT / GLOBAL_INDEX_WEIGHT 환경 변수를 읽어 Clamp + 합산 보정 수행
+      - 모듈 레벨 _PERSONALIZED_INDEX_WEIGHT, _GLOBAL_INDEX_WEIGHT를 원자적으로 덧써 쓰기(global)
+      - 갱신된 값을 튜플로 반환하여 호출자가 증거 로깅 가능
+
+    Returns:
+        갱신 후 (personalized_weight, global_weight) 튜플
+    """
+    global _PERSONALIZED_INDEX_WEIGHT, _GLOBAL_INDEX_WEIGHT
+    _PERSONALIZED_INDEX_WEIGHT, _GLOBAL_INDEX_WEIGHT = _load_index_weights()
+    logger.info(
+        "[HYBRID_SEARCH][WEIGHT] 가중치 통신(reload) 완료: personalized=%.4f, global=%.4f",
+        _PERSONALIZED_INDEX_WEIGHT,
+        _GLOBAL_INDEX_WEIGHT,
+    )
+    return _PERSONALIZED_INDEX_WEIGHT, _GLOBAL_INDEX_WEIGHT
+
+
+async def get_index_weights(hashed_user_id: str) -> Tuple[float, float]:
+    """
+    현재 사용자에게 적용할 (개인화 가중치, 전역 가중치) 튜플을 반환한다.
+
+    Cold Start 판별 결과에 따라 즉시 전역 100% 편향으로 단락(Short-circuit)한다.
+    이 함수는 2단계 라우터와 3단계 RRF 병합의 SSOT(Single Source of Truth)이다.
+
+    Args:
+        hashed_user_id: SHA-256 해시된 사용자 식별자 (평문 user_id 금지)
+
+    Returns:
+        (personalized_weight, global_weight) 튜플
+        - Cold Start: (0.0, 1.0)
+        - 정상 사용자: (_PERSONALIZED_INDEX_WEIGHT, _GLOBAL_INDEX_WEIGHT)
+    """
+    masked_uid = mask_pii_id(hashed_user_id)
+
+    # Cold Start 판별 (topic_clustering_service SSOT 참조)
+    is_cold = await topic_clustering_service.is_cold_start_user(
+        hashed_user_id, masked_uid=masked_uid
+    )
+
+    if is_cold:
+        logger.info(
+            "[HYBRID_SEARCH][WEIGHT] Cold Start 감지 → 전역 100%% 편향 적용 "
+            "(masked_uid=%s, personalized=%.1f, global=%.1f)",
+            masked_uid,
+            _COLD_START_PERSONALIZED_WEIGHT,
+            _COLD_START_GLOBAL_WEIGHT,
+        )
+        return _COLD_START_PERSONALIZED_WEIGHT, _COLD_START_GLOBAL_WEIGHT
+
+    logger.debug(
+        "[HYBRID_SEARCH][WEIGHT] 정상 사용자 가중치 적용 "
+        "(masked_uid=%s, personalized=%.4f, global=%.4f)",
+        masked_uid,
+        _PERSONALIZED_INDEX_WEIGHT,
+        _GLOBAL_INDEX_WEIGHT,
+    )
+    return _PERSONALIZED_INDEX_WEIGHT, _GLOBAL_INDEX_WEIGHT
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [Step 2-3 / Phase 2.3] 2단계: 혼합 검색 라우터 (Router Layer)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 개인화 인덱스 조회 타임아웃 환경 변수 (하드코딩 금지)
+# PERSONALIZED_INDEX_SEARCH_TIMEOUT [float, 기본값: 2.0초, 최소: 0.1초]
+_PERSONALIZED_SEARCH_TIMEOUT_ENV_KEY = "PERSONALIZED_INDEX_SEARCH_TIMEOUT"
+_PERSONALIZED_SEARCH_TIMEOUT_DEFAULT = 2.0
+_PERSONALIZED_SEARCH_TIMEOUT_MIN = 0.1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [Step 2-3 / Phase 2.3] 3단계: RRF 병합 레이어 (Merge Layer) — 모듈 레벨 상수
+# ─────────────────────────────────────────────────────────────────────────────
+
+# RRF 평활 상수 k: score(d) = Σ weight_i / (k + rank_i)
+# RRF_K [int, 기본값: 60, 유효 범위: 1~1000] — 값이 클수록 순위 편중 완화
+_RRF_K_ENV_KEY = "RRF_K"
+_RRF_K_DEFAULT = 60
+_RRF_K_MIN = 1
+_RRF_K_MAX = 1000
+
+# 최종 반환 결과 수: RRF 스코어 내림차순 정렬 후 상위 N개
+# RRF_TOP_K [int, 기본값: 5, 유효 범위: 1~100]
+_RRF_TOP_K_ENV_KEY = "RRF_TOP_K"
+_RRF_TOP_K_DEFAULT = 5
+_RRF_TOP_K_MIN = 1
+_RRF_TOP_K_MAX = 100
+
+
+def _load_int_env(
+    env_key: str,
+    default: int,
+    min_v: int,
+    max_v: int,
+) -> int:
+    """
+    정수형 환경 변수를 안전하게 파싱하고 [min_v, max_v] 범위로 Clamp하는 범용 헬퍼.
+
+    동작 우선순위:
+      1) 미설정(None)       → 조용히 기본값 반환
+      2) 빈값/공백         → WARNING + 기본값
+      3) 비정수            → WARNING + 기본값
+      4) 범위 이탈          → Clamp + WARNING
+    """
+    raw = os.environ.get(env_key)
+    if raw is None:
+        return default
+
+    stripped = raw.strip()
+    if not stripped:
+        logger.warning(
+            "[HYBRID_SEARCH][RRF] %s 가 설정됐으나 빈값/공백입니다. 기본값 %d으로 폴백합니다.",
+            env_key,
+            default,
+        )
+        return default
+
+    try:
+        value = int(stripped)
+    except (ValueError, TypeError):
+        logger.warning(
+            "[HYBRID_SEARCH][RRF] %s 파싱 실패 (값=%r). 기본값 %d으로 폴백합니다.",
+            env_key,
+            stripped,
+            default,
+        )
+        return default
+
+    if value < min_v:
+        logger.warning(
+            "[HYBRID_SEARCH][RRF] %s=%d 가 최솟값(%d) 미만입니다. %d으로 보정합니다.",
+            env_key, value, min_v, min_v,
+        )
+        return min_v
+
+    if value > max_v:
+        logger.warning(
+            "[HYBRID_SEARCH][RRF] %s=%d 가 최댓값(%d) 초과입니다. %d으로 보정합니다.",
+            env_key, value, max_v, max_v,
+        )
+        return max_v
+
+    return value
+
+
+def _load_rrf_k() -> int:
+    """RRF_K 환경 변수를 파싱한다. 상세 동작은 _load_int_env 참조."""
+    return _load_int_env(_RRF_K_ENV_KEY, _RRF_K_DEFAULT, _RRF_K_MIN, _RRF_K_MAX)
+
+
+def _load_rrf_top_k() -> int:
+    """RRF_TOP_K 환경 변수를 파싱한다. 상세 동작은 _load_int_env 참조."""
+    return _load_int_env(
+        _RRF_TOP_K_ENV_KEY, _RRF_TOP_K_DEFAULT, _RRF_TOP_K_MIN, _RRF_TOP_K_MAX
+    )
+
+
+# 모듈 로드 시 1회 파싱 (변경 시 재시작 필요)
+_RRF_K: int = _load_rrf_k()
+_RRF_TOP_K: int = _load_rrf_top_k()
+
+
+@dataclass
+class RRFResult:
+    """
+    3단계 RRF 병합 결과 DTO.
+
+    merge_with_rrf()의 반환값으로, LangGraph retrieve_node(4단계)에 전달된다.
+
+    Fields:
+        results          : RRF 스코어 내림차순으로 정렬된 상위 N개 검색 결과
+        applied_rrf_k    : 실제 적용된 RRF 평활 상수 k
+        applied_top_k    : 실제 적용된 반환 결과 수
+        is_cold_start    : Cold Start 경로 사용 여부 (2단계에서 전달)
+    """
+
+    results: List[Dict[str, Any]]
+    applied_rrf_k: int
+    applied_top_k: int
+    is_cold_start: bool
+
+
+def _load_personalized_search_timeout() -> float:
+    """
+    PERSONALIZED_INDEX_SEARCH_TIMEOUT 환경 변수를 안전하게 파싱한다.
+
+    동작 우선순위:
+      1) 미설정(None)  → 조용히 기본값 반환
+      2) 빈값/공백    → WARNING + 기본값
+      3) 파싱 실패    → WARNING + 기본값
+      4) 최솟값 미만  → Clamp + WARNING
+    """
+    raw = os.environ.get(_PERSONALIZED_SEARCH_TIMEOUT_ENV_KEY)
+    if raw is None:
+        return _PERSONALIZED_SEARCH_TIMEOUT_DEFAULT
+
+    stripped = raw.strip()
+    if not stripped:
+        logger.warning(
+            "[HYBRID_SEARCH][ROUTER] %s 가 설정됐으나 빈값/공백입니다. 기본값 %.1f초로 폴백합니다.",
+            _PERSONALIZED_SEARCH_TIMEOUT_ENV_KEY,
+            _PERSONALIZED_SEARCH_TIMEOUT_DEFAULT,
+        )
+        return _PERSONALIZED_SEARCH_TIMEOUT_DEFAULT
+
+    try:
+        value = float(stripped)
+    except (ValueError, TypeError):
+        logger.warning(
+            "[HYBRID_SEARCH][ROUTER] %s 파싱 실패 (값=%r). 기본값 %.1f초로 폴백합니다.",
+            _PERSONALIZED_SEARCH_TIMEOUT_ENV_KEY,
+            stripped,
+            _PERSONALIZED_SEARCH_TIMEOUT_DEFAULT,
+        )
+        return _PERSONALIZED_SEARCH_TIMEOUT_DEFAULT
+
+    if value < _PERSONALIZED_SEARCH_TIMEOUT_MIN:
+        logger.warning(
+            "[HYBRID_SEARCH][ROUTER] %s=%.3f 가 최솟값(%.1f) 미만입니다. %.1f초로 보정합니다.",
+            _PERSONALIZED_SEARCH_TIMEOUT_ENV_KEY,
+            value,
+            _PERSONALIZED_SEARCH_TIMEOUT_MIN,
+            _PERSONALIZED_SEARCH_TIMEOUT_MIN,
+        )
+        return _PERSONALIZED_SEARCH_TIMEOUT_MIN
+
+    return value
+
+
+# 모듈 로드 시 1회 파싱 (변경 시 재시작 필요)
+_PERSONALIZED_SEARCH_TIMEOUT: float = _load_personalized_search_timeout()
+
+
+@dataclass
+class IndexSearchResults:
+    """
+    2단계 라우터의 병렬 조회 결과 DTO.
+
+    두 인덱스의 결과를 함께 전달하여 3단계 RRF 병합의 타입 계약을 명확히 한다.
+
+    Fields:
+        personalized_results : 개인화 인덱스 조회 결과 (Cold Start 시 빈 리스트)
+        global_results       : 전역 인덱스 조회 결과
+        personalized_weight  : 실제 적용된 개인화 가중치 (1단계 SSOT에서 결정)
+        global_weight        : 실제 적용된 전역 가중치 (1단계 SSOT에서 결정)
+        is_cold_start        : Cold Start 경로 사용 여부 (3단계 RRF 로직 분기용)
+    """
+
+    personalized_results: List[Dict[str, Any]]
+    global_results: List[Dict[str, Any]]
+    personalized_weight: float
+    global_weight: float
+    is_cold_start: bool
+
+
+async def _log_search_history_bg(hashed_user_id: str, query: str) -> None:
+    """
+    검색 히스토리 로깅 백그라운드 태스크 (Fire-and-Forget 전용).
+
+    asyncio.create_task와 함께 사용하며, 검색 흐름과 분리된 코루틴에서
+    Redis 로깅을 best-effort로 수행한다.
+    실패 시에도 검색 응답에는 영향을 주지 않는다.
+
+    [리뷰반영] search() 내부 클로저 대신 모듈 레벨 함수로 분리:
+    - 매 호출마다 클로저 객체 재생성 없음 → 퍼-요청 오버헤드 최소화.
+    - 독립적으로 테스트 가능한 순수 함수.
+    """
+    try:
+        # [리뷰반영] 백그라운드 태스크 무한 대기 방지:
+        # Redis 연결 지연이나 블로킹으로 인해 백그라운드 태스크가 쌓이는 것을 막기 위해 명시적 타임아웃 적용
+        await asyncio.wait_for(
+            topic_clustering_service.log_search_query(hashed_user_id, query),
+            timeout=3.0,
+        )
+    except Exception:  # noqa: BLE001
+        # 히스토리 로깅 실패는 검색 응답에 영향을 주지 않는다 (best-effort).
+        # 쿼리 원문은 PII 노출 위험이 있으므로 로그에 포함하지 않는다.
+        # [리뷰반영] PII 정책: 비-PII 식별자인 hashed_user_id를 로그에 포함하여 장애 연관성 추적 강화
+        logger.warning(
+            "[HYBRID_SEARCH] 검색 히스토리 로깅 실패 (검색 응답에는 영향 없음, hashed_user_id=%s).",
+            hashed_user_id,
+            exc_info=True,
+        )
 
 # [Optimization] 질의 분석용 정규식 패턴 (미리 컴파일하여 부하가 큰 런타임 성능 확보)
 _SEMANTIC_PATTERN = re.compile(
@@ -228,14 +717,15 @@ class HybridSearchService:
         category: Optional[PARACategory] = None,
         metadata_filter: Optional[Dict[str, Any]] = None,
         filter_expansion_factor: int = 2,
+        user_info: Optional[Dict[str, Any]] = None,
     ) -> HybridSearchResult:
         """
-        하이브리드 검색 수행 (캐싱 레이어 포함).
+        하이브리드 검색 수행 (캐싱 및 로깅 포함).
+        - 사용자 히스토리를 기록 (비로그인/Mock 포함).
         - Redis 캐시를 먼저 확인하고, 미스 시 실제 검색 수행.
         - 실제 검색은 CPU-bound 이므로 threadpool에서 실행.
 
         [Fail Fast 정책] 파라미터 검증은 이 public 진입점에서만 수행합니다.
-        _execute_search는 이 메서드를 통해서만 호출되므로 중복 검증이 불필요합니다.
         """
         # [Fail Fast] 캐시 접근 전 파라미터 유효 범위 검증 (단일 검증 지점)
         if not (0.0 <= alpha <= 1.0):
@@ -243,7 +733,17 @@ class HybridSearchService:
         if k < 1:
             raise ValueError(f"k must be greater than or equal to 1, got {k}")
 
-        # 0. PARA 카테고리 검증 및 필터 병합
+        # 0. 히스토리 로깅 (Best-effort, Fire-and-Forget)
+        # PII 정책: user_id는 반드시 해싱(mask_pii_id)하여 전달한다.
+        # [리뷰반영] 모듈 레벨 _log_search_history_bg로 분리:
+        #   - 클로저 재생성 없음 → 퍼 요청 오버헤드 최소화.
+        #   - 실패 인식/예외 체인이 함수 내부에서 완결되어 테스트 용이.
+        if user_info and "id" in user_info:
+            user_id_raw = str(user_info["id"])
+            hashed_user_id = mask_pii_id(user_id_raw, truncate_len=0)  # 전체 해시 확보
+            asyncio.create_task(_log_search_history_bg(hashed_user_id, query))
+
+        # 1. PARA 카테고리 검증 및 필터 병합
         effective_filter = self._build_metadata_filter(category, metadata_filter)
 
         # 1. Redis 캐시 확인 (Async)
@@ -306,6 +806,382 @@ class HybridSearchService:
         )
 
         return HybridSearchResult(results=raw_results, applied_filter=metadata_filter)
+
+    # ------------------------------------------------------------------
+    # [Step 2-3 / Phase 2.3] 2단계: 혼합 검색 라우터 (Router Layer)
+    # ------------------------------------------------------------------
+
+    async def route_weighted_search(
+        self,
+        hashed_user_id: str,
+        query: str,
+        k: int = 5,
+        alpha: float = 0.5,
+        metadata_filter: Optional[Dict[str, Any]] = None,
+        filter_expansion_factor: int = 2,
+    ) -> IndexSearchResults:
+        """
+        1단계 가중치 결정 함수(get_index_weights)를 SSOT로 참조하여
+        개인화 인덱스와 전역 인덱스를 병렬로 조회하는 혼합 검색 라우터.
+
+        설계 원칙:
+          - PII 보호: hashed_user_id를 mask_pii_id()로 마스킹한 masked_uid만 로그에 사용
+          - Cold Start 단락(Short-circuit): personalized_weight == 0.0이면 전역 단독 실행
+          - 병렬 조회: 정상 사용자는 asyncio.gather로 두 인덱스를 동시에 조회하여 지연 최소화
+          - Graceful Degradation: 개인화 인덱스 조회 실패(타임아웃·예외) 시 빈 결과로 폴백,
+            전역 인덱스 결과만으로 계속 진행 (서비스 연속성 우선)
+
+        Args:
+            hashed_user_id       : SHA-256 해시된 사용자 식별자 (평문 user_id 금지)
+            query                : 검색 쿼리 문자열
+            k                    : 각 인덱스에서 조회할 최대 결과 수
+            alpha                : 하이브리드 검색 FAISS/BM25 혼합 비율 (0.0~1.0)
+            metadata_filter      : 메타데이터 필터 (선택)
+            filter_expansion_factor: 필터 확장 계수 (선택)
+
+        Returns:
+            IndexSearchResults — 두 인덱스 결과, 적용된 가중치, Cold Start 여부를 담은 DTO.
+            3단계 RRF 병합 로직의 직접 입력으로 사용된다.
+        """
+        masked_uid = mask_pii_id(hashed_user_id)
+
+        # ── 1단계 SSOT에서 가중치 확정 ────────────────────────────────────────
+        personalized_weight, global_weight = await get_index_weights(hashed_user_id)
+
+        # ── Cold Start 단락(Short-circuit) 경로 ───────────────────────────────
+        # personalized_weight == _COLD_START_PERSONALIZED_WEIGHT(0.0) 이면
+        # 개인화 인덱스 조회를 아예 건너뛰어 불필요한 I/O를 차단한다.
+        if math.isclose(personalized_weight, _COLD_START_PERSONALIZED_WEIGHT,
+                        rel_tol=0.0, abs_tol=_WEIGHT_SUM_ZERO_EPSILON):
+            logger.info(
+                "[HYBRID_SEARCH][ROUTER] Cold Start 단락 경로 → 전역 인덱스 단독 조회 "
+                "(masked_uid=%s, personalized=%.1f, global=%.1f)",
+                masked_uid,
+                personalized_weight,
+                global_weight,
+            )
+            global_results = await run_in_threadpool(
+                self._execute_search,
+                query=query,
+                k=k,
+                alpha=alpha,
+                metadata_filter=metadata_filter,
+                filter_expansion_factor=filter_expansion_factor,
+            )
+            return IndexSearchResults(
+                personalized_results=[],
+                global_results=global_results.results,
+                personalized_weight=personalized_weight,
+                global_weight=global_weight,
+                is_cold_start=True,
+            )
+
+        # ── 정상 사용자: 병렬 조회 경로 ───────────────────────────────────────
+        # 개인화 인덱스와 전역 인덱스를 asyncio.gather로 동시 실행한다.
+        # 개인화 인덱스 조회에만 타임아웃을 적용하여 느린 서브-인덱스가
+        # 전체 응답을 블로킹하지 않도록 방어한다.
+        logger.debug(
+            "[HYBRID_SEARCH][ROUTER] 병렬 조회 시작 "
+            "(masked_uid=%s, personalized=%.4f, global=%.4f, timeout=%.1fs)",
+            masked_uid,
+            personalized_weight,
+            global_weight,
+            _PERSONALIZED_SEARCH_TIMEOUT,
+        )
+
+        async def _search_personalized() -> List[Dict[str, Any]]:
+            """
+            개인화 인덱스 조회 코루틴 (타임아웃 + Graceful Degradation 내장).
+
+            현재는 동일한 HybridSearcher를 사용하며, 향후 사용자별 FAISS 서브-인덱스가
+            실제로 분리되면 이 내부 함수에서 personalized_index_service 조회로 교체한다.
+
+            [타임아웃: Best-effort 방식]
+              asyncio.wait_for는 코루틴만 취소하며, 스레드풀의 _execute_search는
+              계속 실행된다 (FAISS/BM25가 협조적 취소를 지원하지 않으므로 의도된 동작).
+              타임아웃 빈발 시: 이 모듈 상단의 _PERSONALIZED_SEARCH_TIMEOUT_ENV_KEY
+              (env: PERSONALIZED_INDEX_SEARCH_TIMEOUT)로 값을 조정하거나,
+              run_in_threadpool의 executor를 별도 스레드풀로 교체한다.
+            """
+            try:
+                result = await asyncio.wait_for(
+                    run_in_threadpool(
+                        self._execute_search,
+                        query=query,
+                        k=k,
+                        alpha=alpha,
+                        metadata_filter=metadata_filter,
+                        filter_expansion_factor=filter_expansion_factor,
+                    ),
+                    timeout=_PERSONALIZED_SEARCH_TIMEOUT,
+                )
+                return result.results
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "[HYBRID_SEARCH][ROUTER] 개인화 인덱스 조회 타임아웃 "
+                    "(masked_uid=%s, timeout=%.1fs) → 빈 결과로 폴백.",
+                    masked_uid,
+                    _PERSONALIZED_SEARCH_TIMEOUT,
+                )
+                return []
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "[HYBRID_SEARCH][ROUTER] 개인화 인덱스 조회 실패 (masked_uid=%s) "
+                    "→ 빈 결과로 폴백. 전역 인덱스 결과만으로 계속 진행합니다.",
+                    masked_uid,
+                    exc_info=True,
+                )
+                return []
+
+        async def _search_global() -> List[Dict[str, Any]]:
+            """
+            전역 인덱스 조회 코루틴.
+
+            정책: 전역 인덱스는 필수 질의 소스다.
+              - 성공: 결과 목록 반환
+              - 실패: ERROR 로그 후 예외를 상위로 전파하여 요청 전체를 실패시킨다.
+              - (개인화 인덱스와의 차이) 개인화 인덱스는 부가적(Optional)이라
+                실패 시 빈 결과로 Graceful Degradation하지만,
+                전역 인덱스는 폴백이 없으므로 예외를 전파한다.
+            """
+            try:
+                result = await run_in_threadpool(
+                    self._execute_search,
+                    query=query,
+                    k=k,
+                    alpha=alpha,
+                    metadata_filter=metadata_filter,
+                    filter_expansion_factor=filter_expansion_factor,
+                )
+                return result.results
+            except Exception:  # noqa: BLE001
+                logger.error(
+                    "[HYBRID_SEARCH][ROUTER] 전역 인덱스 조회 실패 (masked_uid=%s) "
+                    "→ 요청 전체를 실패시킵니다. "
+                    "(전역 인덱스 실패는 Graceful Degradation 대상이 아닙니다.)",
+                    masked_uid,
+                    exc_info=True,
+                )
+                raise
+
+        personalized_results, global_results = await asyncio.gather(
+            _search_personalized(),
+            _search_global(),
+        )
+
+        logger.debug(
+            "[HYBRID_SEARCH][ROUTER] 병렬 조회 완료 "
+            "(masked_uid=%s, personalized_hits=%d, global_hits=%d)",
+            masked_uid,
+            len(personalized_results),
+            len(global_results),
+        )
+
+        return IndexSearchResults(
+            personalized_results=personalized_results,
+            global_results=global_results,
+            personalized_weight=personalized_weight,
+            global_weight=global_weight,
+            is_cold_start=False,
+        )
+
+    # ------------------------------------------------------------------
+    # [Step 2-3 / Phase 2.3] 3단계: RRF 병합 로직 (Merge Layer)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def merge_with_rrf(
+        router_result: IndexSearchResults,
+        rrf_k: int = _RRF_K,
+        top_k: int = _RRF_TOP_K,
+    ) -> RRFResult:
+        """
+        2단계 라우터 결과(IndexSearchResults)를 입력받아
+        가중 Reciprocal Rank Fusion으로 두 인덱스 결과를 병합하여 반환한다.
+
+        알고리즘:
+          score(d) = Σ_i  weight_i / (rrf_k + rank_i(d))
+          여기서 rank는 1-indexed, weight_i는 1단계 SSOT에서 결정된 가중치.
+
+        설계 원칙:
+          - Cold Start 시: personalized_results가 빈 리스트이므로
+            전역 결과만으로 RRF를 수행한다(자연스러운 단락 처리).
+          - 동일 문서 중복: 두 인덱스에 같은 doc_id가 있으면 스코어를 누산(합산)한다.
+          - doc_id 추출 전략: 결과 딕셔너리에서 'doc_id' > 'id' > 'chunk_id' 순으로
+            키를 탐색하고, 모두 없으면 해당 항목의 직렬화 문자열을 fallback key로 사용한다.
+          - 하드코딩 없음: rrf_k와 top_k는 모두 모듈 레벨 상수(_RRF_K, _RRF_TOP_K)를
+            기본값으로 사용하며 호출 시점에 오버라이드 가능하다.
+
+        Args:
+            router_result : 2단계 route_weighted_search()의 반환 DTO
+            rrf_k         : RRF 평활 상수 (기본값: _RRF_K 환경 변수)
+            top_k         : 최종 반환 결과 수 (기본값: _RRF_TOP_K 환경 변수)
+
+        Returns:
+            RRFResult — 병합된 결과와 적용 파라미터를 담은 DTO.
+        """
+        def _extract_doc_id(item: Dict[str, Any]) -> str:
+            """결과 딕셔너리에서 문서 식별자를 일관되게 추출하는 내부 헬퍼.
+
+            fallback 전략: doc_id/id/chunk_id 키가 모두 없을 때
+            JSON 직렬화 후 SHA-256 앞 16자(hex)를 사용하여
+            키 길이를 제한하고 결정적 중복 제거를 보장한다.
+            """
+            for key in ("doc_id", "id", "chunk_id"):
+                if key in item and item[key] is not None:
+                    return str(item[key])
+            # 안정적·짧은 fallback key: SHA-256(JSON직렬화)[:16]
+            payload = json.dumps(item, sort_keys=True, ensure_ascii=False, default=str)
+            return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+        # ── 진입부 방어 검증 ────────────────────────────────────────────────
+        # merge_with_rrf는 @staticmethod 공개 API이므로,
+        # 환경 변수 로더를 우회하는 직접 호출에도 안전해야 한다.
+        #
+        # rrf_k: rrf_k + rank(최솟값=1) == 0이 되면 ZeroDivisionError 발생.
+        #        _RRF_K_MIN(=1) 이상을 강제한다.
+        if rrf_k < _RRF_K_MIN:
+            logger.warning(
+                "[HYBRID_SEARCH][RRF] rrf_k=%d 가 최솟값(%d) 미만입니다. %d으로 보정합니다.",
+                rrf_k, _RRF_K_MIN, _RRF_K_MIN,
+            )
+            rrf_k = _RRF_K_MIN
+
+        # top_k 타입 검증: 직접 호출 시 비정수 타입이 전달될 경우 비교 연산에서 TypeError 발생.
+        #
+        # [bool 명시 거부]
+        # Python에서 bool은 int의 서브클래스이므로 numbers.Integral 코드를
+        # 통과한다. top_k=True(=1)나 top_k=False(=0)은 거의 확실히 프로그래밍
+        # 오류이므로 명시적으로 거부한다.
+        if isinstance(top_k, bool):
+            raise TypeError(
+                f"[HYBRID_SEARCH][RRF] top_k는 bool 타입을 허용하지 않습니다. "
+                f"정수 값을 명시적으로 전달해 주세요. 값: {top_k!r}"
+            )
+        # [numbers.Integral 광의 정수 검증]
+        # bool 제외 후 numpy int64 등 서드파티 정수 유사 타입도 수용한다.
+        if not isinstance(top_k, numbers.Integral):
+            raise TypeError(
+                f"[HYBRID_SEARCH][RRF] top_k는 정수 타입(numbers.Integral)이어야 합니다. "
+                f"수신된 타입: {type(top_k).__name__!r}, 값: {top_k!r}"
+            )
+
+        # top_k: 음수 시 Python 리스트 슬라이싱이 끝에서 역방향으로 동작하여
+        #        "상위 N개" 의미와 완전히 달라진다. max(0, top_k)로 안전하게 보정한다.
+        # top_k 상한: env 로더(_load_int_env)와 동일한 _RRF_TOP_K_MAX 기준을 직접
+        #             호출 경로에도 적용하여, 예상치 못하게 큰 결과 집합을 방지한다.
+        effective_top_k = top_k
+        if top_k < 0:
+            logger.warning(
+                "[HYBRID_SEARCH][RRF] top_k=%d 가 음수입니다. 0으로 보정합니다. "
+                "(음수 슬라이싱은 'top_k' 의미와 다릅니다.)",
+                top_k,
+            )
+            effective_top_k = 0
+        elif top_k > _RRF_TOP_K_MAX:
+            logger.warning(
+                "[HYBRID_SEARCH][RRF] top_k=%d 가 상한값(%d) 초과입니다. %d으로 보정합니다.",
+                top_k, _RRF_TOP_K_MAX, _RRF_TOP_K_MAX,
+            )
+            effective_top_k = _RRF_TOP_K_MAX
+
+        # ── 스코어 누산 테이블 ──────────────────────────────────────────────
+        # {doc_id: {"score": float, "item": Dict}} 구조
+        score_table: Dict[str, Dict[str, Any]] = {}
+
+        def _accumulate(
+            results: List[Dict[str, Any]],
+            weight: float,
+        ) -> None:
+            """단일 인덱스 결과 목록의 RRF 스코어를 score_table에 누산한다.
+
+            weight 분기:
+              - weight > 0.0: 정상 경로. RRF 스코어를 누산한다.
+              - weight == 0.0: Cold Start 등 정상적인 빈 기여 경로.
+                설계상 results도 비어 있어야 하며, 비어 있지 않으면
+                불변식 위반으로 WARNING을 발생시킨다.
+              - weight < 0.0: 가중치 계산 버그 등 비정상 경로.
+                음수 기여값이 score_table에 누산되면 의도치 않은 역순위를
+                유발하므로 WARNING 발생 후 즉시 스킵한다.
+
+            [float 비교 설계 근거]
+              weight == 0.0 정확 비교: IndexSearchResults를 생성하는 상위
+              레이어는 다음 계약(contract)을 준수한다 — Cold Start로
+              판단된 경우 personalized_weight에 상수 0.0을 리터럴로
+              저장하며, 판단 자체는 math.isclose로 epsilon을 적용한다.
+              따라서 여기서 추가 epsilon을 적용하면 정상 소수
+              가중치(e.g. 1e-10)를 0으로 오판하는 버그를 유발할 수 있다.
+
+            [WARNING 로그 rate limiting 불필요 근거]
+              _accumulate는 merge_with_rrf 호출당 2회(개인화 1회 + 전역 1회)만
+              실행된다. WARNING 경로(weight<0, 불변식 위반)는 버그 상황을
+              표시하므로 노이즈가 아니라 신호다. rate limiting으로 억제하면
+              오히려 운영 중 버그 시그널을 놓칠 수 있다.
+            """
+            if weight == 0.0:
+                # Cold Start 정상 경로. 설계 불변식: weight==0.0이면 results도 비어 있어야 한다.
+                if results:
+                    logger.warning(
+                        "[HYBRID_SEARCH][RRF] weight=0.0인데 results가 비어 있지 않습니다 "
+                        "(len=%d). 설계 불변식 위반 — 스킵합니다.",
+                        len(results),
+                    )
+                else:
+                    logger.debug(
+                        "[HYBRID_SEARCH][RRF] weight=0.0 (Cold Start 정상 경로) — 스킵합니다.",
+                    )
+                return
+
+            if weight < 0.0:
+                # 비정상 경로: 가중치 계산 버그 가능성. WARNING으로 표면하여 운영 중 탐지를 보장한다.
+                logger.warning(
+                    "[HYBRID_SEARCH][RRF] weight=%.6f 가 음수입니다. "
+                    "음수 기여값은 역순위를 유발하며 이는 가중치 계산 버그일 가능성이 높습니다. "
+                    "인덱스를 스킵합니다.",
+                    weight,
+                )
+                return
+
+            # weight > 0.0: 정상 경로
+            for rank, item in enumerate(results, start=1):  # rank는 1-indexed
+                doc_id = _extract_doc_id(item)
+                contribution = weight / (rrf_k + rank)
+                if doc_id in score_table:
+                    score_table[doc_id]["score"] += contribution
+                else:
+                    score_table[doc_id] = {"score": contribution, "item": item}
+
+        # ── Cold Start 단락: personalized_results가 비어 있으면 자동으로 전역만 처리 ──
+        _accumulate(router_result.personalized_results, router_result.personalized_weight)
+        _accumulate(router_result.global_results, router_result.global_weight)
+
+        # ── 정렬 및 상위 N개 슬라이싱 ──────────────────────────────────────
+        sorted_items = sorted(
+            score_table.values(),
+            key=lambda entry: entry["score"],
+            reverse=True,
+        )
+        merged = [entry["item"] for entry in sorted_items[:effective_top_k]]
+
+        logger.debug(
+            "[HYBRID_SEARCH][RRF] 병합 완료 "
+            "(personalized=%d건, global=%d건, merged=%d건, "
+            "rrf_k=%d, top_k=%d, effective_top_k=%d, cold_start=%s)",
+            len(router_result.personalized_results),
+            len(router_result.global_results),
+            len(merged),
+            rrf_k,
+            top_k,
+            effective_top_k,
+            router_result.is_cold_start,
+        )
+
+        return RRFResult(
+            results=merged,
+            applied_rrf_k=rrf_k,
+            applied_top_k=effective_top_k,
+            is_cold_start=router_result.is_cold_start,
+        )
 
     def save_indices(self):
         """FAISS와 BM25 인덱스를 디스크에 저장"""

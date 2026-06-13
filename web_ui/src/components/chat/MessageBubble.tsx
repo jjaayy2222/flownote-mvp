@@ -2,9 +2,7 @@
 
 import React, { useState, useMemo, memo, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { REMARK_PLUGINS, REHYPE_PLUGINS, useMarkdownComponents } from './markdown-components';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { ThumbsUp, ThumbsDown } from 'lucide-react';
@@ -12,10 +10,8 @@ import { cn } from '@/lib/utils';
 import type { UIMessage } from 'ai';
 import { SourcePanel } from './SourcePanel';
 import { type SourceItem } from '@/types/chat';
-import type { Components } from 'react-markdown';
 import { stabilizeIncompleteMarkdown } from '@/lib/markdown';
 import { 
-  CITATION_VALIDATION_REGEX, 
   extractSources,
   buildProcessedContent,
   areTextPartsEqual,
@@ -41,35 +37,11 @@ interface MessageBubbleProps {
   sessionId?: string;
 }
 
-// react-markdown v10 code 컴포넌트 타입
-type CodeProps = React.ComponentPropsWithoutRef<'code'> & {
-  inline?: boolean;
-};
-
 /**
  * [Pure Function] 스트리밍 상태를 고려하여 렌더링 가능한 마크다운 보장
  */
 function ensureRenderableMarkdown(markdown: string, shouldPatch: boolean): string {
   return shouldPatch ? stabilizeIncompleteMarkdown(markdown) : markdown;
-}
-
-/**
- * [Refactoring] 유효하지 않거나 누락된 인용 소스에 대한 일관된 폴백 렌더러
- */
-function FallbackCitation({ 
-  children, 
-  className, 
-  title = "출처 정보 없음" 
-}: { 
-  children: React.ReactNode; 
-  className?: string; 
-  title?: string;
-}) {
-  return (
-    <span className={cn("text-slate-500 font-medium cursor-help", className)} title={title}>
-      {children}
-    </span>
-  );
 }
 
 /**
@@ -325,89 +297,10 @@ export const MessageBubble = memo(
     setSelectedSource(null);
   };
 
-  // react-markdown v10 code 컴포넌트
-  const markdownComponents: Components = {
-    code({ className, children, ...props }: CodeProps) {
-      const match = /language-(\w+)/.exec(className || '');
-      const isBlock = Boolean(match);
-      return isBlock ? (
-        <SyntaxHighlighter
-          style={vscDarkPlus as Record<string, React.CSSProperties>}
-          language={match![1]}
-          PreTag="div"
-          className="rounded-md my-2 text-xs"
-        >
-          {String(children).replace(/\n$/, '')}
-        </SyntaxHighlighter>
-      ) : (
-        <code
-          className="bg-black/10 px-1 py-0.5 rounded text-xs font-mono"
-          {...props}
-        >
-          {children}
-        </code>
-      );
-    },
-    // 인라인 인용(Citation) 링크 컴포넌트
-    a({ children, href, className, ...props }) {
-      if (href?.startsWith('cite:')) {
-        const indexStr = href.replace('cite:', '').trim();
-
-        // [Validation] cite 인덱스 검증
-        if (!CITATION_VALIDATION_REGEX.test(indexStr)) {
-          return <FallbackCitation className={className}>{children}</FallbackCitation>;
-        }
-
-        const index = parseInt(indexStr, 10) - 1;
-        const source = sources[index];
-        
-        if (!source) {
-          return <FallbackCitation className={className}>{children}</FallbackCitation>;
-        }
-
-        const handleCitationClick = (e: React.MouseEvent | React.KeyboardEvent) => {
-          e.preventDefault();
-          handleBadgeClick(source);
-        };
-
-        return (
-          <sup
-            role="button"
-            tabIndex={0}
-            onClick={handleCitationClick}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                handleCitationClick(e as unknown as React.MouseEvent);
-              }
-            }}
-            className="
-              inline-flex items-center justify-center
-              mx-0.5 px-1 min-w-[1rem] h-4
-              bg-blue-50 text-blue-700 font-bold text-[9px]
-              rounded border border-blue-200
-              cursor-pointer hover:bg-blue-100 hover:border-blue-300
-              transition-colors align-top mt-0.5
-              select-none focus:outline-none focus:ring-1 focus:ring-blue-400
-            "
-            title={source.title ? `출처: ${source.title}` : `출처: ${source.id}`}
-          >
-            {children}
-          </sup>
-        );
-      }
-      return (
-        <a 
-          href={href} 
-          className={cn("text-blue-600 underline", className)} 
-          target="_blank" 
-          rel="noopener noreferrer" 
-          {...props}
-        >
-          {children}
-        </a>
-      );
-    },
-  };
+  // 공유 마크다운 컴포넌트 (Memoized)
+  // [설계 결정] isLast && isStreaming: 마지막 메시지가 스트리밍 중인 경우에만 하이라이팅 지연
+  // 히스토리의 완료된 메시지들은 항상 isStreaming=false → SyntaxHighlighter + 복사 버튼 적용
+  const markdownComponents = useMarkdownComponents(sources, handleBadgeClick, isLast && isStreaming);
 
   // [Performance] 콘텐츠 가공 및 마크다운 안정화 로직 통합 호출
   const processedContent = useMemo(() => {
@@ -449,7 +342,8 @@ export const MessageBubble = memo(
             }`}
           >
             <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
+              remarkPlugins={REMARK_PLUGINS}
+              rehypePlugins={REHYPE_PLUGINS}
               components={markdownComponents}
             >
               {processedContent}

@@ -1,4 +1,4 @@
-# 📖 FlowNote 사용자 가이드 (v7.0)
+# 📖 FlowNote 사용자 가이드 (v9.0 진행 중)
 
 <p align="center">
   <a href="./USER_GUIDE.md"><strong>한국어</strong></a> | <a href="./USER_GUIDE_EN.md">English</a>
@@ -22,6 +22,9 @@
 10. [Obsidian 연동](#10-obsidian-연동)
 11. [언어 설정 변경](#11-언어-설정-변경)
 12. [문제 해결](#12-문제-해결)
+13. [🛠️ 고급 설정 및 개발자 가이드](#13-고급-설정-및-개발자-가이드)
+    - [13.1 RAG 품질 평가 및 성능 (v8.0)](#131-rag-품질-평가-및-성능-v80)
+    - [13.2 자가 적응형 지능 (v9.0)](#132-자가-적응형-지능-v90)
 
 ---
 
@@ -660,13 +663,50 @@ python scripts/bootstrap_index.py --vault /path/to/your/vault --concurrency 2
 ## 📚 추가 리소스
 
 - **API 문서**: http://localhost:8000/docs (Swagger UI)
-- **Phase 문서**: `docs/P/` 디렉토리
-  - [v6.0 Phase 1: WebSocket](docs/P/v6.0_phase1_websocket/)
-  - [v6.0 Phase 2: Diff Viewer](docs/P/v6.0_phase2_diff_viewer/)
-  - [v6.0 Phase 3: i18n](docs/P/v6.0_phase3_i18n/)
-  - [v7.0 Planning: Hybrid RAG](docs/P/v7.0_planning/)
+- **Phase 문서**: `docs/AR/` 및 `docs/P/` 디렉토리
+  - [v5.0] [System Core & Dashboard](docs/AR/v5.0/)
+  - [v6.0] [Real-time Sync & i18n](docs/AR/v6.0/)
+  - [v7.0] [Hybrid RAG Search](docs/AR/v7.0/)
+  - [v8.0] [RAG Evaluation Pipeline](docs/AR/v8.0/)
+  - [v9.0] [Adaptive Intelligence](docs/P/v9.0/) ✨
 - **성능 측정**: `tests/performance/benchmark_rag.py`
 - **검색 품질 측정**: `tests/e2e/test_rag_search_quality.py`
+
+---
+
+---
+
+## 13. 🛠️ 고급 설정 및 개발자 가이드
+
+이 섹션은 시스템의 품질 평가 및 자율 학습 엔진에 대한 기술적 세부 정보를 포함합니다.
+
+### 13.1 RAG 품질 평가 및 성능 (v8.0)
+
+> [!IMPORTANT]
+> **개발자용**: RAG 시스템의 신뢰성을 측정하고 성능을 극대화하기 위한 도구입니다.
+
+#### 1. Golden Dataset 추출
+사용자의 피드백을 바탕으로 '정답 셋'을 자동 생성합니다. (Baseline 활용)
+
+#### 2. 정밀 평가 프레임워크
+```bash
+# E2E 검색 품질 측정
+pytest tests/e2e/test_rag_search_quality.py -s -v
+```
+
+#### 3. 성능 최적화
+- LLM Caching 및 Redis Pipelining을 통한 지연 최적화.
+
+### 13.2 자가 적응형 지능 (v9.0)
+
+> [!NOTE]
+> **기술 명세**: 시스템이 사용자의 데이터에 맞춰 스스로 진화하는 엔진입니다.
+
+#### 1. 자율 파인튜닝 (Adaptive Fine-tuning)
+OpenAI Fine-tuning Job을 자율적으로 생성하고 관리하여 분류 정확도를 지속적으로 향상시킵니다.
+
+#### 2. 운영 관측성
+- `ObsEvent`, `ObsMetaTag` 등을 활용한 구조화된 로깅 및 무결성 가드 제공.
 
 ---
 

@@ -7,23 +7,88 @@ FlowNote MVP - 유틸리티 함수
 """
 
 import os
+import logging
 import tiktoken  # type: ignore[import]
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Union
 from datetime import datetime
 import hashlib
+from collections.abc import Mapping
+
+logger = logging.getLogger(__name__)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 💙 새로 추가하는 함수들
+# 새로 추가하는 함수들
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 INVALID_PII_SENTINEL = "<INVALID_PII>"
+ANONYMOUS_USER_ID = "anonymous"
+MAX_QUERY_PREVIEW_LEN = 200
+
+
+def safe_parse_env_int(
+    env_var_name: str, default: int, min_val: Optional[int] = None
+) -> int:
+    """환경 변수를 int로 안전하게 파싱합니다. 실패 시 로그를 남기고 기본값을 반환합니다."""
+    val = os.getenv(env_var_name)
+    if val is None:
+        return default
+    try:
+        parsed = int(val)
+        if min_val is not None and parsed < min_val:
+            logger.warning(
+                "환경 변수 '%s'의 값(%s)은 최소 %s 이상이어야 합니다. 기본값 %s을(를) 사용합니다.",
+                env_var_name,
+                val,
+                min_val,
+                default,
+            )
+            return default
+        return parsed
+    except ValueError:
+        logger.warning(
+            "환경 변수 '%s'의 값(%s)을 int로 파싱할 수 없습니다. 기본값 %s을(를) 사용합니다.",
+            env_var_name,
+            val,
+            default,
+        )
+        return default
+
+
+def safe_parse_env_float(
+    env_var_name: str, default: float, min_val: Optional[float] = None
+) -> float:
+    """환경 변수를 float으로 안전하게 파싱합니다. 실패 시 로그를 남기고 기본값을 반환합니다."""
+    val = os.getenv(env_var_name)
+    if val is None:
+        return default
+    try:
+        parsed = float(val)
+        if min_val is not None and parsed < min_val:
+            logger.warning(
+                "환경 변수 '%s'의 값(%s)은 최소 %s 이상이어야 합니다. 기본값 %s을(를) 사용합니다.",
+                env_var_name,
+                val,
+                min_val,
+                default,
+            )
+            return default
+        return parsed
+    except ValueError:
+        logger.warning(
+            "환경 변수 '%s'의 값(%s)을 float으로 파싱할 수 없습니다. 기본값 %s을(를) 사용합니다.",
+            env_var_name,
+            val,
+            default,
+        )
+        return default
+
 
 def mask_pii_id(value: Optional[str], truncate_len: int = 12) -> str:
     """
-    민감 문자열(user_id, session_id 등)을 SHA-256 해시화하여 
+    민감 문자열(user_id, session_id 등)을 SHA-256 해시화하여
     로그에 안전하게 기록하기 위한 중앙 유틸리티.
-    
+
     Args:
         value: 마스킹할 원본 문자열
         truncate_len: 반환할 해시 문자열의 최대 길이
@@ -33,15 +98,45 @@ def mask_pii_id(value: Optional[str], truncate_len: int = 12) -> str:
     """
     if not value or not isinstance(value, str):
         return INVALID_PII_SENTINEL
-    
+
     # [Security Validation] 음수 방어(Safe Wrapper)
     safe_len = max(0, truncate_len)
-    
-    hashed = str(hashlib.sha256(value.encode('utf-8')).hexdigest())
+
+    hashed = hashlib.sha256(value.encode("utf-8")).hexdigest()
     if safe_len > 0:
         return hashed[:safe_len]  # type: ignore[index]
     return hashed
 
+
+def get_chat_log_extra(request_or_body: Any) -> Dict[str, Any]:
+    """
+    채팅 엔드포인트(동기/스트리밍)에서 공통으로 사용하는
+    안전한 로깅 extra 딕셔너리를 생성합니다.
+    
+    내부적으로 인입된 객체의 형태를 검사하여:
+    1. dict, FastAPI QueryDict 등 Mapping 객체는 `.get()`으로
+    2. Pydantic BaseModel 등 일반 객체는 `getattr`로
+    안전하게 필드를 읽어와 처리합니다.
+    """
+    if isinstance(request_or_body, Mapping):
+        raw_user_id = request_or_body.get("user_id")
+        raw_query = request_or_body.get("query")
+    else:
+        raw_user_id = getattr(request_or_body, "user_id", None)
+        raw_query = getattr(request_or_body, "query", None)
+
+    # Truthy 체크를 통해 빈 문자열("")이나 0 같은 Falsy 값에 대해서도
+    # 안전하게 ANONYMOUS_USER_ID 로 폴백하도록 기존 동작 복원
+    safe_user_id = str(raw_user_id) if raw_user_id else ANONYMOUS_USER_ID
+    safe_query = str(raw_query) if raw_query else ""
+    
+    is_truncated = len(safe_query) > MAX_QUERY_PREVIEW_LEN
+    truncated_query = safe_query[:MAX_QUERY_PREVIEW_LEN] + ("..." if is_truncated else "")
+    
+    return {
+        "user_id_hash": mask_pii_id(safe_user_id),
+        "query_preview": truncated_query,
+    }
 
 def check_metadata_match(
     doc_metadata: Optional[Dict[str, Any]], metadata_filter: Optional[Dict[str, Any]]

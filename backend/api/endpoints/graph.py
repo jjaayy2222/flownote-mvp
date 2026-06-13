@@ -1,112 +1,118 @@
 # backend/api/endpoints/graph.py
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Phase 4: 지식 그래프 API 엔드포인트 - v1
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+# [SSOT 정책]
+# 이 라우터의 모든 응답은 반드시 `backend.schemas.graph`의 모델을 response_model로 선언해야 합니다.
+# raw dict 반환은 OpenAPI 스키마 동기화를 깨뜨리므로 절대 허용되지 않습니다.
+#
+# [버저닝 정책]
+# 현재 라우터 prefix: /api/graph (= v1)
+# Breaking Change 발생 시 /api/v2/graph 라우터를 신규 생성하고,
+# 이 v1 라우터는 Deprecation 헤더를 추가하여 일정 기간 유지합니다.
+#
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+from __future__ import annotations
+
+import random
+from typing import Any
+import logging
 
 from fastapi import APIRouter
+
 from backend.database.connection import DatabaseConnection
-import random
+from backend.graph.analysis import find_orphan_nodes, get_orphan_degree_threshold
+from backend.schemas.graph import (
+    EdgeRelationshipType,
+    GraphDataResponse,
+    GraphEdge,
+    GraphNode,
+    NodeType,
+    OrphanNotesResponse,
+)
+from backend.utils.common import mask_pii_id
 
-router = APIRouter(prefix="/graph", tags=["visualization"])
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/graph", tags=["Knowledge Graph (v1)"])
 
 
-@router.get("/data")
-async def get_graph_data():
+from backend.graph.builder import build_graph_data
+
+
+# ─────────────────────────────────────────
+# 엔드포인트
+# ─────────────────────────────────────────
+
+
+@router.get(
+    "/data",
+    response_model=GraphDataResponse,
+    summary="PARA 기반 지식 그래프 데이터 조회",
+    description=(
+        "PARA 방법론(Projects/Areas/Resources/Archive) 기반으로 구성된 "
+        "노트 간의 노드-엣지 데이터를 반환합니다. "
+        "프론트엔드 react-force-graph 시각화에 사용됩니다.\n\n"
+        "[SSOT] 응답 스키마는 `backend.schemas.graph.GraphDataResponse`를 단일 진실 공급원으로 합니다."
+    ),
+)
+async def get_graph_data() -> GraphDataResponse:
     """
-    PARA Graph View를 위한 노드와 엣지 데이터 반환 using React Flow format
+    PARA Graph View를 위한 노드와 엣지 데이터를 SSOT 스키마 형식으로 반환합니다.
+
+    [v1] 현재는 PARA 카테고리 계층 관계(EdgeRelationshipType.PARA_CATEGORY)만 표현합니다.
+    Phase 4-1에서 명시적/암묵적 관계 추출 파이프라인이 연동되면 확장됩니다.
     """
-    nodes = []
-    edges = []
+    return build_graph_data()
 
-    # helper for positions
-    # PARA Categories layout (fixed)
-    category_positions = {
-        "Projects": {"x": 0, "y": 0},
-        "Areas": {"x": 600, "y": 0},
-        "Resources": {"x": 0, "y": 600},
-        "Archive": {"x": 600, "y": 600},
-    }
 
-    # 1. Add Category Nodes
-    for cat, pos in category_positions.items():
-        nodes.append(
-            {
-                "id": cat,
-                "type": "input",
-                "data": {"label": cat},
-                "position": pos,
-                "style": {
-                    "width": 120,
-                    "height": 120,
-                    "borderRadius": "50%",
-                    "display": "flex",
-                    "justifyContent": "center",
-                    "alignItems": "center",
-                    "backgroundColor": "#e0e7ff",
-                    "border": "2px solid #6366f1",
-                    "fontWeight": "bold",
-                    "fontSize": "14px",
-                    "color": "#3730a3",
-                },
-            }
-        )
+@router.get(
+    "/orphans",
+    response_model=OrphanNotesResponse,
+    summary="고립 노트(Orphan Notes) 감지",
+    description=(
+        "전체 그래프에서 엣지 차수(Degree)가 0이거나 극도로 낮은 "
+        "'고립 노트(Orphan Notes)'를 감지하여 반환합니다.\n\n"
+        "임계값은 ORPHAN_DEGREE_THRESHOLD 환경 변수(기본값: 0)로 제어합니다.\n\n"
+        "[SSOT] 응답 스키마는 `backend.schemas.graph.OrphanNotesResponse`를 "
+        "단일 진실 공급원으로 합니다."
+    ),
+)
+async def get_orphan_notes() -> OrphanNotesResponse:
+    """
+    고립 노트(Orphan Notes)를 감지하여 OrphanNotesResponse로 반환합니다.
 
-    with DatabaseConnection() as db:
-        files = db.get_files_with_para()
+    [알고리즘]
+    1. _build_graph_data()로 현재 그래프의 전체 노드/엣지를 로드.
+    2. find_orphan_nodes()로 ORPHAN_DEGREE_THRESHOLD 이하 차수의 노드를 필터링.
+    3. CATEGORY 노드는 구조적 루트이므로 고립 감지에서 제외.
+    4. 차수 오름차순으로 정렬하여 반환.
 
-    # 2. Add File Nodes and Edges
-    for file in files:
-        file_id = str(file["id"])
-        filename = file["filename"]
-        category = file["para_category"]
+    [ORPHAN_DEGREE_THRESHOLD]
+    - 기본값: 0 (완전 고립 노드만 감지)
+    - 범위: 0~100
+    - 파싱 실패 시: 기본값 폴백 + WARNING 로그
+    """
+    graph_data = build_graph_data()
 
-        # Skip if category is not in our main PARA (unless we want to show uncategorized)
-        if not category or category not in category_positions:
-            continue
+    # CATEGORY 노드를 total_nodes 카운트에서 제외 (분석 대상 노드만 집계)
+    analyzable_nodes = [
+        node for node in graph_data.nodes
+        if node.node_type != NodeType.CATEGORY
+    ]
 
-        # Deterministic offset around the category based on file id
-        # This ensures the graph layout is stable across reloads
-        base_pos = category_positions[category]
+    threshold = get_orphan_degree_threshold()
 
-        # Seed random with file_id for consistent positioning
-        rng = random.Random(file_id)
+    orphans = find_orphan_nodes(
+        nodes=analyzable_nodes,
+        edges=graph_data.edges,
+        degree_threshold=threshold,
+    )
 
-        offset_x = rng.randint(-200, 200)
-        offset_y = rng.randint(-200, 200)
-
-        # Avoid placing too close to center (simple rejection logic)
-        if abs(offset_x) < 80 and abs(offset_y) < 80:
-            offset_x += 100 if offset_x >= 0 else -100
-
-        file_node_id = f"file-{file_id}"
-
-        nodes.append(
-            {
-                "id": file_node_id,
-                "data": {"label": filename},
-                "position": {
-                    "x": base_pos["x"] + offset_x,
-                    "y": base_pos["y"] + offset_y,
-                },
-                "style": {
-                    "width": 100,
-                    "height": 40,
-                    "borderRadius": "20px",
-                    "fontSize": "12px",
-                    "display": "flex",
-                    "justifyContent": "center",
-                    "alignItems": "center",
-                    "backgroundColor": "white",
-                    "border": "1px solid #cbd5e1",
-                },
-            }
-        )
-
-        # Edge from Category to File
-        edges.append(
-            {
-                "id": f"e-{category}-{file_node_id}",
-                "source": category,
-                "target": file_node_id,
-                "animated": True,
-            }
-        )
-
-    return {"nodes": nodes, "edges": edges}
+    return OrphanNotesResponse(
+        orphans=orphans,
+        total_nodes=len(analyzable_nodes),
+        degree_threshold=threshold,
+    )

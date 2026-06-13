@@ -6,6 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Activity, Radio, Database, Clock, TrendingUp } from 'lucide-react';
+import { isAbortError } from '@/lib/utils';
 
 import { getMetricsPollInterval } from '@/config/monitoring';
 
@@ -19,18 +20,7 @@ const METRICS_POLL_INTERVAL = getMetricsPollInterval(
   process.env.NEXT_PUBLIC_METRICS_POLL_INTERVAL
 );
 
-/**
- * Type guard to check if an error is an AbortError
- * Works for both Error instances and DOMException
- * @param err - Unknown error to check
- * @returns true if err is an AbortError with precise type narrowing
- */
-function isAbortError(err: unknown): err is { name: 'AbortError' } {
-  if (err === null || typeof err !== 'object') return false;
-  
-  const e = err as { name?: unknown };
-  return typeof e.name === 'string' && e.name === 'AbortError';
-}
+
 
 // Maximum length for error messages to prevent UI overflow
 const MAX_ERROR_LENGTH = 500;

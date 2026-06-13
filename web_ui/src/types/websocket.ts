@@ -175,30 +175,106 @@ export interface WsConflict {
 }
 
 /**
- * 그래프 노드 데이터 타입
+ * 지식 그래프 노드 타입 (백엔드 SSOT 연동)
  */
-export interface GraphNode {
+export enum NodeType {
+  CATEGORY = "category",
+  NOTE = "note",
+  KEYWORD = "keyword",
+  TAG = "tag",
+}
+
+/**
+ * 지식 그래프 엣지 관계 타입 (백엔드 SSOT 연동)
+ */
+export enum EdgeRelationshipType {
+  RELATED_TO = "related_to",
+  // 백엔드 확장에 따라 추가 가능
+}
+
+/**
+ * 향후 다른 브랜드 타입이 추가될 때 우연한 이름 충돌이나 전역 스코프 오염을 방지하기 위한
+ * 모듈 내부 전용 고유 식별자(Symbol)입니다. 
+ * 외부 모듈과의 결합도(Coupling)를 낮추고 정보 은닉(Encapsulation)을 강제하기 위해 export 하지 않습니다.
+ * 런타임 코드에서는 삭제되며 오직 컴파일 타임의 타입 구분에만 사용됩니다.
+ */
+declare const UnknownRelationshipBrand: unique symbol;
+
+/**
+ * 백엔드에서 프론트엔드가 모르는 새로운 관계 타입 문자열을 보낼 경우를 대비한 Fallback 타입.
+ * 모듈 스코프 내에 캡슐화된 Unique Symbol을 사용하여 외부와의 충돌을 막고, 
+ * 브랜드 값을 명시적 리터럴 문자열('UnknownRelationshipType')로 지정하여 IDE의 에러 툴팁 가독성을 극대화합니다.
+ * 
+ * @example
+ * // 런타임 사용 권장 패턴 (Exhaustive Check 방지)
+ * function handleEdge(edge: GraphEdge) {
+ *   switch (edge.relationship_type) {
+ *     case EdgeRelationshipType.RELATED_TO:
+ *       // 알려진 타입 처리
+ *       break;
+ *     default:
+ *       // 알 수 없는 타입(UnknownRelationshipType)에 대한 안전한 폴백 처리
+ *       console.warn("Unknown relationship:", edge.relationship_type);
+ *       break;
+ *   }
+ * }
+ */
+export type UnknownRelationshipType = string & { 
+  readonly [UnknownRelationshipBrand]: 'UnknownRelationshipType' 
+};
+
+/**
+ * 백엔드에서 전달된 알 수 없는 문자열을 UnknownRelationshipType 브랜드 타입으로 안전하게 변환하는 헬퍼 함수입니다.
+ * 코드베이스 전반에 불안전한 타입 단언(as)이 흩어지는 것을 방지하고 캐스팅 지점을 단일화(Centralize)합니다.
+ * 
+ * @internal 이 함수는 오직 백엔드 API 응답(WebSocket, Fetch 등)을 파싱하는 최전방 경계(Boundary Layer)에서만 사용되어야 합니다.
+ * 비즈니스 로직 내부에서 임의로 호출하여 캐스팅하는 것을 엄격히 금지합니다.
+ * 
+ * @param value 백엔드에서 전달된 임의의 문자열
+ * @returns 브랜딩이 적용된 UnknownRelationshipType
+ */
+export function asUnknownRelationshipType(value: string): UnknownRelationshipType {
+  return value as UnknownRelationshipType;
+}
+
+/**
+ * 그래프 노드 데이터 타입 (백엔드 schemas/graph.py SSOT 연동)
+ * @template TProps 속성(properties)의 구체적인 타입 (기본값: Record<string, unknown>)
+ */
+export interface GraphNode<TProps extends Record<string, unknown> = Record<string, unknown>> {
   id: string;
   label: string;
-  type: 'project' | 'area' | 'resource' | 'archive' | 'note';
-  val: number; // 크기
+  node_type: NodeType;
+  properties: TProps;
+  position_x: number | null;
+  position_y: number | null;
+  user_id_hash: string | null;
 }
 
 /**
- * 그래프 엣지 데이터 타입
+ * 그래프 엣지 데이터 타입 (백엔드 schemas/graph.py SSOT 연동)
+ * @template TProps 속성(properties)의 구체적인 타입 (기본값: Record<string, unknown>)
  */
-export interface GraphEdge {
+export interface GraphEdge<TProps extends Record<string, unknown> = Record<string, unknown>> {
+  id: string;
   source: string;
   target: string;
-  value: number; // 가중치
+  relationship_type: EdgeRelationshipType | UnknownRelationshipType;
+  weight: number;
+  properties: TProps;
 }
 
 /**
- * 그래프 전체 데이터 타입
+ * 그래프 전체 데이터 타입 (백엔드 GraphDataResponse 호환)
+ * @template TNodeProps 노드 속성의 확장 타입
+ * @template TEdgeProps 엣지 속성의 확장 타입
  */
-export interface GraphData {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
+export interface GraphData<
+  TNodeProps extends Record<string, unknown> = Record<string, unknown>,
+  TEdgeProps extends Record<string, unknown> = Record<string, unknown>
+> {
+  nodes: GraphNode<TNodeProps>[];
+  edges: GraphEdge<TEdgeProps>[];
 }
 
 /**

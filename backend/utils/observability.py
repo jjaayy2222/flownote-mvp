@@ -5,8 +5,26 @@ import time
 import threading
 import httpx
 from concurrent.futures import ThreadPoolExecutor
+from enum import Enum
 from typing import Dict, Optional, Any
 from backend.config import AlertConfig
+
+
+class ObsEvent(str, Enum):
+    """
+    관측성(Observability) 시스템 전반에서 사용되는 표준 이벤트 이름.
+    자유 형식의 로깅 문자열을 파싱하는 대신, ELK/Datadog 등의 대시보드와 알림 규칙(Rule Engine)이
+    명확한 기준표를 가질 수 있도록 중앙화된 구조를 제공합니다.
+    """
+    FINETUNE_RESERVED_REDIS_KEY_VIOLATION = "reserved_redis_keys_in_extra_fields"
+
+
+class ObsMetaTag(str, Enum):
+    """
+    관측성 시스템 전반에서 사용되는 메타데이터 플래그 모음.
+    네임스페이스(meta_)를 부착하여 비즈니스 데이터와 시스템 제어용 데이터를 분리합니다.
+    """
+    INTENTIONAL_WARNING = "meta_intentional_warning"
 
 
 class DiscordAlertHandler(logging.Handler):

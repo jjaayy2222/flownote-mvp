@@ -26,6 +26,7 @@ class AgentState(TypedDict):
     # 입력 (필수)
     file_content: str
     file_name: str
+    hashed_user_id: NotRequired[str]
 
     # 내부 처리 (선택적)
     extracted_keywords: NotRequired[List[str]]

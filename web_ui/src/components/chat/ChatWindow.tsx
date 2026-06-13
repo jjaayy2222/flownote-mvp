@@ -4,13 +4,69 @@ import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import { useChat } from '@ai-sdk/react';
 import type { UIMessage } from 'ai';
 import { DefaultChatTransport } from 'ai';
-import { CHAT_CONFIG, STORAGE_KEYS, UI_CONFIG } from '@/lib/constants';
+import { CHAT_CONFIG, STORAGE_KEYS, UI_CONFIG, FEATURE_FLAGS } from '@/lib/constants';
+import { useStreamingChat } from '@/hooks/useStreamingChat';
+import type { StreamChatRequest } from '@/lib/stream-client';
 import { MessageBubble } from './MessageBubble';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Send, Loader2, ChevronDown } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import { REMARK_PLUGINS, REHYPE_PLUGINS, useMarkdownComponents } from './markdown-components';
+import { stabilizeIncompleteMarkdown } from '@/lib/markdown';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { toast } from 'sonner';
+
+/**
+ * 공용 에러 배너 컴포넌트
+ */
+function ErrorBanner({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  return (
+    <div
+      className="p-4 mb-4 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 flex items-center gap-2 animate-in fade-in slide-in-from-top-2"
+    >
+      <span className="font-bold">Error:</span>
+      <span>{message}</span>
+      {onRetry && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onRetry}
+          className="ml-auto h-6 text-[10px] hover:bg-red-100"
+        >
+          재시도
+        </Button>
+      )}
+    </div>
+  );
+}
+
+const TYPING_ANIMATION_DELAYS = ['[animation-delay:-0.3s]', '[animation-delay:-0.15s]', ''];
+
+/**
+ * 스트리밍 대기 시 보여지는 타이핑 인디케이터
+ */
+function TypingIndicator({ className = '' }: { className?: string }) {
+  return (
+    <div className={`flex justify-start px-1 py-2 ${className}`}>
+      <div 
+        className="max-w-[80%] rounded-2xl rounded-tl-sm bg-slate-50 border border-slate-100 px-4 py-4 flex items-center gap-1.5"
+        role="status"
+        aria-live="polite"
+      >
+        {TYPING_ANIMATION_DELAYS.map((delayClass, index) => (
+          <div 
+            key={index}
+            className={`w-2 h-2 bg-slate-400 rounded-full animate-bounce ${delayClass}`} 
+            aria-hidden="true" 
+          />
+        ))}
+        <span className="sr-only">응답 작성 중...</span>
+      </div>
+    </div>
+  );
+}
 
 /** 초기 환영 메시지 */
 const WELCOME_MESSAGE: UIMessage = {
@@ -184,6 +240,52 @@ export function ChatWindow({
 
   const { messages, sendMessage, status, setMessages, error } = useChat(chatOptions);
 
+  // =========================================================================
+  // [스트리밍 훅] 플래그 활성화 시 useStreamingChat 사용
+  // 기존 useChat 방식과 공존하며, 플래그 토글로 즉시 전환 가능합니다.
+  // =========================================================================
+
+  // [DRY] 플래그를 한 번만 참조하여 컴포넌트 전체에서 사용
+  const isStreamingMode = FEATURE_FLAGS.USE_STREAMING;
+
+  const {
+    tokens: streamTokens,
+    isStreaming,
+    sources: streamSources,
+    error: streamError,
+    startStream,
+    cancelStream,
+  } = useStreamingChat({
+    onError: (err, raw) => {
+      // [보안] 운영 환경에서는 원본 raw 에러 객체를 콘솔에 노출하지 않습니다.
+      // 내부 스택 트레이스나 서버 세부정보 노출 위험이 있으므로, 개발 환경에서만 로깅합니다.
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('[ChatWindow] Stream error (dev only):', raw);
+      }
+      toast.error('스트리밍 중 오류가 발생했습니다.', {
+        description: err.message,
+      });
+    },
+    onFinish: (content) => {
+      // 스트리밍이 끝나면 영구적인 messages 배열에 추가하여 
+      // 리렌더링이나 히스토리에서 일관되게 보이도록 합니다.
+      if (!content) return;
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: generateId('ast'),
+          role: 'assistant',
+          parts: [{ type: 'text', text: content }],
+        },
+      ]);
+    },
+  });
+
+  // 클릭 핸들러가 없을 때 `useMarkdownComponents`가 비인터랙티브한 citation 배지를
+  // 렌더링할 수 있도록, 명시적으로 `undefined`를 넘겨줍니다.
+  // isStreaming=true 동안은 plain <pre> 렌더링으로 미완성 코드 펜스 레이아웃 깨짐 방지
+  const markdownComponents = useMarkdownComponents(streamSources, undefined, isStreaming);
+
   useEffect(() => {
     if (!sessionId) return;
     let ignore = false;
@@ -262,7 +364,10 @@ export function ChatWindow({
     }
   };
 
-  const isLoading = status === 'streaming' || status === 'submitted';
+  // 플래그에 따라 로딩 상태를 통합 (기존 useChat 방식 또는 스트리밍 방식)
+  const isLoading = isStreamingMode
+    ? isStreaming
+    : status === 'streaming' || status === 'submitted';
 
   useEffect(() => {
     if (autoScrollEnabled) {
@@ -276,9 +381,24 @@ export function ChatWindow({
     e?.preventDefault();
     const trimmed = input.trim();
     if (!trimmed || isLoading) return;
-    sendMessage({ role: 'user', parts: [{ type: 'text', text: trimmed }] });
+
+    if (isStreamingMode) {
+      // 스트리밍 훅 방식: useStreamingChat.startStream() 호출
+      const payload: StreamChatRequest = {
+        query: trimmed,
+        user_id: userId || CHAT_CONFIG.DEFAULT_USER_ID || '',
+        session_id: sessionId,
+        k: CHAT_CONFIG.DEFAULT_K,
+        alpha: alpha,
+      };
+      startStream(payload);
+    } else {
+      // 폴백: 기존 useChat 방식
+      sendMessage({ role: 'user', parts: [{ type: 'text', text: trimmed }] });
+    }
+
     setInput('');
-  }, [input, isLoading, sendMessage]);
+  }, [input, isLoading, isStreamingMode, sendMessage, startStream, userId, sessionId, alpha]);
 
   const handleRetry = useCallback(() => {
     if (isLoading) return;
@@ -301,6 +421,9 @@ export function ChatWindow({
       handleSubmit();
     }
   };
+
+  const shouldShowTypingIndicator = isStreamingMode && isStreaming && (streamTokens == null || streamTokens === '');
+  const shouldShowStreamingTokens = isStreamingMode && isStreaming && streamTokens != null && streamTokens !== '';
 
   return (
     <div 
@@ -362,24 +485,51 @@ export function ChatWindow({
                 sessionId={sessionId}
               />
             ))}
-            {error && (
-              <div 
-                role="alert" 
-                aria-live="polite"
-                className="p-4 mb-4 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 flex items-center gap-2 animate-in fade-in slide-in-from-top-2"
-              >
-                <span className="font-bold">Error:</span>
-                <span>{error.message || '메시지 전송 중 오류가 발생했습니다.'}</span>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={handleRetry} 
-                  className="ml-auto h-6 text-[10px] hover:bg-red-100"
-                >
-                  재시도
-                </Button>
+            {/* [스트리밍 모드] 첫 토큰 도착 전 타이핑 인디케이터 */}
+            {shouldShowTypingIndicator && (
+              <TypingIndicator />
+            )}
+
+            {/* [스트리밍 모드] 누적 토큰을 실시간으로 렌더링 */}
+            {shouldShowStreamingTokens && (
+              <div className="flex gap-3 w-full justify-start mb-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                {/* 아바타 */}
+                <Avatar className="w-8 h-8 shrink-0 mt-1 shadow-sm border border-slate-100">
+                  <AvatarFallback className="bg-blue-100 text-blue-700 text-xs font-bold">AI</AvatarFallback>
+                </Avatar>
+
+                <div className="flex flex-col gap-2 max-w-[85%] items-start w-full">
+                  <div
+                    className="px-4 py-3 rounded-2xl text-sm leading-relaxed bg-white text-slate-800 rounded-bl-sm shadow-sm border border-slate-100 w-full"
+                  >
+                    <ReactMarkdown
+                      remarkPlugins={REMARK_PLUGINS}
+                      rehypePlugins={REHYPE_PLUGINS}
+                      components={markdownComponents}
+                    >
+                      {stabilizeIncompleteMarkdown(streamTokens)}
+                    </ReactMarkdown>
+                    {isStreaming && (
+                      <span className="inline-block w-1.5 h-4 bg-slate-400 rounded-sm ml-0.5 animate-pulse align-middle" aria-hidden="true" />
+                    )}
+                  </div>
+                </div>
               </div>
             )}
+
+            {/* 에러 UI: 스크린 리더가 DOM 삽입을 항상 감지할 수 있도록 라이브 리전 컨테이너를 상시 렌더링합니다. */}
+            <div aria-live="assertive" aria-atomic="true">
+              {isStreamingMode ? (
+                streamError && <ErrorBanner message={streamError.message} />
+              ) : (
+                error && (
+                  <ErrorBanner
+                    message={error.message || '메시지 전송 중 오류가 발생했습니다.'}
+                    onRetry={handleRetry}
+                  />
+                )
+              )}
+            </div>
             <div className="h-4" />
           </div>
         </ScrollArea>
@@ -418,15 +568,27 @@ export function ChatWindow({
               rows={1}
               disabled={isLoading}
             />
-            <Button
-              type="submit"
-              size="icon"
-              aria-label="메시지 전송"
-              disabled={!input.trim() || isLoading}
-              className="absolute right-3 bottom-3 h-8 w-8 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white transition-opacity disabled:opacity-50"
-            >
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 ml-0.5" />}
-            </Button>
+            {isStreamingMode && isStreaming ? (
+              <Button
+                type="button"
+                size="icon"
+                aria-label="응답 중지"
+                onClick={cancelStream}
+                className="absolute right-3 bottom-3 h-8 w-8 rounded-lg bg-red-500 hover:bg-red-600 text-white transition-colors flex items-center justify-center shadow-md animate-in zoom-in-50 duration-200"
+              >
+                <div className="w-2.5 h-2.5 bg-white rounded-[2px]" />
+              </Button>
+            ) : (
+              <Button
+                type="submit"
+                size="icon"
+                aria-label="메시지 전송"
+                disabled={!input.trim() || isLoading}
+                className="absolute right-3 bottom-3 h-8 w-8 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white transition-opacity disabled:opacity-50"
+              >
+                {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 ml-0.5" />}
+              </Button>
+            )}
           </div>
         </form>
       </div>

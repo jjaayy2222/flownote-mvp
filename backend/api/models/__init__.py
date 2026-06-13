@@ -7,7 +7,7 @@ API Models Package
 from enum import Enum
 from functools import lru_cache
 from typing import cast, Iterable, List, Dict, Any, Optional
-from pydantic import BaseModel, Field  # type: ignore[import]
+from pydantic import BaseModel, Field, field_validator  # type: ignore[import]
 
 from backend.api.models.shared import (  # type: ignore[import]
     ApiStatus,
@@ -111,7 +111,7 @@ class PARACategory(str, Enum):
 # `list[property] is not assignable to list[str]` Type Error (False Positive)를 우회하기 위한 조치.
 # (유사 이슈: https://github.com/facebook/pyre-check/issues/224). 
 # list(PARACategory)에 명시적인 Iterable 캐스팅을 적용합니다.
-PARA_CATEGORIES: List[str] = [str(cat.value) for cat in cast(Iterable[PARACategory], list(PARACategory))]
+PARA_CATEGORIES: List[str] = [cat.value for cat in cast(Iterable[PARACategory], list(PARACategory))]
 
 
 class HybridSearchRequest(BaseModel):
@@ -213,6 +213,14 @@ class ChatQueryRequest(BaseModel):
         default=0.5, ge=0.0, le=1.0, description="하이브리드 검색 FAISS 가중치"
     )
 
+    @field_validator("query")
+    @classmethod
+    def validate_query(cls, v: str) -> str:
+        stripped = v.strip() if v else ""
+        if not stripped:
+            raise ValueError("`query`는 비어 있을 수 없습니다.")
+        return stripped
+
 
 class ChatMessage(BaseModel):
     """채팅 메시지 개별 항목 모델"""
@@ -298,6 +306,24 @@ class FeedbackDetail(BaseModel):
     rating: FeedbackRating = Field(..., description=FEEDBACK_RATING_DESC)
     text: Optional[str] = Field(None, description="사용자가 남긴 상세 코멘트")
     timestamp: str = Field(..., description="피드백 남긴 일시 (ISO 8601)")
+
+
+class ModelPerformanceComparison(BaseModel):
+    """이전 모델과 현행 모델 간의 성능 비교 분석 결과"""
+    status: ApiStatus = Field(..., description=API_STATUS_DESC)
+    previous_model_id: Optional[str] = Field(None, description="이전 모델 ID")
+    current_model_id: Optional[str] = Field(None, description="현재 활성 모델 ID")
+    deployed_at: Optional[str] = Field(None, description="현재 모델 배포(Hot-swap) 일시")
+    
+    previous_up: int = Field(0, description="이전 모델 긍정 피드백 수")
+    previous_down: int = Field(0, description="이전 모델 부정 피드백 수")
+    previous_score: float = Field(0.0, description="이전 모델 User Rating 점수 (0~100)")
+    
+    current_up: int = Field(0, description="현재 모델 긍정 피드백 수")
+    current_down: int = Field(0, description="현재 모델 부정 피드백 수")
+    current_score: float = Field(0.0, description="현재 모델 User Rating 점수 (0~100)")
+    
+    score_improvement: float = Field(0.0, description="점수 증감 (current - previous)")
 
 
 class FeedbackStatsResponse(BaseModel):
