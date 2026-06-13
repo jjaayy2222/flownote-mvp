@@ -712,7 +712,7 @@ streamlit run app.py
 
 ## 1️⃣3️⃣ 프로젝트의 진화 (Evolution: v9.0 진행 중)
 
-MVP 이후 FlowNote는 단순 분류를 넘어 **자가 적응형 지능(Adaptive Intelligence)**으로 진화하고 있습니다.
+MVP 이후 FlowNote는 단순 분류를 넘어 **자가 적응 지능(Adaptive Intelligence)**으로 진화하고 있습니다.
 
 ### 🧠 진화의 핵심 단계
 - **v5.0 - v7.0**: MCP 서버 도입, Obsidian 실시간 동기화, 하이브리드 RAG 검색 엔진(FAISS+BM25) 및 AI 어시스턴트 구축.

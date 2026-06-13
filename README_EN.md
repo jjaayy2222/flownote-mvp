@@ -191,7 +191,7 @@
 ### 2.15 🧠 **Adaptive Intelligence** (v9.0) ✨
 - **Adaptive Fine-tuning**: Autonomous model training loop with automated data purification and hot-swap integration
 - **Personalized RAG**: Customized search quality reflecting individual user context and preferences
-- **GraphRAG & Knowledge Map**: Hybrid reasoning combining Vector RAG with explicit knowledge edges, and `react-force-graph` based visualization
+- **GraphRAG & Knowledge Map**: Hybrid reasoning combining Vector RAG with explicit knowledge edges, and `react-force-graph`-based visualization
 
 ---
 
@@ -635,7 +635,7 @@ python -m backend.cli classify "path/to/file.txt" [user_id]
   - [x] SSE streaming implementation to resolve LLM latency
 - [x] **Phase 4: Knowledge Graph (GraphRAG)** ✨
   - [x] Auto entity/edge extraction (Wiki links and tags)
-  - [x] `react-force-graph` based frontend knowledge map visualization
+  - [x] `react-force-graph`-based frontend knowledge map visualization
   - [x] Celery-based vector similarity recommendations for Orphan Notes
 
 ### 🚧 Planned (v9.0+)
