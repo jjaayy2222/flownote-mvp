@@ -1,6 +1,8 @@
-import pytest
 import uuid
-from typing import List, Dict, Any, Optional, Union, Hashable
+from typing import Any, Dict, Hashable, List, Optional, Union
+
+import pytest
+
 from backend.hybrid_search import HybridSearcher
 
 

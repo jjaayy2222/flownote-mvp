@@ -6,20 +6,20 @@ Automation Manager Service
 """
 
 import json
-from itertools import islice
 import logging
-from pathlib import Path
-from typing import List, Optional, Dict, Any
 from datetime import datetime
+from itertools import islice
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from backend.config import PathConfig
 from backend.models.automation import (
+    ArchivingRecord,
     AutomationLog,
     AutomationRule,
-    AutomationTaskType,
     AutomationStatus,
+    AutomationTaskType,
     ReclassificationRecord,
-    ArchivingRecord,
 )
 
 logger = logging.getLogger(__name__)

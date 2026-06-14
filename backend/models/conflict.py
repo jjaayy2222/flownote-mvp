@@ -11,13 +11,14 @@ from __future__ import annotations
 - API Models: DetectConflictRequest, ResolveConflictRequest, etc.
 """
 
-from pydantic import BaseModel, Field, ConfigDict
-from enum import Enum
-from typing import List, Optional, Dict, Any
 from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
-from .external_sync import ExternalToolType
 
+from pydantic import BaseModel, ConfigDict, Field
+
+from .external_sync import ExternalToolType
 
 # ==========================================
 # Enums

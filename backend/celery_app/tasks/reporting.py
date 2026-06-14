@@ -1,27 +1,23 @@
 # backend/celery_app/tasks/reporting.py
 
-import json
-import uuid
-import logging
 import hashlib
+import json
+import logging
+import uuid
 from datetime import datetime, timedelta
-from typing import List, Dict, Any
 from pathlib import Path
+from typing import Any, Dict, List
 
 from backend.celery_app.celery import app
-from backend.models.automation import (
-    AutomationLog,
-    AutomationTaskType,
-    AutomationStatus,
-    ReclassificationRecord,
-    ArchivingRecord,
-)
-from backend.models.report import (
-    Report,
-    ReportType,
-    ReportMetric,
-)
 from backend.config import PathConfig
+from backend.models.automation import (
+    ArchivingRecord,
+    AutomationLog,
+    AutomationStatus,
+    AutomationTaskType,
+    ReclassificationRecord,
+)
+from backend.models.report import Report, ReportMetric, ReportType
 from backend.services.file_access_logger import FileAccessLogger
 
 logger = logging.getLogger(__name__)

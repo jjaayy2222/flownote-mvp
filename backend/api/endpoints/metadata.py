@@ -3,6 +3,7 @@
 """Metadata Endpoint"""
 
 from fastapi import APIRouter, Depends
+
 from ...api.deps import get_locale
 from ...api.models import MetadataResponse
 from ...services.i18n_service import get_message

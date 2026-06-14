@@ -5,19 +5,19 @@ Obsidian Sync Server
 Watchdog을 사용하여 로컬 Obsidian Vault의 변경 사항을 감지하고 동기화합니다.
 """
 
-import logging
 import asyncio
+import logging
 from pathlib import Path
-from typing import Optional, List, Callable
+from typing import Callable, List, Optional
 
 import aiofiles
-from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
 from backend.config.mcp_config import ObsidianConfig
-from backend.services.sync_service import SyncServiceBase
-from backend.models.external_sync import ExternalToolConnection, ExternalToolType
 from backend.models.conflict import SyncConflict
+from backend.models.external_sync import ExternalToolConnection, ExternalToolType
+from backend.services.sync_service import SyncServiceBase
 
 logger = logging.getLogger(__name__)
 

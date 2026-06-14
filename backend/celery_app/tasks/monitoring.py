@@ -1,12 +1,11 @@
 # backend/celery_app/tasks/monitoring.py
 
 import asyncio
+import json
 import logging
 import uuid
-import json
 from datetime import datetime
-from datetime import datetime
-from typing import Dict, Any, TypeVar, Awaitable
+from typing import Any, Awaitable, Dict, TypeVar
 
 from backend.celery_app.celery import app
 from backend.config import PathConfig
@@ -14,8 +13,8 @@ from backend.config.mcp_config import mcp_config
 from backend.mcp.obsidian_server import ObsidianSyncService
 from backend.models.automation import (
     AutomationLog,
-    AutomationTaskType,
     AutomationStatus,
+    AutomationTaskType,
 )
 
 logger = logging.getLogger(__name__)

@@ -18,17 +18,10 @@ import logging
 import pickle
 from collections.abc import Mapping
 from pathlib import Path
-from typing import (
-    List,
-    Dict,
-    Optional,
-    Any,
-    Callable,
-    Tuple,
-    TypedDict,
-    Union,
-)
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypedDict, Union
+
 from rank_bm25 import BM25Okapi
+
 from backend.utils import check_metadata_match
 
 logger = logging.getLogger(__name__)

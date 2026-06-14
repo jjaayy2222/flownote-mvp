@@ -3,6 +3,7 @@
 """Dashboard Integration Endpoints"""
 
 from fastapi import APIRouter
+
 from backend.dashboard.dashboard_core import MetadataAggregator
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])

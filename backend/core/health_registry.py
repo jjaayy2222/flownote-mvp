@@ -40,9 +40,9 @@ logger = logging.getLogger(__name__)
 class SubsystemStatus(str, Enum):
     """서브시스템 운영 상태."""
 
-    HEALTHY = "healthy"      # 정상 운영 중
-    DEGRADED = "degraded"    # 설정 오류 등으로 비활성화 (서비스는 유지)
-    FAILED = "failed"        # 런타임 장애 감지 (복구 시도 가능)
+    HEALTHY = "healthy"  # 정상 운영 중
+    DEGRADED = "degraded"  # 설정 오류 등으로 비활성화 (서비스는 유지)
+    FAILED = "failed"  # 런타임 장애 감지 (복구 시도 가능)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -141,13 +141,8 @@ class HealthRegistry:
                 inst = _registry_instance
                 configured_ttl = getattr(inst, "_redis_fallback_ttl_secs", None)
                 configured_redis = getattr(inst, "_redis_url", None)
-                ttl_mismatch = (
-                    redis_fallback_ttl_secs != configured_ttl
-                )
-                redis_mismatch = (
-                    redis_url is not None
-                    and redis_url != configured_redis
-                )
+                ttl_mismatch = redis_fallback_ttl_secs != configured_ttl
+                redis_mismatch = redis_url is not None and redis_url != configured_redis
                 if ttl_mismatch or redis_mismatch:
                     logger.warning(
                         "[HEALTH_REGISTRY] get_instance called with config that "
@@ -387,7 +382,7 @@ class HealthRegistry:
     ) -> bool:
         """
         특정 서브시스템의 상태가 정상(HEALTHY)인지 단일 진실 공급원(SSOT)을 통해 확인한다.
-        
+
         - 라우터 및 애플리케이션 계층에서 서브시스템 가동 여부 판별에 사용 (Fail-fast 연결).
         - 명시적인 DEGRADED 또는 FAILED 상태일 경우 False를 반환한다.
 
@@ -408,14 +403,18 @@ class HealthRegistry:
                 f"[HEALTH_REGISTRY] Unsupported subsystem type: {type(subsystem).__name__}. "
                 "subsystem must be a string or Enum."
             )
-            
-        summary = precomputed_summary if precomputed_summary is not None else self.get_summary()
+
+        summary = (
+            precomputed_summary
+            if precomputed_summary is not None
+            else self.get_summary()
+        )
         status = summary.get(key)
-        
+
         # sourcery skip: assign-if-exp
         if status is None:
             return not strict
-            
+
         return status == SubsystemStatus.HEALTHY.value
 
     def is_healthy(self) -> bool:
@@ -425,9 +424,7 @@ class HealthRegistry:
         /health 컨트롤러에서 HTTP 200 vs 503 분기에 사용.
         """
         summary = self.get_summary()
-        return all(
-            v == SubsystemStatus.HEALTHY.value for v in summary.values()
-        )
+        return all(v == SubsystemStatus.HEALTHY.value for v in summary.values())
 
     def get_http_status_code(self) -> int:
         """

@@ -15,6 +15,7 @@ from backend.utils.common import mask_pii_id
 
 logger = logging.getLogger(__name__)
 
+
 def _is_valid_raw_user_id(raw_id: Any) -> bool:
     """
     원본 user_id가 해싱을 수행할 만큼 유효한 값인지 검증하는 헬퍼 함수입니다.
@@ -22,6 +23,7 @@ def _is_valid_raw_user_id(raw_id: Any) -> bool:
     숫자(예: 0) 등 그 외의 값은 유효한 Falsy/Truthy 값으로 간주하여 True를 반환합니다.
     """
     return raw_id is not None and (not isinstance(raw_id, str) or bool(raw_id.strip()))
+
 
 # PARA 카테고리 좌표 — 레이아웃 안정성을 위해 모듈 수준 상수로 관리
 # 하드코딩으로 보일 수 있으나, 이 값들은 PARA 방법론의 고정 구조를 표현하는
@@ -38,6 +40,7 @@ for cat, pos in _PARA_CATEGORY_POSITIONS.items():
         raise RuntimeError(
             f"지식 그래프 설정 오류: 카테고리 '{cat}'의 좌표('x' 또는 'y')가 누락되었습니다."
         )
+
 
 def build_graph_data() -> GraphDataResponse:
     """
@@ -95,7 +98,9 @@ def build_graph_data() -> GraphDataResponse:
 
         # [PII 보안] user_id가 유효한 값(공백 제외)인 경우에만 해싱
         raw_user_id = file.get("user_id")
-        hashed_uid = mask_pii_id(raw_user_id) if _is_valid_raw_user_id(raw_user_id) else None
+        hashed_uid = (
+            mask_pii_id(raw_user_id) if _is_valid_raw_user_id(raw_user_id) else None
+        )
 
         # Deterministic position: 파일 ID 시드를 사용하여 리로드 시에도 레이아웃 안정 보장
         rng = random.Random(file_id)

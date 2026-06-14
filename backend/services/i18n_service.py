@@ -1,7 +1,7 @@
 # backend/services/i18n_service.py
 
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
 
 # Setup logger for i18n debugging
 logger = logging.getLogger(__name__)

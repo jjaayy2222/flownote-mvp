@@ -24,9 +24,9 @@ import os
 import threading
 import uuid
 import xml.etree.ElementTree as ET
-from pathlib import Path
-from typing import Any, Iterator, Generator
 from contextlib import contextmanager
+from pathlib import Path
+from typing import Any, Generator, Iterator
 
 import networkx as nx
 
@@ -91,7 +91,7 @@ class NetworkXGraphRepository(AbstractGraphRepository):
         g = self._graphs.get(hashed_user_id)
         if g is not None:
             return g
-        
+
         with self._meta_lock:
             if hashed_user_id not in self._graphs:
                 self._graphs[hashed_user_id] = nx.DiGraph()
@@ -102,7 +102,7 @@ class NetworkXGraphRepository(AbstractGraphRepository):
         lock = self._locks.get(hashed_user_id)
         if lock is not None:
             return lock
-            
+
         with self._meta_lock:
             if hashed_user_id not in self._locks:
                 self._locks[hashed_user_id] = threading.Lock()
@@ -165,7 +165,9 @@ class NetworkXGraphRepository(AbstractGraphRepository):
         with lock:
             g = self._graphs.get(hashed_user_id)
             # 방어적 복사 — 내부 상태 외부 변경 방지
-            return None if g is None or not g.has_node(node_id) else dict(g.nodes[node_id])
+            return (
+                None if g is None or not g.has_node(node_id) else dict(g.nodes[node_id])
+            )
 
     # ─────────────────────────────────────────────────────────────────────
     # 엣지 뮤테이션
@@ -235,7 +237,11 @@ class NetworkXGraphRepository(AbstractGraphRepository):
         lock = self._get_user_lock(hashed_user_id)
         with lock:
             g = self._graphs.get(hashed_user_id)
-            return None if g is None or not g.has_edge(source_id, target_id) else dict(g.edges[source_id, target_id])
+            return (
+                None
+                if g is None or not g.has_edge(source_id, target_id)
+                else dict(g.edges[source_id, target_id])
+            )
 
     # ─────────────────────────────────────────────────────────────────────
     # 탐색 (Traversal)
@@ -298,9 +304,7 @@ class NetworkXGraphRepository(AbstractGraphRepository):
             g = self._graphs.get(hashed_user_id)
             return g.number_of_nodes() if g is not None else 0
 
-    def iter_nodes(
-        self, hashed_user_id: str
-    ) -> Iterator[tuple[str, dict[str, Any]]]:
+    def iter_nodes(self, hashed_user_id: str) -> Iterator[tuple[str, dict[str, Any]]]:
         """모든 노드를 (node_id, attrs) 튜플로 순회한다."""
         lock = self._get_user_lock(hashed_user_id)
         with lock:
@@ -353,6 +357,7 @@ class NetworkXGraphRepository(AbstractGraphRepository):
             except Exception:
                 # 실패 시 임시 파일 정리 시도
                 import contextlib
+
                 with contextlib.suppress(OSError):
                     tmp_path.unlink(missing_ok=True)
                 logger.exception(
@@ -435,7 +440,9 @@ class NetworkXGraphRepository(AbstractGraphRepository):
             )
 
     @contextmanager
-    def stateless_load(self, hashed_user_id: str) -> Generator["NetworkXGraphRepository", None, None]:
+    def stateless_load(
+        self, hashed_user_id: str
+    ) -> Generator["NetworkXGraphRepository", None, None]:
         """
         일회성 조회를 위해 그래프를 메모리에 로드하고, 블록 종료 시 안전하게 해제하는 컨텍스트 매니저.
         load() 실패 시(예: 파일 손상) 부작용이 발생하지 않도록 is_loaded 상태를 내부에서 관리한다.
@@ -452,5 +459,5 @@ class NetworkXGraphRepository(AbstractGraphRepository):
                 except Exception:
                     logger.exception(
                         "[GRAPH][NX] Failed to clear in-memory graph after stateless load (user_id_prefix=%s).",
-                        hashed_user_id[:8]
+                        hashed_user_id[:8],
                     )

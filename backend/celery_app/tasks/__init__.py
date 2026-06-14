@@ -3,12 +3,6 @@
 # Celery의 autodiscover_tasks는 이 파일을 최초 진입점으로 사용하므로,
 # 여기에 명시적으로 임포트되지 않은 모듈의 태스크는 실행되지 않습니다. (Silent Failure 방지)
 
-from . import (
-    reclassification,
-    archiving,
-    reporting,
-    monitoring,
-    maintenance,
-    classification,  # Added classification task
-    graph,           # Knowledge Graph background tasks
-)
+from . import classification  # Added classification task
+from . import graph  # Knowledge Graph background tasks
+from . import archiving, maintenance, monitoring, reclassification, reporting

@@ -1,9 +1,10 @@
 # scripts/performance_test.py
 
+import argparse
 import asyncio
 import time
-import argparse
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock
+
 from backend.services.classification_service import ClassificationService
 from backend.services.rule_engine import RuleResult
 

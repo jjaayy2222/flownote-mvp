@@ -2,6 +2,7 @@
 
 from enum import Enum
 from typing import Annotated, Literal, Union
+
 from pydantic import BaseModel, Field, field_validator
 
 from backend.utils.common import mask_pii_id
@@ -11,6 +12,7 @@ class StreamChunkType(str, Enum):
     """
     Centralized discriminator values for StreamChunk variants.
     """
+
     TOKEN = "token"
     DONE = "done"
     ERROR = "error"

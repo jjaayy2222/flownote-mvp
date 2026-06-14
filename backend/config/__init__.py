@@ -4,12 +4,13 @@
 FlowNote MVP - 통합 설정 (클래스 기반)
 """
 
-import sys
-from pathlib import Path
-import os
 import logging
+import os
+import sys
 from dataclasses import dataclass
-from typing import TypeVar, Union, Generic, Optional
+from pathlib import Path
+from typing import Generic, Optional, TypeVar, Union
+
 from dotenv import load_dotenv
 
 # 1️⃣ 프로젝트 루트 추가
@@ -248,15 +249,14 @@ class AlertConfig:
     """Discord 및 시스템 알림 설정"""
 
     DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
-    
-    # 동일 에러 재발송 방지 시간 (초)
-    DEFAULT_THROTTLE_SECONDS = 300 # 5분
-    
-    # 심각도별 색상 (Discord Embed용)
-    COLOR_CRITICAL = 0xFF0000 # Red
-    COLOR_WARNING = 0xFFAA00  # Orange
-    COLOR_INFO = 0x00AAFF     # Blue
 
+    # 동일 에러 재발송 방지 시간 (초)
+    DEFAULT_THROTTLE_SECONDS = 300  # 5분
+
+    # 심각도별 색상 (Discord Embed용)
+    COLOR_CRITICAL = 0xFF0000  # Red
+    COLOR_WARNING = 0xFFAA00  # Orange
+    COLOR_INFO = 0x00AAFF  # Blue
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -343,7 +343,6 @@ class PathConfig:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 앱 설정
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 
 
 class AppConfig:

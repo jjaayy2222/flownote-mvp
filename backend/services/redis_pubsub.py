@@ -2,13 +2,13 @@
 
 import asyncio
 import logging
-from typing import Optional, Callable, Awaitable
+from typing import Awaitable, Callable, Optional
+
 import redis.asyncio as redis
-from redis.exceptions import (
-    ConnectionError as RedisConnectionError,
-    TimeoutError as RedisTimeoutError,
-    BusyLoadingError,
-)
+from redis.exceptions import BusyLoadingError
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
+
 from backend.config import RedisConfig
 
 logger = logging.getLogger(__name__)

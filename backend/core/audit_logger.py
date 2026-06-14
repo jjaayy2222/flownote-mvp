@@ -58,7 +58,9 @@ _VALID_BACKENDS = frozenset({"file", "db", "cloudwatch"})
 _DEFAULT_BACKEND = "file"
 
 _raw_backend = os.getenv(_AUDIT_LOG_BACKEND_ENV_KEY, "").strip().lower()
-AUDIT_LOG_BACKEND: str = _raw_backend if _raw_backend in _VALID_BACKENDS else _DEFAULT_BACKEND
+AUDIT_LOG_BACKEND: str = (
+    _raw_backend if _raw_backend in _VALID_BACKENDS else _DEFAULT_BACKEND
+)
 
 if _raw_backend and _raw_backend not in _VALID_BACKENDS:
     logger.warning(
@@ -74,8 +76,7 @@ if _raw_backend and _raw_backend not in _VALID_BACKENDS:
 _AUDIT_LOG_FILE_PATH_ENV_KEY = "AUDIT_LOG_FILE_PATH"
 _DEFAULT_AUDIT_LOG_FILE_PATH = "logs/audit.log"
 AUDIT_LOG_FILE_PATH: str = (
-    os.getenv(_AUDIT_LOG_FILE_PATH_ENV_KEY, "").strip()
-    or _DEFAULT_AUDIT_LOG_FILE_PATH
+    os.getenv(_AUDIT_LOG_FILE_PATH_ENV_KEY, "").strip() or _DEFAULT_AUDIT_LOG_FILE_PATH
 )
 
 # 감사 로그 보관 일수
@@ -86,7 +87,11 @@ _MAX_RETENTION_DAYS = 3650  # 10년 상한
 
 _raw_retention = os.getenv(_AUDIT_LOG_RETENTION_DAYS_ENV_KEY)
 try:
-    _parsed_retention = int(_raw_retention) if _raw_retention is not None else _DEFAULT_AUDIT_LOG_RETENTION_DAYS
+    _parsed_retention = (
+        int(_raw_retention)
+        if _raw_retention is not None
+        else _DEFAULT_AUDIT_LOG_RETENTION_DAYS
+    )
     if not (_MIN_RETENTION_DAYS <= _parsed_retention <= _MAX_RETENTION_DAYS):
         logger.warning(
             "[OBS][AUDIT][CONFIG] '%s'=%d is outside safe range [%d, %d]. "
@@ -119,9 +124,13 @@ _MAX_MASKED_UID_PREFIX_LEN = 16
 _raw_prefix_len = os.getenv(_MASKED_UID_PREFIX_LEN_ENV_KEY)
 try:
     _parsed_prefix_len = (
-        int(_raw_prefix_len) if _raw_prefix_len is not None else _DEFAULT_MASKED_UID_PREFIX_LEN
+        int(_raw_prefix_len)
+        if _raw_prefix_len is not None
+        else _DEFAULT_MASKED_UID_PREFIX_LEN
     )
-    if not (_MIN_MASKED_UID_PREFIX_LEN <= _parsed_prefix_len <= _MAX_MASKED_UID_PREFIX_LEN):
+    if not (
+        _MIN_MASKED_UID_PREFIX_LEN <= _parsed_prefix_len <= _MAX_MASKED_UID_PREFIX_LEN
+    ):
         logger.warning(
             "[OBS][AUDIT][CONFIG] '%s'=%d is outside safe range [%d, %d]. "
             "Falling back to default %d.",
@@ -148,6 +157,7 @@ MASKED_UID_PREFIX_LEN: int = _parsed_prefix_len
 # =============================================================================
 # 커스텀 예외 (Custom Exceptions)
 # =============================================================================
+
 
 class AuditConfigError(RuntimeError):
     """
@@ -192,15 +202,19 @@ def get_masked_uid_prefix_len() -> int:
 # 감사 이벤트 타입
 # =============================================================================
 
+
 class AuditEventType(str, Enum):
     """
     감사 로그에 기록되는 이벤트 유형.
     향후 이벤트 추가 시 이 Enum에만 정의하여 하드코딩 방지.
     """
+
     DATA_DELETE_REQUESTED = "DATA_DELETE_REQUESTED"
     DATA_DELETE_SUCCESS = "DATA_DELETE_SUCCESS"
     DATA_DELETE_FAILURE = "DATA_DELETE_FAILURE"
-    DATA_ANONYMIZE_STARTED = "DATA_ANONYMIZE_STARTED"   # 익명화 파이프라인 시작 (결과 미확정)
+    DATA_ANONYMIZE_STARTED = (
+        "DATA_ANONYMIZE_STARTED"  # 익명화 파이프라인 시작 (결과 미확정)
+    )
     DATA_ANONYMIZE_SUCCESS = "DATA_ANONYMIZE_SUCCESS"
     DATA_ANONYMIZE_FAILURE = "DATA_ANONYMIZE_FAILURE"
     AUDIT_LOG_CLEANUP = "AUDIT_LOG_CLEANUP"
@@ -210,6 +224,7 @@ class AuditEventType(str, Enum):
 # =============================================================================
 # PII 마스킹 헬퍼
 # =============================================================================
+
 
 def mask_uid(hashed_user_id: str) -> str:
     """
@@ -228,13 +243,14 @@ def mask_uid(hashed_user_id: str) -> str:
     """
     if not hashed_user_id:
         return "****"
-    prefix = hashed_user_id[:get_masked_uid_prefix_len()]
+    prefix = hashed_user_id[: get_masked_uid_prefix_len()]
     return f"{prefix}****"
 
 
 # =============================================================================
 # 구조화 감사 로그 포맷터
 # =============================================================================
+
 
 def _build_audit_record(
     event_type: AuditEventType,
@@ -337,6 +353,7 @@ def _write_to_file(record: dict[str, Any]) -> None:
 # 감사 로그 보관 정책 — 스케줄러 트리거 인터페이스
 # =============================================================================
 
+
 def get_audit_log_cutoff_datetime() -> datetime:
     """
     현재 시각을 기준으로 감사 로그 보관 만료 기준 시각을 반환합니다.
@@ -345,7 +362,9 @@ def get_audit_log_cutoff_datetime() -> datetime:
     Returns:
         보관 만료 기준 datetime (UTC).
     """
-    return datetime.now(tz=timezone.utc) - timedelta(days=get_audit_log_retention_days())
+    return datetime.now(tz=timezone.utc) - timedelta(
+        days=get_audit_log_retention_days()
+    )
 
 
 def schedule_audit_log_cleanup() -> None:

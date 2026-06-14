@@ -8,23 +8,23 @@ Celery 작업 단위 테스트
 - 모니터링 작업 (Monitoring)
 """
 
-import pytest
 import json
 import uuid
-from pathlib import Path
 from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, MagicMock
+from pathlib import Path
 from typing import List
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 from backend.models.automation import (
-    AutomationLog,
-    AutomationTaskType,
-    AutomationStatus,
-    ReclassificationRecord,
     ArchivingRecord,
+    AutomationLog,
+    AutomationStatus,
+    AutomationTaskType,
+    ReclassificationRecord,
 )
-from backend.models.report import Report, ReportType, ReportMetric
-
+from backend.models.report import Report, ReportMetric, ReportType
 
 # ============================================================================
 # Fixtures

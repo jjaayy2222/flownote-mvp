@@ -113,7 +113,10 @@ class TestGraphEngineConfigBootDefault:
         assert cfg.max_graph_nodes == DEFAULT_MAX_GRAPH_NODES
         assert cfg.db_url == DEFAULT_DB_URL
         assert cfg.migration_node_threshold == DEFAULT_MIGRATION_NODE_THRESHOLD
-        assert cfg.migration_concurrency_threshold == DEFAULT_MIGRATION_CONCURRENCY_THRESHOLD
+        assert (
+            cfg.migration_concurrency_threshold
+            == DEFAULT_MIGRATION_CONCURRENCY_THRESHOLD
+        )
 
     def test_graph_engine_subsystem_is_ok_with_defaults(self) -> None:
         """기본값 기동 시 GRAPH_ENGINE 서브시스템은 정상(ok=True) 상태여야 한다."""
@@ -130,9 +133,9 @@ class TestGraphEngineConfigBootDefault:
 
         assert cfg.subsystem_ok[Subsystem.GRAPH_ENGINE] is True
         # INFO 로그에 ENV key 이름이 포함되어야 함 (URL 값 자체는 절대 금지)
-        assert any(ENV_DB_URL in record.message for record in caplog.records), (
-            f"GRAPH_DB_URL 미설정 시 '{ENV_DB_URL}'가 포함된 INFO 로그가 없습니다."
-        )
+        assert any(
+            ENV_DB_URL in record.message for record in caplog.records
+        ), f"GRAPH_DB_URL 미설정 시 '{ENV_DB_URL}'가 포함된 INFO 로그가 없습니다."
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -143,12 +146,15 @@ class TestGraphEngineConfigBootDefault:
 class TestGraphEngineConfigFailFast:
     """비정수 파싱 실패 시 서버 전체가 죽지 않고 DEGRADED로 격하되는지 검증."""
 
-    @pytest.mark.parametrize("broken_env_key", [
-        ENV_MAX_TRAVERSAL_DEPTH,
-        ENV_MAX_GRAPH_NODES,
-        ENV_MIGRATION_NODE_THRESHOLD,
-        ENV_MIGRATION_CONCURRENCY_THRESHOLD,
-    ])
+    @pytest.mark.parametrize(
+        "broken_env_key",
+        [
+            ENV_MAX_TRAVERSAL_DEPTH,
+            ENV_MAX_GRAPH_NODES,
+            ENV_MIGRATION_NODE_THRESHOLD,
+            ENV_MIGRATION_CONCURRENCY_THRESHOLD,
+        ],
+    )
     def test_invalid_int_degrades_subsystem_not_crash(
         self,
         broken_env_key: str,
@@ -163,15 +169,15 @@ class TestGraphEngineConfigFailFast:
             cfg = GraphEngineConfig.from_env()
 
         # 서브시스템 비활성화 (DEGRADED) 확인
-        assert cfg.subsystem_ok[Subsystem.GRAPH_ENGINE] is False, (
-            f"[{broken_env_key}] 비정수 값에도 서브시스템이 DEGRADED되지 않았습니다."
-        )
+        assert (
+            cfg.subsystem_ok[Subsystem.GRAPH_ENGINE] is False
+        ), f"[{broken_env_key}] 비정수 값에도 서브시스템이 DEGRADED되지 않았습니다."
 
         # SUBSYSTEM HARD FAILURE ERROR 로그가 출력되어야 함
         error_records = [r for r in caplog.records if r.levelno == logging.ERROR]
-        assert error_records, (
-            f"[{broken_env_key}] 비정수 파싱 실패 시 ERROR 로그가 출력되지 않았습니다."
-        )
+        assert (
+            error_records
+        ), f"[{broken_env_key}] 비정수 파싱 실패 시 ERROR 로그가 출력되지 않았습니다."
 
     def test_invalid_int_does_not_raise_system_exit(
         self,
@@ -315,7 +321,8 @@ class TestGraphEngineConfigClamping:
 
         # then 3: WARNING 로그가 남았고, 환경 변수 이름이 포함되어 있는지
         warning_records = [
-            r for r in caplog.records
+            r
+            for r in caplog.records
             if r.levelno == logging.WARNING and env_key in r.getMessage()
         ]
         assert warning_records, (
@@ -363,7 +370,9 @@ class TestHealthRegistryIntegration:
         self, isolated_registry: HealthRegistry
     ) -> None:
         """미등록 서브시스템은 strict=True 시 False를 반환해야 한다."""
-        assert isolated_registry.is_ok("non_existent_subsystem_xyz", strict=True) is False
+        assert (
+            isolated_registry.is_ok("non_existent_subsystem_xyz", strict=True) is False
+        )
 
     def test_is_ok_accepts_string_key_directly(
         self, isolated_registry: HealthRegistry
@@ -400,10 +409,13 @@ class TestHealthRegistryIntegration:
 
         # 이후 상태가 바뀌어도 snapshot 기준으로 판정되어야 함
         isolated_registry.report(Subsystem.GRAPH_ENGINE.value, SubsystemStatus.DEGRADED)
-        assert isolated_registry.is_ok(
-            Subsystem.GRAPH_ENGINE,
-            precomputed_summary=snapshot,
-        ) is True  # snapshot은 변경 전이므로 True
+        assert (
+            isolated_registry.is_ok(
+                Subsystem.GRAPH_ENGINE,
+                precomputed_summary=snapshot,
+            )
+            is True
+        )  # snapshot은 변경 전이므로 True
 
 
 # ─────────────────────────────────────────────────────────────────────────────

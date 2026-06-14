@@ -13,10 +13,10 @@ Conflict 관련 모델:
 - ConflictResolutionResponse
 """
 
-
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional, Dict, Any
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
 
 # ... (imports)
 

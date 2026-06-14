@@ -4,9 +4,9 @@ CLI Interface for MCP Integration
 """
 
 import asyncio
+import logging
 import sys
 from pathlib import Path
-import logging
 
 # Service imports
 from backend.services.classification_service import ClassificationService

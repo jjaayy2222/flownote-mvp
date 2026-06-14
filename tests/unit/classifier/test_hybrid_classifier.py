@@ -1,10 +1,12 @@
 # tests/unit/classifier/test_hybrid_classifier.py
 
+from unittest.mock import ANY, AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, ANY
+
+from backend.classifier.ai_classifier import AIClassifier
 from backend.classifier.hybrid_classifier import HybridClassifier
 from backend.services.rule_engine import RuleEngine, RuleResult
-from backend.classifier.ai_classifier import AIClassifier
 
 
 @pytest.fixture

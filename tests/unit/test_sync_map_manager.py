@@ -6,13 +6,13 @@ SyncMapManager Unit Tests
 매핑 CRUD 동작 및 Thread Safety를 검증합니다.
 """
 
+from concurrent.futures import ALL_COMPLETED, Future, ThreadPoolExecutor, wait
+from typing import Callable, Dict, List, Set, Tuple
+
 import pytest
-from typing import Callable, Dict, List, Tuple, Set
-from concurrent.futures import ThreadPoolExecutor, wait, ALL_COMPLETED, Future
 
 from backend.mcp.sync_map_manager import SyncMapManager
 from backend.models.external_sync import ExternalToolType
-
 
 # Note: Fixtures는 tests/conftest.py에서 제공됩니다.
 

@@ -6,11 +6,10 @@
 FlowNote MVP - 텍스트 청킹
 """
 
-
 import logging
-from typing import Any, Optional, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
-from langchain_text_splitters import TextSplitter, RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter, TextSplitter
 
 logger = logging.getLogger(__name__)
 

@@ -1,17 +1,31 @@
 # backend/agent/chat/nodes.py
 
-import re
 import logging
 import numbers
+import re
 from collections.abc import Mapping, Sequence
 from itertools import islice
-from typing import Dict, Any, Literal, cast, List, TypedDict, Optional
-from langchain_core.messages import AIMessage, SystemMessage, BaseMessage  # type: ignore[import, import-untyped, reportMissingImports]
+from typing import Any, Dict, List, Literal, Optional, TypedDict, cast
 
-from backend.agent.chat.state import AgentState  # type: ignore[import, import-untyped, reportMissingImports]
-from backend.agent.chat.tools import search_documents_tool, deep_web_search_tool  # type: ignore[import, import-untyped, reportMissingImports]
-from backend.services.chat_service import get_chat_service  # type: ignore[import, import-untyped, reportMissingImports]
-from backend.api.models.shared import RATING_DOWN  # type: ignore[import, import-untyped, reportMissingImports]
+from langchain_core.messages import (  # type: ignore[import, import-untyped, reportMissingImports]
+    AIMessage,
+    BaseMessage,
+    SystemMessage,
+)
+
+from backend.agent.chat.state import (
+    AgentState,
+)  # type: ignore[import, import-untyped, reportMissingImports]
+from backend.agent.chat.tools import (  # type: ignore[import, import-untyped, reportMissingImports]
+    deep_web_search_tool,
+    search_documents_tool,
+)
+from backend.api.models.shared import (
+    RATING_DOWN,
+)  # type: ignore[import, import-untyped, reportMissingImports]
+from backend.services.chat_service import (
+    get_chat_service,
+)  # type: ignore[import, import-untyped, reportMissingImports]
 
 logger = logging.getLogger(__name__)
 
@@ -65,11 +79,12 @@ _EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 # - 의도적 제외: 6자리 이하의 단순 숫자 시퀀스(ID, 순번 등)는 마스킹하지 않음.
 # - 의도적 제외: E.164 표준(\`_E164_MAX_DIGITS\`자)을 초과하는 \`_E164_MAX_DIGITS + 1\`자리 이상의 연속 숫자는 엄격히 제외.
 
+
 def _build_e164_exclusion_lookahead(max_digits: int) -> str:
     """
-    데이터 ID, 타임스탬프 등 전화번호 표준(E.164)을 초과하는 
+    데이터 ID, 타임스탬프 등 전화번호 표준(E.164)을 초과하는
     긴 숫자 시퀀스를 제외하기 위한 부정 룩어헤드 패턴을 생성합니다.
-    
+
     Args:
         max_digits: 허용되는 최대 숫자 자릿수. (정수 계열 타입)
 
@@ -82,9 +97,11 @@ def _build_e164_exclusion_lookahead(max_digits: int) -> str:
         raise TypeError(
             f"max_digits must be an integral type (excluding bool), but got {type(max_digits).__name__}: {max_digits}"
         )
-    
+
     if max_digits <= 0:
-        raise ValueError(f"max_digits must be a positive integer, but got: {max_digits}")
+        raise ValueError(
+            f"max_digits must be a positive integer, but got: {max_digits}"
+        )
     return rf"""
     (?!                                         # [Negative Lookahead]
         (?:\D?\d){{{max_digits + 1},}}            # (구분자?\d) 패턴이 상한({max_digits}+1) 이상 반복 검사
@@ -92,7 +109,8 @@ def _build_e164_exclusion_lookahead(max_digits: int) -> str:
     )
     """
 
-# [Negative Lookahead 패턴] 
+
+# [Negative Lookahead 패턴]
 _E164_EXCLUSION_LOOKAHEAD = _build_e164_exclusion_lookahead(_E164_MAX_DIGITS)
 
 _PHONE_PATTERN = re.compile(
@@ -127,7 +145,7 @@ class PlannerResult(TypedDict):
 def _ensure_str(val: Any) -> str:
     """
     런타임 타입 누수를 방지하기 위한 강제 문자열 변환 헬퍼 (IDE 정적 분석 경고 우회)
-    정적 타입 체커가 이미 str로 인식하더라도, 런타임에 딕셔너리에서 예기치 않은 타입이 
+    정적 타입 체커가 이미 str로 인식하더라도, 런타임에 딕셔너리에서 예기치 않은 타입이
     조회될 가능성을 차단합니다.
     """
     return val if isinstance(val, str) else str(val)
@@ -226,7 +244,9 @@ def _sanitize_pii_in_text(text: str) -> str:
     return sanitized
 
 
-def _safe_truncate_error_msg(e: Exception, max_chars: int = _MAX_ERROR_MSG_CHARS) -> str:
+def _safe_truncate_error_msg(
+    e: Exception, max_chars: int = _MAX_ERROR_MSG_CHARS
+) -> str:
     """
     Exception 객체의 PII 유출을 방지하기 위해 마스킹 처리 후 앞부분만 안전하게 잘라 반환합니다.
     """
@@ -240,7 +260,7 @@ async def _process_single_tool_call(
     search_tool: Any,
     expected_tool_name: str,
     ctx_parts: List[str],
-    source_documents: List[dict]
+    source_documents: List[dict],
 ) -> None:
     """단일 도구 호출을 처리하고 결과를 컨텍스트 및 소스 문서 목록에 추가하는 헬퍼 함수."""
     if not isinstance(tool_call, Mapping):
@@ -248,8 +268,10 @@ async def _process_single_tool_call(
             "[Tool Dispatch] tool_call이 Mapping 타입이 아니므로 무시합니다.",
             extra={
                 "tool_call_type": type(tool_call).__name__,
-                "tool_call_repr": repr(tool_call)[:80],  # 추적을 위한 제한적 식별자 (최대 80자)
-            }
+                "tool_call_repr": repr(tool_call)[
+                    :80
+                ],  # 추적을 위한 제한적 식별자 (최대 80자)
+            },
         )
         return
 
@@ -286,9 +308,9 @@ async def _process_single_tool_call(
         f"[Planner] -> {expected_tool_name} 호출",
         extra={"query_length": len(query_arg)},
     )
-    
+
     tool_res_raw = await search_tool.ainvoke(tool_args)
-    
+
     if isinstance(tool_res_raw, dict):
         tool_res = str(tool_res_raw.get("context", ""))
         docs_chunk = tool_res_raw.get("docs", [])
@@ -297,9 +319,7 @@ async def _process_single_tool_call(
     else:
         tool_res = str(tool_res_raw)
 
-    ctx_parts.append(
-        f"\n[검색 결과 (쿼리 길이: {len(query_arg)}자)]\n{tool_res}\n"
-    )
+    ctx_parts.append(f"\n[검색 결과 (쿼리 길이: {len(query_arg)}자)]\n{tool_res}\n")
 
 
 async def _run_search_agent(
@@ -331,7 +351,11 @@ async def _run_search_agent(
             )
             for tool_call in typed_response.tool_calls:
                 await _process_single_tool_call(
-                    tool_call, search_tool, expected_tool_name, ctx_parts, source_documents
+                    tool_call,
+                    search_tool,
+                    expected_tool_name,
+                    ctx_parts,
+                    source_documents,
                 )
         else:
             logger.info("[Planner] LLM이 도구 없이 자체 판단 가능으로 결론내렸습니다.")
@@ -388,19 +412,21 @@ If you used any document from the context, YOU MUST use inline citations in the 
 def should_fallback(state: AgentState) -> FallbackRoute:
     """
     피드백 기반 Fallback 분기 라우터:
-    엄격한 시간적 윈도우(최근 FALLBACK_WINDOW_SIZE 회 세션) 내에서 
+    엄격한 시간적 윈도우(최근 FALLBACK_WINDOW_SIZE 회 세션) 내에서
     'down'이 기준치(FALLBACK_THRESHOLD) 이상이면 fallback_search, 아니면 standard_rag 반환.
     """
     feedback_history = state.get("feedback_history", [])
-    
+
     # 윈도우 왜곡(Window Distortion) 방지 및 메모리 할당 최적화
     # 전체를 검증 후 자르는 것이 아니라, 최신 N개를 먼저 확보한 뒤 내부에서 타입 가드를 수행합니다.
-    recent_feedbacks = feedback_history[-FALLBACK_WINDOW_SIZE:] if feedback_history else []
-    
+    recent_feedbacks = (
+        feedback_history[-FALLBACK_WINDOW_SIZE:] if feedback_history else []
+    )
+
     negative_count = sum(
         isinstance(f, dict) and f.get("rating") == RATING_DOWN for f in recent_feedbacks
     )
-    
+
     if negative_count >= FALLBACK_THRESHOLD:
         logger.warning(
             "Fallback routing triggered",
@@ -411,18 +437,20 @@ def should_fallback(state: AgentState) -> FallbackRoute:
                 "threshold": FALLBACK_THRESHOLD,
                 "route": ROUTE_FALLBACK_SEARCH,
                 "negative_count": negative_count,
-            }
+            },
         )
         return ROUTE_FALLBACK_SEARCH
-    
+
     return ROUTE_STANDARD_RAG
 
 
-def router_edge(state: AgentState) -> Literal["standard_rag", "fallback_search", "responder"]:
+def router_edge(
+    state: AgentState,
+) -> Literal["standard_rag", "fallback_search", "responder"]:
     """
     조건부 엣지(Conditional Edge):
     가장 마지막 Human 메시지의 의도를 파악하여
-    단순 인사말인 경우 responder로 직행하고, 그렇지 않은 경우 
+    단순 인사말인 경우 responder로 직행하고, 그렇지 않은 경우
     과거 피드백 기록에 따라 standard_rag 또는 fallback_search를 결정합니다.
     """
     messages = state.get("messages", [])
@@ -460,11 +488,15 @@ def router_edge(state: AgentState) -> Literal["standard_rag", "fallback_search",
 
     route = should_fallback(state)
     router_log_extra["target"] = route
-    logger.info(f"[Router] 검색/추론 도구 필요 판단 -> {route} 분기로 전달", extra=router_log_extra)
+    logger.info(
+        f"[Router] 검색/추론 도구 필요 판단 -> {route} 분기로 전달",
+        extra=router_log_extra,
+    )
     return route
 
 
 _USE_STATE_CONTEXT = object()
+
 
 def _resolve_base_context(state: AgentState, override: Any) -> str:
     """
@@ -472,10 +504,10 @@ def _resolve_base_context(state: AgentState, override: Any) -> str:
     """
     if override is _USE_STATE_CONTEXT:
         return _ensure_str(state.get("search_context", "") or "")
-    
+
     if override is None:
         return ""
-        
+
     # [Security/Performance] 복잡한 타입이나 거대한 객체가 그대로 문자열화되어
     # 컨텍스트를 과도하게 차지(Bloat)하거나 PII가 유출되는 것을 제한.
     context_str = str(override)
@@ -489,16 +521,17 @@ def _resolve_base_context(state: AgentState, override: Any) -> str:
                 "original_length": len(context_str),
                 "limit": _MAX_SEARCH_CONTEXT_CHARS,
                 "truncated_length": truncated_length,
-            }
+            },
         )
         context_str = context_str[:safe_slice_len] + _TRUNCATION_SUFFIX
-        
+
     return context_str
+
 
 def _orchestrate_search_flow(
     state: AgentState,
     system_prompt: str,
-    base_context_override: Any = _USE_STATE_CONTEXT
+    base_context_override: Any = _USE_STATE_CONTEXT,
 ) -> tuple[List[BaseMessage], str]:
     """
     공통 검색 오케스트레이션 헬퍼:
@@ -510,8 +543,8 @@ def _orchestrate_search_flow(
         state: AgentState 객체.
         system_prompt: 주입할 시스템 프롬프트.
         base_context_override: 명시적으로 값을 주입할 경우 이 값을 사용하며,
-                               기본값(_USE_STATE_CONTEXT 센티널 객체)인 경우 state 내부의 
-                               'search_context'를 로드합니다. 
+                               기본값(_USE_STATE_CONTEXT 센티널 객체)인 경우 state 내부의
+                               'search_context'를 로드합니다.
                                None은 "컨텍스트 없음"을 의미하며 빈 문자열("")로 취급됩니다.
 
     Returns:
@@ -552,7 +585,9 @@ async def standard_rag_node(state: AgentState) -> PlannerResult:
         system_prompt=system_prompt,
     )
 
-    result = await _run_search_agent(plan_messages, base_context, search_documents_tool, "search_documents_tool")
+    result = await _run_search_agent(
+        plan_messages, base_context, search_documents_tool, "search_documents_tool"
+    )
     return {
         "search_context": result["search_context"],
         "planner_failed": result["planner_failed"],
@@ -584,12 +619,12 @@ async def fallback_search_node(state: AgentState) -> PlannerResult:
 
     # Fallback 플로우에서는 기존 RAG의 search_context가 오염되지 않도록 base_context를 빈 값으로 덮어씌움
     plan_messages, base_context = _orchestrate_search_flow(
-        state=state,
-        system_prompt=system_prompt,
-        base_context_override=""
+        state=state, system_prompt=system_prompt, base_context_override=""
     )
 
-    result = await _run_search_agent(plan_messages, base_context, deep_web_search_tool, "deep_web_search_tool")
+    result = await _run_search_agent(
+        plan_messages, base_context, deep_web_search_tool, "deep_web_search_tool"
+    )
     return {
         "search_context": result["search_context"],
         "planner_failed": result["planner_failed"],

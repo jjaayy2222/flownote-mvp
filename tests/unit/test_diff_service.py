@@ -1,6 +1,7 @@
 # tests/unit/test_diff_service.py
 
 import pytest
+
 from backend.services.diff_service import generate_diff
 
 

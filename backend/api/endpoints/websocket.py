@@ -1,10 +1,12 @@
 # backend/api/endpoints/websocket.py
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
-from backend.api import deps
-from backend.services.websocket_manager import manager
-from backend.services.redis_pubsub import redis_broadcaster
 import logging
+
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+
+from backend.api import deps
+from backend.services.redis_pubsub import redis_broadcaster
+from backend.services.websocket_manager import manager
 
 # 로거 설정
 logger = logging.getLogger(__name__)

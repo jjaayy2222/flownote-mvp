@@ -51,17 +51,13 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from backend.core.audit_logger import (
-    AuditEventType,
-    mask_uid,
-    write_audit_log,
-)
+from backend.core.audit_logger import AuditEventType, mask_uid, write_audit_log
 from backend.core.aws_client_wrapper import fetch_global_pepper
 from backend.services.personalized_index_service import (
     build_index_path,
     delete_index_metadata,
-    should_rebuild_index,
     load_index_metadata,
+    should_rebuild_index,
 )
 
 logger = logging.getLogger(__name__)
@@ -91,7 +87,7 @@ _deletion_batch_counter: int = 0
 # 반복 횟수: NIST 권장 최솟값 이상 강제
 _PBKDF2_ITERATIONS_ENV_KEY = "PBKDF2_ITERATIONS"
 _DEFAULT_PBKDF2_ITERATIONS = 600_000
-_MIN_PBKDF2_ITERATIONS = 100_000   # NIST SP 800-132 최솟값 기준 하한
+_MIN_PBKDF2_ITERATIONS = 100_000  # NIST SP 800-132 최솟값 기준 하한
 _MAX_PBKDF2_ITERATIONS = 10_000_000
 
 # 해시 알고리즘
@@ -174,21 +170,25 @@ def get_vacuum_batch_threshold() -> int:
 # 결과 타입 정의 (Dataclass)
 # =============================================================================
 
+
 @dataclass(frozen=True)
 class DeletionResult(Mapping[str, Any]):
     """
     delete_user_data() 반환값의 타입 계약.
-    frozen=True를 통해 불변성(Immutability)을 보장하며, 
+    frozen=True를 통해 불변성(Immutability)을 보장하며,
     파생 필드(db_deleted)는 @property로 안전하게 제공됩니다.
     """
-    masked_user_id: str        # 마스킹된 UID (masked_uid, 원문 PII 미사용)
-    hashed_user_id: str        # [DEPRECATED] 이전 API 호환성을 위해 유지 (masked_user_id와 동일)
-    db_rows_deleted: int       # DB 레코드 실제 삭제 행 수
-    faiss_file_removed: bool   # FAISS 인덱스 파일 물리 삭제 성공 여부
-    redis_meta_deleted: bool   # Redis 메타데이터 삭제 성공 여부
+
+    masked_user_id: str  # 마스킹된 UID (masked_uid, 원문 PII 미사용)
+    hashed_user_id: (
+        str  # [DEPRECATED] 이전 API 호환성을 위해 유지 (masked_user_id와 동일)
+    )
+    db_rows_deleted: int  # DB 레코드 실제 삭제 행 수
+    faiss_file_removed: bool  # FAISS 인덱스 파일 물리 삭제 성공 여부
+    redis_meta_deleted: bool  # Redis 메타데이터 삭제 성공 여부
     compaction_recommended: bool  # FAISS Compaction 권장 여부
-    vacuum_triggered: bool     # VACUUM 즉시 실행 권장 여부
-    success: bool              # FAISS 파일 + Redis 메타 삭제 전체 성공 여부 (DB 0행은 멱등 성공으로 허용)
+    vacuum_triggered: bool  # VACUUM 즉시 실행 권장 여부
+    success: bool  # FAISS 파일 + Redis 메타 삭제 전체 성공 여부 (DB 0행은 멱등 성공으로 허용)
 
     @property
     def db_deleted(self) -> bool:
@@ -204,7 +204,9 @@ class DeletionResult(Mapping[str, Any]):
     @functools.lru_cache(maxsize=None)
     def _allowed_keys(cls) -> tuple[str, ...]:
         """데이터클래스 필드와 추가 허용 필드(훅)를 결합하여 캐싱합니다."""
-        return tuple(f.name for f in dataclasses.fields(cls)) + cls._extra_allowed_keys()
+        return (
+            tuple(f.name for f in dataclasses.fields(cls)) + cls._extra_allowed_keys()
+        )
 
     @classmethod
     @functools.lru_cache(maxsize=None)
@@ -275,6 +277,7 @@ __all__ = [
 # VACUUM 트리거 판단
 # =============================================================================
 
+
 def _increment_deletion_counter() -> int:
     """
     프로세스 내 누적 삭제 카운터를 1 증가시키고 현재 값을 반환합니다.
@@ -295,6 +298,7 @@ def _increment_deletion_counter() -> int:
 # PBKDF2 익명화 파라미터 런타임 엑세서
 # =============================================================================
 
+
 def get_pbkdf2_iterations() -> int:
     """PBKDF2_ITERATIONS 환경 변수를 파싱하여 반환합니다 (NIST 범위 강제)."""
     raw = os.getenv(_PBKDF2_ITERATIONS_ENV_KEY)
@@ -307,15 +311,20 @@ def get_pbkdf2_iterations() -> int:
             logger.warning(
                 "[OBS][PRIVACY][CONFIG] '%s'=%d is outside NIST range [%d, %d]. "
                 "Falling back to default %d.",
-                _PBKDF2_ITERATIONS_ENV_KEY, value,
-                _MIN_PBKDF2_ITERATIONS, _MAX_PBKDF2_ITERATIONS, default,
+                _PBKDF2_ITERATIONS_ENV_KEY,
+                value,
+                _MIN_PBKDF2_ITERATIONS,
+                _MAX_PBKDF2_ITERATIONS,
+                default,
             )
             return default
         return value
     except (ValueError, TypeError):
         logger.warning(
             "[OBS][PRIVACY][CONFIG] '%s'=%r is not a valid integer. Falling back to default %d.",
-            _PBKDF2_ITERATIONS_ENV_KEY, raw, default,
+            _PBKDF2_ITERATIONS_ENV_KEY,
+            raw,
+            default,
         )
         return default
 
@@ -328,8 +337,10 @@ def _get_pbkdf2_hash_name() -> str:
             logger.warning(
                 "[OBS][PRIVACY][CONFIG] '%s'=%r is not a valid hash name (valid: %s). "
                 "Falling back to default '%s'.",
-                _PBKDF2_HASH_NAME_ENV_KEY, raw,
-                sorted(_VALID_PBKDF2_HASH_NAMES), _DEFAULT_PBKDF2_HASH_NAME,
+                _PBKDF2_HASH_NAME_ENV_KEY,
+                raw,
+                sorted(_VALID_PBKDF2_HASH_NAMES),
+                _DEFAULT_PBKDF2_HASH_NAME,
             )
         return _DEFAULT_PBKDF2_HASH_NAME
     return raw
@@ -347,14 +358,22 @@ def _get_pbkdf2_int_param(
         if not (min_val <= value <= max_val):
             logger.warning(
                 "[OBS][PRIVACY][CONFIG] '%s' (%s)=%d is outside range [%d, %d]. Falling back to %d.",
-                env_key, param_label, value, min_val, max_val, default,
+                env_key,
+                param_label,
+                value,
+                min_val,
+                max_val,
+                default,
             )
             return default
         return value
     except (ValueError, TypeError):
         logger.warning(
             "[OBS][PRIVACY][CONFIG] '%s' (%s)=%r is not a valid integer. Falling back to %d.",
-            env_key, param_label, raw, default,
+            env_key,
+            param_label,
+            raw,
+            default,
         )
         return default
 
@@ -385,6 +404,7 @@ def get_dormant_key_versions() -> list[int]:
 # =============================================================================
 # NIST SP 800-132 런타임 준수 검증
 # =============================================================================
+
 
 def _validate_nist_pbkdf2_params(
     iterations: int,
@@ -434,6 +454,7 @@ def _validate_nist_pbkdf2_params(
 # 익명화 결과 타입 및 키 로테이션 정책
 # =============================================================================
 
+
 class KeyRotationPolicy(str, Enum):
     """
     키 버전 상태 분류.
@@ -441,6 +462,7 @@ class KeyRotationPolicy(str, Enum):
       TRANSITION : N-1 (과도기 — 최대 1년 보관)
       DORMANT    : N-2 이하 (폐기 대상 — 스케줄러가 일괄 삭제)
     """
+
     CURRENT = "current"
     TRANSITION = "transition"
     DORMANT = "dormant"
@@ -452,6 +474,7 @@ class Pbkdf2Config:
     PBKDF2 익명화에 필요한 파라미터를 캡슐화한 불변 설정 객체.
     NIST SP 800-132 검증이 완료된 상태임을 보장합니다.
     """
+
     iterations: int
     hash_name: str
     key_length: int
@@ -465,19 +488,21 @@ class AnonymizationResult:
     anonymize_log_entry() 반환값의 타입 계약.
     모든 필드는 불변이며 PII 원문을 포함하지 않습니다.
     """
-    masked_user_id: str          # 마스킹된 UID (PII 미포함)
-    anonymized_value: str        # hex 인코딩된 PBKDF2 파생 값
-    salt_hex: str                # 검증용 hex 인코딩 솔트 (재연산 불필요 — 감사용)
-    key_version: int             # 사용된 키 버전
+
+    masked_user_id: str  # 마스킹된 UID (PII 미포함)
+    anonymized_value: str  # hex 인코딩된 PBKDF2 파생 값
+    salt_hex: str  # 검증용 hex 인코딩 솔트 (재연산 불필요 — 감사용)
+    key_version: int  # 사용된 키 버전
     key_rotation_policy: KeyRotationPolicy  # 해당 버전의 로테이션 정책
-    iterations: int              # 사용된 반복 횟수 (NIST 준수 감사)
-    hash_name: str               # 사용된 해시 알고리즘
-    success: bool                # 익명화 성공 여부
+    iterations: int  # 사용된 반복 횟수 (NIST 준수 감사)
+    hash_name: str  # 사용된 해시 알고리즘
+    success: bool  # 익명화 성공 여부
 
 
 # =============================================================================
 # 익명화 내부 헬퍼 (순수 함수 — 테스트 용이성 확보)
 # =============================================================================
+
 
 def _load_pbkdf2_config() -> Pbkdf2Config:
     """
@@ -490,12 +515,18 @@ def _load_pbkdf2_config() -> Pbkdf2Config:
     iterations = get_pbkdf2_iterations()
     hash_name = _get_pbkdf2_hash_name()
     key_length = _get_pbkdf2_int_param(
-        _PBKDF2_KEY_LENGTH_ENV_KEY, _DEFAULT_PBKDF2_KEY_LENGTH,
-        _MIN_PBKDF2_KEY_LENGTH, _MAX_PBKDF2_KEY_LENGTH, "key_length",
+        _PBKDF2_KEY_LENGTH_ENV_KEY,
+        _DEFAULT_PBKDF2_KEY_LENGTH,
+        _MIN_PBKDF2_KEY_LENGTH,
+        _MAX_PBKDF2_KEY_LENGTH,
+        "key_length",
     )
     salt_length = _get_pbkdf2_int_param(
-        _PBKDF2_SALT_LENGTH_ENV_KEY, _DEFAULT_PBKDF2_SALT_LENGTH,
-        _MIN_PBKDF2_SALT_LENGTH, _MAX_PBKDF2_SALT_LENGTH, "salt_length",
+        _PBKDF2_SALT_LENGTH_ENV_KEY,
+        _DEFAULT_PBKDF2_SALT_LENGTH,
+        _MIN_PBKDF2_SALT_LENGTH,
+        _MAX_PBKDF2_SALT_LENGTH,
+        "salt_length",
     )
     key_version = get_current_key_version()
 
@@ -511,7 +542,9 @@ def _load_pbkdf2_config() -> Pbkdf2Config:
     )
 
 
-def _compute_rotation_policy(current_version: int, data_version: int) -> KeyRotationPolicy:
+def _compute_rotation_policy(
+    current_version: int, data_version: int
+) -> KeyRotationPolicy:
     """
     현재 시스템 키 버전(current_version)과 데이터의 키 버전(data_version)을 비교하여
     로테이션 상태를 분류합니다.
@@ -560,6 +593,7 @@ def _derive_anonymized_value(
 # =============================================================================
 # 익명화 파이프라인
 # =============================================================================
+
 
 async def anonymize_log_entry(
     hashed_user_id: str,
@@ -623,13 +657,18 @@ async def anonymize_log_entry(
         pepper: str = await fetch_global_pepper()
 
         # ── 순수 PBKDF2 파생 연산 ─────────────────────────────────────────────
-        anonymized_hex, salt_hex = _derive_anonymized_value(log_field_value, pepper, config)
+        anonymized_hex, salt_hex = _derive_anonymized_value(
+            log_field_value, pepper, config
+        )
 
         logger.info(
             "[OBS][PRIVACY] Log field anonymized: masked_uid=%s, key_version=%d, "
             "iterations=%d, hash=%s, rotation_policy=%s",
-            masked, config.key_version, config.iterations,
-            config.hash_name, rotation_policy.value,
+            masked,
+            config.key_version,
+            config.iterations,
+            config.hash_name,
+            rotation_policy.value,
         )
         write_audit_log(
             event_type=AuditEventType.DATA_ANONYMIZE_SUCCESS,
@@ -657,7 +696,9 @@ async def anonymize_log_entry(
     except Exception as e:
         logger.exception(
             "[OBS][PRIVACY] Anonymization failed for masked_uid=%s: error_type=%s, error_msg=%s",
-            masked, type(e).__name__, str(e),
+            masked,
+            type(e).__name__,
+            str(e),
         )
         write_audit_log(
             event_type=AuditEventType.DATA_ANONYMIZE_FAILURE,
@@ -711,6 +752,7 @@ def trigger_vacuum_if_needed(current_count: int) -> bool:
 # FAISS 인덱스 파일 물리 삭제
 # =============================================================================
 
+
 def _remove_faiss_index_file(index_path: Path) -> bool:
     """
     FAISS 서브-인덱스 파일을 물리적으로 삭제합니다.
@@ -746,6 +788,7 @@ def _remove_faiss_index_file(index_path: Path) -> bool:
 # =============================================================================
 # 핵심 삭제 파이프라인
 # =============================================================================
+
 
 async def delete_user_data(
     hashed_user_id: str,
@@ -793,7 +836,7 @@ async def delete_user_data(
         raise ValueError("delete_user_data: 'storage_base_path' must not be empty.")
 
     masked = mask_uid(hashed_user_id)
-    
+
     # 파이프라인 상태 변수 초기화
     db_rows_deleted = 0
     faiss_removed = False

@@ -1,21 +1,22 @@
 # tests/test_classification_flow.py
 
-import pytest
-from fastapi.testclient import TestClient
 import sys
 from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
 
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-# 올바른 경로로 임포트
-from backend.api.routes import router as router
+import json
+import logging
+from datetime import datetime
+
 from backend.api.models import *
 
-
-import logging
-import json
-from datetime import datetime
+# 올바른 경로로 임포트
+from backend.api.routes import router as router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -44,7 +45,13 @@ async def test_1_keyword_classifier():
 
         # category가 반드시 존재하는지 확인
         assert "category" in result, "❌ category 필드 없음!"
-        assert result["category"] in ["Projects", "Areas", "Resources", "Archives", "Inbox"], "❌ 잘못된 카테고리!"
+        assert result["category"] in [
+            "Projects",
+            "Areas",
+            "Resources",
+            "Archives",
+            "Inbox",
+        ], "❌ 잘못된 카테고리!"
 
     print("\n✅ 테스트 1 통과!")
 
@@ -58,8 +65,9 @@ async def test_2_conflict_service():
     print("테스트 2: ConflictService 테스트")
     print("=" * 60)
 
+    from unittest.mock import AsyncMock, patch
+
     from backend.services.conflict_service import ConflictService
-    from unittest.mock import patch, AsyncMock
 
     # Mocking external dependencies
     with patch(
@@ -195,16 +203,14 @@ def test_5_api_endpoint():
     print("  uvicorn backend.main:app --reload --port 8000")
 
     print("\n테스트 curl 명령어:")
-    print(
-        """
+    print("""
 curl -X POST "http://127.0.0.1:8000/classifier/keywords" \\
   -H "Content-Type: application/json" \\
   -d '{"text": "영어 공부하기",
     "user_id": "test_user_3",
     "file_id": "test_file_003"
   }' | jq '.'
-    """
-    )
+    """)
 
     print("\n확인 사항:")
     print("  1. keyword_tags가 비어있지 않은가?")

@@ -1,9 +1,10 @@
 # tests/e2e/test_full_flow.py
 
-import pytest
 import io
 import uuid
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 
 def _perform_onboarding_step1(client, user_name):

@@ -8,12 +8,12 @@ Sync Map Manager (Option 2) for Scalable MCP Integration
 import json
 import logging
 import threading
-from pathlib import Path
-from typing import Dict, Optional, List
 from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional
 
-from backend.models.external_sync import ExternalFileMapping, ExternalToolType
 from backend.config import PathConfig
+from backend.models.external_sync import ExternalFileMapping, ExternalToolType
 
 logger = logging.getLogger(__name__)
 

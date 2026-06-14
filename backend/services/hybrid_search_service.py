@@ -20,7 +20,7 @@
 [설계 노트: 가중치 재정규화 허용치와 정밀도]
   _WEIGHT_SUM_NORMALIZATION_TOLERANCE와 _WEIGHT_NORMALIZATION_PRECISION은
   항상 수학적 일관성을 유지해야 한다.
-  (근거) round(..., p) 2개의 합산 시 최대 오차는 10**(-p) 이며, 
+  (근거) round(..., p) 2개의 합산 시 최대 오차는 10**(-p) 이며,
   재정규화 직후 다시 허용치를 벗어나 무한 진동(oscillation)하는 것을 방지하려면
   TOLERANCE >= 10**(-PRECISION) 이어야 한다.
 """
@@ -32,22 +32,28 @@ import logging
 import re
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from backend.faiss_search import FAISSRetriever
-from backend.bm25_search import BM25Retriever
-from backend.hybrid_search import HybridSearcher, Retriever
-from backend.api.models import PARACategory
-from backend.services.search_cache_service import search_cache_service
-from backend.services import topic_clustering_service  # type: ignore[import]
-from backend.utils.common import mask_pii_id, safe_parse_env_float  # type: ignore[import]
 from fastapi.concurrency import run_in_threadpool
+
+from backend.api.models import PARACategory
+from backend.bm25_search import BM25Retriever
+from backend.faiss_search import FAISSRetriever
+from backend.hybrid_search import HybridSearcher, Retriever
+from backend.services import topic_clustering_service  # type: ignore[import]
+from backend.services.search_cache_service import search_cache_service
+from backend.utils.common import (
+    mask_pii_id,  # type: ignore[import]
+    safe_parse_env_float,
+)
 
 logger = logging.getLogger(__name__)
 
 # [리뷰반영] 하드코딩 제거: 로깅 타임아웃을 환경 변수에서 가져오도록 설정 (기본값 3.0초)
 # [리뷰반영] import 시점 크래시 방지: safe_parse_env_float 헬퍼를 사용하여 비정상 값 방어 및 0.1초 이상 강제
-_LOG_SEARCH_HISTORY_TIMEOUT = safe_parse_env_float("SEARCH_HISTORY_LOG_TIMEOUT", 3.0, min_val=0.1)
+_LOG_SEARCH_HISTORY_TIMEOUT = safe_parse_env_float(
+    "SEARCH_HISTORY_LOG_TIMEOUT", 3.0, min_val=0.1
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -77,7 +83,7 @@ _COLD_START_GLOBAL_WEIGHT = 1.0
 _WEIGHT_SUM_ZERO_EPSILON: float = 1e-9
 
 # ── [그룹 B] 재정규화 허용치 & 반올림 정밀도 ────────────────────────────────
-# 두 상수는 쌍으로 작동하며, 정밀도(PRECISION)에 따른 최대 오차가 허용치(TOLERANCE)를 
+# 두 상수는 쌍으로 작동하며, 정밀도(PRECISION)에 따른 최대 오차가 허용치(TOLERANCE)를
 # 넘지 않도록 런타임에 강제된다 (모듈 레벨 주석의 [설계 노트] 참조).
 _WEIGHT_SUM_NORMALIZATION_TOLERANCE: float = 1e-6
 _WEIGHT_NORMALIZATION_PRECISION: int = 6
@@ -91,7 +97,9 @@ if _MAX_WEIGHT_SUM_ROUNDING_ERROR > _WEIGHT_SUM_NORMALIZATION_TOLERANCE:
     )
 
 
-def _parse_bounded_weight(env_key: str, default: float, min_val: float, max_val: float) -> float:
+def _parse_bounded_weight(
+    env_key: str, default: float, min_val: float, max_val: float
+) -> float:
     """
     가중치 환경 변수를 안전하게 파싱하고 [min_val, max_val] 범위로 Clamp하는 헬퍼.
 
@@ -146,14 +154,20 @@ def _parse_bounded_weight(env_key: str, default: float, min_val: float, max_val:
     if value < min_val:
         logger.warning(
             "[HYBRID_SEARCH] %s=%r 가 최솟값(%r) 미만입니다. %r로 보정합니다.",
-            env_key, value, min_val, min_val,
+            env_key,
+            value,
+            min_val,
+            min_val,
         )
         return min_val
 
     if value > max_val:
         logger.warning(
             "[HYBRID_SEARCH] %s=%r 가 최댓값(%r) 초과입니다. %r로 보정합니다.",
-            env_key, value, max_val, max_val,
+            env_key,
+            value,
+            max_val,
+            max_val,
         )
         return max_val
 
@@ -198,16 +212,21 @@ def _load_index_weights() -> Tuple[float, float]:
     # abs_tol 전용 판단: "1.0 근처에서 절대 오차만으로 판단"
     # rel_tol=0.0 명시로 기본값(1e-9)의 암묵적 적용을 차단 → 주석과 코드 완전 일치
     # (rel_tol=_WEIGHT_SUM_ZERO_EPSILON은 ZeroDivision 가드 전용 개념과 분리)
-    if not math.isclose(total, 1.0, rel_tol=0.0, abs_tol=_WEIGHT_SUM_NORMALIZATION_TOLERANCE):
+    if not math.isclose(
+        total, 1.0, rel_tol=0.0, abs_tol=_WEIGHT_SUM_NORMALIZATION_TOLERANCE
+    ):
         normalized_p = round(personalized / total, _WEIGHT_NORMALIZATION_PRECISION)
         normalized_g = round(global_w / total, _WEIGHT_NORMALIZATION_PRECISION)
         logger.warning(
             "[HYBRID_SEARCH] %s=%.4f + %s=%.4f 의 합계가 1.0이 아닙니다 (합계=%.4f). "
             "재정규화합니다: personalized=%.4f, global=%.4f.",
-            _PERSONALIZED_WEIGHT_ENV_KEY, personalized,
-            _GLOBAL_WEIGHT_ENV_KEY, global_w,
+            _PERSONALIZED_WEIGHT_ENV_KEY,
+            personalized,
+            _GLOBAL_WEIGHT_ENV_KEY,
+            global_w,
             total,
-            normalized_p, normalized_g,
+            normalized_p,
+            normalized_g,
         )
         return normalized_p, normalized_g
 
@@ -359,14 +378,20 @@ def _load_int_env(
     if value < min_v:
         logger.warning(
             "[HYBRID_SEARCH][RRF] %s=%d 가 최솟값(%d) 미만입니다. %d으로 보정합니다.",
-            env_key, value, min_v, min_v,
+            env_key,
+            value,
+            min_v,
+            min_v,
         )
         return min_v
 
     if value > max_v:
         logger.warning(
             "[HYBRID_SEARCH][RRF] %s=%d 가 최댓값(%d) 초과입니다. %d으로 보정합니다.",
-            env_key, value, max_v, max_v,
+            env_key,
+            value,
+            max_v,
+            max_v,
         )
         return max_v
 
@@ -511,6 +536,7 @@ async def _log_search_history_bg(hashed_user_id: str, query: str) -> None:
             hashed_user_id,
             exc_info=True,
         )
+
 
 # [Optimization] 질의 분석용 정규식 패턴 (미리 컴파일하여 부하가 큰 런타임 성능 확보)
 _SEMANTIC_PATTERN = re.compile(
@@ -851,8 +877,12 @@ class HybridSearchService:
         # ── Cold Start 단락(Short-circuit) 경로 ───────────────────────────────
         # personalized_weight == _COLD_START_PERSONALIZED_WEIGHT(0.0) 이면
         # 개인화 인덱스 조회를 아예 건너뛰어 불필요한 I/O를 차단한다.
-        if math.isclose(personalized_weight, _COLD_START_PERSONALIZED_WEIGHT,
-                        rel_tol=0.0, abs_tol=_WEIGHT_SUM_ZERO_EPSILON):
+        if math.isclose(
+            personalized_weight,
+            _COLD_START_PERSONALIZED_WEIGHT,
+            rel_tol=0.0,
+            abs_tol=_WEIGHT_SUM_ZERO_EPSILON,
+        ):
             logger.info(
                 "[HYBRID_SEARCH][ROUTER] Cold Start 단락 경로 → 전역 인덱스 단독 조회 "
                 "(masked_uid=%s, personalized=%.1f, global=%.1f)",
@@ -1020,6 +1050,7 @@ class HybridSearchService:
         Returns:
             RRFResult — 병합된 결과와 적용 파라미터를 담은 DTO.
         """
+
         def _extract_doc_id(item: Dict[str, Any]) -> str:
             """결과 딕셔너리에서 문서 식별자를 일관되게 추출하는 내부 헬퍼.
 
@@ -1043,7 +1074,9 @@ class HybridSearchService:
         if rrf_k < _RRF_K_MIN:
             logger.warning(
                 "[HYBRID_SEARCH][RRF] rrf_k=%d 가 최솟값(%d) 미만입니다. %d으로 보정합니다.",
-                rrf_k, _RRF_K_MIN, _RRF_K_MIN,
+                rrf_k,
+                _RRF_K_MIN,
+                _RRF_K_MIN,
             )
             rrf_k = _RRF_K_MIN
 
@@ -1081,7 +1114,9 @@ class HybridSearchService:
         elif top_k > _RRF_TOP_K_MAX:
             logger.warning(
                 "[HYBRID_SEARCH][RRF] top_k=%d 가 상한값(%d) 초과입니다. %d으로 보정합니다.",
-                top_k, _RRF_TOP_K_MAX, _RRF_TOP_K_MAX,
+                top_k,
+                _RRF_TOP_K_MAX,
+                _RRF_TOP_K_MAX,
             )
             effective_top_k = _RRF_TOP_K_MAX
 
@@ -1152,7 +1187,9 @@ class HybridSearchService:
                     score_table[doc_id] = {"score": contribution, "item": item}
 
         # ── Cold Start 단락: personalized_results가 비어 있으면 자동으로 전역만 처리 ──
-        _accumulate(router_result.personalized_results, router_result.personalized_weight)
+        _accumulate(
+            router_result.personalized_results, router_result.personalized_weight
+        )
         _accumulate(router_result.global_results, router_result.global_weight)
 
         # ── 정렬 및 상위 N개 슬라이싱 ──────────────────────────────────────

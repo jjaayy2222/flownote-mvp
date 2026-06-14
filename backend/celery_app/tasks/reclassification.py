@@ -1,23 +1,23 @@
 # backend/celery_app/tasks/reclassification.py
 
 import asyncio
-import uuid
 import logging
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 from backend.celery_app.celery import app
-from backend.services.file_access_logger import FileAccessLogger
 from backend.classifier.hybrid_classifier import HybridClassifier
+from backend.config import PathConfig
 from backend.models.automation import (
     AutomationLog,
-    AutomationTaskType,
     AutomationStatus,
+    AutomationTaskType,
     ReclassificationRecord,
 )
-from backend.config import PathConfig
+from backend.services.file_access_logger import FileAccessLogger
 
 logger = logging.getLogger(__name__)
 

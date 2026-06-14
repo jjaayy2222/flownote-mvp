@@ -45,7 +45,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 
 from backend.api.deps import get_current_user
-from backend.core.audit_logger import AuditConfigError, AuditEventType, mask_uid, write_audit_log
+from backend.core.audit_logger import (
+    AuditConfigError,
+    AuditEventType,
+    mask_uid,
+    write_audit_log,
+)
 from backend.services.privacy_service import (
     AnonymizationResult,
     DeletionResult,
@@ -105,15 +110,20 @@ def _get_log_field_max_length() -> int:
         if not (_MIN_LOG_FIELD_MAX_LENGTH <= value <= _MAX_LOG_FIELD_MAX_LENGTH):
             logger.warning(
                 "[OBS][PRIVACY][CONFIG] '%s'=%d is outside range [%d, %d]. Falling back to %d.",
-                _LOG_FIELD_MAX_LENGTH_ENV_KEY, value,
-                _MIN_LOG_FIELD_MAX_LENGTH, _MAX_LOG_FIELD_MAX_LENGTH, default,
+                _LOG_FIELD_MAX_LENGTH_ENV_KEY,
+                value,
+                _MIN_LOG_FIELD_MAX_LENGTH,
+                _MAX_LOG_FIELD_MAX_LENGTH,
+                default,
             )
             return default
         return value
     except (ValueError, TypeError):
         logger.warning(
             "[OBS][PRIVACY][CONFIG] '%s'=%r is not a valid integer. Falling back to %d.",
-            _LOG_FIELD_MAX_LENGTH_ENV_KEY, raw, default,
+            _LOG_FIELD_MAX_LENGTH_ENV_KEY,
+            raw,
+            default,
         )
         return default
 
@@ -121,6 +131,7 @@ def _get_log_field_max_length() -> int:
 # =============================================================================
 # 요청/응답 모델
 # =============================================================================
+
 
 class EraseRequest(BaseModel):
     """
@@ -132,6 +143,7 @@ class EraseRequest(BaseModel):
       - log_fields_to_anonymize: 항목별 최대 길이(PRIVACY_LOG_FIELD_MAX_LENGTH)를 검증.
         (각 항목은 이미 추출된 필드 값이어야 하며, PII 원문 포함 금지)
     """
+
     hashed_user_id: str = Field(
         ...,
         min_length=64,
@@ -180,6 +192,7 @@ class AnonymizationFailureReason(str, Enum):
     익명화 실패 시 클라이언트에 노출해도 안전한 정규화된 사유 코드.
     내부 구현 세부사항(예: 예외 클래스명)을 숨기고 API 스키마를 안정화합니다.
     """
+
     INVALID_INPUT = "invalid_input"
     INTERNAL_ERROR = "internal_error"
     ANONYMIZATION_FAILED = "anonymization_failed"
@@ -196,6 +209,7 @@ class AnonymizationSummary(BaseModel):
       - 실패 시 key_version/rotation_policy/hash_name은 None.
       - 원문 필드 값(PII)은 절대 포함하지 않습니다.
     """
+
     field_index: int = Field(
         ...,
         description="요청 log_fields_to_anonymize 배열의 0-based 인덱스 (PII 미포함 매핑 키)",
@@ -239,6 +253,7 @@ class EraseResponse(BaseModel):
     삭제 요청 처리 결과 응답 페이로드.
     모든 필드는 PII 원문을 포함하지 않습니다.
     """
+
     masked_user_id: str = Field(..., description="마스킹된 UID (PII 미포함)")
     deletion_success: bool = Field(..., description="Vector Data 삭제 성공 여부")
     db_rows_deleted: int = Field(..., description="DB 실제 삭제 행 수")
@@ -262,6 +277,7 @@ class EraseResponse(BaseModel):
 # =============================================================================
 # E2E 오케스트레이션 헬퍼
 # =============================================================================
+
 
 def _build_anonymization_summary(
     field_index: int,
@@ -289,19 +305,23 @@ def _build_anonymization_summary(
 
 def _hash_exception_message(exc: Exception) -> str:
     """
-    보안(GDPR): 원본 에러 메시지(PII 포함 가능성)를 서버 로그에 남기지 않기 위해 
+    보안(GDPR): 원본 에러 메시지(PII 포함 가능성)를 서버 로그에 남기지 않기 위해
     안정적인 구조(모듈.타입명 + 정규화된 args)를 기반으로 SHA-256 해시 핑거프린트를 생성합니다.
     """
     # 1. 모듈 경로를 포함하여 서로 다른 라이브러리의 동명 예외(충돌) 방지
     exc_type = f"{exc.__class__.__module__}.{exc.__class__.__name__}"
-    
-    # 2. 인자 내부의 동적 메모리 주소(<... at 0x...>)만 선택적으로 정규화하여 
+
+    # 2. 인자 내부의 동적 메모리 주소(<... at 0x...>)만 선택적으로 정규화하여
     # 정상적인 16진수 데이터(예: 트랜잭션 ID)가 뭉개지는 과잉 정규화 방지
     raw_args_str = str(exc.args)
-    normalized_args = _MEMORY_ADDRESS_PATTERN.sub(r"\g<prefix>0x...\g<suffix>", raw_args_str)
-    
+    normalized_args = _MEMORY_ADDRESS_PATTERN.sub(
+        r"\g<prefix>0x...\g<suffix>", raw_args_str
+    )
+
     stable_repr = f"{exc_type}:{normalized_args}"
-    return hashlib.sha256(stable_repr.encode("utf-8")).hexdigest()[:EXCEPTION_HASH_PREFIX_LEN]
+    return hashlib.sha256(stable_repr.encode("utf-8")).hexdigest()[
+        :EXCEPTION_HASH_PREFIX_LEN
+    ]
 
 
 def _normalize_reason(
@@ -310,7 +330,7 @@ def _normalize_reason(
 ) -> str:
     """
     익명화 실패 사유(reason)를 안전하고 일관된 문자열로 정규화하는 헬퍼 함수입니다.
-    
+
     [보안 및 방어 로직]
     - Enum: .value 추출
     - Exception: PII 유출을 막기 위해 마스킹하고, 추적을 위해 서버 사이드에 로깅
@@ -326,8 +346,10 @@ def _normalize_reason(
         msg_hash = _hash_exception_message(reason)
         logger.error(
             "[OBS][PRIVACY][API] Implicit exception masking in _normalize_reason. "
-            "Exception type: %s, msg_hash: %s, field_index: %s", 
-            type(reason).__name__, msg_hash, field_index
+            "Exception type: %s, msg_hash: %s, field_index: %s",
+            type(reason).__name__,
+            msg_hash,
+            field_index,
         )
         return AnonymizationFailureReason.INTERNAL_ERROR.value
     if not isinstance(reason, str):
@@ -344,7 +366,7 @@ def _build_failed_summary(
     성공 경로와 동일한 스키마를 유지하여 클라이언트 일관성을 보장합니다.
 
     [타입 계약]
-    _normalize_reason 헬퍼를 통해 어떠한 예기치 않은 타입이 들어오더라도 
+    _normalize_reason 헬퍼를 통해 어떠한 예기치 않은 타입이 들어오더라도
     안전한 문자열로 캐스팅되어 모델에 주입됩니다.
     """
     return AnonymizationSummary(
@@ -398,6 +420,7 @@ def _build_erase_message(
 # 엔드포인트
 # =============================================================================
 
+
 @router.post(
     "/erase",
     response_model=EraseResponse,
@@ -448,7 +471,8 @@ async def erase_user_data(
         # 예외 타입명만 로그 — str(exc) 제외로 PII 유출 방지
         logger.exception(
             "[OBS][PRIVACY][API] Vector data deletion failed: masked_uid=%s, error_type=%s",
-            masked, type(exc).__name__,
+            masked,
+            type(exc).__name__,
         )
         _try_write_audit_log(
             event_type=AuditEventType.DATA_DELETE_FAILURE,
@@ -477,10 +501,13 @@ async def erase_user_data(
             logger.warning(
                 "[OBS][PRIVACY][API] Anonymization skipped: masked_uid=%s, "
                 "field_index=%d, reason=invalid_input",
-                masked, field_index,
+                masked,
+                field_index,
             )
             anonymization_summaries.append(
-                _build_failed_summary(field_index, AnonymizationFailureReason.INVALID_INPUT)
+                _build_failed_summary(
+                    field_index, AnonymizationFailureReason.INVALID_INPUT
+                )
             )
         except Exception as exc:
             # 예기치 않은 오류 — 해당 필드만 실패, Graceful Degradation
@@ -490,12 +517,17 @@ async def erase_user_data(
             logger.error(
                 "[OBS][PRIVACY][API] Anonymization error: masked_uid=%s, "
                 "field_index=%d, error_type=%s, msg_hash=%s",
-                masked, field_index, type(exc).__name__, msg_hash
+                masked,
+                field_index,
+                type(exc).__name__,
+                msg_hash,
             )
             # 내부 구현 세부사항(예외 클래스명)을 API 응답 스키마에 노출하지 않기 위해
             # 예기치 않은 오류는 안정적인 공통 코드로 매핑합니다.
             anonymization_summaries.append(
-                _build_failed_summary(field_index, AnonymizationFailureReason.INTERNAL_ERROR)
+                _build_failed_summary(
+                    field_index, AnonymizationFailureReason.INTERNAL_ERROR
+                )
             )
 
     # ── 4. 최종 처리 결과 감사 로그 (실제 기록 성공 여부 추적) ──────────────

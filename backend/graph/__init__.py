@@ -15,10 +15,13 @@
 
 from backend.graph.analysis import find_orphan_nodes, get_orphan_degree_threshold
 from backend.graph.base import AbstractGraphRepository
-from backend.graph.path_utils import build_graph_path
 from backend.graph.extractor import EntityEdgeExtractor
-from backend.graph.similarity import find_link_recommendations, get_link_similarity_threshold
 from backend.graph.notifications import send_link_recommendations
+from backend.graph.path_utils import build_graph_path
+from backend.graph.similarity import (
+    find_link_recommendations,
+    get_link_similarity_threshold,
+)
 
 __all__ = [
     "AbstractGraphRepository",
@@ -37,5 +40,5 @@ from contextlib import suppress
 # (requirements.txt에 networkx가 없는 환경에서도 나머지 모듈이 정상 동작하도록 보호)
 with suppress(ImportError):
     from backend.graph.networkx_repository import NetworkXGraphRepository
-    __all__.append("NetworkXGraphRepository")
 
+    __all__.append("NetworkXGraphRepository")

@@ -7,9 +7,9 @@ FlowNote MVP - FAISS 검색
 """
 
 import json
+import logging
 import sys
 from pathlib import Path
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -17,10 +17,12 @@ logger = logging.getLogger(__name__)
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+import numbers
+from typing import Any, Dict, List, Optional, Union
+
 import faiss
 import numpy as np
-import numbers
-from typing import List, Dict, Union, Optional, Any
+
 from backend.embedding import EmbeddingGenerator
 from backend.utils import check_metadata_match
 

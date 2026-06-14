@@ -1,8 +1,9 @@
 # backend/agent/chat/state.py
 
-from typing import Annotated, TypedDict, Any, Optional, NotRequired
-from langchain_core.messages import BaseMessage
 import operator
+from typing import Annotated, Any, NotRequired, Optional, TypedDict
+
+from langchain_core.messages import BaseMessage
 
 # =================================================================
 # Type Definitions

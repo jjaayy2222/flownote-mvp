@@ -6,21 +6,21 @@ Obsidian 동기화 통합 테스트
 End-to-End 시나리오 및 서비스 간 상호작용을 검증합니다.
 """
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 from backend.mcp.obsidian_server import ObsidianSyncService
 from backend.mcp.sync_map_manager import SyncMapManager
-from backend.services.conflict_resolution_service import ConflictResolutionService
-from backend.models.external_sync import ExternalToolType
 from backend.models.conflict import (
-    SyncConflict,
-    SyncConflictType,
-    ResolutionStrategy,
     ResolutionMethod,
     ResolutionStatus,
+    ResolutionStrategy,
+    SyncConflict,
+    SyncConflictType,
 )
-
+from backend.models.external_sync import ExternalToolType
+from backend.services.conflict_resolution_service import ConflictResolutionService
 
 # Note: Fixtures는 tests/conftest.py에서 제공됩니다.
 

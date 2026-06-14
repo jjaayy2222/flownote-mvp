@@ -1,9 +1,11 @@
 # tests/test_classification_service_unit.py
 
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, mock_open
-from backend.services.classification_service import ClassificationService
+
 from backend.models import ClassifyResponse
+from backend.services.classification_service import ClassificationService
 
 
 @pytest.mark.asyncio

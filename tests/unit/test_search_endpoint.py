@@ -15,13 +15,12 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.main import app
 from backend.api.models import PARACategory
+from backend.main import app
 from backend.services.hybrid_search_service import (
     HybridSearchService,
     get_hybrid_search_service,
 )
-
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 픽스처 (Fixtures)
@@ -43,8 +42,8 @@ def _make_mock_doc(
 @pytest.fixture
 def mock_retrievers():
     """리트리버 Mock 객체 쌍을 생성하는 Fixture."""
-    from backend.faiss_search import FAISSRetriever
     from backend.bm25_search import BM25Retriever
+    from backend.faiss_search import FAISSRetriever
 
     faiss = MagicMock(spec=FAISSRetriever)
     bm25 = MagicMock(spec=BM25Retriever)

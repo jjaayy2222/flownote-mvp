@@ -3,14 +3,22 @@
 import hashlib
 import json
 import logging
+from datetime import datetime, timezone
 from json import JSONDecodeError
 from typing import Any, Dict, List, NoReturn, Optional, Tuple
-from datetime import datetime, timezone
-from backend.services.redis_pubsub import redis_client  # type: ignore[import]
+
+from backend.agent.chat.state import (
+    FeedbackEntry,
+)  # type: ignore[import, import-untyped]
 from backend.api.models import ChatMessage  # type: ignore[import]
-from backend.api.models.shared import FeedbackRating, RATING_UP, RATING_DOWN, RATING_NONE  # type: ignore[import]
+from backend.api.models.shared import (
+    RATING_DOWN,  # type: ignore[import]
+    RATING_NONE,
+    RATING_UP,
+    FeedbackRating,
+)
+from backend.services.redis_pubsub import redis_client  # type: ignore[import]
 from backend.utils import mask_pii_id  # type: ignore[import]
-from backend.agent.chat.state import FeedbackEntry  # type: ignore[import, import-untyped]
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +100,7 @@ def _process_feedback_entry(
     raw_rating = meta.get("rating")
     # Frontend FeedbackRating Union 타입('up' | 'down' | 'none')과 일치시키기 위한 강제 캐스팅
     rating = raw_rating if raw_rating in (RATING_UP, RATING_DOWN) else RATING_NONE
-    
+
     # timestamp가 int(epoch)이거나 str(ISO)일 수 있으므로 타입을 명시적으로 검증하여 정규화
     # 주의: bool은 int의 서브클래스이므로 명시적으로 제외 (True/False가 0/1 epoch으로 처리되는 것을 방지)
     raw_ts = meta.get("timestamp")
@@ -222,7 +230,10 @@ class ChatHistoryService:
         except (JSONDecodeError, ValueError) as parse_err:
             logger.error(
                 "Malformed session meta during list_sessions, skipping.",
-                extra={"session_id_hash": mask_pii_id(session_id), "error": str(parse_err)},
+                extra={
+                    "session_id_hash": mask_pii_id(session_id),
+                    "error": str(parse_err),
+                },
             )
             return None
 
@@ -314,8 +325,11 @@ class ChatHistoryService:
         """
         now = now or _now_utc()
         meta = await self._build_session_meta(
-            session_id, user_id,
-            new_preview=new_preview, now=now, force_meta=force_meta,
+            session_id,
+            user_id,
+            new_preview=new_preview,
+            now=now,
+            force_meta=force_meta,
         )
         await self._save_session_meta(session_id, meta)
         await self._update_session_index(session_id, meta.get("user_id"), now)
@@ -512,7 +526,7 @@ class ChatHistoryService:
             for item in data:
                 msg_dict = self._parse_message(item)
                 if msg_dict is None:
-                    # Checklist (Wait): Linter가 parse_errors 타입을 인식 못 하는 경우를 위해 
+                    # Checklist (Wait): Linter가 parse_errors 타입을 인식 못 하는 경우를 위해
                     # int 정체성 보장 (Pyre2 binding 이슈 대응)
                     parse_errors = int(parse_errors + 1)  # type: ignore[operator]
                     continue
@@ -535,7 +549,9 @@ class ChatHistoryService:
                 e,
             )
 
-    async def clear_history(self, session_id: str, user_id: Optional[str] = None) -> None:
+    async def clear_history(
+        self, session_id: str, user_id: Optional[str] = None
+    ) -> None:
         """특정 세션의 히스토리 + 메타 + ZSET 역색인을 완전 삭제한다.
 
         user_id가 없으면 메타에서 자동으로 복원하여 ZSET 항목도 제거한다.
@@ -585,7 +601,9 @@ class ChatHistoryService:
             RedisUnavailableError: Redis 연결 불가.
         """
         if not session_id or not message_id or not rating:
-            raise ValueError("session_id, message_id, rating are required for feedback.")
+            raise ValueError(
+                "session_id, message_id, rating are required for feedback."
+            )
 
         try:
             await self._ensure_connected("save_feedback")
@@ -595,7 +613,9 @@ class ChatHistoryService:
                 "text": feedback_text,
                 "timestamp": _now_utc().isoformat(),
             }
-            await redis_client.redis.hset(key, message_id, json.dumps(meta, ensure_ascii=False))
+            await redis_client.redis.hset(
+                key, message_id, json.dumps(meta, ensure_ascii=False)
+            )
             await redis_client.redis.expire(key, self.ttl)
         except Exception as e:
             _log_and_reraise_generic(
@@ -610,18 +630,18 @@ class ChatHistoryService:
 
     async def get_feedback_stats(self, limit_recent: int = 50) -> Dict[str, Any]:
         """AI 피드백 전체 통계를 집계하여 반환한다.
-        
+
         Redis의 `scan`을 사용하여 모든 `chat:feedback:*` 키를 차단(Blocking) 없이 순회하고,
         일자별(Up/Down) 트렌드 및 최근 상세 피드백 내역(텍스트 포함)을 묶어서 반환한다.
         """
         import heapq
-        
+
         # 내부 오작동 방지를 위한 상/하한선 (Service Layer clamping)
         limit_recent = max(1, min(limit_recent, MAX_FEEDBACK_STATS_LIMIT))
-        
+
         try:
             await self._ensure_connected("get_feedback_stats")
-            
+
             cursor = 0
             recent_heap: List[Any] = []
             tiebreaker = 0
@@ -630,13 +650,15 @@ class ChatHistoryService:
 
             # 1. 키 목록 수집 & 배치 단위 실시간 처리 (Streaming Aggregation 차용)
             while True:
-                cursor, partial_keys = await redis_client.redis.scan(cursor, match=f"{_FEEDBACK_PREFIX}*", count=100)
-                
+                cursor, partial_keys = await redis_client.redis.scan(
+                    cursor, match=f"{_FEEDBACK_PREFIX}*", count=100
+                )
+
                 # 2. 배치별 즉시 처리
                 for raw_key in partial_keys:
                     key_str = _decode_str(raw_key)
                     session_id = key_str.replace(_FEEDBACK_PREFIX, "")
-                    
+
                     feedback_hash = await redis_client.redis.hgetall(key_str)
                     for msg_id_raw, meta_raw in feedback_hash.items():
                         up_delta, down_delta, item = _process_feedback_entry(
@@ -644,14 +666,16 @@ class ChatHistoryService:
                         )
                         up_count += up_delta
                         down_count += down_delta
-                        
+
                         if item:
                             tiebreaker += 1
                             # Min-Heap 활용하여 O(1) 메모리 유지: timestamp가 가장 작은(오래된) 항목을 자동 pop
-                            heapq.heappush(recent_heap, (item["timestamp"], tiebreaker, item))
+                            heapq.heappush(
+                                recent_heap, (item["timestamp"], tiebreaker, item)
+                            )
                             if len(recent_heap) > limit_recent:
                                 heapq.heappop(recent_heap)
-                            
+
                 # 안전하게 int로 캐스팅하여 종료 조건 체크
                 if int(cursor) == 0:
                     break
@@ -661,19 +685,19 @@ class ChatHistoryService:
                 {"date": d, "up": trends[d][RATING_UP], "down": trends[d][RATING_DOWN]}
                 for d in sorted(trends.keys())
             ]
-            
+
             # 4. Heap에서 아이템 추출 후 최신순 역렬
             recent_feedbacks = sorted(
                 [val for _, _, val in recent_heap],
                 key=lambda x: x.get("timestamp", ""),
                 reverse=True,
             )
-            
+
             return {
                 "total_up": up_count,
                 "total_down": down_count,
                 "trends": sorted_trends,
-                "recent_feedbacks": recent_feedbacks
+                "recent_feedbacks": recent_feedbacks,
             }
 
         except Exception as e:
@@ -683,9 +707,11 @@ class ChatHistoryService:
                 e,
             )
 
-    async def get_session_feedback(self, session_id: str, limit: int = 3) -> List[FeedbackEntry]:
+    async def get_session_feedback(
+        self, session_id: str, limit: int = 3
+    ) -> List[FeedbackEntry]:
         """특정 세션의 최근 피드백 이력을 조회합니다.
-        
+
         Raises:
             ValueError: session_id 누락.
             RedisUnavailableError: Redis 연결 불가.
@@ -697,7 +723,7 @@ class ChatHistoryService:
             await self._ensure_connected("get_session_feedback")
             key = self._feedback_key(session_id)
             feedback_hash = await redis_client.redis.hgetall(key)
-            
+
             def _parse_timestamp(ts: Any) -> float:
                 if isinstance(ts, (int, float)) and not isinstance(ts, bool):
                     return float(ts)
@@ -705,7 +731,9 @@ class ChatHistoryService:
                     ts_str = ts.strip()
                     try:
                         # ISO 8601 parsing fallback
-                        return datetime.fromisoformat(ts_str.replace("Z", "+00:00")).timestamp()
+                        return datetime.fromisoformat(
+                            ts_str.replace("Z", "+00:00")
+                        ).timestamp()
                     except ValueError:
                         try:
                             # Numeric string fallback
@@ -713,7 +741,7 @@ class ChatHistoryService:
                         except ValueError:
                             pass
                 return 0.0
-            
+
             feedbacks_with_keys: List[Tuple[float, FeedbackEntry]] = []
             for msg_id_raw, meta_raw in feedback_hash.items():
                 msg_id = _decode_str(msg_id_raw)
@@ -722,16 +750,22 @@ class ChatHistoryService:
                     meta = json.loads(meta_str)
                     if isinstance(meta, dict):
                         raw_ts = meta.get("timestamp")
-                        if isinstance(raw_ts, (int, float, str)) and not isinstance(raw_ts, bool):
+                        if isinstance(raw_ts, (int, float, str)) and not isinstance(
+                            raw_ts, bool
+                        ):
                             ts_str = str(raw_ts).strip()
                         else:
                             ts_str = ""
-                            
+
                         raw_rating = meta.get("rating")
-                        rating = str(raw_rating).lower().strip() if raw_rating is not None else RATING_NONE
+                        rating = (
+                            str(raw_rating).lower().strip()
+                            if raw_rating is not None
+                            else RATING_NONE
+                        )
                         if rating not in {RATING_UP, RATING_DOWN, RATING_NONE}:
                             rating = RATING_NONE
-                            
+
                         entry: FeedbackEntry = {
                             "message_id": msg_id,
                             "rating": rating,
@@ -741,7 +775,7 @@ class ChatHistoryService:
                         feedbacks_with_keys.append((_parse_timestamp(raw_ts), entry))
                 except (JSONDecodeError, ValueError, TypeError):
                     continue
-                    
+
             # 최신순 정렬 (숫자형 우선, 내림차순) 및 원본 자료형(FeedbackEntry) 리스트로 반환 (Mutation 방지)
             feedbacks_with_keys.sort(key=lambda x: x[0], reverse=True)
             return [entry for _, entry in feedbacks_with_keys[:limit]]
@@ -756,4 +790,3 @@ class ChatHistoryService:
 
 def get_chat_history_service() -> ChatHistoryService:
     return ChatHistoryService()
-

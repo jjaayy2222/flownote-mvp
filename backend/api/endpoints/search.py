@@ -9,18 +9,18 @@
 """
 
 import logging
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.concurrency import run_in_threadpool
 
-from backend.api.deps import get_locale, get_current_user
+from backend.api.deps import get_current_user, get_locale
 from backend.api.models import (
-    SearchResponse,
     HybridSearchRequest,
     HybridSearchResponse,
-    SearchResultItem,
     PARACategory,
+    SearchResponse,
+    SearchResultItem,
 )
 from backend.services.hybrid_search_service import (
     HybridSearchService,

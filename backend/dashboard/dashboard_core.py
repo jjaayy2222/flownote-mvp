@@ -1,7 +1,8 @@
 # backend/dashboard/dashboard_core.py
 
+from typing import Any, Dict, List
+
 from backend.database.connection import DatabaseConnection
-from typing import Dict, Any, List
 
 
 class MetadataAggregator:

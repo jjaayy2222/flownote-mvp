@@ -9,46 +9,42 @@ sys.path.insert(0, str(project_root))
 
 from backend.classifier.para_classifier import PARAClassifier
 
+
 def test_classifier():
     """간단한 테스트"""
-    
+
     classifier = PARAClassifier()
-    
+
     # 테스트 파일들
     test_files = [
         {
             "filename": "프로젝트_제안서.pdf",
-            "content": "2025년 신규 프로젝트 제안서. 마감: 11월 15일"
+            "content": "2025년 신규 프로젝트 제안서. 마감: 11월 15일",
         },
         {
             "filename": "Python_학습노트.md",
-            "content": "파이썬 문법 정리. 지속적으로 업데이트 중."
+            "content": "파이썬 문법 정리. 지속적으로 업데이트 중.",
         },
-        {
-            "filename": "AI_논문_모음.pdf",
-            "content": "참고용 AI 관련 논문 모음집"
-        },
+        {"filename": "AI_논문_모음.pdf", "content": "참고용 AI 관련 논문 모음집"},
         {
             "filename": "2024_완료_프로젝트.pdf",
-            "content": "2024년에 완료된 프로젝트 최종 보고서"
-        }
+            "content": "2024년에 완료된 프로젝트 최종 보고서",
+        },
     ]
-    
+
     print("=" * 50)
     print("PARA 분류 테스트")
     print("=" * 50)
-    
+
     for test_file in test_files:
-        result = classifier.classify_text(
-            test_file["filename"],
-            test_file["content"]
-        )
-        
+        result = classifier.classify_text(test_file["filename"], test_file["content"])
+
         print(f"\n📄 {test_file['filename']}")
-        print(f"    카테고리: {result['category']}")            # Resources = 폴백의 경우
+        print(f"    카테고리: {result['category']}")  # Resources = 폴백의 경우
         print(f"    이유: {result.get('reasoning', 'N/A')}")
         print(f"    단서: {', '.join(result.get('detected_cues', [])[:3])}")
         print(f"    신뢰도: {result['confidence']:.2%}")
+
 
 if __name__ == "__main__":
     test_classifier()

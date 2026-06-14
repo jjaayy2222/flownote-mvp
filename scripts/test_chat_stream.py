@@ -1,8 +1,9 @@
 # scripts/test_chat_stream.py
 
-import json
-import httpx
 import asyncio
+import json
+
+import httpx
 
 
 async def test_streaming_chat():

@@ -6,8 +6,9 @@ MCP (Model Context Protocol) 관련 설정
 """
 
 import os
-from pydantic import BaseModel, Field, ConfigDict
 from pathlib import Path
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ObsidianConfig(BaseModel):

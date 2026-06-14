@@ -2,12 +2,13 @@
 
 import pytest
 from pydantic import ValidationError
+
 from backend.models import (
     ClassifyRequest,
     ClassifyResponse,
-    Step1Input,
-    ConflictType,
     ConflictRecord,
+    ConflictType,
+    Step1Input,
 )
 
 

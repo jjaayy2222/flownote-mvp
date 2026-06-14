@@ -6,14 +6,15 @@
 FlowNote MVP - 유틸리티 함수
 """
 
-import os
-import logging
-import tiktoken  # type: ignore[import]
-from pathlib import Path
-from typing import Optional, Dict, Any, List, Union
-from datetime import datetime
 import hashlib
+import logging
+import os
 from collections.abc import Mapping
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+
+import tiktoken  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,7 @@ def get_chat_log_extra(request_or_body: Any) -> Dict[str, Any]:
     """
     채팅 엔드포인트(동기/스트리밍)에서 공통으로 사용하는
     안전한 로깅 extra 딕셔너리를 생성합니다.
-    
+
     내부적으로 인입된 객체의 형태를 검사하여:
     1. dict, FastAPI QueryDict 등 Mapping 객체는 `.get()`으로
     2. Pydantic BaseModel 등 일반 객체는 `getattr`로
@@ -129,14 +130,17 @@ def get_chat_log_extra(request_or_body: Any) -> Dict[str, Any]:
     # 안전하게 ANONYMOUS_USER_ID 로 폴백하도록 기존 동작 복원
     safe_user_id = str(raw_user_id) if raw_user_id else ANONYMOUS_USER_ID
     safe_query = str(raw_query) if raw_query else ""
-    
+
     is_truncated = len(safe_query) > MAX_QUERY_PREVIEW_LEN
-    truncated_query = safe_query[:MAX_QUERY_PREVIEW_LEN] + ("..." if is_truncated else "")
-    
+    truncated_query = safe_query[:MAX_QUERY_PREVIEW_LEN] + (
+        "..." if is_truncated else ""
+    )
+
     return {
         "user_id_hash": mask_pii_id(safe_user_id),
         "query_preview": truncated_query,
     }
+
 
 def check_metadata_match(
     doc_metadata: Optional[Dict[str, Any]], metadata_filter: Optional[Dict[str, Any]]

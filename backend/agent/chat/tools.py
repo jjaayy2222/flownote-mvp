@@ -1,17 +1,22 @@
 # backend/agent/chat/tools.py
 
-import logging
-from typing import Any, Dict, Optional, TypedDict, cast
-from langchain_core.tools import tool  # type: ignore[import, import-untyped, reportMissingImports]
-from backend.services.hybrid_search_service import get_hybrid_search_service  # type: ignore[import, import-untyped, reportMissingImports]
-
-import os
 import asyncio
+import decimal
+import logging
 import math
 import numbers
-import decimal
+import os
 from collections.abc import Sized
+from typing import Any, Dict, Optional, TypedDict, cast
+
+from langchain_core.tools import (
+    tool,
+)  # type: ignore[import, import-untyped, reportMissingImports]
 from tavily import TavilyClient
+
+from backend.services.hybrid_search_service import (
+    get_hybrid_search_service,
+)  # type: ignore[import, import-untyped, reportMissingImports]
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +33,10 @@ _MIN_SEARCH_LIMIT = 1
 _MAX_SEARCH_LIMIT = 10
 _DEFAULT_SEARCH_LIMIT = 5
 
+
 def _format_numeric_safe(k: Any) -> str:
     """
-    수치형 데이터를 안전하게 문자열로 변환하여 로깅 시 지수 표기법(Scientific Notation) 잘림이나 
+    수치형 데이터를 안전하게 문자열로 변환하여 로깅 시 지수 표기법(Scientific Notation) 잘림이나
     거대 정수/Decimal의 정밀도 유실을 방지합니다.
     """
     # 정수(int, bool)와 Decimal은 float 변환 시 정밀도(precision) 손실이 발생할 수 있으므로 그대로 문자열화
@@ -44,11 +50,12 @@ def _format_numeric_safe(k: Any) -> str:
         except (ValueError, TypeError, OverflowError):
             # 특이 수치 표현식은 단순 문자열화
             s = str(k)
-            
+
     if len(s) > _MAX_LOG_NUMERIC_CHARS:
         # 길이 초과 시 끝부분을 _ELLIPSIS 로 치환하여 하드코딩 없이 안전하게 절단
-        return s[:_MAX_LOG_NUMERIC_CHARS - len(_ELLIPSIS)] + _ELLIPSIS
+        return s[: _MAX_LOG_NUMERIC_CHARS - len(_ELLIPSIS)] + _ELLIPSIS
     return s
+
 
 def _build_k_logging_extra(tool_name: str, k: Any) -> Dict[str, Any]:
     """
@@ -62,7 +69,7 @@ def _build_k_logging_extra(tool_name: str, k: Any) -> Dict[str, Any]:
     if isinstance(k, bool):
         extra["raw_k_value"] = k
     elif isinstance(k, numbers.Number):
-        # 숫자형(int, float, Decimal, numpy 스칼라 등)은 
+        # 숫자형(int, float, Decimal, numpy 스칼라 등)은
         # 극한의 수치에 의한 로그 부하 방지 및 지수 표기법 유지를 위해 헬퍼로 포맷팅
         extra["raw_k_value"] = _format_numeric_safe(k)
     else:
@@ -73,6 +80,7 @@ def _build_k_logging_extra(tool_name: str, k: Any) -> Dict[str, Any]:
         else:
             extra["raw_k_length"] = "unknown"
     return extra
+
 
 def _sanitize_search_limit(k: Any, tool_name: str) -> int:
     """
@@ -89,7 +97,7 @@ def _sanitize_search_limit(k: Any, tool_name: str) -> int:
     if isinstance(k, bool):
         logger.warning(
             f"[Tool] {tool_name} - bool 타입 k 입력 감지. 기본값({_DEFAULT_SEARCH_LIMIT})으로 폴백합니다.",
-            extra=_build_k_logging_extra(tool_name, k)
+            extra=_build_k_logging_extra(tool_name, k),
         )
         return _DEFAULT_SEARCH_LIMIT
 
@@ -101,14 +109,14 @@ def _sanitize_search_limit(k: Any, tool_name: str) -> int:
             # 명확한 의미 전달을 위해 여기서 먼저 차단
             logger.warning(
                 f"[Tool] {tool_name} - NaN/inf float k 감지. 기본값({_DEFAULT_SEARCH_LIMIT})으로 폴백합니다.",
-                extra=_build_k_logging_extra(tool_name, k)
+                extra=_build_k_logging_extra(tool_name, k),
             )
             return _DEFAULT_SEARCH_LIMIT
 
         if not k.is_integer():
             logger.warning(
                 f"[Tool] {tool_name} - float 타입 k 감지. 소수점 이하를 절단하여 처리합니다. (의도된 경우 int 타입으로 전달 권장)",
-                extra=_build_k_logging_extra(tool_name, k)
+                extra=_build_k_logging_extra(tool_name, k),
             )
         # 경고 후 int()로 절단 → 클램핑 계속 진행
 
@@ -119,11 +127,13 @@ def _sanitize_search_limit(k: Any, tool_name: str) -> int:
     except (ValueError, TypeError, OverflowError):
         logger.warning(
             f"[Tool] {tool_name} - k 파라미터 타입 파싱 실패, 기본값({_DEFAULT_SEARCH_LIMIT})으로 폴백합니다.",
-            extra=_build_k_logging_extra(tool_name, k)
+            extra=_build_k_logging_extra(tool_name, k),
         )
         return _DEFAULT_SEARCH_LIMIT
 
+
 _tavily_client: Optional[TavilyClient] = None
+
 
 def _get_tavily_client(api_key: str) -> TavilyClient:
     """
@@ -151,6 +161,7 @@ class SerializedDoc(TypedDict):
     - `metadata`: 원본 메타데이터 dict. 로우 레벨 필드는 Any를 허용하지만,
                   모든 값은 직렬화 시 json.dumps(기본값 default=str)로 방어됨.
     """
+
     id: Optional[str]
     score: Optional[float]
     content: str
@@ -243,12 +254,15 @@ def _normalize_doc(doc: Any) -> SerializedDoc:
     # 이 cast는 해당 단언이 필요하지만, 부정확한 cast가 아닙니다:
     # 반환 지점에 도달하는 모든 필드(normalized_id, normalized_score, content, metadata)는
     # 각각 위에서 명시적으로 타입 어노테이션되었으므로 mypy가 해당 시점까지 개별 유효성을 검증합니다.
-    return cast(SerializedDoc, {
-        "id": normalized_id,
-        "score": normalized_score,
-        "content": content,
-        "metadata": metadata,
-    })
+    return cast(
+        SerializedDoc,
+        {
+            "id": normalized_id,
+            "score": normalized_score,
+            "content": content,
+            "metadata": metadata,
+        },
+    )
 
 
 @tool
@@ -267,8 +281,7 @@ async def search_documents_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> d
 
     # [Comment 1 반영] PII 보호: query 원문 대신 길이(비민감 메타데이터)만 로깅
     logger.info(
-        "[Tool] search_documents_tool 실행",
-        extra={"query_length": len(query), "k": k}
+        "[Tool] search_documents_tool 실행", extra={"query_length": len(query), "k": k}
     )
     hybrid_search_service = get_hybrid_search_service()
 
@@ -282,7 +295,7 @@ async def search_documents_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> d
         # JSON-serializable 변환용 리스트
         serialized_docs = []
         formatted_results = []
-        
+
         for i, doc in enumerate(docs, 1):
             safe_doc: SerializedDoc = _normalize_doc(doc)
             serialized_docs.append(safe_doc)
@@ -304,7 +317,7 @@ async def search_documents_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> d
         final_context = "\n\n".join(formatted_results)
         logger.info(
             "[Tool] 문서 검색 완료",
-            extra={"doc_count": len(docs), "total_length": len(final_context)}
+            extra={"doc_count": len(docs), "total_length": len(final_context)},
         )
         return {"context": final_context, "docs": serialized_docs}
 
@@ -316,7 +329,10 @@ async def search_documents_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> d
             "[Tool] 검색 중 오류 발생",
             extra=_build_log_extra(None, error_type=type(e).__name__),
         )
-        return {"context": "문서 검색 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.", "docs": []}
+        return {
+            "context": "문서 검색 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+            "docs": [],
+        }
 
 
 @tool
@@ -334,20 +350,22 @@ async def deep_web_search_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> di
     k = _sanitize_search_limit(k, "deep_web_search_tool")
 
     logger.info(
-        "[Tool] deep_web_search_tool 실행",
-        extra={"query_length": len(query), "k": k}
+        "[Tool] deep_web_search_tool 실행", extra={"query_length": len(query), "k": k}
     )
     api_key = os.getenv("TAVILY_API_KEY")
     if not api_key:
         logger.error("[Tool] TAVILY_API_KEY 환경변수가 설정되지 않았습니다.")
-        return {"context": "웹 검색 연결 설정이 누락되어 검색할 수 없습니다.", "docs": []}
+        return {
+            "context": "웹 검색 연결 설정이 누락되어 검색할 수 없습니다.",
+            "docs": [],
+        }
 
     try:
         client = _get_tavily_client(api_key)
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,
-            lambda: client.search(query=query, search_depth="advanced", max_results=k)
+            lambda: client.search(query=query, search_depth="advanced", max_results=k),
         )
 
         results = result.get("results", [])
@@ -361,25 +379,31 @@ async def deep_web_search_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> di
         for i, item in enumerate(results, 1):
             content_str = str(item.get("content", ""))
             if len(content_str) > _MAX_DOC_CONTENT_CHARS:
-                content_str = str(content_str[:_MAX_DOC_CONTENT_CHARS]) + "...(truncated)"
+                content_str = (
+                    str(content_str[:_MAX_DOC_CONTENT_CHARS]) + "...(truncated)"
+                )
 
             source = str(item.get("url", "unknown"))
             formatted_results.append(
                 f"--- Web Document {i} (Source: {source}) ---\n{content_str}"
             )
 
-            safe_doc: SerializedDoc = _normalize_doc({
-                "id": source,
-                "score": float(item.get("score", 0.0) if item.get("score") is not None else 0.0),
-                "content": content_str,
-                "metadata": {"source": source, "title": item.get("title", "")}
-            })
+            safe_doc: SerializedDoc = _normalize_doc(
+                {
+                    "id": source,
+                    "score": float(
+                        item.get("score", 0.0) if item.get("score") is not None else 0.0
+                    ),
+                    "content": content_str,
+                    "metadata": {"source": source, "title": item.get("title", "")},
+                }
+            )
             serialized_docs.append(safe_doc)
 
         final_context = "\n\n".join(formatted_results)
         logger.info(
             "[Tool] 웹 검색 완료",
-            extra={"doc_count": len(results), "total_length": len(final_context)}
+            extra={"doc_count": len(results), "total_length": len(final_context)},
         )
         return {"context": final_context, "docs": serialized_docs}
 
@@ -388,4 +412,7 @@ async def deep_web_search_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> di
             "[Tool] 웹 검색 중 오류 발생",
             extra=_build_log_extra(None, error_type=type(e).__name__),
         )
-        return {"context": "웹 검색 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.", "docs": []}
+        return {
+            "context": "웹 검색 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+            "docs": [],
+        }

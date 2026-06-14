@@ -19,15 +19,16 @@ def test_backend_models_import():
     """backend.models 임포트 테스트"""
     try:
         from backend.models import (
+            ClassifyBatchRequest,
+            ClassifyBatchResponse,
             ClassifyRequest,
             ClassifyResponse,
             FileMetadata,
             FileMetadataInput,
-            ClassifyBatchRequest,
-            ClassifyBatchResponse,
             SaveClassificationRequest,
             SearchRequest,
         )
+
         print("✅ backend.models import SUCCESS")
         assert True
     except ImportError as e:
@@ -38,11 +39,12 @@ def test_backend_api_models_import():
     """backend.api.models.conflict_models 임포트 테스트"""
     try:
         from backend.models import (
-            ConflictType,
             ConflictDetail,
-            ConflictResolution,
             ConflictReport,
+            ConflictResolution,
+            ConflictType,
         )
+
         print("✅ backend.api.models.conflict_models import SUCCESS")
         assert True
     except ImportError as e:
@@ -58,6 +60,7 @@ def test_backend_api_init_import():
             ConflictDetail,
             ConflictReport,
         )
+
         print("✅ backend.api import SUCCESS")
         assert True
     except ImportError as e:
@@ -68,6 +71,7 @@ def test_classifier_routes_import():
     """classifier_routes 임포트 테스트"""
     try:
         from backend.routes.classifier_routes import router
+
         print("✅ classifier_routes import SUCCESS")
         assert True
     except ImportError as e:
@@ -78,11 +82,10 @@ def test_metadata_import():
     """metadata.py 임포트 테스트 (클래스 이름 중복 체크)"""
     try:
         # Pydantic 모델
-        from backend.models import FileMetadata as PydanticFileMetadata
-        
         # 매니저 클래스
         from backend.metadata import FileMetadata as FileMetadataManager
-        
+        from backend.models import FileMetadata as PydanticFileMetadata
+
         print("✅ FileMetadata 두 버전 모두 import SUCCESS")
         print(f"   - Pydantic: {PydanticFileMetadata}")
         print(f"   - Manager: {FileMetadataManager}")
@@ -93,16 +96,16 @@ def test_metadata_import():
 
 if __name__ == "__main__":
     """터미널에서 직접 실행용"""
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("🧪 임포트 테스트 시작")
-    print("="*50 + "\n")
-    
+    print("=" * 50 + "\n")
+
     test_backend_models_import()
     test_backend_api_models_import()
     test_backend_api_init_import()
     test_classifier_routes_import()
     test_metadata_import()
-    
-    print("\n" + "="*50)
+
+    print("\n" + "=" * 50)
     print("✅ 모든 임포트 테스트 통과!")
-    print("="*50)
+    print("=" * 50)

@@ -8,7 +8,9 @@
 
 import logging
 from typing import List
+
 from fastapi import APIRouter, HTTPException
+
 from backend.models import ConflictRecord, ConflictReport
 from backend.services.conflict_service import ConflictService
 

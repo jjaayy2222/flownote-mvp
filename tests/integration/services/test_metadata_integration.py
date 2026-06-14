@@ -1,29 +1,24 @@
 # tests/test_metadata_integration.py
 
 import pytest
-from backend.classifier.conflict_resolver import ConflictResolver, ClassificationResult
+
+from backend.classifier.conflict_resolver import ClassificationResult, ConflictResolver
 
 
 def test_metadata_with_auto_resolution():
     """자동 해결 시 메타데이터 기록"""
     resolver = ConflictResolver(confidence_gap_threshold=0.2)
-    
+
     para = ClassificationResult(
-        category="Projects",
-        confidence=0.92,
-        source="para",
-        reasoning="Clear deadline"
+        category="Projects", confidence=0.92, source="para", reasoning="Clear deadline"
     )
-    
+
     keyword = ClassificationResult(
-        category="업무",
-        confidence=0.60,
-        source="keyword",
-        tags=["urgent", "deadline"]
+        category="업무", confidence=0.60, source="keyword", tags=["urgent", "deadline"]
     )
-    
+
     result = resolver.resolve(para, keyword)
-    
+
     assert result["final_category"] == "Projects"
     assert result["confidence_gap"] == pytest.approx(0.32, rel=0.01)
     assert result["conflict_detected"] == False
@@ -36,23 +31,20 @@ def test_metadata_with_auto_resolution():
 def test_metadata_with_conflict():
     """충돌 시 상세 메타데이터"""
     resolver = ConflictResolver(confidence_gap_threshold=0.2)
-    
+
     para = ClassificationResult(
         category="Areas",
         confidence=0.75,
         source="para",
-        reasoning="Related to skill development"
+        reasoning="Related to skill development",
     )
-    
+
     keyword = ClassificationResult(
-        category="학습",
-        confidence=0.73,
-        source="keyword",
-        tags=["python", "AI"]
+        category="학습", confidence=0.73, source="keyword", tags=["python", "AI"]
     )
-    
+
     result = resolver.resolve(para, keyword)
-    
+
     assert result["conflict_detected"] == True
     assert result["requires_review"] == True
     assert "confidence_gap" in result
@@ -64,22 +56,18 @@ def test_metadata_with_conflict():
 def test_statistics():
     """통계 정보 생성"""
     resolver = ConflictResolver(confidence_gap_threshold=0.2)
-    
+
     for i in range(5):
         para = ClassificationResult(
-            category="Projects",
-            confidence=0.9 - (i * 0.05),
-            source="para"
+            category="Projects", confidence=0.9 - (i * 0.05), source="para"
         )
         keyword = ClassificationResult(
-            category="업무",
-            confidence=0.6,
-            source="keyword"
+            category="업무", confidence=0.6, source="keyword"
         )
         resolver.resolve(para, keyword)
-    
+
     stats = resolver.get_statistics()
-    
+
     assert stats["total_resolutions"] == 5
     assert stats["auto_resolve_rate"] >= 0.6
     print("PASSED: Statistics generation")
@@ -90,7 +78,6 @@ if __name__ == "__main__":
     test_metadata_with_conflict()
     test_statistics()
     print("\n✅ 모든 테스트 통과!!")
-
 
 
 """test_metadata_integration test_result_2

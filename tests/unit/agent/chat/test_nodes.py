@@ -1,13 +1,14 @@
 # tests/unit/agent/chat/test_nodes.py
 
-import unittest
 import copy
+import unittest
+
 from backend.agent.chat.nodes import (
-    should_fallback,
+    FALLBACK_THRESHOLD,
+    FALLBACK_WINDOW_SIZE,
     ROUTE_FALLBACK_SEARCH,
     ROUTE_STANDARD_RAG,
-    FALLBACK_WINDOW_SIZE,
-    FALLBACK_THRESHOLD,
+    should_fallback,
 )
 from backend.api.models.shared import RATING_DOWN, RATING_UP, FeedbackRating
 
@@ -56,7 +57,9 @@ class TestChatNodes(unittest.TestCase):
 
     def test_should_fallback_mixed_recent(self):
         # Window size of feedback containing exactly threshold downs at the end
-        history = self._make_history(count=(FALLBACK_WINDOW_SIZE - FALLBACK_THRESHOLD), rating=RATING_UP)
+        history = self._make_history(
+            count=(FALLBACK_WINDOW_SIZE - FALLBACK_THRESHOLD), rating=RATING_UP
+        )
         history.extend(self._make_history(count=FALLBACK_THRESHOLD, rating=RATING_DOWN))
         state = {"feedback_history": history}
         self.assertEqual(should_fallback(state), ROUTE_FALLBACK_SEARCH)

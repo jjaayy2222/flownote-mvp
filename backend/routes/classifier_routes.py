@@ -8,34 +8,20 @@
 모든 비즈니스 로직은 `ClassificationService`로 이관되었습니다.
 """
 
-import os
 import json
 import logging
-from typing import Optional, List
+import os
+from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Request
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 통합 모델 Import
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-from backend.models import (
+from backend.models import (  # ClassificationRequest,  # Unused; ClassificationResponse, # Unused; ClassifyBatchRequest,   # Unused; ClassifyBatchResponse,  # Unused; MetadataClassifyRequest, # Unused; HybridClassifyRequest,   # Unused; ParallelClassifyRequest, # Unused; FileMetadata,           # Unused; SaveClassificationRequest, # Unused; SearchRequest,          # Unused; HealthCheckResponse,    # Unused; MetadataResponse,       # Unused; ErrorResponse,          # Unused; SuccessResponse,        # Unused
     ClassifyRequest,
     ClassifyResponse,
-    # ClassificationRequest,  # Unused
-    # ClassificationResponse, # Unused
-    # ClassifyBatchRequest,   # Unused
-    # ClassifyBatchResponse,  # Unused
-    # MetadataClassifyRequest, # Unused
-    # HybridClassifyRequest,   # Unused
-    # ParallelClassifyRequest, # Unused
-    # FileMetadata,           # Unused
-    # SaveClassificationRequest, # Unused
-    # SearchRequest,          # Unused
-    # HealthCheckResponse,    # Unused
-    # MetadataResponse,       # Unused
-    # ErrorResponse,          # Unused
-    # SuccessResponse,        # Unused
 )
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

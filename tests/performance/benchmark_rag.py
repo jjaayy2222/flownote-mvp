@@ -1,27 +1,28 @@
 # tests/performance/benchmark_rag.py
 
 import asyncio
-import time
+import json
 import logging
+import os
 import random
 import sys
-import json
-import os
+import time
 from pathlib import Path
-from typing import List, Dict, Optional, Any
-from unittest.mock import MagicMock, AsyncMock, patch
+from typing import Any, Dict, List, Optional
+from unittest.mock import AsyncMock, MagicMock, patch
 
 # 프로젝트 루트 추가
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import numpy as np
-from backend.services.hybrid_search_service import HybridSearchService
-from backend.faiss_search import FAISSRetriever
-from backend.bm25_search import BM25Retriever
-from backend.services.chat_service import ChatService
-from backend.services.chat_history_service import ChatHistoryService
-from backend.services.onboarding_service import OnboardingService
+
 from backend.api.models import ChatMessage
+from backend.bm25_search import BM25Retriever
+from backend.faiss_search import FAISSRetriever
+from backend.services.chat_history_service import ChatHistoryService
+from backend.services.chat_service import ChatService
+from backend.services.hybrid_search_service import HybridSearchService
+from backend.services.onboarding_service import OnboardingService
 from tests.performance.collector import measure_stream_performance
 
 logging.basicConfig(
@@ -33,21 +34,24 @@ logger = logging.getLogger(__name__)
 _LOG_MSG_TRUNCATE_LEN = 100
 _LOG_REPR_TRUNCATE_LEN = 50
 
+
 def _truncate(text: str, limit: int) -> str:
     """텍스트가 제한 길이를 넘으면 자르고 '...'을 붙입니다."""
     return (text[:limit] + "...") if len(text) > limit else text
 
 
-
-
-async def run_load_test(chat_service: ChatService, queries: List[str], concurrency: int = 5):
+async def run_load_test(
+    chat_service: ChatService, queries: List[str], concurrency: int = 5
+):
     """
     동시성 제어를 포함한 부하 테스트를 수행합니다.
     """
-    logger.info(f"Starting Load Test: Concurrency={concurrency}, Total Queries={len(queries)}")
-    
+    logger.info(
+        f"Starting Load Test: Concurrency={concurrency}, Total Queries={len(queries)}"
+    )
+
     semaphore = asyncio.Semaphore(concurrency)
-    
+
     async def task(query):
         async with semaphore:
             return await measure_stream_performance(chat_service, query)
@@ -70,7 +74,9 @@ async def run_load_test(chat_service: ChatService, queries: List[str], concurren
     # 통계 계산
     successful_results = [r for r in actual_results if r["success"]]
     ttfts = [r["ttft"] for r in successful_results if r["ttft"] is not None]
-    total_times = [r["total_time"] for r in successful_results if r["total_time"] is not None]
+    total_times = [
+        r["total_time"] for r in successful_results if r["total_time"] is not None
+    ]
 
     avg_ttft = np.mean(ttfts) if ttfts else 0
     p95_ttft = np.percentile(ttfts, 95) if ttfts else 0
@@ -90,7 +96,7 @@ async def run_load_test(chat_service: ChatService, queries: List[str], concurren
         logger.info(f"Avg Total Time:   {avg_total_time:.4f}s")
     logger.info(f"System Throughput: {tps:.2f} queries/sec")
     logger.info(f"Total Duration:   {total_duration:.2f}s")
-    
+
     # [Robustness] 에러 요약 로깅 (Review 반영)
     if errors or len(actual_results) > len(successful_results):
         failed_internal = len(actual_results) - len(successful_results)
@@ -103,12 +109,12 @@ async def run_load_test(chat_service: ChatService, queries: List[str], concurren
             # [Performance] 요약 로그는 헬퍼를 통해 간결하게 유지 (Review 반영)
             repr_summary = _truncate(repr(first_err), _LOG_REPR_TRUNCATE_LEN)
             msg_summary = _truncate(str(first_err), _LOG_MSG_TRUNCATE_LEN)
-            
+
             logger.error(f"First error summary: {repr_summary} msg={msg_summary}")
-            
+
             # [Robustness] exc_info에 예외 객체를 직접 전달하여 상세 트레이스백 확보 (v3.10+ 지원)
             logger.debug("Full error details for debugging", exc_info=first_err)
-            
+
     logger.info("=" * 50)
 
 
@@ -116,25 +122,36 @@ def setup_mock_llm():
     """
     실제 API 호출 없이 벤치마크 로직을 검증하기 위한 Mock LLM 설정
     """
-    from langchain_core.outputs import ChatGenerationChunk
     from langchain_core.messages import AIMessageChunk
-    
+    from langchain_core.outputs import ChatGenerationChunk
+
     mock_llm = MagicMock()
-    
+
     async def mock_astream(*args, **kwargs):
         # 가짜 토큰 스트리밍 시뮬레이션
-        tokens = ["This ", "is ", "a ", "mocked ", "response ", "for ", "performance ", "testing."]
-        await asyncio.sleep(0.1) # Initial delay (TTFT)
+        tokens = [
+            "This ",
+            "is ",
+            "a ",
+            "mocked ",
+            "response ",
+            "for ",
+            "performance ",
+            "testing.",
+        ]
+        await asyncio.sleep(0.1)  # Initial delay (TTFT)
         for token in tokens:
             yield AIMessageChunk(content=token)
-            await asyncio.sleep(0.02) # Inter-token delay
+            await asyncio.sleep(0.02)  # Inter-token delay
 
     async def mock_ainvoke(*args, **kwargs):
         return AIMessageChunk(content="Mocked standalone response")
 
     mock_llm.astream = mock_astream
     mock_llm.ainvoke = mock_ainvoke
-    mock_llm.invoke = MagicMock(side_effect=lambda *a, **k: AIMessageChunk(content="Mocked response"))
+    mock_llm.invoke = MagicMock(
+        side_effect=lambda *a, **k: AIMessageChunk(content="Mocked response")
+    )
     return mock_llm
 
 
@@ -145,34 +162,42 @@ async def run_benchmark(use_mock_llm: bool = True):
     # 1. 시뮬레이션 데이터 및 서비스 초기화
     num_docs = 500
     dim = 1536
-    
+
     logger.info(f"Initializaing services with {num_docs} docs...")
     faiss_ret = FAISSRetriever(dimension=dim)
     bm25_ret = BM25Retriever()
-    
+
     docs = [
         {
             "content": f"FlowNote document {i}. Topic: {i % 10}",
-            "metadata": {"source": f"doc_{i}.md", "id": str(i)}
-        } for i in range(num_docs)
+            "metadata": {"source": f"doc_{i}.md", "id": str(i)},
+        }
+        for i in range(num_docs)
     ]
     fake_embeddings = np.random.rand(num_docs, dim).astype("float32")
     faiss_ret.add_documents(fake_embeddings, docs)
     bm25_ret.add_documents(docs)
-    
-    hybrid_search = HybridSearchService(faiss_retriever=faiss_ret, bm25_retriever=bm25_ret)
-    
+
+    hybrid_search = HybridSearchService(
+        faiss_retriever=faiss_ret, bm25_retriever=bm25_ret
+    )
+
     # Mock 의존성 설정
     mock_onboarding = MagicMock(spec=OnboardingService)
-    mock_onboarding.get_user_status.return_value = {"status": "success", "is_completed": True, "occupation": "Researcher", "areas": ["AI"]}
-    
+    mock_onboarding.get_user_status.return_value = {
+        "status": "success",
+        "is_completed": True,
+        "occupation": "Researcher",
+        "areas": ["AI"],
+    }
+
     mock_history = AsyncMock(spec=ChatHistoryService)
     mock_history.get_history.return_value = []
-    
+
     # [Security] API Key mock
     os.environ["GPT4O_MINI_API_KEY"] = os.getenv("GPT4O_MINI_API_KEY") or "mock-key"
     os.environ["RAG_MAX_DOCS"] = "5"
-    
+
     mock_llm = None
     if use_mock_llm:
         logger.info("Using Mock LLM for benchmark logic validation.")
@@ -183,20 +208,24 @@ async def run_benchmark(use_mock_llm: bool = True):
         onboarding_service=mock_onboarding,
         chat_history_service=mock_history,
         llm=mock_llm,
-        streaming_llm=mock_llm
+        streaming_llm=mock_llm,
     )
 
     # 2. 단일 스트리밍 성능 측정 (TTFT Focus)
     logger.info("Benchmark: Measuring Single Stream Performance...")
-    perf_result = await measure_stream_performance(chat_service, "Tell me about FlowNote performance")
+    perf_result = await measure_stream_performance(
+        chat_service, "Tell me about FlowNote performance"
+    )
     if perf_result["success"] and perf_result["ttft"] is not None:
         logger.info(f"✅ Single TTFT: {perf_result['ttft']:.4f}s")
         logger.info(f"✅ Single Total: {perf_result['total_time']:.4f}s")
         logger.info(f"✅ Chunks count: {perf_result['chunks_count']}")
         logger.info(f"✅ CPS: {perf_result['cps']:.2f} chunks/sec")
     else:
-        logger.warning(f"❌ Single stream test failed or returned no tokens. Error: {perf_result.get('error')}")
-    
+        logger.warning(
+            f"❌ Single stream test failed or returned no tokens. Error: {perf_result.get('error')}"
+        )
+
     # 3. 동시 부하 테스트
     load_queries = [f"Performance test query {i}" for i in range(10)]
     await run_load_test(chat_service, load_queries, concurrency=3)
@@ -204,8 +233,10 @@ async def run_benchmark(use_mock_llm: bool = True):
 
 if __name__ == "__main__":
     # 환경변수에 실제 키가 있으면 실제 LLM 사용, 없으면 Mock 사용
-    api_key_exists = bool(os.getenv("GPT4O_MINI_API_KEY") or os.getenv("OPENAI_API_KEY"))
-    
+    api_key_exists = bool(
+        os.getenv("GPT4O_MINI_API_KEY") or os.getenv("OPENAI_API_KEY")
+    )
+
     try:
         asyncio.run(run_benchmark(use_mock_llm=not api_key_exists))
     except Exception as e:

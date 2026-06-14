@@ -1,7 +1,7 @@
 # backend/services/diff_service.py
 
 import difflib
-from typing import Dict, Any
+from typing import Any, Dict
 
 
 def generate_diff(local_content: str, remote_content: str) -> Dict[str, Any]:

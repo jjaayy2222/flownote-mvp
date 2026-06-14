@@ -9,27 +9,27 @@ Step 5 요구사항:
 3. MCP Tools 호출 검증
 """
 
-import pytest
 import asyncio
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
-from backend.services.obsidian_sync import ObsidianSyncService
-from backend.services.conflict_resolution_service import ConflictResolutionService
-from backend.services.sync_service import SyncServiceBase
-from backend.models.external_sync import (
-    ExternalToolConnection,
-    ExternalToolType,
-    ConnectionConfig,
-)
+import pytest
+
 from backend.models.conflict import (
-    SyncConflict,
-    SyncConflictType,
-    ResolutionStrategy,
     ResolutionMethod,
     ResolutionStatus,
+    ResolutionStrategy,
+    SyncConflict,
+    SyncConflictType,
 )
-
+from backend.models.external_sync import (
+    ConnectionConfig,
+    ExternalToolConnection,
+    ExternalToolType,
+)
+from backend.services.conflict_resolution_service import ConflictResolutionService
+from backend.services.obsidian_sync import ObsidianSyncService
+from backend.services.sync_service import SyncServiceBase
 
 # ==========================================
 # Test: Obsidian 파일 생성 -> 분류 -> 이동
@@ -276,7 +276,7 @@ async def test_mcp_tools_integration(mock_vault: Path):
     Note: 이 테스트는 MCP 도구 통합 경로를 검증합니다.
     실제 MCP 서버 호출은 E2E 테스트에서 수행됩니다.
     """
-    from unittest.mock import patch, AsyncMock
+    from unittest.mock import AsyncMock, patch
 
     # Arrange: 분류할 텍스트 준비
     test_text = "오늘 프로젝트 회의가 있습니다. 마감일은 다음주입니다."

@@ -27,19 +27,19 @@ import math
 import os
 import re
 import typing
-from typing import Any, Callable, Dict, List, Optional, TypeVar
 from functools import lru_cache
+from typing import Any, Callable, Dict, List, Optional, TypeVar
 
 import numpy as np
 import redis.exceptions
+from fastapi.concurrency import run_in_threadpool  # type: ignore[import]
 from redis.exceptions import RedisError  # 연결/타임아웃/명령 실패 포괄
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 
+from backend.embedding import EmbeddingGenerator  # type: ignore[import]
 from backend.services.redis_pubsub import redis_client  # type: ignore[import]
 from backend.utils import mask_pii_id  # type: ignore[import]
-from backend.embedding import EmbeddingGenerator  # type: ignore[import]
-from fastapi.concurrency import run_in_threadpool  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
 
@@ -70,50 +70,42 @@ _WS_RE = re.compile(r"\s+")  # 연속 공백 통합
 _MSG_PAIR_COUNT_PREFIX: str = "cls:msg_pair_count"
 _RAG_SEARCH_COUNT_PREFIX: str = "cls:rag_search_count"
 _QUERY_HISTORY_PREFIX: str = "cls:query_history"  # 사용자 검색어 히스토리 (List)
-_CLUSTER_CACHE_PREFIX: str = "cls:result"         # 클러스터링 결과 캐시 (JSON String)
+_CLUSTER_CACHE_PREFIX: str = "cls:result"  # 클러스터링 결과 캐시 (JSON String)
 
 # 데이터 스키마 버전 (버전 업 시 구버전 캐시 자동 무효화, 환경 변수로 외부화)
 _CLUSTER_CACHE_VERSION_ENV_KEY = "CLUSTER_CACHE_VERSION"
 _CLUSTER_CACHE_VERSION_DEFAULT = "v1"
 
-_cluster_cache_version_singleton: Optional[str] = None
 
-def _get_cluster_cache_version() -> str:
-    """
-    [리뷰반영] CLUSTER_CACHE_VERSION 환경 변수를 지연 로드(lazy-load)하고 캐싱한다.
-    모듈 임포트 시점의 잦은 로깅 스팸(서버리스/오토스케일링 환경 등)을 방지한다.
-    """
-    global _cluster_cache_version_singleton
-    if _cluster_cache_version_singleton is not None:
-        return _cluster_cache_version_singleton
+class ClusterCacheConfig:
+    @lru_cache(maxsize=1)
+    def get_version(self) -> str:
+        """
+        [리뷰반영] CLUSTER_CACHE_VERSION 환경 변수를 지연 로드(lazy-load)하고 캐싱한다.
+        모듈 임포트 시점의 잦은 로깅 스팸(서버리스/오토스케일링 환경 등)을 방지한다.
+        """
+        raw_val = os.environ.get(_CLUSTER_CACHE_VERSION_ENV_KEY)
 
-    raw_val = os.environ.get(_CLUSTER_CACHE_VERSION_ENV_KEY)
-    
-    # 1) 미설정 시 조용히 기본값 사용하되, 최초 로딩 시점에 INFO 로그로 남겨 관측성 향상
-    if raw_val is None:
-        logger.info(
-            "[TOPIC_CLUSTERING] %s 환경 변수가 미설정되었습니다. 기본값 %r을 사용합니다.",
-            _CLUSTER_CACHE_VERSION_ENV_KEY,
-            _CLUSTER_CACHE_VERSION_DEFAULT,
-        )
-        _cluster_cache_version_singleton = _CLUSTER_CACHE_VERSION_DEFAULT
-        return _cluster_cache_version_singleton
+        # 1) 미설정 시 조용히 기본값 사용하되, 최초 로딩 시점에 INFO 로그로 남겨 관측성 향상
+        if raw_val is None:
+            logger.info(
+                "[TOPIC_CLUSTERING] %s 환경 변수가 미설정되었습니다. 기본값 %r을 사용합니다.",
+                _CLUSTER_CACHE_VERSION_ENV_KEY,
+                _CLUSTER_CACHE_VERSION_DEFAULT,
+            )
+            return _CLUSTER_CACHE_VERSION_DEFAULT
 
-    val = raw_val.strip()
-    # 2) 설정되었으나 공백인 경우 운영자 실수로 간주하여 WARNING 로그
-    if not val:
-        # [리뷰반영] 공백인 경우 원본 값(raw_val)을 repr()로 남겨 정확한 설정 문제 진단을 돕는다.
-        logger.warning(
-            "[TOPIC_CLUSTERING] %s 환경 변수가 비정상(공백)입니다 (운영자 오설정 의심, raw=%r). 기본값 %r로 폴백합니다.",
-            _CLUSTER_CACHE_VERSION_ENV_KEY,
-            raw_val,
-            _CLUSTER_CACHE_VERSION_DEFAULT,
-        )
-        _cluster_cache_version_singleton = _CLUSTER_CACHE_VERSION_DEFAULT
-        return _cluster_cache_version_singleton
-
-    _cluster_cache_version_singleton = val
-    return _cluster_cache_version_singleton
+        val = raw_val.strip()
+        # 2) 설정되었으나 공백인 경우 운영자 실수로 간주하여 WARNING 로그
+        if not val:
+            # [리뷰반영] 공백인 경우 원본 값(raw_val)을 repr()로 남겨 정확한 설정 문제 진단을 돕는다.
+            logger.warning(
+                "[TOPIC_CLUSTERING] %s 환경 변수가 비정상(공백)입니다 (운영자 오설정 의심, raw=%r). 기본값 %r로 폴백합니다.",
+                _CLUSTER_CACHE_VERSION_ENV_KEY,
+                raw_val,
+                _CLUSTER_CACHE_VERSION_DEFAULT,
+            )
+            return _CLUSTER_CACHE_VERSION_DEFAULT
 
         return val
 
@@ -133,6 +125,7 @@ def _get_cluster_cache_version() -> str:
                 "리팩터링 시 데코레이터를 제거하지 마십시오."
             )
         cache_clear_fn()
+
 
 # 모듈 레벨 싱글톤 인스턴스 (테스트 시 의존성 주입(DI)에 유리함)
 cluster_cache_config = ClusterCacheConfig()
@@ -385,7 +378,10 @@ _MIN_FLATTEN_CONSECUTIVE_STEPS: int = 2
 
 class ClusteringConfigError(ValueError):
     """클러스터링 알고리즘 설정값 오류 시 발생하는 도메인 특화 예외"""
-    def __init__(self, message: str, param: Optional[str] = None, value: Optional[Any] = None):
+
+    def __init__(
+        self, message: str, param: Optional[str] = None, value: Optional[Any] = None
+    ):
         super().__init__(message)
         self.param = param
         self.value = value
@@ -398,7 +394,7 @@ class ClusteringConfigError(ValueError):
             details.append(f"param={self.param}")
         if self.value is not None:
             details.append(f"value={self.value}")
-        
+
         if details:
             return f"{base_msg} ({', '.join(details)})"
         return base_msg
@@ -434,7 +430,7 @@ def _assert_valid_clustering_config(
         # [리뷰반영] 예외 객체 내부에 캡슐화된 메서드를 호출하여 extra kwargs 제공 (DRY)
         logger.critical(str(err), extra=err.get_log_extra())
         raise err
-    
+
     if min_consecutive_steps < 1:
         err = ClusteringConfigError(
             "[TOPIC_CLUSTERING] Misconfiguration: _MIN_FLATTEN_CONSECUTIVE_STEPS must be >= 1.",
@@ -918,9 +914,8 @@ def _create_kmeans(n_clusters: int) -> KMeans:
 
 import typing
 
-def _compute_silhouette_safe(
-    embeddings: np.ndarray, labels: np.ndarray
-) -> float:
+
+def _compute_silhouette_safe(embeddings: np.ndarray, labels: np.ndarray) -> float:
     """
     [리뷰반영] 실루엣 점수 계산을 안전하게 수행하는 헬퍼 함수.
     단일 클러스터 붕괴 시 예외를 방지하고 다운샘플링을 적용한다.
@@ -994,7 +989,9 @@ def _maybe_update_inertia_flatten_state(
     )
 
 
-def _determine_optimal_k(embeddings: np.ndarray, max_k: int = _MAX_CLUSTERS_LIMIT) -> int:
+def _determine_optimal_k(
+    embeddings: np.ndarray, max_k: int = _MAX_CLUSTERS_LIMIT
+) -> int:
     """
     엘보우 메서드(1차)와 실루엣 계수(2차)를 활용하여 최적의 K(클러스터 수)를 결정한다.
     """
@@ -1008,14 +1005,16 @@ def _determine_optimal_k(embeddings: np.ndarray, max_k: int = _MAX_CLUSTERS_LIMI
 
     inertias: List[float] = []
     k_values: List[int] = []
-    sil_by_k: Dict[int, float] = {}  # [리뷰반영] K를 키로 실루엣을 매핑하여 O(n) 탐색 제거
+    sil_by_k: Dict[int, float] = (
+        {}
+    )  # [리뷰반영] K를 키로 실루엣을 매핑하여 O(n) 탐색 제거
     inertia_flatten_count = 0
 
     for k in range(2, limit_k + 1):
         kmeans = _create_kmeans(k)
         labels = kmeans.fit_predict(embeddings)
         current_inertia = float(kmeans.inertia_)
-        
+
         inertias.append(current_inertia)
         k_values.append(k)
 
@@ -1086,7 +1085,9 @@ def _extract_cluster_labels(
     return labels
 
 
-async def _get_cached_cluster_result(hashed_user_id: str) -> Optional[List[Dict[str, Any]]]:
+async def _get_cached_cluster_result(
+    hashed_user_id: str,
+) -> Optional[List[Dict[str, Any]]]:
     """
     [리뷰반영] 캐시 조회를 처리하는 내부 헬퍼.
     바이트 디코딩 이슈 방어 및 PII 마스킹 로그 일관성을 보장한다.
@@ -1197,7 +1198,9 @@ async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
             return [{"label": history[0], "weight": 1.0, "size": n_samples}]
 
         # 최대 클러스터 개수는 샘플 수에 비례하되 전역 상한으로 제한
-        optimal_k = _determine_optimal_k(embeddings, max_k=min(_MAX_CLUSTERS_LIMIT, n_samples - 1))
+        optimal_k = _determine_optimal_k(
+            embeddings, max_k=min(_MAX_CLUSTERS_LIMIT, n_samples - 1)
+        )
 
         # 공통 팩토리 헬퍼를 사용하여 KMeans 초기화
         kmeans = _create_kmeans(optimal_k)

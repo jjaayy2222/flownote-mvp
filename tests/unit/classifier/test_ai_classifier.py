@@ -1,9 +1,11 @@
 # tests/unit/classifier/test_ai_classifier.py
 
-import pytest
-import json
 import datetime
+import json
 from unittest.mock import MagicMock
+
+import pytest
+
 from backend.classifier.ai_classifier import AIClassifier
 from backend.services.gpt_helper import GPT4oHelper
 

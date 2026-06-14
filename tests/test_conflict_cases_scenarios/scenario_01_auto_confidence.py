@@ -21,43 +21,45 @@ from backend.database.metadata_schema import ClassificationMetadataExtender
 
 def test_scenario_01():
     """Scenario 1: 자동 신뢰도 해결"""
-    
+
     test_text = "프로젝트 문서 작성"
-    
+
     print("=" * 80)
     print("🧪 Scenario 1: 자동 신뢰도 해결 (명확한 승자)")
     print("=" * 80)
     print(f"Input: {test_text}")
     print()
-    
+
     # 분류 실행
     result = run_para_agent_sync(test_text)
-    
+
     # ✅ 실제 구조에 맞게!
-    category = result.get('category', '')
-    confidence = result.get('confidence', 0)
-    conflict_detected = result.get('conflict_detected', False)
-    snapshot_id = result.get('snapshot_id', 'unknown')
-    
+    category = result.get("category", "")
+    confidence = result.get("confidence", 0)
+    conflict_detected = result.get("conflict_detected", False)
+    snapshot_id = result.get("snapshot_id", "unknown")
+
     print(f"📊 분류 결과:")
     print(f"  - Category: {category}")
     print(f"  - Confidence: {confidence}")
     print(f"  - Conflict: {conflict_detected}")
     print(f"  - Snapshot ID: {snapshot_id}")
     print()
-    
+
     # ✅ 검증: 신뢰도 높은 결과
     assert confidence > 0.8, f"신뢰도 부족: {confidence}"
     assert not conflict_detected, "충돌이 감지되면 안 됨 (자동 해결 시나리오)"
-    assert category in ["Projects", "Areas", "Resources", "Archive"], f"예상 카테고리 불일치: {category}"
-    
+    assert category in [
+        "Projects",
+        "Areas",
+        "Resources",
+        "Archive",
+    ], f"예상 카테고리 불일치: {category}"
+
     # DB 저장
     meta = ClassificationMetadataExtender()
-    file_id = meta.save_classification_result(
-        result,
-        filename=f"scenario_01_test.txt"
-    )
-    
+    file_id = meta.save_classification_result(result, filename=f"scenario_01_test.txt")
+
     print(f"✅ Scenario 1 PASS!")
     print(f"  - Category: {category}")
     print(f"  - Confidence: {confidence}")
@@ -65,10 +67,10 @@ def test_scenario_01():
     print(f"  - DB Saved: file_id={file_id}")
     print()
 
+
 # 테스트
 if __name__ == "__main__":
     test_scenario_01()
-
 
 
 """test_result_1 - ❌ (데이터 구조 다름을 확인)

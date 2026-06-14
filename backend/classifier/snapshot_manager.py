@@ -6,15 +6,17 @@ Snapshot 관리 클래스
     - 비교 로직은 나중에 구현 예정
 """
 
+import copy
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Dict, Any
-import json
-import copy
+from typing import Any, Dict, List
+
 
 @dataclass
 class Snapshot:
     """분류 결과 스냅샷"""
+
     id: str
     timestamp: datetime
     text: str
@@ -22,7 +24,7 @@ class Snapshot:
     keyword_result: dict
     conflict_result: dict
     metadata: dict
-    
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
@@ -34,17 +36,19 @@ class Snapshot:
             "metadata": self.metadata,
         }
 
+
 class SnapshotManager:
     """스냅샷 저장 및 관리"""
-    
+
     def __init__(self):
         self.snapshots: List[Snapshot] = []
-    
-    def save_snapshot(self, text: str, para_result: dict, 
-                    keyword_result: dict, conflict_result: dict) -> Snapshot:
+
+    def save_snapshot(
+        self, text: str, para_result: dict, keyword_result: dict, conflict_result: dict
+    ) -> Snapshot:
         """
         분류 결과 저장
-        
+
         - Deep Copy로 데이터 독립성 보장하기
         """
         snapshot = Snapshot(
@@ -59,11 +63,11 @@ class SnapshotManager:
                 "confidence": conflict_result.get("confidence_score", 0),
                 "is_conflict": conflict_result.get("is_conflict", False),
                 "final_category": conflict_result.get("final_category"),
-            }
+            },
         )
         self.snapshots.append(snapshot)
         return snapshot
-    
+
     def get_snapshots(self) -> List[dict]:
         """모든 스냅샷 반환"""
         return [s.to_dict() for s in self.snapshots]
@@ -79,10 +83,10 @@ class SnapshotManager:
         """2개 스냅샷 비교"""
         snap1 = next((s for s in self.snapshots if s.id == id1), None)
         snap2 = next((s for s in self.snapshots if s.id == id2), None)
-        
+
         if not snap1 or not snap2:
             return {"error": "Snapshot not found"}
-        
+
         return {
             "snap1_id": id1,
             "snap2_id": id2,
@@ -91,7 +95,7 @@ class SnapshotManager:
             "keyword_diff": snap1.keyword_result != snap2.keyword_result,
             "conflict_diff": snap1.conflict_result != snap2.conflict_result,
         }
-    
+
     def clear_snapshots(self):
         """모든 스냅샷 삭제"""
         self.snapshots.clear()

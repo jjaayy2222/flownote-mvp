@@ -38,12 +38,7 @@ from backend.core.config.streaming import (
     STREAMING_DEFAULT_STREAM_VERSION,
     StreamVersion,
 )
-from backend.schemas.streaming import (
-    DoneChunk,
-    ErrorChunk,
-    StreamChunk,
-    TokenChunk,
-)
+from backend.schemas.streaming import DoneChunk, ErrorChunk, StreamChunk, TokenChunk
 
 if TYPE_CHECKING:
     from langgraph.graph.state import CompiledStateGraph
@@ -78,6 +73,7 @@ class _StreamEvent(TypedDict, total=False):
     run_id: str
     tags: list[str]
     metadata: dict[str, Any]
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LangGraph 이벤트 타입 상수 (문자열 하드코딩 방지)
@@ -146,11 +142,11 @@ def _extract_token_from_event(event: Mapping[str, Any]) -> str | None:
     # run_id: None(키 없음)과 실제 빈 문자열을 구분하여 로그 명확성 확보
     _raw_run_id = event.get("run_id")
     run_id: str = str(_raw_run_id) if _raw_run_id is not None else "N/A"
-    
+
     if _EVENT_DATA_KEY not in event:
         # data 키가 아예 없는 이벤트: 정상 케이스로 간주
         return None
-        
+
     raw_data = event[_EVENT_DATA_KEY]
     if raw_data is None:
         logger.warning(
@@ -160,7 +156,7 @@ def _extract_token_from_event(event: Mapping[str, Any]) -> str | None:
             run_id,
         )
         return None
-        
+
     if not isinstance(raw_data, Mapping):
         logger.warning(
             "[STREAM][SCHEMA] Unexpected data type in streaming event '%s' "
@@ -182,7 +178,6 @@ def _extract_token_from_event(event: Mapping[str, Any]) -> str | None:
             run_id,
         )
         return None
-
 
     content = getattr(chunk, _CONTENT_KEY, None)
     if not isinstance(content, str) or not content:
@@ -241,9 +236,7 @@ async def stream_agent_response(
 
     except asyncio.CancelledError:
         # 클라이언트 연결 종료 — 조용히 정리(Graceful Teardown)
-        logger.info(
-            "[STREAM] Client disconnected. Graceful teardown initiated."
-        )
+        logger.info("[STREAM] Client disconnected. Graceful teardown initiated.")
         # CancelledError를 재발생시켜 상위 태스크가 올바르게 취소될 수 있도록 함
         raise
 
@@ -278,4 +271,3 @@ async def stream_agent_response(
 
     # 스트림 정상 완료
     yield DoneChunk()
-

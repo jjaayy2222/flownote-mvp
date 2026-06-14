@@ -1,11 +1,11 @@
 # tests/test_integration_onboarding_classification.py
 
-import sys
-from pathlib import Path
-
 import io
 import os
+import sys
 import uuid
+from pathlib import Path
+
 import pytest
 import requests
 
@@ -32,25 +32,26 @@ BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 
 from unittest.mock import patch
 
-@patch('backend.services.gpt_helper.GPT4oHelper.suggest_areas')
-@patch('backend.services.gpt_helper.GPT4oHelper.classify_text')
-@patch('backend.services.gpt_helper.GPT4oHelper.generate_keywords')
-def test_onboarding_to_classification_file_flow(mock_keywords, mock_classify, mock_suggest, client):
+
+@patch("backend.services.gpt_helper.GPT4oHelper.suggest_areas")
+@patch("backend.services.gpt_helper.GPT4oHelper.classify_text")
+@patch("backend.services.gpt_helper.GPT4oHelper.generate_keywords")
+def test_onboarding_to_classification_file_flow(
+    mock_keywords, mock_classify, mock_suggest, client
+):
     # Mock 설정
     mock_suggest.return_value = {
         "status": "success",
         "areas": ["Python", "AI", "Web"],
-        "message": "Mocked response"
+        "message": "Mocked response",
     }
     mock_classify.return_value = {
         "status": "success",
         "category": "Project",
         "confidence": 0.9,
-        "reasoning": "Mocked reasoning"
+        "reasoning": "Mocked reasoning",
     }
-    mock_keywords.return_value = {
-        "Python": ["FlowNote", "Test"]
-    }
+    mock_keywords.return_value = {"Python": ["FlowNote", "Test"]}
     """
     온보딩(step1 → suggest-areas → save-context → status) 후
     분류 관련 엔드포인트(/api/classify/file)가 정상 동작하는지까지 한 번에 검증.

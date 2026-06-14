@@ -56,9 +56,9 @@ def _mask_nested_pii(data: Any, pii_fields: set[str]) -> Any:
                 result[k] = v
         return result
     elif isinstance(data, (list, tuple, set)):
-        # 참고: JSON 명세는 set(집합)을 네이티브 배열 타입으로 지원하지 않습니다. 
+        # 참고: JSON 명세는 set(집합)을 네이티브 배열 타입으로 지원하지 않습니다.
         # 이를 무방비로 직렬화하면 단순 문자열 "{x, y}" 형태로 데이터 구조가 오염될 수 있습니다.
-        # 향후 학습 파이프라인에서 예측 가능하고 일관된 JSON 배열([]) 형태로 
+        # 향후 학습 파이프라인에서 예측 가능하고 일관된 JSON 배열([]) 형태로
         # 구조를 보존하기 위해, 여기서 의도적으로 set을 list로 정규화합니다.
         container_type = list if isinstance(data, set) else type(data)
         return container_type(_mask_nested_pii(item, pii_fields) for item in data)
@@ -91,17 +91,17 @@ def serialize_to_jsonl(
 
     try:
         pii_fields_set = set(pii_fields) if pii_fields else set()
-        
+
         fallback_counts: Dict[str, int] = {}
-        
+
         # Dataclass, datetime 등 비-직렬화 객체 발생으로 인한 런타임 에러 방지용 안전 장치
-        # (주의: 대규모 데이터셋 처리 시 I/O 부하와 로그 스팸을 방지하기 위해 
+        # (주의: 대규모 데이터셋 처리 시 I/O 부하와 로그 스팸을 방지하기 위해
         # 여기서 개별 건마다 직접 로깅하지 않고, 타입별 발생 횟수만 집계하여 최종 요약합니다.)
         def _json_fallback(obj: Any) -> str:
             obj_type = type(obj).__name__
             fallback_counts[obj_type] = fallback_counts.get(obj_type, 0) + 1
             return str(obj)
-        
+
         with open(absolute_path, "w", encoding="utf-8") as f:
             for item in dataset:
                 # PII 필드 대상 재귀적 깊은 마스킹 적용 (backend.utils.mask_pii_id 재사용)
@@ -109,7 +109,9 @@ def serialize_to_jsonl(
                 masked_item = _mask_nested_pii(item, pii_fields_set)
 
                 # JSON 직렬화 (유니코드 문자 보존 및 비-직렬화 객체 문자열 변환 처리)
-                json_line = json.dumps(masked_item, ensure_ascii=False, default=_json_fallback)
+                json_line = json.dumps(
+                    masked_item, ensure_ascii=False, default=_json_fallback
+                )
                 f.write(json_line + "\n")
 
         if fallback_counts:
@@ -118,18 +120,18 @@ def serialize_to_jsonl(
             extra_payload = {
                 "fallback_counts": fallback_counts,
                 "filepath": absolute_path,
-                "total_items": len(dataset)
+                "total_items": len(dataset),
             }
-            
+
             if strict_alert:
                 logger.warning(
                     "[OBS] Non-serializable types encountered during JSONL serialization (fallback applied).",
-                    extra=extra_payload
+                    extra=extra_payload,
                 )
             else:
                 logger.info(
                     "Non-serializable types encountered during JSONL serialization (fallback applied).",
-                    extra=extra_payload
+                    extra=extra_payload,
                 )
 
         logger.info(

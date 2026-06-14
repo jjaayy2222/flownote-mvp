@@ -1,14 +1,16 @@
 # tests/units/test_utils.py
 
-import pytest
 import os
-from unittest.mock import patch, mock_open, MagicMock
+from unittest.mock import MagicMock, mock_open, patch
+
+import pytest
+
 from backend.utils import (
     count_tokens,
-    read_file_content,
-    format_file_size,
     estimate_cost,
+    format_file_size,
     load_pdf,
+    read_file_content,
     save_to_markdown,
 )
 

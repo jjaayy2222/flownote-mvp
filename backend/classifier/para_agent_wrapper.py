@@ -4,10 +4,12 @@
 
 import asyncio
 import logging
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 from backend.classifier.para_agent import run_para_agent  # ← async 함수
 
 logger = logging.getLogger(__name__)
+
 
 def run_para_agent_sync(text: str, metadata: Optional[Dict] = None) -> Dict[str, Any]:
     """
@@ -18,14 +20,14 @@ def run_para_agent_sync(text: str, metadata: Optional[Dict] = None) -> Dict[str,
         # 🔥 asyncio 이벤트 루프에서 async 함수 실행
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
+
         result = loop.run_until_complete(
             run_para_agent(text=text, metadata=metadata or {})
         )
-        
+
         loop.close()
         return result
-        
+
     except Exception as e:
         logger.error(f"❌ Para Agent Error: {str(e)}")
         # Fallback: 기본 분류
@@ -34,7 +36,7 @@ def run_para_agent_sync(text: str, metadata: Optional[Dict] = None) -> Dict[str,
             "keyword_tags": text.split()[:10],
             "confidence": 0.5,
             "conflict_detected": False,
-            "resolution_method": "fallback"
+            "resolution_method": "fallback",
         }
 
 
@@ -44,7 +46,7 @@ if __name__ == "__main__":
     FlowNote는 AI 기반 문서 분류 도구입니다.
     프로젝트 관리, 메타데이터 추출, PARA 분류를 지원합니다.
     """
-    
+
     result = run_para_agent_sync(test_text)
     print(f"✅ 분류 결과: {result}")
 
@@ -182,5 +184,3 @@ if __name__ == "__main__":
             }
 
 """
-
-

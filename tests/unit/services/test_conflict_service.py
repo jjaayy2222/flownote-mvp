@@ -1,9 +1,11 @@
 # tests/unit/services/test_conflict_service.py
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from backend.services.conflict_service import ConflictService
+
+import pytest
+
 from backend.classifier.conflict_resolver import ClassificationResult
+from backend.services.conflict_service import ConflictService
 
 
 @pytest.mark.asyncio

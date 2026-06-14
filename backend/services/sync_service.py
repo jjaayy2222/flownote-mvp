@@ -8,15 +8,15 @@ Sync Service Abstraction
 import hashlib
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional, List, Any
 from datetime import datetime
+from typing import Any, List, Optional
 
+from backend.models.conflict import ResolutionMethod, SyncConflict, SyncConflictType
 from backend.models.external_sync import (
-    ExternalToolConnection,
     ExternalFileMapping,
+    ExternalToolConnection,
     SyncStatus,
 )
-from backend.models.conflict import SyncConflict, SyncConflictType, ResolutionMethod
 
 logger = logging.getLogger(__name__)
 

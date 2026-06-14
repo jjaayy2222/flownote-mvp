@@ -6,17 +6,13 @@ Obsidian 동기화 Unit Tests
 개별 컴포넌트의 독립적인 동작을 검증합니다.
 """
 
-import pytest
 from pathlib import Path
 
-from backend.mcp.obsidian_server import ObsidianSyncService, ObsidianFileWatcher
-from backend.models.conflict import (
-    SyncConflict,
-    SyncConflictType,
-    ResolutionStatus,
-)
-from backend.models.external_sync import ExternalToolType
+import pytest
 
+from backend.mcp.obsidian_server import ObsidianFileWatcher, ObsidianSyncService
+from backend.models.conflict import ResolutionStatus, SyncConflict, SyncConflictType
+from backend.models.external_sync import ExternalToolType
 
 # Note: Fixtures는 tests/conftest.py에서 제공됩니다.
 

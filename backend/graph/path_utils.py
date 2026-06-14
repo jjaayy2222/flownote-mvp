@@ -46,4 +46,6 @@ def build_graph_path(hashed_user_id: str, storage_base_path: str) -> Path:
     if not storage_base_path:
         raise ValueError("build_graph_path: 'storage_base_path' must not be empty.")
 
-    return Path(storage_base_path) / _GRAPH_SUBDIR / f"{hashed_user_id}{_GRAPH_FILE_EXT}"
+    return (
+        Path(storage_base_path) / _GRAPH_SUBDIR / f"{hashed_user_id}{_GRAPH_FILE_EXT}"
+    )

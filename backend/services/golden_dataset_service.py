@@ -16,11 +16,15 @@ import numbers
 from dataclasses import dataclass
 from json import JSONDecodeError
 from typing import Any, Optional
-from backend.api.models.shared import RATING_UP  # type: ignore[import, import-untyped, reportMissingImports]
 
 import redis.exceptions
 
-from backend.services.chat_history_service import FEEDBACK_KEY_PREFIX  # type: ignore[import]
+from backend.api.models.shared import (
+    RATING_UP,
+)  # type: ignore[import, import-untyped, reportMissingImports]
+from backend.services.chat_history_service import (
+    FEEDBACK_KEY_PREFIX,
+)  # type: ignore[import]
 from backend.services.redis_pubsub import redis_client  # type: ignore[import]
 from backend.utils import mask_pii_id  # type: ignore[import]
 
@@ -165,10 +169,10 @@ async def filter_positive_feedbacks(
 
         cursor = 0
         total_scanned_keys = 0
-        total_skipped_parse = 0    # JSON 디코딩 오류 또는 timestamp 유효성 실패
-        total_skipped_rating = 0   # rating != RATING_UP (부정/없음 평가)
+        total_skipped_parse = 0  # JSON 디코딩 오류 또는 timestamp 유효성 실패
+        total_skipped_rating = 0  # rating != RATING_UP (부정/없음 평가)
         total_skipped_quality = 0  # session_id/message_id 비어있음
-        total_skipped_dedup = 0    # (session_id, message_id) 중복
+        total_skipped_dedup = 0  # (session_id, message_id) 중복
 
         while True:
             cursor, partial_keys = await redis_client.redis.scan(
@@ -179,7 +183,11 @@ async def filter_positive_feedbacks(
 
             for raw_key in partial_keys:
                 # _decode_str 인라인: 함수가 제거되었으므로 직접 디코딩
-                key_str = raw_key.decode("utf-8") if isinstance(raw_key, bytes) else str(raw_key)
+                key_str = (
+                    raw_key.decode("utf-8")
+                    if isinstance(raw_key, bytes)
+                    else str(raw_key)
+                )
                 session_id = key_str.removeprefix(FEEDBACK_KEY_PREFIX)
                 total_scanned_keys += 1
 
@@ -198,9 +206,17 @@ async def filter_positive_feedbacks(
                 for msg_id_raw, meta_raw in feedback_hash.items():
                     # [Step 1] meta_raw와 msg_id_raw를 이 지점에서 한 번만 디코딩/파싱합니다.
                     # 헬퍼(_parse_feedback_meta)은 이미 정규화된(str/dict) 타입만 입력받습니다.
-                    msg_id = msg_id_raw.decode("utf-8") if isinstance(msg_id_raw, bytes) else str(msg_id_raw)
+                    msg_id = (
+                        msg_id_raw.decode("utf-8")
+                        if isinstance(msg_id_raw, bytes)
+                        else str(msg_id_raw)
+                    )
                     try:
-                        meta_str = meta_raw.decode("utf-8") if isinstance(meta_raw, bytes) else str(meta_raw)
+                        meta_str = (
+                            meta_raw.decode("utf-8")
+                            if isinstance(meta_raw, bytes)
+                            else str(meta_raw)
+                        )
                         meta = json.loads(meta_str)
                     except (JSONDecodeError, ValueError):
                         # json.loads는 meta_str이 str임이 보장되는 시점에 호출되므로
@@ -264,8 +280,8 @@ async def filter_positive_feedbacks(
             extra={
                 "total_collected": len(results),
                 "total_scanned_keys": total_scanned_keys,
-                "skipped_parse_error": total_skipped_parse,    # 실제 파싱/타입 오류만 집계
-                "skipped_rating_gate": total_skipped_rating,   # rating != RATING_UP 필터 수
+                "skipped_parse_error": total_skipped_parse,  # 실제 파싱/타입 오류만 집계
+                "skipped_rating_gate": total_skipped_rating,  # rating != RATING_UP 필터 수
                 "skipped_quality_gate": total_skipped_quality,
                 "skipped_dedup": total_skipped_dedup,
             },

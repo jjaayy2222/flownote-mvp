@@ -33,19 +33,21 @@ from typing import Any, AsyncGenerator
 import anyio
 import anyio.to_thread
 from cachetools import TTLCache  # type: ignore[import, import-untyped]
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from backend.agent.streaming import stream_agent_response  # noqa: F401 (3단계 연동 예정)
+from backend.agent.streaming import (
+    stream_agent_response,
+)  # noqa: F401 (3단계 연동 예정)
 from backend.api.models import ChatQueryRequest
+from backend.core.aws_client_wrapper import fetch_global_pepper
 from backend.core.config.streaming import StreamingConfig
-from backend.schemas.streaming import DoneChunk, ErrorChunk, StreamChunk, TokenChunk
-from backend.utils import get_chat_log_extra
 from backend.core.config_validator import GraphEngineConfig, PersonalizedRAGConfig
 from backend.graph import NetworkXGraphRepository
+from backend.schemas.streaming import DoneChunk, ErrorChunk, StreamChunk, TokenChunk
 from backend.services.personalized_index_service import compute_hashed_user_id
-from backend.core.aws_client_wrapper import fetch_global_pepper
+from backend.utils import get_chat_log_extra
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +66,7 @@ _rag_cfg = PersonalizedRAGConfig.from_env()
 _active_sse_sessions: int = 0
 _sse_sessions_lock = asyncio.Lock()
 
+
 async def sse_session_tracker() -> AsyncGenerator[int, None]:
     """
     FastAPI Depends: 워커 인스턴스(Per-worker) 내부 SSE 세션 수를 추적합니다.
@@ -71,18 +74,20 @@ async def sse_session_tracker() -> AsyncGenerator[int, None]:
     global _active_sse_sessions
     async with _sse_sessions_lock:
         _active_sse_sessions += 1
-    
+
     try:
         yield _active_sse_sessions
     finally:
         async with _sse_sessions_lock:
             _active_sse_sessions -= 1
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 전역 의존성 캐싱 (Per-worker)
 # ─────────────────────────────────────────────────────────────────────────────
 _pepper_cache: TTLCache = TTLCache(maxsize=1, ttl=300)  # 5분 단위 갱신
 _pepper_lock = asyncio.Lock()
+
 
 async def get_cached_global_pepper() -> str:
     """KMS 지연시간 감소를 위한 global_pepper 메모리 캐싱"""
@@ -99,6 +104,7 @@ async def get_cached_global_pepper() -> str:
         pepper = await fetch_global_pepper()
         _pepper_cache["pepper"] = pepper
         return pepper
+
 
 # SSE 이벤트 이름 상수 (클라이언트 API 계약 — 하드코딩 방지)
 # 프론트엔드와 동기화된 표준 이벤트 이름이므로, 변경 시 이 상수만 수정하면 됩니다.
@@ -205,16 +211,18 @@ async def stream_chat_endpoint(
         # [설계결정] DB 연동 전까지 user_id를 이용해 임시 salt 구성
         per_user_salt = f"mock_salt_{body.user_id}"
         global_pepper = await get_cached_global_pepper()
-        
+
         hashed_uid = compute_hashed_user_id(body.user_id, per_user_salt, global_pepper)
-        
-        # [설계결정] node_count는 디스크 I/O를 유발하므로 이벤트 루프 블로킹을 방지하고, 
+
+        # [설계결정] node_count는 디스크 I/O를 유발하므로 이벤트 루프 블로킹을 방지하고,
         # 스레드 안전성(Thread-safety) 확보 및 상태 공유 차단을 위해 스레드 내부에서 리포지토리 독립 인스턴스를 생성
         def _get_node_count() -> int:
             # 리포지토리 레벨에 캡슐화된 컨텍스트 매니저를 통해 안전하게 로드 후 해제
-            with NetworkXGraphRepository(storage_base_path=_rag_cfg.storage_base_path).stateless_load(hashed_uid) as local_repo:
+            with NetworkXGraphRepository(
+                storage_base_path=_rag_cfg.storage_base_path
+            ).stateless_load(hashed_uid) as local_repo:
                 return local_repo.node_count(hashed_uid)
-            
+
         current_node_count = await anyio.to_thread.run_sync(_get_node_count)
     except Exception as exc:
         logger.warning(
@@ -260,25 +268,38 @@ async def stream_chat_endpoint(
                   yield chunk
             """
             try:
-                from backend.services.chat_service import get_chat_service
+                from langchain_core.runnables import (
+                    RunnableConfig,
+                )  # type: ignore[import]
+
                 from backend.agent.streaming import stream_agent_response
-                from langchain_core.runnables import RunnableConfig  # type: ignore[import]
+                from backend.services.chat_service import get_chat_service
 
                 chat_service = get_chat_service()
 
                 # 기존 /api/chat 엔드포인트와 공통 로직 리팩터링 (재사용)
-                initial_state, agent_graph = await chat_service.build_agent_state_and_graph(
-                    query=body.query,
-                    user_id=body.user_id,
-                    session_id=body.session_id,
+                initial_state, agent_graph = (
+                    await chat_service.build_agent_state_and_graph(
+                        query=body.query,
+                        user_id=body.user_id,
+                        session_id=body.session_id,
+                    )
                 )
 
                 # downstream 컴포넌트 오류 방지를 위한 식별자 정규화
-                effective_session_id = body.session_id if body.session_id and body.session_id.strip() else f"temp_{uuid.uuid4().hex}"
-                config = RunnableConfig(configurable={"thread_id": effective_session_id})
+                effective_session_id = (
+                    body.session_id
+                    if body.session_id and body.session_id.strip()
+                    else f"temp_{uuid.uuid4().hex}"
+                )
+                config = RunnableConfig(
+                    configurable={"thread_id": effective_session_id}
+                )
 
                 # 실제 LangGraph 스트리밍 어댑터 호출
-                async for chunk in stream_agent_response(agent_graph, initial_state, config):
+                async for chunk in stream_agent_response(
+                    agent_graph, initial_state, config
+                ):
                     yield chunk
 
             except Exception as exc:  # noqa: BLE001
@@ -363,7 +384,9 @@ async def stream_chat_endpoint(
                             "safe_payload=%s. Possible schema mismatch.",
                             _LOG_TAG,
                             type(chunk).__name__,
-                            _safe_repr(chunk),  # PII 유출 위험이 전혀 없는 구조 정보와 비민감 메타데이터 로깅 (안전성 우선 원칙)
+                            _safe_repr(
+                                chunk
+                            ),  # PII 유출 위험이 전혀 없는 구조 정보와 비민감 메타데이터 로깅 (안전성 우선 원칙)
                         )
                         yield {
                             "event": _SSE_EVENT_ERROR,
@@ -376,7 +399,9 @@ async def stream_chat_endpoint(
 
                     # ── 클라이언트 disconnect 감지 (각 청크 처리 후 즉시 확인) ──
                     if await request.is_disconnected():
-                        logger.info("%s Client disconnected. Stopping stream.", _LOG_TAG)
+                        logger.info(
+                            "%s Client disconnected. Stopping stream.", _LOG_TAG
+                        )
                         break
 
         except asyncio.TimeoutError:
@@ -425,7 +450,7 @@ async def stream_chat_endpoint(
                         _LOG_TAG,
                         exc_info=True,
                     )
-            
+
             total_elapsed = time.monotonic() - request_start
             logger.info(
                 "%s Session closed. total_elapsed=%.2fs, chunks_sent=%d",

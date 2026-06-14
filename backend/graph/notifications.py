@@ -32,7 +32,9 @@ logger = logging.getLogger(__name__)
 # 메시지 템플릿 상수 (하드코딩 금지 — 이곳에서만 관리)
 # ─────────────────────────────────────────
 
-_NOTIFICATION_TITLE_TEMPLATE = "연결 추천: {orphan_label}과(와) {candidate_label}을(를) 연결해 보시겠어요?"
+_NOTIFICATION_TITLE_TEMPLATE = (
+    "연결 추천: {orphan_label}과(와) {candidate_label}을(를) 연결해 보시겠어요?"
+)
 _NOTIFICATION_BODY_TEMPLATE = (
     "'{orphan_label}' 노트가 고립되어 있습니다. "
     "'{candidate_label}'과(와) {similarity_pct}% 연관성이 있는 것으로 분석되었습니다. "
@@ -88,7 +90,11 @@ def _send_log_notification(notification: LinkNotification) -> None:
         "[GRAPH][NOTIFICATION] 연결 추천 알림 전송: user_id_hash=%s | orphan=%s | candidate=%s | score=%.4f | 제목=%s",
         notification.user_id_hash or "unassigned",
         notification.orphan_node_id[:8] if notification.orphan_node_id else "<empty>",
-        notification.candidate_node_id[:8] if notification.candidate_node_id else "<empty>",
+        (
+            notification.candidate_node_id[:8]
+            if notification.candidate_node_id
+            else "<empty>"
+        ),
         notification.similarity_score,
         notification.title,
     )

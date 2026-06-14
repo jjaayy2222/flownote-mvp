@@ -3,11 +3,12 @@
 """
 AIClassifier - LLM 기반 분류기
 """
-import logging
-import json
+
 import asyncio
+import json
+import logging
 import re
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 from backend.classifier.base_classifier import BaseClassifier
 from backend.services.gpt_helper import GPT4oHelper

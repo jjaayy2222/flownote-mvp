@@ -1,16 +1,16 @@
 # backend/services/obsidian_sync.py
 
+import asyncio
+import logging
 import os
 import shutil
-import logging
-import asyncio
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional
 
-from backend.services.sync_service import SyncServiceBase
-from backend.services.ignore_manager import ignore_manager
-from backend.models.external_sync import ExternalToolConnection, SyncStatus
 from backend.models.conflict import SyncConflict
+from backend.models.external_sync import ExternalToolConnection, SyncStatus
+from backend.services.ignore_manager import ignore_manager
+from backend.services.sync_service import SyncServiceBase
 
 logger = logging.getLogger(__name__)
 

@@ -1,8 +1,10 @@
 # tests/integration/test_hybrid_flow.py
 
-import pytest
 import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from backend.services.classification_service import ClassificationService
 from backend.services.rule_engine import RuleResult
 

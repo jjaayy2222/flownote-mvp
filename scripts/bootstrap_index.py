@@ -8,10 +8,10 @@
 # sys.path 조작은 이 스크립트가 단독 CLI 유틸리티로 설계되었기 때문이며,
 # poetry/setuptools 기반 패키지 구조가 도입되면 Entry Point로 대체할 수 있습니다.
 
-import sys
 import argparse
 import asyncio
 import logging
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -19,12 +19,12 @@ from typing import Optional
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from backend.services.hybrid_search_service import HybridSearchService
-from backend.chunking import TextChunker
-from backend.api.models import PARACategory
-from backend.config import PathConfig
 import numpy as np
 
+from backend.api.models import PARACategory
+from backend.chunking import TextChunker
+from backend.config import PathConfig
+from backend.services.hybrid_search_service import HybridSearchService
 
 logger = logging.getLogger(__name__)
 
@@ -280,7 +280,9 @@ async def main() -> None:
     )
 
     if total_errors > 0:
-        logger.warning("⚠️ %d개의 배치가 실패했습니다. 로그를 확인하세요.", total_errors)
+        logger.warning(
+            "⚠️ %d개의 배치가 실패했습니다. 로그를 확인하세요.", total_errors
+        )
 
 
 if __name__ == "__main__":

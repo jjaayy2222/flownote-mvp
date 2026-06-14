@@ -1,5 +1,6 @@
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from backend.agent.nodes import analyze_node, classify_node, should_retry
 
 # AgentState는 TypedDict이므로 import만 하면 됨

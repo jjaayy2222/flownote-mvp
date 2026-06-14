@@ -1,8 +1,10 @@
-import pytest
-import numpy as np
 import numbers
-from typing import Optional, Dict
-from unittest.mock import patch, MagicMock
+from typing import Dict, Optional
+from unittest.mock import MagicMock, patch
+
+import numpy as np
+import pytest
+
 from backend.faiss_search import FAISSRetriever
 
 

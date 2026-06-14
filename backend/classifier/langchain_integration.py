@@ -5,16 +5,17 @@ LangChain을 사용한 PARA 분류 통합 모듈 (메타데이터 대비)
 GPT-4o-mini를 사용한 AI 기반 분류
 - 상대경로 + 동적 버전
 - 정규표현식 사용
-- metadata_classification_prompt 읽기 추가 
+- metadata_classification_prompt 읽기 추가
 """
 
 import json
 import logging
 import os
-import sys
 import re
-from typing import Dict, Any, Optional, List
+import sys
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 from dotenv import load_dotenv
 
 # 상대경로 + 동적 계산
@@ -31,9 +32,9 @@ load_dotenv(str(ENV_FILE))
 sys.path.insert(0, str(BACKEND_DIR))
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import PromptTemplate
+from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 # 통합 모델 마이그레이션 임포트
@@ -43,15 +44,18 @@ from backend.models import PARAClassificationOutput
 try:
     # 1번째 시도: 절대 import
     from backend.config import ModelConfig
+
     print("✅ ModelConfig loaded from backend.config")
 except ImportError:
     try:
         # 2번째 시도: 상대 import
         from config import ModelConfig
+
         print("✅ ModelConfig loaded from config")
     except ImportError:
         # 3번째 시도: 직접 환경변수
         print("⚠️ Using os.getenv fallback")
+
         class ModelConfig:
             GPT4O_MINI_API_KEY = os.getenv("GPT4O_MINI_API_KEY")
             GPT4O_MINI_BASE_URL = os.getenv("GPT4O_MINI_BASE_URL")
@@ -63,89 +67,89 @@ logger = logging.getLogger(__name__)
 
 def escape_json_braces_complete(content: str) -> str:
     """모든 JSON 형식의 중괄호를 이스케이프"""
-    
+
     # 1. 백틱(```
     # ```
     # {
     #   "key": "value"
     # }
     # ```
-    
+
     # 패턴: ```로 시작하고 ```
     def escape_code_block(match):
         code_block = match.group(0)
         # 코드 블록 내의 { → {{ 치환
-        code_block = code_block.replace('{\n', '{{\n')
-        code_block = code_block.replace('\n}', '\n}}')
-        code_block = code_block.replace('{ ', '{{ ')
-        code_block = code_block.replace(' }', ' }}')
+        code_block = code_block.replace("{\n", "{{\n")
+        code_block = code_block.replace("\n}", "\n}}")
+        code_block = code_block.replace("{ ", "{{ ")
+        code_block = code_block.replace(" }", " }}")
         return code_block
-    
+
     # ```...```
-    content = re.sub(r'``````', escape_code_block, content)
-    
+    content = re.sub(r"``````", escape_code_block, content)
+
     # 2. 일반 { } 처리 (백틱 밖)
     # {{ → {{{ 로 안 되게 조심하기
     lines = []
     in_code = False
-    
-    for line in content.split('\n'):
-        if line.strip().startswith('```'):
+
+    for line in content.split("\n"):
+        if line.strip().startswith("```"):
             in_code = not in_code
             lines.append(line)
-        elif not in_code and re.match(r'^\s*\{', line):
+        elif not in_code and re.match(r"^\s*\{", line):
             # 라인이 { 로 시작
-            line = re.sub(r'\{\s', '{{ ', line)
-            line = re.sub(r'\{$', '{{', line)
+            line = re.sub(r"\{\s", "{{ ", line)
+            line = re.sub(r"\{$", "{{", line)
             lines.append(line)
-        elif not in_code and re.search(r'\}\s*$', line):
+        elif not in_code and re.search(r"\}\s*$", line):
             # 라인이 } 로 끝남
-            line = re.sub(r'\s\}', ' }}', line)
-            line = re.sub(r'^}', '}}', line)
+            line = re.sub(r"\s\}", " }}", line)
+            line = re.sub(r"^}", "}}", line)
             lines.append(line)
         else:
             lines.append(line)
-    
-    return '\n'.join(lines)
+
+    return "\n".join(lines)
 
 
 def get_para_classification_prompt() -> str:
     """프롬프트 파일 읽기 + 간단한 이스케이프"""
-    
+
     prompt_path = CLASSIFIER_DIR / "prompts" / "para_classification_prompt.txt"
-    
+
     with open(prompt_path, "r", encoding="utf-8") as f:
         content = f.read()
-    
+
     # ✅ 간단한 이스케이프
     lines = []
-    for line in content.split('\n'):
+    for line in content.split("\n"):
         # {text}는 건드리지 말고
-        if '{text}' in line:
+        if "{text}" in line:
             lines.append(line)
         else:
             # 나머지 { } 는 이스케이프
-            line = line.replace('{', '{{').replace('}', '}}')
+            line = line.replace("{", "{{").replace("}", "}}")
             # {text}는 원상복구
-            line = line.replace('{{text}}', '{text}')
+            line = line.replace("{{text}}", "{text}")
             lines.append(line)
-    
-    return '\n'.join(lines)
+
+    return "\n".join(lines)
 
 
 def create_para_prompt(include_metadata: bool = False) -> PromptTemplate:
     """메타데이터 옵션이 있는 프롬프트 생성
-    
+
     Args:
         include_metadata: 메타데이터 포함 여부
-    
+
     Returns:
         PromptTemplate: LangChain 프롬프트
     """
-    
+
     # 기본 프롬프트 로드
     base_prompt = get_para_classification_prompt()
-    
+
     if include_metadata:
         # 메타데이터 섹션 추가
         metadata_instruction = """
@@ -161,56 +165,52 @@ def create_para_prompt(include_metadata: bool = False) -> PromptTemplate:
     else:
         full_prompt = base_prompt
         input_variables = ["text"]
-    
+
     # 프롬프트 생성
-    prompt = PromptTemplate(
-        input_variables=input_variables,
-        template=full_prompt
-    )
-    
+    prompt = PromptTemplate(input_variables=input_variables, template=full_prompt)
+
     return prompt
 
 
 def create_para_chain(include_metadata: bool = False):
     """
     PARA 분류를 위한 LangChain Chain 생성
-    
+
     Args:
         include_metadata: 메타데이터 포함 여부
-    
+
     Returns:
         Runnable: LangChain 실행 가능 객체
     """
-    
+
     # ✅ config의 설정으로 LLM 초기화
     llm = ChatOpenAI(
         api_key=ModelConfig.GPT4O_MINI_API_KEY,
         base_url=ModelConfig.GPT4O_MINI_BASE_URL,
         model=ModelConfig.GPT4O_MINI_MODEL,
         temperature=0.3,
-        max_tokens=500
+        max_tokens=500,
     )
-    
+
     # 프롬프트 생성
     prompt = create_para_prompt(include_metadata=include_metadata)
-    
+
     # JSON 출력 파서
     parser = JsonOutputParser(pydantic_object=PARAClassificationOutput)
-    
+
     # Chain 구성: Prompt → LLM → Parser
     chain = prompt | llm | parser
-    
+
     return chain
 
 
 def classify_with_langchain(
-    text: str,
-    metadata: Optional[Dict[str, Any]] = None
+    text: str, metadata: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     LangChain을 사용해 텍스트를 PARA로 분류
     메타데이터 옵션으로 미래 확장 대비
-    
+
     Args:
         text (str): 분류할 텍스트
         metadata (Optional[Dict]): 옵션 메타데이터
@@ -219,7 +219,7 @@ def classify_with_langchain(
                 "created_date": str,
                 "tags": List[str]
             }
-    
+
     Returns:
         Dict: 분류 결과
             {
@@ -231,42 +231,44 @@ def classify_with_langchain(
                 "has_metadata": bool
             }
     """
-    
+
     try:
         # 메타데이터 포함 여부 결정
         include_metadata = metadata is not None
-        
+
         # Chain 생성
         chain = create_para_chain(include_metadata=include_metadata)
-        
+
         # 입력 데이터 구성
         input_data = {"text": text}
-        
+
         if include_metadata:
-            input_data.update({
-                "filename": metadata.get("filename", "N/A"),
-                "created_date": metadata.get("created_date", "N/A"),
-                "tags": ", ".join(metadata.get("tags", [])) or "None"
-            })
-        
+            input_data.update(
+                {
+                    "filename": metadata.get("filename", "N/A"),
+                    "created_date": metadata.get("created_date", "N/A"),
+                    "tags": ", ".join(metadata.get("tags", [])) or "None",
+                }
+            )
+
         # 분류 실행
         result = chain.invoke(input_data)
-        
+
         logger.info(
             f"분류 완료: {result['category']} "
             f"(confidence: {result['confidence']:.2%}, "
             f"metadata: {include_metadata})"
         )
-        
+
         return {
             "category": result["category"],
             "confidence": result["confidence"],
             "reasoning": result["reasoning"],
             "detected_cues": result.get("detected_cues", []),
             "source": "langchain",
-            "has_metadata": include_metadata
+            "has_metadata": include_metadata,
         }
-    
+
     except Exception as e:
         logger.error(f"LangChain 분류 중 오류: {str(e)}")
         raise
@@ -276,24 +278,25 @@ def classify_with_langchain(
 # 메타데이터 기반 PARA 분류 (새로 추가)
 # ============================================================
 
+
 def get_metadata_classification_prompt() -> str:
     """메타데이터 분류 프롬프트 파일 읽기"""
     prompt_path = CLASSIFIER_DIR / "prompts" / "metadata_classification_prompt.txt"
     try:
         with open(prompt_path, "r", encoding="utf-8") as f:
             content = f.read()
-        
+
         # 간단한 이스케이프 처리
         lines = []
-        for line in content.split('\n'):
-            if '{metadata}' in line:
+        for line in content.split("\n"):
+            if "{metadata}" in line:
                 lines.append(line)
             else:
-                line = line.replace('{', '{{').replace('}', '}}')
-                line = line.replace('{{metadata}}', '{metadata}')
+                line = line.replace("{", "{{").replace("}", "}}")
+                line = line.replace("{{metadata}}", "{metadata}")
                 lines.append(line)
-        
-        return '\n'.join(lines)
+
+        return "\n".join(lines)
     except FileNotFoundError:
         logger.error(f"메타데이터 프롬프트 파일을 찾을 수 없습니다: {prompt_path}")
         raise
@@ -302,30 +305,25 @@ def get_metadata_classification_prompt() -> str:
 def create_metadata_classification_chain():
     """메타데이터 기반 PARA 분류 Chain 생성"""
     prompt_content = get_metadata_classification_prompt()
-    
-    prompt = PromptTemplate(
-        input_variables=["metadata"],
-        template=prompt_content
-    )
-    
+
+    prompt = PromptTemplate(input_variables=["metadata"], template=prompt_content)
+
     llm = ChatOpenAI(
         api_key=ModelConfig.GPT4O_MINI_API_KEY,
         base_url=ModelConfig.GPT4O_MINI_BASE_URL,
         model=ModelConfig.GPT4O_MINI_MODEL,
         temperature=0.0,  # 메타데이터는 deterministic
-        max_tokens=500
+        max_tokens=500,
     )
-    
+
     parser = JsonOutputParser(pydantic_object=PARAClassificationOutput)
     return prompt | llm | parser
 
 
-def classify_with_metadata(
-    metadata: Dict[str, Any]
-) -> Dict[str, Any]:
+def classify_with_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
     """
     메타데이터만을 사용해 PARA로 분류
-    
+
     Args:
         metadata: 메타데이터 딕셔너리 (JSON 형식)
         {
@@ -333,7 +331,7 @@ def classify_with_metadata(
             "temporal_info": {...},
             ...
         }
-    
+
     Returns:
         Dict: 분류 결과
         {
@@ -348,43 +346,40 @@ def classify_with_metadata(
     try:
         # Chain 생성
         chain = create_metadata_classification_chain()
-        
+
         # 메타데이터를 JSON 문자열로 변환
         metadata_json = json.dumps(metadata, ensure_ascii=False, indent=2)
-        
+
         # 분류 실행
         result = chain.invoke({"metadata": metadata_json})
-        
+
         logger.info(
             f"메타데이터 분류 완료: {result['category']} "
             f"(confidence: {result['confidence']:.2%})"
         )
-        
+
         return {
             "category": result["category"],
             "confidence": result["confidence"],
             "reasoning": result["reasoning"],
             "detected_cues": result.get("detected_cues", []),
             "source": "metadata",
-            "metadata_used": True
+            "metadata_used": True,
         }
-    
+
     except Exception as e:
         logger.error(f"메타데이터 분류 중 오류: {str(e)}")
         raise
 
 
-def hybrid_classify(
-    text: str,
-    metadata: Dict[str, Any]
-) -> Dict[str, Any]:
+def hybrid_classify(text: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
     """
     텍스트와 메타데이터 모두를 사용해 하이브리드 분류
-    
+
     Args:
         text: 분류할 텍스트
         metadata: 메타데이터 딕셔너리
-    
+
     Returns:
         Dict: 통합 분류 결과
         {
@@ -400,23 +395,20 @@ def hybrid_classify(
     try:
         # 1. 텍스트 분류
         text_result = classify_with_langchain(text)
-        
+
         # 2. 메타데이터 분류
         metadata_result = classify_with_metadata(metadata)
-        
+
         # 3. 신뢰도 기반 병합
         text_conf = text_result["confidence"]
         meta_conf = metadata_result["confidence"]
-        
+
         if text_conf >= 0.7:
             # 텍스트 70% + 메타 30%
             merge_strategy = "text_dominant (0.7:0.3)"
             # 텍스트 결과를 주로 사용하되 신뢰도 조정
             final_category = text_result["category"]
-            final_confidence = min(
-                text_conf * 0.7 + meta_conf * 0.3,
-                1.0
-            )
+            final_confidence = min(text_conf * 0.7 + meta_conf * 0.3, 1.0)
         elif text_conf >= 0.5:
             # 텍스트 50% + 메타 50%
             merge_strategy = "balanced (0.5:0.5)"
@@ -427,24 +419,18 @@ def hybrid_classify(
             else:
                 # 불일치 시 메타데이터 우선 (메타가 더 명시적)
                 final_category = metadata_result["category"]
-                final_confidence = min(
-                    text_conf * 0.5 + meta_conf * 0.5,
-                    1.0
-                )
+                final_confidence = min(text_conf * 0.5 + meta_conf * 0.5, 1.0)
         else:
             # 메타데이터 우선 (70% 이상)
             merge_strategy = "metadata_dominant (0.3:0.7)"
             final_category = metadata_result["category"]
-            final_confidence = min(
-                text_conf * 0.3 + meta_conf * 0.7,
-                1.0
-            )
-        
+            final_confidence = min(text_conf * 0.3 + meta_conf * 0.7, 1.0)
+
         logger.info(
             f"하이브리드 분류: {final_category} "
             f"(strategy: {merge_strategy}, confidence: {final_confidence:.2%})"
         )
-        
+
         return {
             "category": final_category,
             "confidence": final_confidence,
@@ -452,13 +438,12 @@ def hybrid_classify(
             "text_result": text_result,
             "metadata_result": metadata_result,
             "merge_strategy": merge_strategy,
-            "source": "hybrid"
+            "source": "hybrid",
         }
-    
+
     except Exception as e:
         logger.error(f"하이브리드 분류 중 오류: {str(e)}")
         raise
-
 
 
 # 테스트용
@@ -468,38 +453,49 @@ if __name__ == "__main__":
     print("=" * 60)
     print("Config 기반 LangChain 테스트")
     print("=" * 60)
-    print(f"API Key: {ModelConfig.GPT4O_MINI_API_KEY[:3]}..." if ModelConfig.GPT4O_MINI_API_KEY else "❌ API Key 없음")
-    print(f"API Base: {ModelConfig.GPT4O_MINI_BASE_URL[:3]}..................." if ModelConfig.GPT4O_MINI_BASE_URL else "❌ API Base 못찾음")
-    print(f"Model: {ModelConfig.GPT4O_MINI_MODEL}" if ModelConfig.GPT4O_MINI_MODEL else "❌ Model 없음")
+    print(
+        f"API Key: {ModelConfig.GPT4O_MINI_API_KEY[:3]}..."
+        if ModelConfig.GPT4O_MINI_API_KEY
+        else "❌ API Key 없음"
+    )
+    print(
+        f"API Base: {ModelConfig.GPT4O_MINI_BASE_URL[:3]}..................."
+        if ModelConfig.GPT4O_MINI_BASE_URL
+        else "❌ API Base 못찾음"
+    )
+    print(
+        f"Model: {ModelConfig.GPT4O_MINI_MODEL}"
+        if ModelConfig.GPT4O_MINI_MODEL
+        else "❌ Model 없음"
+    )
     print("=" * 60)
-
 
     # 테스트 1: 텍스트만
     test_text_1 = "11월 30일까지 완성해야 하는 프로젝트 제안서"
-    
+
     print("=" * 60)
     print("테스트 1: 텍스트만 분류")
     print("=" * 60)
-    
+
     try:
         result = classify_with_langchain(test_text_1)
         print(json.dumps(result, indent=2, ensure_ascii=False))
     except Exception as e:
         print(f"오류: {e}")
-    
+
     # 테스트 2: 메타데이터 포함
     print("\n테스트 2: 메타데이터 포함 분류\n")
     test_text_2 = "마케팅 전략"
     test_metadata = {
         "filename": "marketing_strategy_2025.md",
         "created_date": "2025-01-01",
-        "tags": ["work", "important"]
+        "tags": ["work", "important"],
     }
-    
+
     print("\n" + "=" * 60)
     print("테스트 2: 메타데이터 포함 분류")
     print("=" * 60)
-    
+
     try:
         result = classify_with_langchain(test_text_2, metadata=test_metadata)
         print(json.dumps(result, indent=2, ensure_ascii=False))
@@ -508,21 +504,21 @@ if __name__ == "__main__":
 
     # 추가
     # 테스트 3: 메타데이터만 분류 (새로운 함수)
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("테스트 3: 메타데이터만 분류")
-    print("="*60)
+    print("=" * 60)
 
     test_metadata = {
         "basic_info": {
             "title": "2024년 완료된 프로젝트 보고서",
             "summary": "지난해 프로젝트들의 최종 결과",
-            "content_type": "report"
+            "content_type": "report",
         },
         "temporal_info": {
             "created_date": "2024-12-31",
             "deadline": None,
-            "status": "completed"
-        }
+            "status": "completed",
+        },
     }
 
     try:
@@ -532,20 +528,17 @@ if __name__ == "__main__":
         print(f"오류: {e}")
 
     # 테스트 4: 하이브리드 분류 (새로운 함수)
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("테스트 4: 하이브리드 분류 (텍스트 + 메타데이터)")
-    print("="*60)
+    print("=" * 60)
 
     test_text = "다음 분기 마케팅 캠페인"
     test_metadata = {
         "basic_info": {
             "title": "Q2_Marketing_Campaign_2025.md",
-            "created_date": "2025-11-01"
+            "created_date": "2025-11-01",
         },
-        "temporal_info": {
-            "deadline": "2025-06-30",
-            "status": "planning"
-        }
+        "temporal_info": {"deadline": "2025-06-30", "status": "planning"},
     }
 
     try:
@@ -553,8 +546,6 @@ if __name__ == "__main__":
         print(json.dumps(result, indent=2, ensure_ascii=False))
     except Exception as e:
         print(f"오류: {e}")
-
-
 
 
 """test_result
@@ -600,7 +591,6 @@ if __name__ == "__main__":
     }
 
 """
-
 
 
 """test_result_2(metadata_prompt용)

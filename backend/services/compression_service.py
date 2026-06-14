@@ -2,7 +2,7 @@
 
 import gzip
 import logging
-from typing import Union, Tuple
+from typing import Tuple, Union
 
 from backend.config import WebSocketConfig
 

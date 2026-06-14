@@ -1,4 +1,4 @@
-from typing import TypedDict, List, NotRequired
+from typing import List, NotRequired, TypedDict
 
 
 class ClassificationResult(TypedDict):

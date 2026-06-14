@@ -18,7 +18,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from openai import OpenAI, APIError, APIConnectionError
+from openai import APIConnectionError, APIError, OpenAI
 
 from backend.config import ModelConfig  # type: ignore[import]
 from backend.services.redis_pubsub import redis_client  # type: ignore[import]
@@ -53,13 +53,19 @@ _FINETUNE_DATA_DIR: Path = Path(
 )
 
 # Job 상태 폴링 간격(초) — 환경 변수로 오버라이드 가능 (기본 30초, 최소 5초)
-_FINETUNE_POLL_INTERVAL_SECS: int = safe_parse_env_int("FINETUNE_POLL_INTERVAL_SECS", 30, min_val=5)
+_FINETUNE_POLL_INTERVAL_SECS: int = safe_parse_env_int(
+    "FINETUNE_POLL_INTERVAL_SECS", 30, min_val=5
+)
 
 # Job 완료 대기 최대 시간(초) — 기본 2시간, 최소 600초 (환경 변수로 오버라이드 가능)
-_FINETUNE_POLL_TIMEOUT_SECS: int = safe_parse_env_int("FINETUNE_POLL_TIMEOUT_SECS", 2 * 60 * 60, min_val=600)
+_FINETUNE_POLL_TIMEOUT_SECS: int = safe_parse_env_int(
+    "FINETUNE_POLL_TIMEOUT_SECS", 2 * 60 * 60, min_val=600
+)
 
 # Redis에 Job 상태를 보관하는 TTL (기본 7일, 최소 1일)
-_FINETUNE_REDIS_TTL_SECS: int = safe_parse_env_int("FINETUNE_REDIS_TTL_SECS", 7 * 24 * 60 * 60, min_val=86400)
+_FINETUNE_REDIS_TTL_SECS: int = safe_parse_env_int(
+    "FINETUNE_REDIS_TTL_SECS", 7 * 24 * 60 * 60, min_val=86400
+)
 
 # 파인튜닝 Job 생성 시 사용할 기반 모델 (환경 변수로 오버라이드 가능)
 _FINETUNE_BASE_MODEL: str = os.getenv("FINETUNE_BASE_MODEL", "gpt-4o-mini-2024-07-18")
@@ -203,7 +209,9 @@ async def _save_job_status_to_redis(
         mapping["fine_tuned_model"] = fine_tuned_model
     if extra_fields:
         # 핵심 키(status, fine_tuned_model)가 오버라이드되지 않도록 예약 키를 필터링합니다.
-        safe_extra = {k: v for k, v in extra_fields.items() if k not in _RESERVED_REDIS_KEYS}
+        safe_extra = {
+            k: v for k, v in extra_fields.items() if k not in _RESERVED_REDIS_KEYS
+        }
         # 집합 교집(∩)으로 충돌한 예약 키를 직접 하이라이팅하여 의도를 명확히 표현합니다.
         skipped = set(extra_fields) & _RESERVED_REDIS_KEYS
         if skipped:
@@ -253,18 +261,33 @@ async def set_active_finetune_model(fine_tuned_model_id: str) -> None:
 
     # 1. 기존 활성 모델의 ID와 배포 시각을 이전 모델(previous) 키에 백업
     previous_model = await redis_client.redis.get(_FINETUNE_ACTIVE_MODEL_KEY)
-    previous_deployed_at = await redis_client.redis.get(f"{_FINETUNE_ACTIVE_MODEL_KEY}:deployed_at")
+    previous_deployed_at = await redis_client.redis.get(
+        f"{_FINETUNE_ACTIVE_MODEL_KEY}:deployed_at"
+    )
 
     if previous_model:
         # decode가 되어 있지 않을 경우를 대비
-        prev_model_str = previous_model.decode("utf-8") if isinstance(previous_model, bytes) else str(previous_model)
-        await redis_client.redis.set(f"{_FINETUNE_ACTIVE_MODEL_KEY}:previous", prev_model_str)
+        prev_model_str = (
+            previous_model.decode("utf-8")
+            if isinstance(previous_model, bytes)
+            else str(previous_model)
+        )
+        await redis_client.redis.set(
+            f"{_FINETUNE_ACTIVE_MODEL_KEY}:previous", prev_model_str
+        )
         if previous_deployed_at:
-            prev_ts_str = previous_deployed_at.decode("utf-8") if isinstance(previous_deployed_at, bytes) else str(previous_deployed_at)
-            await redis_client.redis.set(f"{_FINETUNE_ACTIVE_MODEL_KEY}:previous_deployed_at", prev_ts_str)
+            prev_ts_str = (
+                previous_deployed_at.decode("utf-8")
+                if isinstance(previous_deployed_at, bytes)
+                else str(previous_deployed_at)
+            )
+            await redis_client.redis.set(
+                f"{_FINETUNE_ACTIVE_MODEL_KEY}:previous_deployed_at", prev_ts_str
+            )
 
     # 2. 신규 파인튜닝 모델 정보 저장 (Hot-swap 적용 및 배포 시각 기록)
     from datetime import datetime, timezone
+
     now_iso = datetime.now(timezone.utc).isoformat()
     await redis_client.redis.set(_FINETUNE_ACTIVE_MODEL_KEY, fine_tuned_model_id)
     await redis_client.redis.set(f"{_FINETUNE_ACTIVE_MODEL_KEY}:deployed_at", now_iso)
@@ -437,7 +460,10 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
     try:
         client = _get_openai_client()
     except ValueError as e:
-        logger.error("[OBS] Cannot poll fine-tuning job: API client creation failed.", extra={"error": str(e)})
+        logger.error(
+            "[OBS] Cannot poll fine-tuning job: API client creation failed.",
+            extra={"error": str(e)},
+        )
         return FinetuneJobStatus.FAILED
 
     # 실제 벽시계 시간 기반으로 타임아웃 측정 (jobs.retrieve 지연 시간 포함)
@@ -507,7 +533,11 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
             # 일시적 네트워크 오류 — 재시도 허용
             logger.warning(
                 "[OBS] Transient connection error during fine-tuning job polling. Will retry.",
-                extra={"job_id_hash": mask_pii_id(job_id), "error": str(e), "elapsed_secs": round(_elapsed_secs(start_time), 1)},
+                extra={
+                    "job_id_hash": mask_pii_id(job_id),
+                    "error": str(e),
+                    "elapsed_secs": round(_elapsed_secs(start_time), 1),
+                },
             )
         except APIError as e:
             status_code: int = getattr(e, "status_code", 0) or 0
@@ -522,13 +552,19 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
                     },
                     exc_info=True,
                 )
-                await _save_job_status_to_redis(job_id=job_id, status=FinetuneJobStatus.FAILED)
+                await _save_job_status_to_redis(
+                    job_id=job_id, status=FinetuneJobStatus.FAILED
+                )
                 return FinetuneJobStatus.FAILED
             else:
                 # 5xx: 서버 오류 — 재시도 허용
                 logger.error(
                     "[OBS] Transient server error during fine-tuning job polling. Will retry.",
-                    extra={"job_id_hash": mask_pii_id(job_id), "status_code": status_code, "error": str(e)},
+                    extra={
+                        "job_id_hash": mask_pii_id(job_id),
+                        "status_code": status_code,
+                        "error": str(e),
+                    },
                 )
 
     # 타임아웃 만료: start_time 기준으로 실제 경과 시간을 계산하고 음수가 되지 않도록 클램핑
@@ -571,6 +607,7 @@ async def get_active_finetune_model() -> Optional[str]:
     model_id: str = raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
     return model_id if model_id else None
 
+
 async def get_model_performance_comparison() -> dict:
     """
     이전 모델과 현재 파인튜닝 모델 간의 피드백(User Rating)을 비교하여 반환합니다.
@@ -579,14 +616,21 @@ async def get_model_performance_comparison() -> dict:
         await redis_client.connect()
         if not redis_client.redis:
             raise RuntimeError("Redis connection not established.")
-        
+
     current_model_raw = await redis_client.redis.get(_FINETUNE_ACTIVE_MODEL_KEY)
-    deployed_at_raw = await redis_client.redis.get(f"{_FINETUNE_ACTIVE_MODEL_KEY}:deployed_at")
-    previous_model_raw = await redis_client.redis.get(f"{_FINETUNE_ACTIVE_MODEL_KEY}:previous")
-    prev_deployed_at_raw = await redis_client.redis.get(f"{_FINETUNE_ACTIVE_MODEL_KEY}:previous_deployed_at")
+    deployed_at_raw = await redis_client.redis.get(
+        f"{_FINETUNE_ACTIVE_MODEL_KEY}:deployed_at"
+    )
+    previous_model_raw = await redis_client.redis.get(
+        f"{_FINETUNE_ACTIVE_MODEL_KEY}:previous"
+    )
+    prev_deployed_at_raw = await redis_client.redis.get(
+        f"{_FINETUNE_ACTIVE_MODEL_KEY}:previous_deployed_at"
+    )
 
     def _decode(val) -> str | None:
-        if not val: return None
+        if not val:
+            return None
         return val.decode("utf-8") if isinstance(val, bytes) else str(val)
 
     current_model = _decode(current_model_raw)
@@ -595,14 +639,17 @@ async def get_model_performance_comparison() -> dict:
     prev_deployed_at_str = _decode(prev_deployed_at_raw)
 
     import datetime
-    
+
     def _to_timestamp(raw_ts) -> float:
-        if not raw_ts: return 0.0
+        if not raw_ts:
+            return 0.0
         if isinstance(raw_ts, (int, float)) and not isinstance(raw_ts, bool):
             return float(raw_ts)
         iso_str = str(raw_ts).strip()
         try:
-            return datetime.datetime.fromisoformat(iso_str.replace("Z", "+00:00")).timestamp()
+            return datetime.datetime.fromisoformat(
+                iso_str.replace("Z", "+00:00")
+            ).timestamp()
         except ValueError:
             try:
                 return float(iso_str)
@@ -616,64 +663,75 @@ async def get_model_performance_comparison() -> dict:
     cursor = 0
     prev_up = prev_down = 0
     curr_up = curr_down = 0
-    
-    from backend.services.chat_history_service import FEEDBACK_KEY_PREFIX
-    from backend.api.models.shared import RATING_UP, RATING_DOWN
+
     import json
-    
+
+    from backend.api.models.shared import RATING_DOWN, RATING_UP
+    from backend.services.chat_history_service import FEEDBACK_KEY_PREFIX
+
     def _process_feedback_meta(meta_raw) -> None:
         nonlocal curr_up, curr_down, prev_up, prev_down
         meta_str = _decode(meta_raw)
-        if not meta_str: return
+        if not meta_str:
+            return
         try:
             meta = json.loads(meta_str)
             rating = meta.get("rating")
             raw_ts = meta.get("timestamp")
-            
+
             if rating not in (RATING_UP, RATING_DOWN):
                 return
-                
+
             if isinstance(raw_ts, (int, float, str)) and not isinstance(raw_ts, bool):
                 ts = _to_timestamp(raw_ts)
             else:
                 return
-                
+
             # 유효하지 않은 타임스탬프는 맹목적으로 누적하지 않고 생략하여 통계 오염 방지
             if ts <= 0.0:
                 return
-                
+
             # deployed_ts가 0.0이면, Hot-swap 한 번도 안 일어났으므로 모든 것을 현재 모델로 분류
             if deployed_ts == 0.0 or ts >= deployed_ts:
-                if rating == RATING_UP: curr_up += 1
-                else: curr_down += 1
+                if rating == RATING_UP:
+                    curr_up += 1
+                else:
+                    curr_down += 1
             # deployed_ts 기록은 있지만 이전 기록이 없거나, 이전 기록 시간 이상인 경우
             elif prev_deployed_ts == 0.0 or ts >= prev_deployed_ts:
-                if rating == RATING_UP: prev_up += 1
-                else: prev_down += 1
-                
+                if rating == RATING_UP:
+                    prev_up += 1
+                else:
+                    prev_down += 1
+
         except (json.JSONDecodeError, ValueError, TypeError) as e:
-            logger.debug("[OBS] Failed to parse feedback entry for performance comparison: %s", e)
+            logger.debug(
+                "[OBS] Failed to parse feedback entry for performance comparison: %s", e
+            )
 
     # 불필요한 MULTI/EXEC 오버헤드 방지 및 생명주기를 완벽히 관리하기 위해 async with 적용
     async with redis_client.redis.pipeline(transaction=False) as pipeline:
         while True:
-            cursor, keys = await redis_client.redis.scan(cursor, match=f"{FEEDBACK_KEY_PREFIX}*", count=100)
-            
+            cursor, keys = await redis_client.redis.scan(
+                cursor, match=f"{FEEDBACK_KEY_PREFIX}*", count=100
+            )
+
             if keys:
                 # Pipelining HGETALL calls to significantly reduce network roundtrips
                 for key in keys:
                     pipeline.hgetall(key)
                 batch_results = await pipeline.execute()
-                
+
                 for hash_data in batch_results:
-                    if not hash_data: continue
+                    if not hash_data:
+                        continue
                     # Redis-py 3.x/4.x 버전에 따라 dict 형식이 반환됩니다
                     for _, meta_raw in hash_data.items():
                         _process_feedback_meta(meta_raw)
-                        
+
             if int(cursor) == 0:
                 break
-            
+
     def _calc_score(u: int, d: int) -> float:
         tot = u + d
         return round((u / tot) * 100, 2) if tot > 0 else 0.0
@@ -691,5 +749,5 @@ async def get_model_performance_comparison() -> dict:
         "current_up": curr_up,
         "current_down": curr_down,
         "current_score": curr_score,
-        "score_improvement": round(curr_score - prev_score, 2)
+        "score_improvement": round(curr_score - prev_score, 2),
     }

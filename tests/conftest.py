@@ -1,12 +1,13 @@
 # tests/conftest.py
 
+import os
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
-from pathlib import Path
-import tempfile
-import shutil
-import os
-import sys
 
 # 프로젝트 루트를 Python Path에 추가
 sys.path.append(str(Path(__file__).parent.parent))
@@ -35,10 +36,10 @@ def rag_config() -> RAGTestConfig:
     return RAGTestConfig()
 
 
-from backend.main import app
-from backend.services.onboarding_service import OnboardingService
-from backend.services.classification_service import ClassificationService
 from backend.data_manager import DataManager
+from backend.main import app
+from backend.services.classification_service import ClassificationService
+from backend.services.onboarding_service import OnboardingService
 
 
 @pytest.fixture(scope="session")

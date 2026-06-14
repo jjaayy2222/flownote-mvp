@@ -104,10 +104,14 @@ class TestClampDepth:
         assert _clamp_depth(3) == 3
 
     def test_min_boundary_is_preserved(self) -> None:
-        assert _clamp_depth(MAX_TRAVERSAL_DEPTH_RANGE.min) == MAX_TRAVERSAL_DEPTH_RANGE.min
+        assert (
+            _clamp_depth(MAX_TRAVERSAL_DEPTH_RANGE.min) == MAX_TRAVERSAL_DEPTH_RANGE.min
+        )
 
     def test_max_boundary_is_preserved(self) -> None:
-        assert _clamp_depth(MAX_TRAVERSAL_DEPTH_RANGE.max) == MAX_TRAVERSAL_DEPTH_RANGE.max
+        assert (
+            _clamp_depth(MAX_TRAVERSAL_DEPTH_RANGE.max) == MAX_TRAVERSAL_DEPTH_RANGE.max
+        )
 
     def test_below_min_is_clamped_to_min(self) -> None:
         assert _clamp_depth(0) == MAX_TRAVERSAL_DEPTH_RANGE.min
@@ -124,7 +128,9 @@ class TestClampDepth:
 
 
 class TestLoadTraversalDepth:
-    def test_returns_default_when_env_not_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_returns_default_when_env_not_set(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.delenv(ENV_MAX_TRAVERSAL_DEPTH, raising=False)
         assert _load_traversal_depth() == _clamp_depth(DEFAULT_MAX_TRAVERSAL_DEPTH)
 
@@ -140,7 +146,9 @@ class TestLoadTraversalDepth:
         monkeypatch.setenv(ENV_MAX_TRAVERSAL_DEPTH, "0")
         assert _load_traversal_depth() == MAX_TRAVERSAL_DEPTH_RANGE.min
 
-    def test_returns_default_on_non_integer_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_returns_default_on_non_integer_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv(ENV_MAX_TRAVERSAL_DEPTH, "not_a_number")
         assert _load_traversal_depth() == _clamp_depth(DEFAULT_MAX_TRAVERSAL_DEPTH)
 
@@ -172,7 +180,11 @@ class TestExtractSeedNodeIds:
 
     def test_top_level_id_takes_priority_over_metadata(self) -> None:
         results = [
-            {"id": "note-E", "metadata": {"id": "note-F", "source": "note-G"}, "score": 0.5},
+            {
+                "id": "note-E",
+                "metadata": {"id": "note-F", "source": "note-G"},
+                "score": 0.5,
+            },
         ]
         assert _extract_seed_node_ids(results) == ["note-E"]
 
@@ -290,7 +302,9 @@ class TestRouteQuerySkipConditions:
         simple_vector_results: List[Dict[str, Any]],
         repo: NetworkXGraphRepository,
     ) -> None:
-        router = GraphHybridRouter(health_registry=healthy_registry, graph_repository=repo)
+        router = GraphHybridRouter(
+            health_registry=healthy_registry, graph_repository=repo
+        )
         result = router.route_query("query", simple_vector_results, hashed_user_id=None)
         assert result is simple_vector_results
 
@@ -299,7 +313,9 @@ class TestRouteQuerySkipConditions:
         healthy_registry: MagicMock,
         simple_vector_results: List[Dict[str, Any]],
     ) -> None:
-        router = GraphHybridRouter(health_registry=healthy_registry, graph_repository=None)
+        router = GraphHybridRouter(
+            health_registry=healthy_registry, graph_repository=None
+        )
         result = router.route_query(
             "query",
             simple_vector_results,
@@ -314,7 +330,9 @@ class TestRouteQuerySkipConditions:
     ) -> None:
         # id 필드 없는 vector_results → Seed Node 없음 → 탐색 스킵
         no_id_results = [{"content": "text", "score": 0.5}]
-        router = GraphHybridRouter(health_registry=healthy_registry, graph_repository=repo)
+        router = GraphHybridRouter(
+            health_registry=healthy_registry, graph_repository=repo
+        )
         result = router.route_query(
             "query",
             no_id_results,
@@ -349,7 +367,9 @@ class TestRouteQueryBFSTraversal:
         repo.add_edge(_DUMMY_HASH, "B", "C")
         repo.persist(_DUMMY_HASH)
 
-        router = GraphHybridRouter(health_registry=healthy_registry, graph_repository=repo)
+        router = GraphHybridRouter(
+            health_registry=healthy_registry, graph_repository=repo
+        )
         results = router.route_query(
             "query",
             self._make_vector_results("A"),
@@ -375,7 +395,9 @@ class TestRouteQueryBFSTraversal:
         repo.add_edge(_DUMMY_HASH, "C", "D")
         repo.persist(_DUMMY_HASH)
 
-        router = GraphHybridRouter(health_registry=healthy_registry, graph_repository=repo)
+        router = GraphHybridRouter(
+            health_registry=healthy_registry, graph_repository=repo
+        )
         results = router.route_query(
             "query",
             self._make_vector_results("A"),
@@ -386,7 +408,9 @@ class TestRouteQueryBFSTraversal:
             for r in results
             if r.get("metadata", {}).get("id") != "A"
         ]
-        assert neighbor_ids.count("D") == 1, "D should appear exactly once (no duplicates)"
+        assert (
+            neighbor_ids.count("D") == 1
+        ), "D should appear exactly once (no duplicates)"
 
     def test_cycle_graph_no_infinite_loop(
         self,
@@ -403,7 +427,9 @@ class TestRouteQueryBFSTraversal:
         repo.add_edge(_DUMMY_HASH, "C", "A")
         repo.persist(_DUMMY_HASH)
 
-        router = GraphHybridRouter(health_registry=healthy_registry, graph_repository=repo)
+        router = GraphHybridRouter(
+            health_registry=healthy_registry, graph_repository=repo
+        )
         # 무한 루프라면 여기서 타임아웃 발생 — 통과하면 안전함
         results = router.route_query(
             "query",
@@ -421,7 +447,9 @@ class TestRouteQueryBFSTraversal:
         repo.add_node(_DUMMY_HASH, "isolated", title="Lonely Node")
         repo.persist(_DUMMY_HASH)
 
-        router = GraphHybridRouter(health_registry=healthy_registry, graph_repository=repo)
+        router = GraphHybridRouter(
+            health_registry=healthy_registry, graph_repository=repo
+        )
         vector_in = self._make_vector_results("isolated")
         results = router.route_query(
             "query",
@@ -441,7 +469,9 @@ class TestRouteQueryBFSTraversal:
         repo.add_edge(_DUMMY_HASH, "A", "B")
         repo.persist(_DUMMY_HASH)
 
-        router = GraphHybridRouter(health_registry=healthy_registry, graph_repository=repo)
+        router = GraphHybridRouter(
+            health_registry=healthy_registry, graph_repository=repo
+        )
         results = router.route_query(
             "query",
             self._make_vector_results("A"),
@@ -473,7 +503,9 @@ class TestStatelessLoadLifecycle:
         repo.add_edge(_DUMMY_HASH, "A", "B")
         repo.persist(_DUMMY_HASH)
 
-        router = GraphHybridRouter(health_registry=healthy_registry, graph_repository=repo)
+        router = GraphHybridRouter(
+            health_registry=healthy_registry, graph_repository=repo
+        )
         vector_in = [{"id": "A", "content": "Seed", "metadata": {}, "score": 0.9}]
         router.route_query(
             "query",
@@ -500,7 +532,9 @@ class TestExceptionIsolation:
         # stateless_load를 컨텍스트 매니저처럼 동작하되 내부에서 예외 발생
         broken_repo.stateless_load.side_effect = RuntimeError("Simulated IO failure")
 
-        router = GraphHybridRouter(health_registry=healthy_registry, graph_repository=broken_repo)
+        router = GraphHybridRouter(
+            health_registry=healthy_registry, graph_repository=broken_repo
+        )
         result = router.route_query(
             "query",
             simple_vector_results,
@@ -532,8 +566,12 @@ class TestDependencyInjection:
     ) -> None:
         """생성자로 주입한 graph_repository가 사용된다."""
         fallback_repo = MagicMock()
-        fallback_repo.stateless_load.return_value.__enter__ = MagicMock(return_value=fallback_repo)
-        fallback_repo.stateless_load.return_value.__exit__ = MagicMock(return_value=False)
+        fallback_repo.stateless_load.return_value.__enter__ = MagicMock(
+            return_value=fallback_repo
+        )
+        fallback_repo.stateless_load.return_value.__exit__ = MagicMock(
+            return_value=False
+        )
         fallback_repo.neighbors.return_value = []
 
         router = GraphHybridRouter(
@@ -548,7 +586,9 @@ class TestDependencyInjection:
         )
         fallback_repo.stateless_load.assert_called_once_with(_DUMMY_HASH)
 
-    def test_none_registry_uses_global_singleton(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_none_registry_uses_global_singleton(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """health_registry=None이면 HealthRegistry.get_instance()를 호출한다."""
         mock_instance = MagicMock()
         mock_instance.is_ok.return_value = False
@@ -650,8 +690,12 @@ class TestTenantIsolation:
         repo.persist(_DUMMY_HASH)
 
         # 사용자 B: 그래프 없음 (빈 그래프)
-        router = GraphHybridRouter(health_registry=healthy_registry, graph_repository=repo)
-        vector_in_b = [{"id": "A", "content": "B's query", "metadata": {}, "score": 0.9}]
+        router = GraphHybridRouter(
+            health_registry=healthy_registry, graph_repository=repo
+        )
+        vector_in_b = [
+            {"id": "A", "content": "B's query", "metadata": {}, "score": 0.9}
+        ]
         result_b = router.route_query(
             "query",
             vector_in_b,

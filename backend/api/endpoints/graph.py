@@ -16,9 +16,9 @@
 
 from __future__ import annotations
 
+import logging
 import random
 from typing import Any
-import logging
 
 from fastapi import APIRouter
 
@@ -40,7 +40,6 @@ router = APIRouter(prefix="/graph", tags=["Knowledge Graph (v1)"])
 
 
 from backend.graph.builder import build_graph_data
-
 
 # ─────────────────────────────────────────
 # 엔드포인트
@@ -99,8 +98,7 @@ async def get_orphan_notes() -> OrphanNotesResponse:
 
     # CATEGORY 노드를 total_nodes 카운트에서 제외 (분석 대상 노드만 집계)
     analyzable_nodes = [
-        node for node in graph_data.nodes
-        if node.node_type != NodeType.CATEGORY
+        node for node in graph_data.nodes if node.node_type != NodeType.CATEGORY
     ]
 
     threshold = get_orphan_degree_threshold()

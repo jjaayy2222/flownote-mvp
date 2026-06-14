@@ -6,19 +6,21 @@ Automation API Endpoints
 """
 
 import logging
-from typing import List, Optional, Literal
 from datetime import datetime
+from typing import List, Literal, Optional
 
-from fastapi import APIRouter, HTTPException, Query, Path as PathParam
+from fastapi import APIRouter, HTTPException
+from fastapi import Path as PathParam
+from fastapi import Query
 from pydantic import BaseModel, Field
 
 from backend.models.automation import (
+    ArchivingRecord,
     AutomationLog,
     AutomationRule,
-    AutomationTaskType,
     AutomationStatus,
+    AutomationTaskType,
     ReclassificationRecord,
-    ArchivingRecord,
 )
 from backend.services.automation_manager import automation_manager
 

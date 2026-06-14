@@ -7,21 +7,22 @@
 - API 엔드포인트 동작 검증
 """
 
-import pytest
 import json
 import uuid
 import warnings
-from typing import Any, Mapping, AbstractSet
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import AbstractSet, Any, Mapping
 from unittest.mock import patch
+
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.main import app
 from backend.models.automation import (
     AutomationLog,
-    AutomationTaskType,
     AutomationStatus,
+    AutomationTaskType,
     ReclassificationRecord,
 )
 

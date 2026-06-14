@@ -12,20 +12,21 @@
 #
 # 3. 위치(인덱스) 기반 assert 대신 ID/내용 기반 assert를 사용합니다.
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, call, patch
+
+import pytest
 from langchain_core.documents import Document
 
-from backend.services.chat_service import ChatService, REPHRASE_HISTORY_WINDOW
+from backend.api.models import ChatMessage
+from backend.services.chat_history_service import ChatHistoryService
+from backend.services.chat_service import REPHRASE_HISTORY_WINDOW, ChatService
 from backend.services.hybrid_search_service import HybridSearchService
 from backend.services.onboarding_service import OnboardingService
-from backend.services.chat_history_service import ChatHistoryService
-from backend.api.models import ChatMessage
-
 
 # ─────────────────────────────────────────────────────────────
 # Fixtures
 # ─────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def mock_hybrid_search_service():
@@ -72,6 +73,7 @@ def chat_service(
 # TEST 1: PII 마스킹 정확도
 # ─────────────────────────────────────────────────────────────
 
+
 def test_mask_pii_masks_sensitive_data(chat_service):
     """
     [Phase 1] 안정성 강화: 이메일 및 전화번호가 정확히 마스킹되는지 검증
@@ -112,9 +114,9 @@ def test_mask_pii_does_not_over_mask_normal_text(chat_service):
         "https://github.com/jjaayy2222/flownote-mvp",
     ]
     for text in normal_texts:
-        assert chat_service._mask_pii(text) == text, (
-            f"오버-마스킹 감지: '{text}' 가 변경되었습니다."
-        )
+        assert (
+            chat_service._mask_pii(text) == text
+        ), f"오버-마스킹 감지: '{text}' 가 변경되었습니다."
 
 
 # ─────────────────────────────────────────────────────────────
@@ -123,6 +125,7 @@ def test_mask_pii_does_not_over_mask_normal_text(chat_service):
 #   - 테스트명과 독스트링이 검증 내용과 일치하도록 수정 (by_id vs by_source 명확화)
 #   - source 기준 중복 제거 케이스 별도 추가
 # ─────────────────────────────────────────────────────────────
+
 
 def test_dedupe_and_build_sources_deduplicates_by_id(chat_service):
     """
@@ -243,6 +246,7 @@ def test_dedupe_and_build_sources_empty_input(chat_service):
 #   - history 최근 5개 잘라내기(truncation) 계약 검증 테스트 추가
 # ─────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_rephrase_query_with_history(chat_service):
     """
@@ -309,9 +313,7 @@ async def test_rephrase_query_truncates_history_to_last_five(chat_service):
     total = REPHRASE_HISTORY_WINDOW * 2  # 10개
     # [주의] 부분 문자열 충돌이 없는 고유한 문자열을 사용합니다. (예: 'msg-A'~'msg-J')
     messages = [f"msg-{chr(ord('A') + i)}" for i in range(total)]
-    history = [
-        ChatMessage(role="user", content=msg) for msg in messages
-    ]
+    history = [ChatMessage(role="user", content=msg) for msg in messages]
     query = "최신 질문입니다."
 
     captured_calls = []
@@ -320,7 +322,9 @@ async def test_rephrase_query_truncates_history_to_last_five(chat_service):
         captured_calls.append(context_history)
         return "재구성된 쿼리"
 
-    with patch.object(chat_service, "_invoke_rephrase_chain", side_effect=capture_invoke):
+    with patch.object(
+        chat_service, "_invoke_rephrase_chain", side_effect=capture_invoke
+    ):
         await chat_service._rephrase_query(query, history)
 
     assert len(captured_calls) == 1, "chain이 정확히 1회 호출되어야 합니다."

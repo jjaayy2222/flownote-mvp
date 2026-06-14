@@ -5,17 +5,18 @@ FlowNote MCP Server
 External AI agents can use FlowNote capabilities as Tools and access Resources.
 """
 
-import json
 import asyncio
-import threading
+import json
 import logging
-from typing import Dict, Any, List, Optional
+import threading
+from typing import Any, Dict, List, Optional
+
 from mcp.server.fastmcp import FastMCP
 
 # FlowNote Internal Services
 from backend.classifier.hybrid_classifier import HybridClassifier
-from backend.faiss_search import FAISSRetriever
 from backend.dashboard.dashboard_core import MetadataAggregator
+from backend.faiss_search import FAISSRetriever
 
 # Initialize Logger
 logger = logging.getLogger(__name__)

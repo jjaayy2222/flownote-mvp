@@ -1,8 +1,10 @@
 import asyncio
 import logging
+
 from backend.services.chat_service import get_chat_service
 
 logging.basicConfig(level=logging.ERROR)
+
 
 async def main():
     service = get_chat_service()
@@ -12,6 +14,7 @@ async def main():
             print(chunk, end="")
     except Exception as e:
         logging.exception(f"Unhandled exception during chat streaming: {e}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

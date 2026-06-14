@@ -1,6 +1,8 @@
+from typing import Any, Dict, List, Optional
+
 import pytest
+
 from backend.hybrid_search import HybridSearcher
-from typing import List, Dict, Any, Optional
 from backend.utils import check_metadata_match
 
 

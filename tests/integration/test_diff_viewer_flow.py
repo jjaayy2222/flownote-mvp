@@ -2,6 +2,7 @@
 
 import pytest
 from fastapi.testclient import TestClient
+
 from backend.main import app
 from tests.test_utils import validate_pydantic_error_structure
 

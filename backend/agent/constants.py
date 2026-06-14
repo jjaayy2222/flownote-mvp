@@ -1,6 +1,6 @@
 """
 에이전트 파이프라인(Agent Pipeline) 전역에서 공유되는 공통 상수를 정의합니다.
-유틸리티(utils)나 노드(nodes) 모듈 간의 순환 참조(Circular Import)를 구조적으로 
+유틸리티(utils)나 노드(nodes) 모듈 간의 순환 참조(Circular Import)를 구조적으로
 차단하고, 단일 진실 공급원(Single Source of Truth)을 유지하기 위해 사용됩니다.
 """
 

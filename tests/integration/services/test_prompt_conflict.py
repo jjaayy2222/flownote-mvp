@@ -7,15 +7,14 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 import requests
 
 from backend.classifier.para_agent import PARAAgentState
-from backend.classifier.para_classifier import PARAClassifier
 from backend.classifier.para_agent_wrapper import run_para_agent_sync
-
-
-from unittest.mock import patch, AsyncMock
+from backend.classifier.para_classifier import PARAClassifier
 
 
 def test_prompt_conflict(client):

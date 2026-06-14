@@ -1,8 +1,10 @@
 # tests/unit/services/test_gpt_helper.py
 
-import pytest
-from unittest.mock import MagicMock, patch
 import json
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 from backend.services.gpt_helper import GPT4oHelper
 
 

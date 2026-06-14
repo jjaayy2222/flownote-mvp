@@ -4,9 +4,10 @@
 BaseClassifier - 모든 분류기의 추상 클래스
 Async 지원 + 타입 힌팅
 """
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Tuple
+
 import logging
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +25,11 @@ class BaseClassifier(ABC):
     ) -> Dict[str, Any]:
         """
         분류 수행
-        
+
         Args:
             text: 분류할 텍스트
             context: 추가 컨텍스트 정보
-            
+
         Returns:
             {
                 "category": str,       # Projects, Areas, Resources, Archives
@@ -40,9 +41,7 @@ class BaseClassifier(ABC):
         """
         pass
 
-    def validate_result(
-        self, result: Dict[str, Any]
-    ) -> Tuple[bool, str]:
+    def validate_result(self, result: Dict[str, Any]) -> Tuple[bool, str]:
         """분류 결과 검증"""
         required_fields = ["category", "confidence", "reasoning", "method"]
         for field in required_fields:

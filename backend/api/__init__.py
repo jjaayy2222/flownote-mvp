@@ -4,39 +4,34 @@
 API Models Package
 """
 
+# Conflict models (backend.models에서 직접)
 # Models import (backend.models에서 직접)
 from backend.models import (
-    # Classification models
-    ClassifyRequest,
-    ClassificationRequest,
-    MetadataClassifyRequest,
-    HybridClassifyRequest,
-    ParallelClassifyRequest,
-    ClassifyResponse,
+    ClassificationRequest,  # Classification models
     ClassificationResponse,
-    FileMetadataInput,
     ClassifyBatchRequest,
     ClassifyBatchResponse,
+    ClassifyRequest,
+    ClassifyResponse,
+    ConflictDetail,
+    ConflictDetectResponse,
+    ConflictRecord,
+    ConflictReport,
+    ConflictResolution,
+    ConflictResolveResponse,
+    ConflictType,
+    DetectConflictRequest,
+    FileMetadataInput,
+    HybridClassifyRequest,
+    MetadataClassifyRequest,
+    ParallelClassifyRequest,
+    ResolutionMethod,
+    ResolutionStatus,
+    ResolutionStrategy,
+    ResolveConflictRequest,
     SaveClassificationRequest,
     SearchRequest,
 )
-
-# Conflict models (backend.models에서 직접)
-from backend.models import (
-    ConflictType,
-    ResolutionMethod,
-    ResolutionStatus,
-    ConflictDetail,
-    ConflictRecord,
-    ResolutionStrategy,
-    ConflictResolution,
-    ConflictReport,
-    DetectConflictRequest,
-    ResolveConflictRequest,
-    ConflictDetectResponse,
-    ConflictResolveResponse,
-)
-
 
 __all__ = [
     # Classification
@@ -52,7 +47,6 @@ __all__ = [
     "ClassifyBatchResponse",
     "SaveClassificationRequest",
     "SearchRequest",
-    
     # Conflict
     "ConflictType",
     "ResolutionMethod",

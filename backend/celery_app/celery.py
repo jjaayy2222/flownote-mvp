@@ -2,6 +2,7 @@
 
 from celery import Celery
 from celery.schedules import crontab
+
 from backend.celery_app.config import CeleryConfig
 
 # Celery App 초기화

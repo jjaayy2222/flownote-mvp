@@ -1,18 +1,19 @@
 # backend/services/obsidian_watcher.py
 
-import time
 import logging
 import threading
+import time
 from pathlib import Path
-from typing import Optional, Dict
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+from typing import Dict, Optional
 
-from backend.config.mcp_config import mcp_config
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
+
 from backend.celery_app.tasks.classification import (
     classify_new_file_task,
     update_embedding_task,
 )
+from backend.config.mcp_config import mcp_config
 from backend.services.ignore_manager import ignore_manager
 
 logger = logging.getLogger(__name__)

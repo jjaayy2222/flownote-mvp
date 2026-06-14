@@ -1,25 +1,25 @@
 # backend/celery_app/tasks/classification.py
 
 import asyncio
-import logging
 import atexit
-import threading
 import hashlib
-from pathlib import Path
-from typing import Dict, Any, Optional
+import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 from backend.celery_app.celery import app
-from backend.services.classification_service import ClassificationService
 
 # Sync & Config Imports
 from backend.config.mcp_config import mcp_config
-from backend.services.obsidian_sync import ObsidianSyncService
 from backend.models.external_sync import (
+    ConnectionConfig,
     ExternalToolConnection,
     ExternalToolType,
-    ConnectionConfig,
 )
+from backend.services.classification_service import ClassificationService
+from backend.services.obsidian_sync import ObsidianSyncService
 
 logger = logging.getLogger(__name__)
 

@@ -1,7 +1,8 @@
 # tests/e2e/test_fallback_e2e.py
 
 import asyncio
-from backend.agent.chat.nodes import router_edge, should_fallback, ROUTE_FALLBACK_SEARCH
+
+from backend.agent.chat.nodes import ROUTE_FALLBACK_SEARCH, router_edge, should_fallback
 from backend.api.models.shared import RATING_DOWN
 
 
@@ -10,6 +11,7 @@ def test_e2e_routing():
 
     # 사용자 초기 상태 (싫어요 2번 연속)
     from langchain_core.messages import HumanMessage
+
     mock_state = {
         "messages": [HumanMessage(content="제대로 된 답변 좀 줘")],
         "feedback_history": [

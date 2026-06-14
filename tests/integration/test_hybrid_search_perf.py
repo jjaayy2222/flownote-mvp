@@ -1,9 +1,11 @@
 import logging
-import numpy as np
 import time
 from unittest.mock import patch
-from backend.faiss_search import FAISSRetriever
+
+import numpy as np
+
 from backend.bm25_search import BM25Retriever
+from backend.faiss_search import FAISSRetriever
 from backend.hybrid_search import HybridSearcher
 from backend.utils import check_metadata_match
 

@@ -358,7 +358,7 @@ def _log_subsystem_state(
         if not ok:
             # sub는 Subsystem 타입임이 보장되므로, 명시적으로 .value를 호출하여 str로 변환
             sub_name: str = sub.value
-            
+
             logger.log(
                 log_level,
                 "[CONFIG][SUBSYSTEM %s] '%s' subsystem is %s due to invalid "
@@ -599,18 +599,18 @@ class RealtimeStreamingConfig:
         """
         # 공개 상수 별칭을 통해 임포트 (밑줄 접두 내부 상수 직접 참조 금지)
         from backend.core.config.streaming import (
-            STREAMING_DEFAULT_KEEPALIVE_INTERVAL_SECS,
-            STREAMING_DEFAULT_BUFFER_MAX_SIZE,
-            STREAMING_DEFAULT_TIMEOUT_SECS,
-            STREAMING_DEFAULT_STREAM_VERSION,
-            STREAMING_KEEPALIVE_INTERVAL_RANGE,
             STREAMING_BUFFER_MAX_SIZE_RANGE,
+            STREAMING_DEFAULT_BUFFER_MAX_SIZE,
+            STREAMING_DEFAULT_KEEPALIVE_INTERVAL_SECS,
+            STREAMING_DEFAULT_STREAM_VERSION,
+            STREAMING_DEFAULT_TIMEOUT_SECS,
+            STREAMING_ENV_BUFFER_MAX_SIZE,
+            STREAMING_ENV_KEEPALIVE_INTERVAL,
+            STREAMING_ENV_STREAM_VERSION,
+            STREAMING_ENV_TIMEOUT,
+            STREAMING_KEEPALIVE_INTERVAL_RANGE,
             STREAMING_TIMEOUT_RANGE,
             STREAMING_VALID_STREAM_VERSIONS,
-            STREAMING_ENV_KEEPALIVE_INTERVAL,
-            STREAMING_ENV_BUFFER_MAX_SIZE,
-            STREAMING_ENV_TIMEOUT,
-            STREAMING_ENV_STREAM_VERSION,
         )
 
         # Dict[Subsystem, bool]: Enum 키로 내부 타입 안전성 확보
@@ -737,11 +737,11 @@ class GraphEngineConfig:
         """
         # SSOT: 모든 상수를 graph.py에서 import — 하드코딩 금지
         from backend.core.config.graph import (
-            DEFAULT_MAX_TRAVERSAL_DEPTH,
-            DEFAULT_MAX_GRAPH_NODES,
             DEFAULT_DB_URL,
-            DEFAULT_MIGRATION_NODE_THRESHOLD,
+            DEFAULT_MAX_GRAPH_NODES,
+            DEFAULT_MAX_TRAVERSAL_DEPTH,
             DEFAULT_MIGRATION_CONCURRENCY_THRESHOLD,
+            DEFAULT_MIGRATION_NODE_THRESHOLD,
             ENV_DB_URL,
             ENV_MAX_GRAPH_NODES,
             ENV_MAX_TRAVERSAL_DEPTH,
@@ -796,9 +796,7 @@ class GraphEngineConfig:
         # ── 서브시스템 건강 판정: 하나라도 파싱 실패 시 DEGRADED ──────────
         # GRAPH_DB_URL 파싱 실패는 서브시스템 비활성화 조건에 포함하지 않음
         # (빈 값은 유효한 상태이므로)
-        subsystem_ok[Subsystem.GRAPH_ENGINE] = (
-            ok_depth and ok_nodes and ok_mn and ok_mc
-        )
+        subsystem_ok[Subsystem.GRAPH_ENGINE] = ok_depth and ok_nodes and ok_mn and ok_mc
 
         # ── 서브시스템 상태(DEGRADED) 운영 가시성 로깅 ───────────────────────
         _log_subsystem_state(subsystem_ok, state_label=SubsystemHealthState.DEGRADED)

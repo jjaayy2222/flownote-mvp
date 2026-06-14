@@ -13,6 +13,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 import os
+
 from dotenv import load_dotenv
 
 # 로컬 .env 로드
@@ -21,19 +22,20 @@ load_dotenv()
 # Streamlit Secrets (배포용)
 try:
     import streamlit as st
-    if hasattr(st, 'secrets') and len(st.secrets) > 0:
+
+    if hasattr(st, "secrets") and len(st.secrets) > 0:
         for key in ["GPT4O_API_KEY", "GPT4O_BASE_URL", ...]:
             if key in st.secrets:
                 os.environ[key] = st.secrets[key]
 except:
     pass
 
-from backend.config import ModelConfig
-
-import re
 import json
 import logging
+import re
 from typing import Dict, List, Optional
+
+from backend.config import ModelConfig
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +43,13 @@ logger = logging.getLogger(__name__)
 class GPT4oHelper:
     """
     GPT-4o 전용 헬퍼 클래스
-    
+
     기능:
     - suggest_areas: 직업별 책임 영역 추천
     - generate_keywords: 영역별 키워드 생성
     - classify_text: 간단한 텍스트 분류
     """
-    
+
     def __init__(self):
         """초기화: GPT-4o 클라이언트 생성"""
         try:
@@ -58,84 +60,88 @@ class GPT4oHelper:
             logger.error(f"❌ GPT-4o 초기화 실패: {e}")
             self.client = None
             self.model = None
-    
-    def _call(self, prompt: str, system_prompt: str = None, max_tokens: int = 500) -> str:
+
+    def _call(
+        self, prompt: str, system_prompt: str = None, max_tokens: int = 500
+    ) -> str:
         """
         GPT-4o 호출 (내부 메서드)
-        
+
         Args:
             prompt: 사용자 프롬프트
             system_prompt: 시스템 프롬프트
             max_tokens: 최대 토큰
-            
+
         Returns:
             GPT-4o 응답 텍스트
         """
         if not self.client:
             raise Exception("GPT-4o 클라이언트가 초기화되지 않았습니다")
-        
+
         messages = []
-        
+
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
-        
+
         messages.append({"role": "user", "content": prompt})
-        
+
         response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            max_tokens=max_tokens,
-            temperature=0.7
+            model=self.model, messages=messages, max_tokens=max_tokens, temperature=0.7
         )
-        
+
         raw_response = response.choices[0].message.content.strip()
-        
+
         # ✨ 정규표현식으로 한방에 제거!
         # 1. 시작 부분의 마크다운 코드 블록 마커 제거 (```json 또는 ```)
-        raw_response = re.sub(r'^```(?:json)?\n', '', raw_response)
+        raw_response = re.sub(r"^```(?:json)?\n", "", raw_response)
         # 2. 끝 부분의 마크다운 코드 블록 마커 제거 (```)
         # 마지막에 ```가 있는 경우에만 제거하도록 $ 앵커를 추가하는 것이 안전
-        raw_response = re.sub(r'\n```$', '', raw_response)
-        
-        logger.info(f"🔍 CLEANED RESPONSE: {raw_response[:200]}")           # ← 처음 200자 출력!
-        logger.info(f"📏 RESPONSE LENGTH: {len(raw_response)}")             # ← 길이 확인!
-        
+        raw_response = re.sub(r"\n```$", "", raw_response)
+
+        logger.info(f"🔍 CLEANED RESPONSE: {raw_response[:200]}")  # ← 처음 200자 출력!
+        logger.info(f"📏 RESPONSE LENGTH: {len(raw_response)}")  # ← 길이 확인!
+
         return raw_response
-    
+
     # ============================================
     # 🎯 핵심 기능 1: 직업별 영역 추천
     # ============================================
-    
+
     def _load_prompt(self, prompt_name: str) -> str:
         """
         prompts/ 폴더에서 프롬프트 파일 로드
-        
+
         Args:
             prompt_name: 프롬프트 파일명 (확장자 제외)
-            
+
         Returns:
             프롬프트 내용
         """
         from pathlib import Path
-        
-        prompt_path = Path(__file__).parent.parent / "classifier" / "prompts" / f"{prompt_name}.txt"
-        
+
+        prompt_path = (
+            Path(__file__).parent.parent
+            / "classifier"
+            / "prompts"
+            / f"{prompt_name}.txt"
+        )
+
         if not prompt_path.exists():
             logger.warning(f"⚠️ 프롬프트 파일 없음: {prompt_path}")
             return ""
-        
+
         with open(prompt_path, "r", encoding="utf-8") as f:
             return f.read()
-    
+
     # count 파라미터 기본값을 10으로 변경 (5~10개를 추천함)
     def suggest_areas(self, occupation: str, count: int = 10) -> Dict[str, any]:
         """
         직업에 맞는 책임 영역 추천
-        
+
         Args:
             occupation: 직업 (예: "교사", "개발자")
             count: 추천할 영역 개수 (기본값: 10)
-            
+
         Returns:
             {
                 "status": "success" | "error",
@@ -146,7 +152,7 @@ class GPT4oHelper:
         try:
             # ✅ prompts/에서 시스템 프롬프트 로드 시도
             system_prompt = self._load_prompt("onboarding_suggest_areas")
-            
+
             # ✅ 프롬프트 없으면 기본값 사용
             if not system_prompt:
                 logger.warning("⚠️ 프롬프트 파일 없음, 기본 프롬프트 사용")
@@ -155,7 +161,7 @@ class GPT4oHelper:
 각 영역은 3-5단어로 간결하게 표현하세요.
 반드시 JSON 형식으로만 응답하세요.
                 """.strip()
-            
+
             user_prompt = f"""
 직업: {occupation}
 
@@ -166,40 +172,38 @@ class GPT4oHelper:
   "areas": ["영역1", "영역2", "영역3", ...]
 }}
             """.strip()
-            
+
             # GPT-4o 호출
             response = self._call(user_prompt, system_prompt)
-            
+
             # JSON 파싱
             result = json.loads(response)
             areas = result.get("areas", [])
-            
+
             logger.info(f"✅ GPT-4o 영역 추천 성공: {occupation} → {len(areas)}개")
-            
+
             return {
                 "status": "success",
                 "areas": areas,
-                "message": f"{occupation}의 핵심 영역 {len(areas)}개 추천됨"
+                "message": f"{occupation}의 핵심 영역 {len(areas)}개 추천됨",
             }
-        
+
         except json.JSONDecodeError as e:
             logger.error(f"❌ JSON 파싱 실패: {e}")
             # Fallback
             return {
                 "status": "success",
                 "areas": self._get_fallback_areas(occupation, count),
-                "message": "기본 추천값 (GPT 파싱 실패)"
+                "message": "기본 추천값 (GPT 파싱 실패)",
             }
-        
+
         except Exception as e:
             logger.error(f"❌ GPT-4o 호출 실패: {e}")
             return {
                 "status": "error",
                 "areas": self._get_fallback_areas(occupation, count),
-                "message": f"오류: {str(e)}"
+                "message": f"오류: {str(e)}",
             }
-
-
 
     # 수정: Fallback에서도 count 파라미터 기본값 10으로 변경
     def _get_fallback_areas(self, occupation: str, count: int = 10) -> List[str]:
@@ -208,32 +212,73 @@ class GPT4oHelper:
         """
         fallback_map = {
             # 수정: 각 직업별 10개 영역으로 확장
-            "교사": ["학생 평가", "수업 계획", "학급 운영", "학부모 소통", "교사 연수", 
-                    "교육 자료 개발", "학생 상담", "성적 관리", "동료 협력", "교육 연구"],
-            "개발자": ["코드 리뷰", "아키텍처 설계", "팀 협업", "기술 학습", "프로젝트 관리",
-                    "버그 수정", "API 개발", "문서화", "배포 관리", "기술 블로그"],
-            "마케터": ["캠페인 전략", "고객 분석", "브랜드 관리", "데이터 분석", "시장 조사",
-                    "SNS 운영", "콘텐츠 제작", "광고 관리", "파트너십", "고객 소통"],
-            "학생": ["시험 준비", "과제 관리", "동아리 활동", "진로 탐색", "공부 습관",
-                    "봉사 활동", "자격증 준비", "운동", "독서", "멘토링"],
+            "교사": [
+                "학생 평가",
+                "수업 계획",
+                "학급 운영",
+                "학부모 소통",
+                "교사 연수",
+                "교육 자료 개발",
+                "학생 상담",
+                "성적 관리",
+                "동료 협력",
+                "교육 연구",
+            ],
+            "개발자": [
+                "코드 리뷰",
+                "아키텍처 설계",
+                "팀 협업",
+                "기술 학습",
+                "프로젝트 관리",
+                "버그 수정",
+                "API 개발",
+                "문서화",
+                "배포 관리",
+                "기술 블로그",
+            ],
+            "마케터": [
+                "캠페인 전략",
+                "고객 분석",
+                "브랜드 관리",
+                "데이터 분석",
+                "시장 조사",
+                "SNS 운영",
+                "콘텐츠 제작",
+                "광고 관리",
+                "파트너십",
+                "고객 소통",
+            ],
+            "학생": [
+                "시험 준비",
+                "과제 관리",
+                "동아리 활동",
+                "진로 탐색",
+                "공부 습관",
+                "봉사 활동",
+                "자격증 준비",
+                "운동",
+                "독서",
+                "멘토링",
+            ],
         }
-        
+
         # 수정: 직업별 fallback이 없을 경우 count개만큼 생성
         return fallback_map.get(occupation, [f"관심분야{i+1}" for i in range(count)])
 
-    
     # ============================================
     # 🎯 핵심 기능 2: 영역별 키워드 생성
     # ============================================
-    
-    def generate_keywords(self, occupation: str, areas: List[str]) -> Dict[str, List[str]]:
+
+    def generate_keywords(
+        self, occupation: str, areas: List[str]
+    ) -> Dict[str, List[str]]:
         """
         각 영역별 핵심 키워드 생성
-        
+
         Args:
             occupation: 직업
             areas: 영역 목록
-            
+
         Returns:
             {
                 "영역1": ["키워드1", "키워드2", ...],
@@ -247,7 +292,7 @@ class GPT4oHelper:
 각 영역마다 3-5개의 키워드를 제시하세요.
 반드시 JSON 형식으로만 응답하세요.
             """.strip()
-            
+
             user_prompt = f"""
 직업: {occupation}
 영역: {', '.join(areas)}
@@ -261,30 +306,30 @@ class GPT4oHelper:
   ...
 }}
             """.strip()
-            
+
             response = self._call(user_prompt, system_prompt, max_tokens=800)
             result = json.loads(response)
-            
+
             logger.info(f"✅ 키워드 생성 성공: {len(result)}개 영역")
             return result
-        
+
         except Exception as e:
             logger.error(f"❌ 키워드 생성 실패: {e}")
             # Fallback
             return {area: [f"{area}_키워드{i+1}" for i in range(3)] for area in areas}
-    
+
     # ============================================
     # 🎯 핵심 기능 3: 간단한 텍스트 분류
     # ============================================
-    
+
     def classify_text(self, text: str, categories: List[str]) -> Dict[str, any]:
         """
         텍스트를 주어진 카테고리로 분류
-        
+
         Args:
             text: 분류할 텍스트
             categories: 카테고리 목록
-            
+
         Returns:
             {
                 "status": "success",
@@ -299,7 +344,7 @@ class GPT4oHelper:
 주어진 카테고리 중 가장 적합한 것을 선택하세요.
 반드시 JSON 형식으로만 응답하세요.
             """.strip()
-            
+
             user_prompt = f"""
 텍스트: {text}
 카테고리: {', '.join(categories)}
@@ -313,24 +358,20 @@ class GPT4oHelper:
   "reasoning": "분류 이유 (한국어)"
 }}
             """.strip()
-            
+
             response = self._call(user_prompt, system_prompt)
             result = json.loads(response)
-            
-            return {
-                "status": "success",
-                **result
-            }
-        
+
+            return {"status": "success", **result}
+
         except Exception as e:
             logger.error(f"❌ 텍스트 분류 실패: {e}")
             return {
                 "status": "error",
                 "category": categories[0] if categories else "Unknown",
                 "confidence": 0.5,
-                "reasoning": f"오류: {str(e)}"
+                "reasoning": f"오류: {str(e)}",
             }
-
 
 
 # ============================================
@@ -339,13 +380,14 @@ class GPT4oHelper:
 
 _gpt_helper_instance: Optional[GPT4oHelper] = None
 
+
 def get_gpt_helper() -> GPT4oHelper:
     """GPT4oHelper 싱글톤 반환"""
     global _gpt_helper_instance
-    
+
     if _gpt_helper_instance is None:
         _gpt_helper_instance = GPT4oHelper()
-    
+
     return _gpt_helper_instance
 
 
@@ -355,13 +397,13 @@ def get_gpt_helper() -> GPT4oHelper:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    
-    print("\n" + "="*60)
+
+    print("\n" + "=" * 60)
     print("🤖 GPT-4o Helper 테스트")
-    print("="*60)
-    
+    print("=" * 60)
+
     helper = GPT4oHelper()
-    
+
     # 수정: 10개 영역 추천 테스트
     print("\n[테스트 1] 직업별 영역 추천 (10개)")
     result = helper.suggest_areas("교사", count=10)
@@ -370,26 +412,24 @@ if __name__ == "__main__":
     print(f"영역: {result['areas']}")
     print(f"메시지: {result['message']}")
 
-    
     # 테스트 2: 키워드 생성
     print("\n[테스트 2] 영역별 키워드 생성 (5개 영역만)")
-    keywords = helper.generate_keywords("교사", result['areas'][:5])
+    keywords = helper.generate_keywords("교사", result["areas"][:5])
     for area, kws in keywords.items():
         print(f"  {area}: {', '.join(kws)}")
-    
+
     # 테스트 3: 텍스트 분류
     print("\n[테스트 3] 텍스트 분류")
     classify_result = helper.classify_text(
-        "2025년 수업 계획서 작성",
-        ["Projects", "Areas", "Resources", "Archives"]
+        "2025년 수업 계획서 작성", ["Projects", "Areas", "Resources", "Archives"]
     )
     print(f"카테고리: {classify_result['category']}")
     print(f"신뢰도: {classify_result['confidence']}")
     print(f"이유: {classify_result['reasoning']}")
-    
-    print("\n" + "="*60)
+
+    print("\n" + "=" * 60)
     print("🤖 GPT-4o Helper 테스트 완료")
-    print("="*60)
+    print("=" * 60)
 
 
 """test_result_1 - ❌
@@ -711,7 +751,6 @@ if __name__ == "__main__":
     🤖 GPT-4o Helper 테스트 완료
 
 """
-
 
 
 """test_result_7 → ⭕️ 서버 테스트

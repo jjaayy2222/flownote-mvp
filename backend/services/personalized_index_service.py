@@ -26,9 +26,10 @@ import logging
 import os
 import types
 import typing
+from dataclasses import dataclass
+
 import redis.asyncio as redis_async
 import redis.exceptions
-from dataclasses import dataclass
 
 # [타입 힌팅 Alias] 동기 함수가 반환하는 스크립트 객체임을 명시하여 await 오용 방지
 CompiledRedisScriptHandle = "redis.commands.core.AsyncScript"
@@ -37,9 +38,9 @@ from pathlib import Path
 from typing import Optional
 
 from backend.core.aws_client_wrapper import fetch_global_pepper  # type: ignore[import]
-from backend.core.config_validator import PersonalizedRAGConfig   # type: ignore[import]
-from backend.services.redis_pubsub import redis_client            # type: ignore[import]
-from backend.utils import mask_pii_id                             # type: ignore[import]
+from backend.core.config_validator import PersonalizedRAGConfig  # type: ignore[import]
+from backend.services.redis_pubsub import redis_client  # type: ignore[import]
+from backend.utils import mask_pii_id  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ _HASH_ALGORITHM: str = "sha256"
 # Redis 메타데이터 TTL (초): 환경 변수 PERSONALIZED_INDEX_META_TTL로 오버라이드 가능
 # 기본값 30일 = 2,592,000초 (운영 환경에서 충분한 캐시 보존)
 _DEFAULT_META_TTL_SECS: int = 2_592_000
-_META_TTL_MIN_SECS: int = 3_600       # 최소 1시간
+_META_TTL_MIN_SECS: int = 3_600  # 최소 1시간
 _META_TTL_MAX_SECS: int = 31_536_000  # 최대 1년
 
 # 스키마 파싱 경고 로그 레벨
@@ -166,7 +167,9 @@ def _load_compaction_threshold() -> int:
             logger.warning(
                 "[PERSONALIZED_INDEX][CONFIG] 'FAISS_COMPACTION_VECTOR_THRESHOLD'=%d is "
                 "below minimum %d; clamped to %d.",
-                val, _MIN_COMPACTION_THRESHOLD, _MIN_COMPACTION_THRESHOLD
+                val,
+                _MIN_COMPACTION_THRESHOLD,
+                _MIN_COMPACTION_THRESHOLD,
             )
             return _MIN_COMPACTION_THRESHOLD
         return val
@@ -174,7 +177,8 @@ def _load_compaction_threshold() -> int:
         logger.warning(
             "[PERSONALIZED_INDEX][CONFIG] 'FAISS_COMPACTION_VECTOR_THRESHOLD'=%r is "
             "not a valid integer; falling back to %d.",
-            raw, _DEFAULT_COMPACTION_THRESHOLD
+            raw,
+            _DEFAULT_COMPACTION_THRESHOLD,
         )
         return _DEFAULT_COMPACTION_THRESHOLD
 
@@ -191,7 +195,10 @@ def _load_delete_ratio() -> float:
             logger.warning(
                 "[PERSONALIZED_INDEX][CONFIG] 'FAISS_COMPACTION_DELETE_RATIO'=%f is "
                 "outside range [%.1f, %.1f]; clamped to %.2f.",
-                val, _DELETE_RATIO_MIN, _DELETE_RATIO_MAX, clamped
+                val,
+                _DELETE_RATIO_MIN,
+                _DELETE_RATIO_MAX,
+                clamped,
             )
             return clamped
         return val
@@ -199,7 +206,8 @@ def _load_delete_ratio() -> float:
         logger.warning(
             "[PERSONALIZED_INDEX][CONFIG] 'FAISS_COMPACTION_DELETE_RATIO'=%r is "
             "not a valid float; falling back to %.2f.",
-            raw, _DEFAULT_DELETE_RATIO
+            raw,
+            _DEFAULT_DELETE_RATIO,
         )
         return _DEFAULT_DELETE_RATIO
 
@@ -230,7 +238,6 @@ redis.call("EXPIRE", KEYS[1], tonumber(ARGV[4]))
 
 return redis.call("HGETALL", KEYS[1])
 """
-
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -290,6 +297,7 @@ class IndexMetadata:
           5. per-type 디스패처로 str/int/float/bool 타입 각각 안전하게 변환.
              미지원 타입은 WARNING 로그 후 raw str 사용.
         """
+
         def _to_str(v: bytes | str) -> str:
             return v.decode("utf-8") if isinstance(v, bytes) else str(v)
 
@@ -311,10 +319,17 @@ class IndexMetadata:
                 return f.default_factory()  # type: ignore[misc]
             return dataclasses.MISSING
 
-        field_defaults: dict[str, object] = {f.name: _get_field_default(f) for f in cls_fields}
+        field_defaults: dict[str, object] = {
+            f.name: _get_field_default(f) for f in cls_fields
+        }
 
         # 누락 필드 감지: dataclass 기본값으로 폴백 (MISSING이 아닌 경우) + _SCHEMA_LOG_LEVEL 레벨 로그
-        missing = [name for name in field_defaults if name not in normalized and field_defaults[name] is not dataclasses.MISSING]
+        missing = [
+            name
+            for name in field_defaults
+            if name not in normalized
+            and field_defaults[name] is not dataclasses.MISSING
+        ]
         if missing:
             logger.log(
                 _SCHEMA_LOG_LEVEL,
@@ -324,14 +339,18 @@ class IndexMetadata:
                 missing,
             )
 
-        def _parse_value(field_name: str, raw_val: str, field_type: type, default: object) -> object:
+        def _parse_value(
+            field_name: str, raw_val: str, field_type: type, default: object
+        ) -> object:
             """
             Redis raw str 값을 필드의 실제 Python 타입으로 안전하게 변환한다.
             지원 타입: str, int, float, bool
             미지원 타입: WARNING 로그 후 raw str 반환 (서비스 장애 전파 방지)
             """
-            origin = typing.get_origin(field_type)  # Optional, Union (typing / PEP 604) 등의 원본 타입
-            
+            origin = typing.get_origin(
+                field_type
+            )  # Optional, Union (typing / PEP 604) 등의 원본 타입
+
             # Union 처리 (typing.Union 또는 types.UnionType)
             union_types = (typing.Union, getattr(types, "UnionType", ()))
             if origin in union_types:
@@ -355,7 +374,8 @@ class IndexMetadata:
                         "[PERSONALIZED_INDEX][SCHEMA] from_redis_dict: field '%s'=%r "
                         "cannot be parsed as int; falling back to dataclass default. "
                         "(Adjust 'PERSONALIZED_INDEX_SCHEMA_LOG_LEVEL' env var to suppress.)",
-                        field_name, raw_val,
+                        field_name,
+                        raw_val,
                     )
                     return default
             if field_type is float:
@@ -366,7 +386,8 @@ class IndexMetadata:
                         _SCHEMA_LOG_LEVEL,
                         "[PERSONALIZED_INDEX][SCHEMA] from_redis_dict: field '%s'=%r "
                         "cannot be parsed as float; falling back to dataclass default.",
-                        field_name, raw_val,
+                        field_name,
+                        raw_val,
                     )
                     return default
             if field_type is bool:
@@ -378,7 +399,8 @@ class IndexMetadata:
                 "[PERSONALIZED_INDEX][SCHEMA] from_redis_dict: field '%s' has unsupported "
                 "type '%s' for automatic conversion; returning raw string. "
                 "Add a type handler to _parse_value() to suppress this warning.",
-                field_name, field_type,
+                field_name,
+                field_type,
             )
             return raw_val
 
@@ -402,8 +424,6 @@ class IndexMetadata:
                 kwargs[f.name] = _parse_value(f.name, raw_val, field_type, default)
 
         return cls(**kwargs)
-
-
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -443,7 +463,7 @@ def _extract_masked_uid_from_key(key: typing.Any) -> str:
             f"({_format_key_meta(key)})"
         )
 
-    uid_part = key[len(expected_prefix):]
+    uid_part = key[len(expected_prefix) :]
     if not uid_part:
         raise ValueError(
             f"Empty UID part in Redis key (prefix matched — {_format_key_meta(key)})"
@@ -750,7 +770,7 @@ def should_rebuild_index(metadata: IndexMetadata) -> bool:
 
     판단 기준:
       - 무의미한 Rebuild 방어: 삭제된 벡터(deleted_count)가 없으면 Rebuild는 단순 복사본 생성이 되므로 즉시 False 반환.
-      - 기준 1. 물리적 규모 임계값 초과: '유효 벡터(vector_count)'가 아닌 '누적 벡터(total_count)'가 
+      - 기준 1. 물리적 규모 임계값 초과: '유효 벡터(vector_count)'가 아닌 '누적 벡터(total_count)'가
                 _COMPACTION_THRESHOLD를 초과하는지 검사. FAISS의 물리적 크기 팽창과 메모리 사용량은 total_count에 비례한다.
       - 기준 2. 삭제 비율 임계값 초과: (deleted_count / total_count)가 _DELETE_RATIO_THRESHOLD를 초과하는가?
                 단, _MIN_DATASET_SIZE_FOR_COMPACTION 이하의 극소량 데이터셋에서는 일시적 변동 노이즈를 방지하기 위해 무시한다.
@@ -793,11 +813,14 @@ def should_rebuild_index(metadata: IndexMetadata) -> bool:
 
 class LuaScriptCache:
     """Lua 스크립트의 EVALSHA 캐시를 캡슐화하고, 연결 유실 시 자율 복구하는 헬퍼 클래스"""
+
     def __init__(self, script_body: str):
         self.script_body = script_body
         self._compiled: Optional[CompiledRedisScriptHandle] = None
 
-    def get_compiled_script_handle(self, client: "redis_async.Redis") -> CompiledRedisScriptHandle:
+    def get_compiled_script_handle(
+        self, client: "redis_async.Redis"
+    ) -> CompiledRedisScriptHandle:
         """
         스크립트 객체의 '참조(Handle)'를 반환하는 동기(Sync) 인터페이스입니다.
         (경쟁 상태의 부하가 미비하므로 비동기 Lock 없이 단순 메모리 검사만 수행)
@@ -810,8 +833,10 @@ class LuaScriptCache:
     def invalidate(self) -> None:
         self._compiled = None
 
+
 # 모듈 레벨 캡슐화 객체 (단일 진실 공급원)
 _meta_updater = LuaScriptCache(_LUA_UPDATE_META_SCRIPT)
+
 
 async def _execute_update_meta_script(
     client: "redis_async.Redis",
@@ -861,7 +886,9 @@ def _hgetall_list_to_dict(
     raw_list: typing.Any,
 ) -> Optional[dict[bytes | str, bytes | str]]:
     if not isinstance(raw_list, list) or len(raw_list) % 2 != 0:
-        actual = len(raw_list) if isinstance(raw_list, list) else type(raw_list).__name__
+        actual = (
+            len(raw_list) if isinstance(raw_list, list) else type(raw_list).__name__
+        )
         logger.error(
             "[PERSONALIZED_INDEX] Corrupted Redis metadata response for masked_uid=%s. "
             "Expected an even-length list from HGETALL, got length/type=%s.",
@@ -881,7 +908,7 @@ async def update_index_after_op(
     [원자적(Atomic) 연산 기능 업데이트]
     벡터 추가/삭제 작업 후 메타데이터를 원자적으로 갱신하고, 컴팩션 필요 여부를 판단한다.
 
-    Redis Lua Script를 사용하여 동시성(Race Condition) 환경에서도 'Read-Modify-Write' 시 
+    Redis Lua Script를 사용하여 동시성(Race Condition) 환경에서도 'Read-Modify-Write' 시
     데이터 갱신이 유실되지 않도록 보장한다. 갱신 후의 카운트는 항상 0 이상으로 유지된다.
 
     Args:
@@ -905,7 +932,7 @@ async def update_index_after_op(
         delete_delta=delete_delta,
         now=now,
     )
-    
+
     if raw_list is None:
         logger.error(
             "[PERSONALIZED_INDEX] Cannot update metrics: No metadata found for masked_uid=%s",

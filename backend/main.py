@@ -4,29 +4,38 @@
 FastAPI 메인 서버
 """
 
-from fastapi import FastAPI, UploadFile, File, HTTPException  # type: ignore[import]
+import logging
+import uuid
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+
+from fastapi import FastAPI, File, HTTPException, UploadFile  # type: ignore[import]
 from fastapi.middleware.cors import CORSMiddleware  # type: ignore[import]
 from pydantic import BaseModel  # type: ignore[import]
-import logging
-from datetime import datetime, timezone
-import uuid
 
-from contextlib import asynccontextmanager
-from backend.services.websocket_manager import manager  # type: ignore[import]
-from backend.api.endpoints.websocket import router as websocket_router  # type: ignore[import]
-
-# 마이그레이션 모델 임포트
-from backend.models import HealthCheckResponse, FileMetadata  # type: ignore[import]
-
-from backend.routes.conflict_routes import router as conflict_router  # type: ignore[import]
-from backend.routes.classifier_routes import router as classifier_router  # type: ignore[import]
-from backend.routes.onboarding_routes import router as onboarding_router  # type: ignore[import]
-from backend.api.endpoints.sync import router as sync_router  # type: ignore[import]
-from backend.api.endpoints.automation import router as automation_router  # type: ignore[import]
+from backend.api.endpoints.automation import (
+    router as automation_router,
+)  # type: ignore[import]
+from backend.api.endpoints.chat import router as chat_router  # type: ignore[import]
 from backend.api.endpoints.graph import router as graph_router  # type: ignore[import]
 from backend.api.endpoints.search import router as search_router  # type: ignore[import]
-from backend.api.endpoints.chat import router as chat_router  # type: ignore[import]
+from backend.api.endpoints.sync import router as sync_router  # type: ignore[import]
+from backend.api.endpoints.websocket import (
+    router as websocket_router,
+)  # type: ignore[import]
 
+# 마이그레이션 모델 임포트
+from backend.models import FileMetadata, HealthCheckResponse  # type: ignore[import]
+from backend.routes.classifier_routes import (
+    router as classifier_router,
+)  # type: ignore[import]
+from backend.routes.conflict_routes import (
+    router as conflict_router,
+)  # type: ignore[import]
+from backend.routes.onboarding_routes import (
+    router as onboarding_router,
+)  # type: ignore[import]
+from backend.services.websocket_manager import manager  # type: ignore[import]
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -34,6 +43,7 @@ logger = logging.getLogger(__name__)
 
 # Discord 알림 핸들러 활성화
 from backend.utils.observability import DiscordAlertHandler
+
 logging.getLogger().addHandler(DiscordAlertHandler())
 
 
@@ -42,19 +52,20 @@ logging.getLogger().addHandler(DiscordAlertHandler())
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
-from backend.services.scheduler_service import start_scheduler, shutdown_scheduler
+from backend.services.scheduler_service import shutdown_scheduler, start_scheduler
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting up: Initializing WebSocket Manager & Redis...")
     await manager.initialize()
-    
+
     # 스케줄러(Golden Dataset 수집 등) 시작
     start_scheduler()
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down: Cleaning up resources...")
     shutdown_scheduler()
@@ -114,18 +125,26 @@ app.add_middleware(
 # Exception Handlers (i18n support)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-from fastapi.exceptions import RequestValidationError  # type: ignore[import]
 from fastapi import Request  # type: ignore[import]
+from fastapi.exceptions import RequestValidationError  # type: ignore[import]
 from fastapi.responses import JSONResponse  # type: ignore[import]
-from backend.api.exceptions import http_exception_handler, validation_exception_handler  # type: ignore[import]
-from backend.services.chat_history_service import RedisUnavailableError  # type: ignore[import]
+
+from backend.api.exceptions import (  # type: ignore[import]
+    http_exception_handler,
+    validation_exception_handler,
+)
+from backend.services.chat_history_service import (
+    RedisUnavailableError,
+)  # type: ignore[import]
 
 app.add_exception_handler(HTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 
 
 @app.exception_handler(RedisUnavailableError)
-async def redis_unavailable_handler(request: Request, exc: RedisUnavailableError) -> JSONResponse:
+async def redis_unavailable_handler(
+    request: Request, exc: RedisUnavailableError
+) -> JSONResponse:
     """Redis 연결 불가 시 전역 503 응답 반환.
 
     chat_history_service의 모든 엔드포인트에서 각자 RedisUnavailableError를

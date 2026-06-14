@@ -65,7 +65,9 @@ def _clamp_core(value: T, min_val: T, max_val: T) -> T:
     return max(min_val, min(max_val, value))
 
 
-def _clamp_float(value: float, min_val: float, max_val: float, source: str, label: str) -> float:
+def _clamp_float(
+    value: float, min_val: float, max_val: float, source: str, label: str
+) -> float:
     """float 값을 [min_val, max_val] 범위 내로 Clamp한다."""
     clamped = _clamp_core(value, min_val, max_val)
     if clamped != value:
@@ -194,22 +196,25 @@ def _score_candidates_for_orphan(
 ) -> list[tuple[float, str]]:
     """고립 노드에 대해 유사도 임계값을 넘는 후보들을 평가하여 반환한다."""
     scored: list[tuple[float, str]] = []
-    
+
     for candidate_id, candidate_vec in a_candidate_vecs.items():
         if candidate_id == orphan_id:
             continue
-            
+
         if len(orphan_vec) != len(candidate_vec):
             logger.debug(
                 "[GRAPH][SIMILARITY] 차원 불일치로 건너뜀: orphan(id=%s, dim=%d) != candidate(id=%s, dim=%d)",
-                orphan_id[:8], len(orphan_vec), candidate_id[:8], len(candidate_vec)
+                orphan_id[:8],
+                len(orphan_vec),
+                candidate_id[:8],
+                len(candidate_vec),
             )
             continue
-            
+
         sim = _cosine_similarity(orphan_vec, candidate_vec)
         if sim >= similarity_threshold:
             scored.append((sim, candidate_id))
-            
+
     return scored
 
 
@@ -281,7 +286,7 @@ def find_link_recommendations(
 
     # 후보 노드 ID → GraphNode 빠른 조회 맵
     candidate_map: dict[str, GraphNode] = {n.id: n for n in candidate_nodes}
-    
+
     # 사전에 후보/고립 임베딩을 np.ndarray로 변환하여 캐싱 (성능 최적화 및 대칭성 확보)
     a_candidate_vecs: dict[str, np.ndarray] = {
         cid: np.array(vec_raw, dtype=np.float32)
@@ -296,7 +301,7 @@ def find_link_recommendations(
     if missing_candidates := set(a_candidate_vecs.keys()) - set(candidate_map.keys()):
         logger.debug(
             "[GRAPH][SIMILARITY] candidate_embeddings에 %d개의 식별되지 않은 노드 ID가 있습니다. (무시됨)",
-            len(missing_candidates)
+            len(missing_candidates),
         )
         for missing_id in missing_candidates:
             a_candidate_vecs.pop(missing_id, None)

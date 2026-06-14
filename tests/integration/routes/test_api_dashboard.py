@@ -1,10 +1,12 @@
 # tests/test_api_dashboard.py
 
 """API Dashboard Endpoints - Unit & Integration Tests"""
-import pytest
-from fastapi.testclient import TestClient
+
 import sys
 from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
 
 # 경로 설정
 project_root = Path(__file__).parent.parent
@@ -12,6 +14,7 @@ sys.path.insert(0, str(project_root))
 
 # FastAPI 테스트 클라이언트를 위한 더미 앱
 from fastapi import FastAPI
+
 from backend.api.endpoints.dashboard import router
 
 # 테스트 앱 생성
@@ -19,9 +22,10 @@ app = FastAPI()
 app.include_router(router)
 client = TestClient(app)
 
+
 class TestDashboardEndpoints:
     """Dashboard API 엔드포인트 테스트"""
-    
+
     def test_status_endpoint(self):
         """GET /dashboard/status"""
         print("🧪 Testing: GET /dashboard/status")
@@ -30,7 +34,7 @@ class TestDashboardEndpoints:
         data = response.json()
         assert "status" in data
         print(f"✅ Response: {data}")
-    
+
     def test_metrics_endpoint(self):
         """GET /dashboard/metrics"""
         print("🧪 Testing: GET /dashboard/metrics")
@@ -40,7 +44,7 @@ class TestDashboardEndpoints:
         # MetadataAggregator 데이터 체크
         assert "file_statistics" in data or "total_files" in data
         print(f"✅ Response keys: {data.keys()}")
-    
+
     def test_keywords_endpoint(self):
         """GET /dashboard/keywords?top_n=5"""
         print("🧪 Testing: GET /dashboard/keywords?top_n=5")
@@ -49,7 +53,7 @@ class TestDashboardEndpoints:
         data = response.json()
         assert "top_keywords" in data
         print(f"✅ Top keywords count: {len(data['top_keywords'])}")
-    
+
     def test_keywords_with_custom_params(self):
         """GET /dashboard/keywords?top_n=20"""
         print("🧪 Testing: GET /dashboard/keywords?top_n=20")
@@ -59,11 +63,12 @@ class TestDashboardEndpoints:
         assert "top_keywords" in data
         print(f"✅ Response length: {len(data['top_keywords'])}")
 
+
 # 테스트
 if __name__ == "__main__":
     print("🚀 Running API Dashboard Tests\n")
     test = TestDashboardEndpoints()
-    
+
     try:
         test.test_status_endpoint()
         print()
@@ -75,7 +80,6 @@ if __name__ == "__main__":
         print("\n✅ All API tests passed!")
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
-
 
 
 """test_result_1 - 직접 실행 = `python tests/test_api_dashboard.py`

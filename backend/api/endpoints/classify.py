@@ -2,13 +2,15 @@
 
 """Classification Endpoint"""
 
-from fastapi import APIRouter, UploadFile, File, Depends
-from ...api.deps import get_locale
-from ...api.models import FileProcessingResponse
-from ...api.exceptions import localized_http_exception
-from ...services.i18n_service import get_message
-from ...core.config import settings
 import math
+
+from fastapi import APIRouter, Depends, File, UploadFile
+
+from ...api.deps import get_locale
+from ...api.exceptions import localized_http_exception
+from ...api.models import FileProcessingResponse
+from ...core.config import settings
+from ...services.i18n_service import get_message
 
 router = APIRouter(prefix="/classify", tags=["classify"])
 

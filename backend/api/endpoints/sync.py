@@ -6,18 +6,19 @@ External Sync API Endpoints
 MCP 서버 및 Obsidian 동기화 상태 모니터링 API
 """
 
-from fastapi import APIRouter, HTTPException, Depends
-from typing import List, Dict, Any, Optional
-from datetime import datetime
-from pathlib import Path
-from enum import Enum
 import logging
+from datetime import datetime
+from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from backend.services.obsidian_sync import ObsidianSyncService
-from backend.services.diff_service import generate_diff
-from backend.config.mcp_config import mcp_config
-from backend.models.external_sync import SyncStatus, ExternalToolType
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from backend.config.mcp_config import mcp_config
+from backend.models.external_sync import ExternalToolType, SyncStatus
+from backend.services.diff_service import generate_diff
+from backend.services.obsidian_sync import ObsidianSyncService
 
 logger = logging.getLogger(__name__)
 

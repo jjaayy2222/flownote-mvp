@@ -1,20 +1,21 @@
 # backend/api/deps.py
 
+import logging
 import os
-from typing import Optional, Dict, Any, Callable, Union, NamedTuple
+from typing import Any, Callable, Dict, NamedTuple, Optional, Union
+
 from fastapi import (
     Depends,
-    HTTPException,
-    status,
-    WebSocket,
-    Query,
-    WebSocketException,
     Header,
+    HTTPException,
+    Query,
+    WebSocket,
+    WebSocketException,
+    status,
 )
 from fastapi.security import OAuth2PasswordBearer
-from backend.core.config import settings
 
-import logging
+from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
 

@@ -17,11 +17,11 @@
 
 from __future__ import annotations
 
+import re
 from enum import Enum
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
-import re
 
 from backend.utils.common import INVALID_PII_SENTINEL
 
@@ -229,9 +229,7 @@ class OrphanNode(BaseModel):
     )
     user_id_hash: Optional[str] = Field(
         default=None,
-        description=(
-            "소유자 해시 ID (mask_pii_id() 반환값만 허용, PII 원문 금지)."
-        ),
+        description=("소유자 해시 ID (mask_pii_id() 반환값만 허용, PII 원문 금지)."),
     )
 
     @field_validator("user_id_hash")
@@ -295,7 +293,9 @@ class LinkRecommendation(BaseModel):
     orphan_node_id: str = Field(..., description="고립 노드의 고유 식별자")
     orphan_node_label: str = Field(..., description="고립 노드의 표시 이름")
     candidate_node_id: str = Field(..., description="연결 추천 후보 노드의 고유 식별자")
-    candidate_node_label: str = Field(..., description="연결 추천 후보 노드의 표시 이름")
+    candidate_node_label: str = Field(
+        ..., description="연결 추천 후보 노드의 표시 이름"
+    )
     similarity_score: float = Field(
         ...,
         ge=0.0,

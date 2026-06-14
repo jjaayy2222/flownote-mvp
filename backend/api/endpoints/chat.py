@@ -6,32 +6,42 @@
 
 import logging
 import os
-import time
 import threading
+import time
 from collections import OrderedDict
-from typing import Optional, Dict
-from fastapi import APIRouter, Depends, HTTPException, Query, Header, Request  # type: ignore[import]
+from typing import Dict, Optional
 
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,  # type: ignore[import]
+    HTTPException,
+    Query,
+    Request,
+)
 from fastapi.responses import StreamingResponse  # type: ignore[import]
 
-from backend.api.models import (  # type: ignore[import]
+from backend.api.models import (
+    ChatHistoryResponse,  # type: ignore[import]
     ChatQueryRequest,
-    ChatHistoryResponse,
-    SessionListResponse,
     ChatSessionMeta,
-    RenameSessionRequest,
     FeedbackRequest,
     FeedbackResponse,
     FeedbackStatsResponse,
-)
-from backend.services.chat_service import ChatService, get_chat_service  # type: ignore[import]
-from backend.services.chat_history_service import (  # type: ignore[import]
-    ChatHistoryService,
-    get_chat_history_service,
-    MAX_FEEDBACK_STATS_LIMIT,
+    RenameSessionRequest,
+    SessionListResponse,
 )
 from backend.config import AdminConfig, AlertConfig
-from backend.utils import mask_pii_id, get_chat_log_extra  # type: ignore[import]
+from backend.services.chat_history_service import (  # type: ignore[import]
+    MAX_FEEDBACK_STATS_LIMIT,
+    ChatHistoryService,
+    get_chat_history_service,
+)
+from backend.services.chat_service import (
+    ChatService,  # type: ignore[import]
+    get_chat_service,
+)
+from backend.utils import get_chat_log_extra, mask_pii_id  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +228,7 @@ async def submit_feedback(
     """
     # 1. Observability 목적으로 정형화된 로그(Structured log) 기록
     comment_length: int = len(body.feedback_text) if body.feedback_text else 0
-    
+
     logger.info(
         "[OBS] Event: Feedback received",
         extra={
@@ -244,8 +254,8 @@ async def submit_feedback(
             f"[OBS] Error: Failed to save feedback to Redis: {e}",
             extra={
                 "session_id_hash": mask_pii_id(body.session_id),
-                "message_id_hash": mask_pii_id(body.message_id)
-            }
+                "message_id_hash": mask_pii_id(body.message_id),
+            },
         )
 
     return FeedbackResponse(
@@ -268,6 +278,7 @@ _test_alert_lock = threading.Lock()
 # 신뢰할 수 있는 프록시 IP 목록 (실제 환경에서는 환경변수나 설정값으로 분리)
 _TRUSTED_PROXIES = {"127.0.0.1", "::1", "localhost"}
 
+
 def _cleanup_test_alert_history(now: float) -> None:
     """오래된 엔트리를 제거하고 최대 크기를 넘기면 가장 오래된 항목부터 삭제하여 메모리 릭을 방지합니다.
 
@@ -277,7 +288,7 @@ def _cleanup_test_alert_history(now: float) -> None:
     """
     global _test_alert_history
     cutoff = now - _TEST_ALERT_THROTTLE_SECONDS
-    
+
     # 1) 만료된 항목 삭제 (분할 상환 O(1))
     while _test_alert_history:
         ip, ts = next(iter(_test_alert_history.items()))
@@ -285,10 +296,11 @@ def _cleanup_test_alert_history(now: float) -> None:
             _test_alert_history.pop(ip)
         else:
             break
-            
+
     # 2) 허용된 최대 튜플 크기를 초과할 경우, 가장 오래된 항목 삭제 (개별 연산 O(1))
     while len(_test_alert_history) > _TEST_ALERT_MAX_ENTRIES:
         _test_alert_history.popitem(last=False)
+
 
 def get_client_ip(request: Request) -> str:
     """신뢰할 수 있는 프록시에 한하여 X-Forwarded-For 헤더를 사용함으로써 IP 스푸핑을 방지합니다."""
@@ -306,19 +318,22 @@ def get_client_ip(request: Request) -> str:
 
     return client_ip
 
+
 @router.post(
     "/alert/test",
     summary="Discord 알림 테스트 발송 (Admin)",
 )
 async def test_alert_endpoint(
     request: Request,
-    x_admin_key: Optional[str] = Header(None, description="Next.js 프록시 내부 인증 키"),
+    x_admin_key: Optional[str] = Header(
+        None, description="Next.js 프록시 내부 인증 키"
+    ),
 ):
     """
     강제로 [OBS] 로그를 발생시켜 Discord 알림 파이프라인이 작동하는지 테스트합니다.
     """
     admin_key = AdminConfig.get_admin_key()
-    
+
     if not admin_key or x_admin_key != admin_key:
         logger.warning("[OBS] Unauthorized attempt to trigger alert test.")
         raise HTTPException(status_code=403, detail="Forbidden")
@@ -330,19 +345,28 @@ async def test_alert_endpoint(
     with _test_alert_lock:
         # [Fix] 메모리 릭 방지를 위한 Eviction 적용 (분할 상환 O(1))
         _cleanup_test_alert_history(current_time)
-        
-        # [Fix] 개별 클라이언트 IP 기반 Rate Limiting 
+
+        # [Fix] 개별 클라이언트 IP 기반 Rate Limiting
         last_called = _test_alert_history.get(client_ip, 0.0)
         if current_time - last_called < _TEST_ALERT_THROTTLE_SECONDS:
-            logger.warning(f"[OBS] Rate limited: Test alert requested too frequently by IP: {client_ip}")
-            raise HTTPException(status_code=429, detail="Too Many Requests. Please wait before testing again.")
+            logger.warning(
+                f"[OBS] Rate limited: Test alert requested too frequently by IP: {client_ip}"
+            )
+            raise HTTPException(
+                status_code=429,
+                detail="Too Many Requests. Please wait before testing again.",
+            )
 
         _test_alert_history[client_ip] = current_time
-        _test_alert_history.move_to_end(client_ip)  # 최근 접속한 항목을 뒤로 보내 LRU 체계를 확립
+        _test_alert_history.move_to_end(
+            client_ip
+        )  # 최근 접속한 항목을 뒤로 보내 LRU 체계를 확립
 
     # 強제 [OBS] Warning 발생 -> DiscordAlertHandler가 가로챔 (호출자 IP 메타데이터 포함)
-    logger.warning(f"[OBS] 🔔 Test Alert: 관리자 페이지에서 테스트 알림이 요청되었습니다. (IP: {client_ip})")
-    
+    logger.warning(
+        f"[OBS] 🔔 Test Alert: 관리자 페이지에서 테스트 알림이 요청되었습니다. (IP: {client_ip})"
+    )
+
     return {"status": "success", "message": "Test alert triggered."}
 
 
@@ -352,29 +376,40 @@ async def test_alert_endpoint(
     summary="AI 피드백 통계 및 트렌드 데이터 조회 (Admin)",
 )
 async def get_feedback_stats_endpoint(
-    limit: int = Query(50, ge=1, le=MAX_FEEDBACK_STATS_LIMIT, description=f"최근 피드백 반환 최대 개수 (상한 {MAX_FEEDBACK_STATS_LIMIT})"),
-    x_admin_key: Optional[str] = Header(None, description="Next.js 프록시 내부 인증 키"),
+    limit: int = Query(
+        50,
+        ge=1,
+        le=MAX_FEEDBACK_STATS_LIMIT,
+        description=f"최근 피드백 반환 최대 개수 (상한 {MAX_FEEDBACK_STATS_LIMIT})",
+    ),
+    x_admin_key: Optional[str] = Header(
+        None, description="Next.js 프록시 내부 인증 키"
+    ),
     chat_history_service: ChatHistoryService = Depends(get_chat_history_service),
 ):
     """
     어드민 대시보드 시각화를 위한 피드백 통계를 반환합니다.
-    
+
     - O(N) SCAN 기반 전체 피드백 Hash 순회
     - 일자별 긍정/부정 트렌드 차트 데이터를 위해 집계
     - 최신 사용자 피드백 텍스트 리스트(최대 limit개) 추출
     """
-    
+
     # 설정 관리자를 통해 인증 키 조회 (핫 리로드 및 테스트 유연성 보장)
     admin_key = AdminConfig.get_admin_key()
-    
+
     if not admin_key:
-        logger.error("[OBS] ADMIN_API_KEY is not configured in environment. Rejecting access.")
-        raise HTTPException(status_code=500, detail="Server Configuration Error: Missing Secret")
-        
+        logger.error(
+            "[OBS] ADMIN_API_KEY is not configured in environment. Rejecting access."
+        )
+        raise HTTPException(
+            status_code=500, detail="Server Configuration Error: Missing Secret"
+        )
+
     if not x_admin_key or x_admin_key != admin_key:
         logger.warning("[OBS] Unauthorized attempt to access admin stats endpoint.")
         raise HTTPException(status_code=403, detail="Forbidden: Invalid Admin Key")
-    
+
     try:
         stats = await chat_history_service.get_feedback_stats(limit_recent=limit)
         return FeedbackStatsResponse(

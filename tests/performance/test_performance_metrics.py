@@ -1,29 +1,29 @@
 # tests/performance/test_performance_metrics.py
 
-import pytest
-import json
 import asyncio
-from typing import List, AsyncGenerator
+import json
+from typing import AsyncGenerator, List
 from unittest.mock import MagicMock
 
+import pytest
+
 from tests.performance.collector import measure_stream_performance
+
 
 class FakeChatService:
     """
     Fake chat_service implementation for unit-testing measure_stream_performance.
     """
+
     def __init__(self, events: List[str]) -> None:
         self._events = events
 
     async def stream_chat(
-        self,
-        query: str,
-        user_id: str,
-        session_id: str = None,
-        **kwargs
+        self, query: str, user_id: str, session_id: str = None, **kwargs
     ) -> AsyncGenerator[str, None]:
         for event in self._events:
             yield event
+
 
 @pytest.mark.asyncio
 async def test_measure_stream_performance_basic_stream_metrics():
@@ -33,16 +33,14 @@ async def test_measure_stream_performance_basic_stream_metrics():
     events = [
         'data: {"type": "token", "content": "Hello"}\n\n',
         'data: {"type": "token", "content": " world"}\n\n',
-        'data: [DONE]\n\n',
+        "data: [DONE]\n\n",
     ]
     fake_service = FakeChatService(events)
-    
+
     result = await measure_stream_performance(
-        chat_service=fake_service,
-        query="test query",
-        user_id="test_user"
+        chat_service=fake_service, query="test query", user_id="test_user"
     )
-    
+
     assert result["success"] is True
     assert result["chunks_count"] == 2
     assert result["chars_count"] == len("Hello world")
@@ -51,6 +49,7 @@ async def test_measure_stream_performance_basic_stream_metrics():
     assert result["total_time"] > result["ttft"]
     assert result["cps"] > 0
 
+
 @pytest.mark.asyncio
 async def test_measure_stream_performance_no_token_events():
     """
@@ -58,16 +57,14 @@ async def test_measure_stream_performance_no_token_events():
     """
     events = [
         'data: {"type": "search_start"}\n\n',
-        'data: [DONE]\n\n',
+        "data: [DONE]\n\n",
     ]
     fake_service = FakeChatService(events)
-    
+
     result = await measure_stream_performance(
-        chat_service=fake_service,
-        query="no tokens",
-        user_id="test_user"
+        chat_service=fake_service, query="no tokens", user_id="test_user"
     )
-    
+
     assert result["success"] is True
     assert result["chunks_count"] == 0
     assert result["chars_count"] == 0
@@ -76,24 +73,23 @@ async def test_measure_stream_performance_no_token_events():
     assert result["cps"] == 0
     assert result["chars_per_sec"] == 0
 
+
 @pytest.mark.asyncio
 async def test_measure_stream_performance_malformed_json():
     """
     잘못된 JSON 형식이 섞여 있어도 건너뛰고 정상 동작하는지 검증
     """
     events = [
-        'data: {invalid json}\n\n',
+        "data: {invalid json}\n\n",
         'data: {"type": "token", "content": "Valid"}\n\n',
-        'data: [DONE]\n\n',
+        "data: [DONE]\n\n",
     ]
     fake_service = FakeChatService(events)
-    
+
     result = await measure_stream_performance(
-        chat_service=fake_service,
-        query="malformed json",
-        user_id="test_user"
+        chat_service=fake_service, query="malformed json", user_id="test_user"
     )
-    
+
     assert result["success"] is True
     assert result["chunks_count"] == 1
     assert result["chars_count"] == len("Valid")

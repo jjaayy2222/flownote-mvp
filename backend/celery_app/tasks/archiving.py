@@ -1,23 +1,23 @@
 # backend/celery_app/tasks/archiving.py
 
-import os
-import uuid
-import shutil
 import logging
+import os
+import shutil
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional, Set, Tuple
 
 from backend.celery_app.celery import app
-from backend.services.file_access_logger import FileAccessLogger
+from backend.config import AppConfig, PathConfig
 from backend.models.automation import (
-    AutomationLog,
-    AutomationTaskType,
-    AutomationStatus,
     ArchivingRecord,
+    AutomationLog,
+    AutomationStatus,
+    AutomationTaskType,
 )
-from backend.config import PathConfig, AppConfig
+from backend.services.file_access_logger import FileAccessLogger
 
 logger = logging.getLogger(__name__)
 

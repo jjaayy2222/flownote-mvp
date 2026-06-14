@@ -1,9 +1,9 @@
 # backend/dashboard/connection.py (수정)
 
 import sqlite3
-from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Any
+from pathlib import Path
+from typing import Any, Dict, List
 
 
 class DatabaseConnection:
@@ -21,8 +21,7 @@ class DatabaseConnection:
     def _init_schema(self):
         """테이블 스키마 초기화"""
         # 파일 테이블
-        self.cursor.execute(
-            """
+        self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS files (
                 id INTEGER PRIMARY KEY,
                 filename TEXT UNIQUE NOT NULL,
@@ -32,12 +31,10 @@ class DatabaseConnection:
                 updated_date TIMESTAMP,
                 path TEXT
             )
-        """
-        )
+        """)
 
         # 메타데이터 테이블
-        self.cursor.execute(
-            """
+        self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS metadata (
                 id INTEGER PRIMARY KEY,
                 file_id INTEGER UNIQUE,
@@ -47,12 +44,10 @@ class DatabaseConnection:
                 manual_override BOOLEAN,
                 FOREIGN KEY(file_id) REFERENCES files(id)
             )
-        """
-        )
+        """)
 
         # 검색 통계 테이블
-        self.cursor.execute(
-            """
+        self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS search_analytics (
                 id INTEGER PRIMARY KEY,
                 file_id INTEGER,
@@ -61,8 +56,7 @@ class DatabaseConnection:
                 top_keywords TEXT,
                 FOREIGN KEY(file_id) REFERENCES files(id)
             )
-        """
-        )
+        """)
 
         self.conn.commit()
 
@@ -102,13 +96,11 @@ class DatabaseConnection:
     def _group_by_extension(self) -> Dict[str, int]:
         """파일 타입별 그룹화"""
         try:
-            self.cursor.execute(
-                """
+            self.cursor.execute("""
                 SELECT file_type, COUNT(*) as count 
                 FROM files 
                 GROUP BY file_type
-            """
-            )
+            """)
             return {row[0]: row[1] for row in self.cursor.fetchall()}
         except Exception as e:
             print(f"Error grouping by extension: {e}")
@@ -117,14 +109,12 @@ class DatabaseConnection:
     def _group_by_para(self) -> Dict[str, int]:
         """PARA별 그룹화"""
         try:
-            self.cursor.execute(
-                """
+            self.cursor.execute("""
                 SELECT para_category, COUNT(*) as count 
                 FROM metadata 
                 WHERE para_category IS NOT NULL
                 GROUP BY para_category
-            """
-            )
+            """)
             return {row[0]: row[1] for row in self.cursor.fetchall()}
         except Exception as e:
             print(f"Error grouping by PARA: {e}")
@@ -182,13 +172,11 @@ class DatabaseConnection:
     def get_files_with_para(self) -> List[Dict[str, Any]]:
         """PARA 카테고리를 포함한 파일 목록 반환 (Graph View용)"""
         try:
-            self.cursor.execute(
-                """
+            self.cursor.execute("""
                 SELECT f.id, f.filename, m.para_category 
                 FROM files f
                 LEFT JOIN metadata m ON f.id = m.file_id
-            """
-            )
+            """)
             return [dict(row) for row in self.cursor.fetchall()]
         except Exception as e:
             print(f"Error fetching files with PARA: {e}")
@@ -228,20 +216,18 @@ class DatabaseConnection:
             """
             self.cursor.execute(query)
             rows = self.cursor.fetchall()
-            
+
             # 데이터 가공은 Python에서 처리 (주차/요일 계산 등)
             result = []
             for row in rows:
                 date_str = row[0]
                 count = row[1]
-                if not date_str: continue
-                
-                dt = datetime.strptime(date_str, '%Y-%m-%d')
+                if not date_str:
+                    continue
+
+                dt = datetime.strptime(date_str, "%Y-%m-%d")
                 # 간단하게 ISO Year/Week 사용 or 단순 날짜 반환
-                result.append({
-                    "date": date_str,
-                    "count": count
-                })
+                result.append({"date": date_str, "count": count})
             return result
         except Exception as e:
             print(f"Error getting activity heatmap: {e}")
@@ -261,7 +247,7 @@ class DatabaseConnection:
             """
             self.cursor.execute(query)
             rows = self.cursor.fetchall()
-            
+
             # 정렬을 다시 평범하게 (과거 -> 현재)
             data = [{"name": r[0], "value": r[1]} for r in rows]
             return data[::-1]

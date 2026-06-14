@@ -4,11 +4,14 @@
 Custom exception handlers and utilities for i18n error responses
 """
 
+from typing import Optional
+
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
-from typing import Optional
-from ..services.i18n_service import get_message
+
 from backend.core.config import settings
+
+from ..services.i18n_service import get_message
 
 
 def localized_http_exception(
@@ -85,6 +88,7 @@ async def validation_exception_handler(
     Pydantic 검증 오류 핸들러 (다국어 지원)
     """
     from fastapi.exceptions import RequestValidationError
+
     from .deps import extract_locale_from_header
 
     if not isinstance(exc, RequestValidationError):

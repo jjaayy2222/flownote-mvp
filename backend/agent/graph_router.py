@@ -19,13 +19,13 @@ Phase 4-2: GraphRAG 하이브리드 라우터
 import logging
 from typing import Any, Dict, List, Optional, Union
 
-from backend.core.health_registry import HealthRegistry
-from backend.core.config_validator import Subsystem
 from backend.core.config.graph import (
-    MAX_TRAVERSAL_DEPTH_RANGE,
     DEFAULT_MAX_TRAVERSAL_DEPTH,
     ENV_MAX_TRAVERSAL_DEPTH,
+    MAX_TRAVERSAL_DEPTH_RANGE,
 )
+from backend.core.config_validator import Subsystem
+from backend.core.health_registry import HealthRegistry
 from backend.graph.base import AbstractGraphRepository
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 # 내부 헬퍼
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _clamp_depth(depth: int) -> int:
     """
@@ -74,6 +75,7 @@ def _load_traversal_depth() -> int:
         보정된 탐색 깊이 (int)
     """
     import os
+
     raw = os.environ.get(ENV_MAX_TRAVERSAL_DEPTH, "")
     if raw.strip():
         try:
@@ -99,25 +101,27 @@ def _is_valid_identifier(val: Any) -> bool:
     return isinstance(val, (str, int)) and bool(str(val).strip())
 
 
-def _get_node_id_and_source(result: Dict[str, Any]) -> tuple[Optional[Union[str, int]], Optional[str]]:
+def _get_node_id_and_source(
+    result: Dict[str, Any],
+) -> tuple[Optional[Union[str, int]], Optional[str]]:
     """결과 딕셔너리에서 node_id와 출처(source_field)를 추출한다.
-    
+
     유효한 ID는 문자열(str) 또는 정수(int) 형태이며, 빈 문자열은 허용하지 않는다.
     """
     val_id = result.get("id")
     if _is_valid_identifier(val_id):
         return val_id, "id"
-    
+
     metadata = result.get("metadata")
     if isinstance(metadata, dict):
         val_meta_id = metadata.get("id")
         if _is_valid_identifier(val_meta_id):
             return val_meta_id, "metadata.id"
-            
+
         val_meta_source = metadata.get("source")
         if _is_valid_identifier(val_meta_source):
             return val_meta_source, "metadata.source"
-            
+
     return None, None
 
 
@@ -225,12 +229,7 @@ def _serialize_neighbor_node(
         {'content': str, 'metadata': dict, 'score': float} 형식의 딕셔너리
     """
     # content: 노드 속성에서 텍스트 필드를 우선 탐색
-    content = (
-        attrs.get("content")
-        or attrs.get("text")
-        or attrs.get("title")
-        or node_id
-    )
+    content = attrs.get("content") or attrs.get("text") or attrs.get("title") or node_id
     return {
         "content": str(content),
         "metadata": {
@@ -249,6 +248,7 @@ def _serialize_neighbor_node(
 # ─────────────────────────────────────────────────────────────────────────────
 # GraphHybridRouter
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class GraphHybridRouter:
     """
@@ -396,6 +396,7 @@ class GraphHybridRouter:
 # ─────────────────────────────────────────────────────────────────────────────
 # 헬퍼 함수
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def run_hybrid_search(
     query: str,

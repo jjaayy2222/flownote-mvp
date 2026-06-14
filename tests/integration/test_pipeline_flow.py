@@ -1,7 +1,9 @@
 # tests/integration/test_pipeline_flow.py
 
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
+
 from backend.services.classification_service import ClassificationService
 from backend.services.onboarding_service import OnboardingService
 

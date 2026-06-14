@@ -1,11 +1,11 @@
+import asyncio
+import logging
 import os
 import re
-import logging
-import asyncio
-import redis
-from typing import List, Optional, TYPE_CHECKING, Any
 from functools import lru_cache
+from typing import TYPE_CHECKING, Any, List, Optional
 
+import redis
 from dotenv import load_dotenv
 
 from backend.agent.constants import EMPTY_RETRIEVED_CONTEXT
@@ -24,7 +24,9 @@ DEFAULT_MODEL_NAME: str = os.getenv("GPT4O_MODEL", "gpt-4o")
 # finetune_service의 상수가 모듈-프라이빗(_)이므로 직접 임포트 대신 동일한 환경 변수를 공유 진실 공급원으로 사용합니다.
 # strip() 후 or 패턴으로 빈 문자열("") 및 공백 전용("   ") 환경 변수 값도 올바르게 기본값으로 대체합니다.
 _raw_active_model_redis_key = os.getenv("FINETUNE_ACTIVE_MODEL_KEY", "").strip()
-_ACTIVE_MODEL_REDIS_KEY: str = _raw_active_model_redis_key or "v9:finetune:current_model_id"
+_ACTIVE_MODEL_REDIS_KEY: str = (
+    _raw_active_model_redis_key or "v9:finetune:current_model_id"
+)
 
 # 로거 설정
 logger = logging.getLogger(__name__)
@@ -49,9 +51,9 @@ else:
 
 # 실제 런타임용 라이브러리 임포트
 try:
-    from langchain_openai import ChatOpenAI
-    from langchain_core.prompts import ChatPromptTemplate
     from langchain_core.output_parsers import CommaSeparatedListOutputParser
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_openai import ChatOpenAI
 except ImportError:
     # 패키지 미설치 시 None 처리 (함수 내에서 핸들링)
     ChatOpenAI = None  # type: ignore
@@ -77,7 +79,11 @@ async def resolve_active_model() -> str:
         raw_active_model = await get_active_finetune_model()
         # 공백 전용 문자열('   ')은 Truthy이지만 유효하지 않으므로 strip()으로 정규화
         # (반환 타입이 Optional[str]이므로 str 이외의 타입 방어는 불요)
-        active_model = raw_active_model.strip() if isinstance(raw_active_model, str) else raw_active_model
+        active_model = (
+            raw_active_model.strip()
+            if isinstance(raw_active_model, str)
+            else raw_active_model
+        )
         # strip() 후 빈 문자열이 됐다면 → 원본이 빈 문자열이거나 공백 전용 문자열이었음 (Redis 데이터 오염)
         # isinstance() 로 None(정상 미등록 케이스)을 제외하고, 빈 문자열("")과 공백(" ") 모두 경고 대상에 포함
         if isinstance(raw_active_model, str) and not active_model:
@@ -90,7 +96,12 @@ async def resolve_active_model() -> str:
             )
         return active_model or DEFAULT_MODEL_NAME
     # 아래 예외만 캐치 (NameError/TypeError 등 프로그래밍 버그는 의도적으로 통과시킴 → Fail Fast)
-    except (redis.exceptions.RedisError, asyncio.TimeoutError, ValueError, UnicodeDecodeError) as e:
+    except (
+        redis.exceptions.RedisError,
+        asyncio.TimeoutError,
+        ValueError,
+        UnicodeDecodeError,
+    ) as e:
         logger.exception(
             "Hot-swap model lookup failed. Defaulting to %s.",
             DEFAULT_MODEL_NAME,

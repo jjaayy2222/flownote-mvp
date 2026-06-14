@@ -1,7 +1,9 @@
 # tests/unit/services/test_parallel_processor.py
 
-import pytest
 from unittest.mock import patch
+
+import pytest
+
 from backend.services.parallel_processor import ParallelClassifier
 
 

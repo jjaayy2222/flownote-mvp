@@ -12,89 +12,81 @@
     - 다른 패키지(backend.api.* 등)는 여기서 import 하지 않음
 """
 
-# Classification (Phase 2.1에서 추가됨)
-from .classification import (
-    ClassifyRequest,
-    ClassifyResponse,
-    ClassificationRequest,
-    ClassificationResponse,
-    MetadataClassifyRequest,
-    HybridClassifyRequest,
-    ParallelClassifyRequest,
-    FileMetadata as ClassificationFileMetadata,  # 이름 충돌 방지
-    FileMetadataInput,
-    ClassifyBatchRequest,
-    ClassifyBatchResponse,
-    SaveClassificationRequest as ClassificationSaveRequest,  # 이름 충돌 방지
-    SearchRequest as ClassificationSearchRequest,  # 이름 충돌 방지
-    PARAClassificationOutput,
+# Automation (Phase 4 - NEW!)
+from .automation import (
+    ArchivingRecord,
+    AutomationLog,
+    AutomationRule,
+    AutomationStatus,
+    AutomationTaskType,
+    ReclassificationRecord,
 )
 
-# User (Phase 2.2에서 추가됨)
-from .user import (
-    Step1Input,
-    Step2Input,
-    OnboardingStatus,
-    UserProfile,
-    UserContext,
+# Classification (Phase 2.1에서 추가됨)
+from .classification import (
+    ClassificationRequest,
+    ClassificationResponse,
+    ClassifyBatchRequest,
+    ClassifyBatchResponse,
+    ClassifyRequest,
+    ClassifyResponse,
 )
+from .classification import FileMetadata as ClassificationFileMetadata  # 이름 충돌 방지
+from .classification import (
+    FileMetadataInput,
+    HybridClassifyRequest,
+    MetadataClassifyRequest,
+    PARAClassificationOutput,
+    ParallelClassifyRequest,
+)
+from .classification import (
+    SaveClassificationRequest as ClassificationSaveRequest,
+)  # 이름 충돌 방지
+from .classification import (
+    SearchRequest as ClassificationSearchRequest,
+)  # 이름 충돌 방지
 
 # Common (Phase 2.2에서 추가됨)
 from .common import (
     ErrorResponse,
-    SuccessResponse,
-    HealthCheckResponse,
     FileMetadata,
+    HealthCheckResponse,
     MetadataResponse,
     SaveClassificationRequest,
     SearchRequest,
+    SuccessResponse,
 )
 
 # Conflict (Phase 2.3 - NEW!)
 from .conflict import (
-    # Enums
+    ConflictDetail,  # Enums; Core Models; API Models
+    ConflictDetectResponse,
+    ConflictRecord,
+    ConflictReport,
+    ConflictResolution,
+    ConflictResolveResponse,
     ConflictType,
+    DetectConflictRequest,
     ResolutionMethod,
     ResolutionStatus,
-    # Core Models
-    ConflictDetail,
-    ConflictRecord,
     ResolutionStrategy,
-    ConflictResolution,
-    ConflictReport,
-    # API Models
-    DetectConflictRequest,
     ResolveConflictRequest,
-    ConflictDetectResponse,
-    ConflictResolveResponse,
 )
 
 # External Sync (Phase 3 - NEW!)
 from .external_sync import (
-    ExternalToolConnection,
     ExternalFileMapping,
     ExternalSyncLog,
-    SyncStatus,
+    ExternalToolConnection,
     ExternalToolType,
-)
-
-# Automation (Phase 4 - NEW!)
-from .automation import (
-    AutomationTaskType,
-    AutomationStatus,
-    AutomationRule,
-    AutomationLog,
-    ReclassificationRecord,
-    ArchivingRecord,
+    SyncStatus,
 )
 
 # Reporting (Phase 4)
-from .report import (
-    ReportType,
-    ReportMetric,
-    Report,
-)
+from .report import Report, ReportMetric, ReportType
 
+# User (Phase 2.2에서 추가됨)
+from .user import OnboardingStatus, Step1Input, Step2Input, UserContext, UserProfile
 
 __all__ = [
     # Classification

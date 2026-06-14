@@ -7,14 +7,14 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from backend.celery_app.celery import app
-from backend.graph.builder import build_graph_data
 from backend.graph.analysis import find_orphan_nodes, get_orphan_degree_threshold
+from backend.graph.builder import build_graph_data
+from backend.graph.notifications import send_link_recommendations
 from backend.graph.similarity import (
     find_link_recommendations,
     get_link_similarity_threshold,
     get_max_recommendations_per_orphan,
 )
-from backend.graph.notifications import send_link_recommendations
 from backend.schemas.graph import (
     GraphDataResponse,
     GraphEdge,
@@ -27,7 +27,9 @@ from backend.schemas.graph import (
 logger = logging.getLogger(__name__)
 
 # 임베딩 파이프라인 기능 플래그 (현재 DB 임베딩 부재로 False)
-_EMBEDDINGS_ENABLED = os.environ.get("FEATURE_ENABLE_LINK_RECOMMENDATIONS", "false").lower() == "true"
+_EMBEDDINGS_ENABLED = (
+    os.environ.get("FEATURE_ENABLE_LINK_RECOMMENDATIONS", "false").lower() == "true"
+)
 
 # ─────────────────────────────────────────
 # 내부 헬퍼
@@ -77,7 +79,9 @@ def _filter_user_edges(
     타 사용자 노드 식별자가 끝점에 포함된 엣지는 교차 접근 차단을 위해 제외한다.
     """
     valid_ids = user_node_ids | category_ids
-    return [e for e in graph_data.edges if e.source in valid_ids and e.target in valid_ids]
+    return [
+        e for e in graph_data.edges if e.source in valid_ids and e.target in valid_ids
+    ]
 
 
 def _load_embeddings_for_nodes(node_ids: list[str]) -> dict[str, list[float]]:
@@ -116,7 +120,8 @@ def _run_recommendation_pipeline(
     if not orphan_embeddings or not candidate_embeddings:
         logger.debug(
             "[%s] user_id_hash=%s 컨텍스트: 임베딩 데이터 없음 — 연결 추천 건너뜀.",
-            task_name, uid,
+            task_name,
+            uid,
         )
         return None
 
@@ -161,7 +166,9 @@ def detect_orphan_notes_for_all_users(self):
     (Data Leakage 방지: 타 사용자의 노트 내용 섞임 원천 차단)
     """
     task_name = "detect-orphan-notes"
-    logger.info("[%s] 전역 고립 노트 스캔 + 연결 추천 스케줄러가 시작되었습니다.", task_name)
+    logger.info(
+        "[%s] 전역 고립 노트 스캔 + 연결 추천 스케줄러가 시작되었습니다.", task_name
+    )
 
     graph_data = build_graph_data()
     orphan_threshold = get_orphan_degree_threshold()
@@ -170,7 +177,7 @@ def detect_orphan_notes_for_all_users(self):
         logger.info(
             "[%s] 임베딩 파이프라인이 비활성화되어 있습니다. "
             "고립 노드 감지만 수행하며, 연결 추천은 건너뜁니다.",
-            task_name
+            task_name,
         )
         similarity_threshold = 0.0
         max_per_orphan = 0
@@ -197,7 +204,11 @@ def detect_orphan_notes_for_all_users(self):
     agg_recommendations = 0
     agg_notifications_sent = 0
 
-    logger.info("[%s] 총 %d명의 사용자 격리 컨텍스트가 준비되었습니다.", task_name, users_scanned)
+    logger.info(
+        "[%s] 총 %d명의 사용자 격리 컨텍스트가 준비되었습니다.",
+        task_name,
+        users_scanned,
+    )
 
     for uid, user_nodes in nodes_by_user.items():
         user_node_ids = {n.id for n in user_nodes}
@@ -213,7 +224,9 @@ def detect_orphan_notes_for_all_users(self):
 
         logger.info(
             "[%s] user_id_hash=%s 컨텍스트에서 %d개의 고립 노트를 발견했습니다.",
-            task_name, uid, len(orphans),
+            task_name,
+            uid,
+            len(orphans),
         )
         total_orphans_found += len(orphans)
 
@@ -235,7 +248,11 @@ def detect_orphan_notes_for_all_users(self):
     if _EMBEDDINGS_ENABLED:
         logger.info(
             "[%s] 전역 스캔 완료: users=%d, orphans=%d, recommendations=%d, notifications=%d",
-            task_name, users_scanned, total_orphans_found, agg_recommendations, agg_notifications_sent,
+            task_name,
+            users_scanned,
+            total_orphans_found,
+            agg_recommendations,
+            agg_notifications_sent,
         )
         return (
             f"Success: {users_scanned} users scanned, "
@@ -246,7 +263,9 @@ def detect_orphan_notes_for_all_users(self):
     else:
         logger.info(
             "[%s] 전역 스캔 완료: users=%d, orphans=%d (연결 추천 비활성화)",
-            task_name, users_scanned, total_orphans_found,
+            task_name,
+            users_scanned,
+            total_orphans_found,
         )
         return (
             f"Success: {users_scanned} users scanned, "

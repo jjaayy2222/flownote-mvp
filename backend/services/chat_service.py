@@ -1,41 +1,66 @@
 # backend/services/chat_service.py
 
+import asyncio
+import hashlib
 import json
 import logging
-import asyncio
 import re
 import time
-import hashlib
 from functools import lru_cache
 from itertools import islice
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, List, Optional, Tuple, TypedDict, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncGenerator,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    TypedDict,
+    cast,
+)
 
 if TYPE_CHECKING:
     from langgraph.graph.state import CompiledStateGraph  # type: ignore[import, import-untyped]
 
-
-from langchain_core.callbacks.manager import CallbackManagerForRetrieverRun  # type: ignore[import, import-untyped, reportMissingImports]
-from langchain_core.documents import Document  # type: ignore[import, import-untyped, reportMissingImports]
-from langchain_core.output_parsers import StrOutputParser  # type: ignore[import, import-untyped, reportMissingImports]
+from langchain_core.callbacks.manager import (
+    CallbackManagerForRetrieverRun,
+)  # type: ignore[import, import-untyped, reportMissingImports]
+from langchain_core.documents import (
+    Document,
+)  # type: ignore[import, import-untyped, reportMissingImports]
+from langchain_core.output_parsers import (
+    StrOutputParser,
+)  # type: ignore[import, import-untyped, reportMissingImports]
 from langchain_core.prompts import (  # type: ignore[import, import-untyped, reportMissingImports]
     ChatPromptTemplate,
-    SystemMessagePromptTemplate,
     HumanMessagePromptTemplate,
+    SystemMessagePromptTemplate,
 )
-from langchain_core.retrievers import BaseRetriever  # type: ignore[import, import-untyped, reportMissingImports]
+from langchain_core.retrievers import (
+    BaseRetriever,
+)  # type: ignore[import, import-untyped, reportMissingImports]
 
-from backend.services.hybrid_search_service import (  # type: ignore[import, import-untyped, reportMissingImports]
-    HybridSearchService,
-    get_hybrid_search_service,
-)
-from backend.services.onboarding_service import OnboardingService  # type: ignore[import, import-untyped, reportMissingImports]
+from backend.agent.chat.state import (
+    FeedbackEntry,
+)  # type: ignore[import, import-untyped]
+from backend.api.models import (
+    ChatMessage,
+)  # type: ignore[import, import-untyped, reportMissingImports]
 from backend.services.chat_history_service import (  # type: ignore[import, import-untyped, reportMissingImports]
     ChatHistoryService,
     get_chat_history_service,
 )
-from backend.api.models import ChatMessage  # type: ignore[import, import-untyped, reportMissingImports]
-from backend.utils import mask_pii_id  # type: ignore[import, import-untyped, reportMissingImports]
-from backend.agent.chat.state import FeedbackEntry  # type: ignore[import, import-untyped]
+from backend.services.hybrid_search_service import (  # type: ignore[import, import-untyped, reportMissingImports]
+    HybridSearchService,
+    get_hybrid_search_service,
+)
+from backend.services.onboarding_service import (
+    OnboardingService,
+)  # type: ignore[import, import-untyped, reportMissingImports]
+from backend.utils import (
+    mask_pii_id,
+)  # type: ignore[import, import-untyped, reportMissingImports]
 
 logger = logging.getLogger(__name__)
 
@@ -174,8 +199,11 @@ class ChatService:
         if not streaming and self._custom_llm:
             return self._custom_llm
 
-        from langchain_openai import ChatOpenAI  # type: ignore[import, import-untyped, reportMissingImports]
         import os
+
+        from langchain_openai import (
+            ChatOpenAI,
+        )  # type: ignore[import, import-untyped, reportMissingImports]
 
         # 기본 OPENAI_API_KEY가 없는 환경이므로 .env의 커스텀 환경변수를 명시적으로 주입
         # GPT-4o-mini를 1순위로, GPT-4o 등 다른 모델을 fallback으로 사용
@@ -362,9 +390,7 @@ Standalone Question:"""
         # [Contract] 모듈 상수 REPHRASE_HISTORY_WINDOW를 사용하여 히스토리 잘라내기.
         # 테스트(test_rephrase_query_truncates_history)가 이 상수를 import하여 동기화됩니다.
         truncated_history = history[-REPHRASE_HISTORY_WINDOW:]  # type: ignore[index]
-        context_history = "\n".join(
-            f"{m.role}: {m.content}" for m in truncated_history
-        )
+        context_history = "\n".join(f"{m.role}: {m.content}" for m in truncated_history)
 
         try:
             standalone_query = await self._invoke_rephrase_chain(context_history, query)
@@ -413,11 +439,18 @@ Standalone Question:"""
 
         if session_id and session_id.strip():
             history = await self.chat_history_service.get_history(session_id)
-            feedback_history = await self.chat_history_service.get_session_feedback(session_id, limit=3)
+            feedback_history = await self.chat_history_service.get_session_feedback(
+                session_id, limit=3
+            )
             if history:
                 effective_query = await self._rephrase_query(query, history)
 
-        from langchain_core.messages import HumanMessage, AIMessage, BaseMessage  # type: ignore[import, import-untyped, reportMissingImports]
+        from langchain_core.messages import (  # type: ignore[import, import-untyped, reportMissingImports]
+            AIMessage,
+            BaseMessage,
+            HumanMessage,
+        )
+
         langchain_history: List[BaseMessage] = []
         for msg in history:
             if msg.role == "user":
@@ -434,7 +467,10 @@ Standalone Question:"""
             "feedback_history": feedback_history,
         }
 
-        from backend.agent.chat.graph import create_chat_workflow  # type: ignore[import, import-untyped, reportMissingImports]
+        from backend.agent.chat.graph import (
+            create_chat_workflow,
+        )  # type: ignore[import, import-untyped, reportMissingImports]
+
         agent_graph = create_chat_workflow(checkpointer=None)
 
         return initial_state, agent_graph
@@ -472,7 +508,7 @@ Standalone Question:"""
                 if name == "planner" and kind == "on_chain_end":
                     planner_output = event["data"].get("output", {})
                     source_docs_raw = planner_output.get("source_documents", [])
-                    
+
                     if source_docs_raw:
                         source_docs = []
                         for doc_dict in source_docs_raw:
@@ -480,11 +516,17 @@ Standalone Question:"""
                             metadata = dict(doc_dict.get("metadata", {}))
                             metadata["id"] = doc_dict.get("id", "")
                             metadata["score"] = doc_dict.get("score", 0.0)
-                            source_docs.append(Document(page_content=content, metadata=metadata))
-                        
-                        deduplicated_source_docs, sources_payload = self._dedupe_and_build_sources(source_docs)
+                            source_docs.append(
+                                Document(page_content=content, metadata=metadata)
+                            )
+
+                        deduplicated_source_docs, sources_payload = (
+                            self._dedupe_and_build_sources(source_docs)
+                        )
                         if sources_payload:
-                            yield self._format_sse_event("sources", data=sources_payload)
+                            yield self._format_sse_event(
+                                "sources", data=sources_payload
+                            )
 
                 # LLM 스트리밍 토큰 청크 추출하여 SSE 전송 (Responder 동작 시 발생)
                 elif kind == "on_chat_model_stream":

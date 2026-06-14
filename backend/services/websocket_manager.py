@@ -4,13 +4,15 @@ import asyncio
 import logging
 import time
 from collections import Counter, deque
-from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
 from fastapi import WebSocket
-from starlette.websockets import WebSocketState, WebSocketDisconnect
-from backend.services.redis_pubsub import redis_broadcaster
-from backend.services.compression_service import compress_payload
+from starlette.websockets import WebSocketDisconnect, WebSocketState
+
 from backend.config import WebSocketConfig
+from backend.services.compression_service import compress_payload
+from backend.services.redis_pubsub import redis_broadcaster
 
 logger = logging.getLogger(__name__)
 

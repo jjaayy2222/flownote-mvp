@@ -1,7 +1,9 @@
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from backend.services.classification_service import ClassificationService
+
 from backend.models import ClassifyResponse
+from backend.services.classification_service import ClassificationService
 
 
 @pytest.fixture

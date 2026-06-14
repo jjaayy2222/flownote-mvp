@@ -1,12 +1,14 @@
 # backend/utils/observability.py
 
 import logging
-import time
 import threading
-import httpx
+import time
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
-from typing import Dict, Optional, Any
+from typing import Any, Dict, Optional
+
+import httpx
+
 from backend.config import AlertConfig
 
 
@@ -16,6 +18,7 @@ class ObsEvent(str, Enum):
     자유 형식의 로깅 문자열을 파싱하는 대신, ELK/Datadog 등의 대시보드와 알림 규칙(Rule Engine)이
     명확한 기준표를 가질 수 있도록 중앙화된 구조를 제공합니다.
     """
+
     FINETUNE_RESERVED_REDIS_KEY_VIOLATION = "reserved_redis_keys_in_extra_fields"
 
 
@@ -24,6 +27,7 @@ class ObsMetaTag(str, Enum):
     관측성 시스템 전반에서 사용되는 메타데이터 플래그 모음.
     네임스페이스(meta_)를 부착하여 비즈니스 데이터와 시스템 제어용 데이터를 분리합니다.
     """
+
     INTENTIONAL_WARNING = "meta_intentional_warning"
 
 
@@ -38,11 +42,12 @@ class DiscordAlertHandler(logging.Handler):
         self.webhook_url = webhook_url or AlertConfig.DISCORD_WEBHOOK_URL
         self.last_alerts: Dict[str, float] = {}
         self.throttle_seconds = AlertConfig.DEFAULT_THROTTLE_SECONDS
-        
+
         # [Fix] 스레드 동시성 제어 및 스레드 폭주 방지를 위한 Lock & ThreadPool 적용
         self._lock = threading.Lock()
-        self._executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="DiscordAlerter")
-
+        self._executor = ThreadPoolExecutor(
+            max_workers=3, thread_name_prefix="DiscordAlerter"
+        )
 
     def emit(self, record: logging.LogRecord):
         # 1. 대상 필터링: [OBS] 태그 체크 또는 ERROR 레벨 이상
@@ -62,7 +67,11 @@ class DiscordAlertHandler(logging.Handler):
         with self._lock:
             # [Fix] 메모리 누수 방지(Eviction Strategy): 저장된 키가 1000개를 초과하면 만료된 데이터 정리
             if len(self.last_alerts) > 1000:
-                stale_keys = [k for k, v in self.last_alerts.items() if current_time - v >= self.throttle_seconds]
+                stale_keys = [
+                    k
+                    for k, v in self.last_alerts.items()
+                    if current_time - v >= self.throttle_seconds
+                ]
                 for k in stale_keys:
                     del self.last_alerts[k]
 
@@ -136,4 +145,3 @@ class DiscordAlertHandler(logging.Handler):
             # 최대한 생성된 알림 전송 태스크가 완료되도록 대기 (Best-effort delivery)
             self._executor.shutdown(wait=True)
         super().close()
-

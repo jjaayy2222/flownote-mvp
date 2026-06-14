@@ -1,18 +1,19 @@
 # tests/e2e/test_rag_search_quality.py
 
 import logging
+from typing import Any, Dict, List, Optional, TypedDict, Union
+
 import pytest
-from typing import List, Dict, Any, TypedDict, Optional, Union
 
 try:
     from typing import NotRequired  # Python 3.11+
 except ImportError:
     from typing_extensions import NotRequired
 
-from backend.faiss_search import FAISSRetriever
-from backend.bm25_search import BM25Retriever
-from backend.services.hybrid_search_service import HybridSearchService
 from backend.api.models import PARACategory
+from backend.bm25_search import BM25Retriever
+from backend.faiss_search import FAISSRetriever
+from backend.services.hybrid_search_service import HybridSearchService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

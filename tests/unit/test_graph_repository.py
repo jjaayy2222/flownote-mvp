@@ -27,7 +27,7 @@ from typing import Any
 import networkx as nx
 import pytest
 
-from backend.graph.base import GraphLoadError, AbstractGraphRepository
+from backend.graph.base import AbstractGraphRepository, GraphLoadError
 from backend.graph.networkx_repository import NetworkXGraphRepository
 from backend.graph.path_utils import build_graph_path
 
@@ -220,11 +220,11 @@ class TestEdgeCRUD:
         repo.add_node(_DUMMY_HASH_A, "src")
         repo.add_node(_DUMMY_HASH_A, "tgt")
         repo.add_edge(_DUMMY_HASH_A, "src", "tgt", weight=1.0)
-        
+
         attrs = repo.get_edge_attrs(_DUMMY_HASH_A, "src", "tgt")
         assert attrs is not None
         attrs["weight"] = 2.0
-        
+
         attrs_again = repo.get_edge_attrs(_DUMMY_HASH_A, "src", "tgt")
         assert attrs_again is not None
         assert attrs_again["weight"] == 1.0
@@ -270,9 +270,7 @@ class TestNeighbors:
         result = repo.neighbors(_DUMMY_HASH_A, "ghost", max_depth=3)
         assert result == []
 
-    def test_no_duplicate_in_diamond_graph(
-        self, repo: NetworkXGraphRepository
-    ) -> None:
+    def test_no_duplicate_in_diamond_graph(self, repo: NetworkXGraphRepository) -> None:
         """A → B, A → C, B → D, C → D 다이아몬드 — D 중복 없음."""
         self._add_abcd_nodes(repo)
         for src, tgt in [("A", "B"), ("A", "C"), ("B", "D"), ("C", "D")]:
@@ -411,9 +409,7 @@ class TestTenantIsolation:
         # 사용자 A의 노드는 살아있어야 한다
         assert repo.has_node(_DUMMY_HASH_A, "shared-name") is True
 
-    def test_node_counts_are_independent(
-        self, repo: NetworkXGraphRepository
-    ) -> None:
+    def test_node_counts_are_independent(self, repo: NetworkXGraphRepository) -> None:
         repo.add_node(_DUMMY_HASH_A, "n1")
         repo.add_node(_DUMMY_HASH_A, "n2")
         repo.add_node(_DUMMY_HASH_B, "n1")

@@ -25,7 +25,7 @@ import logging
 import os
 import random
 import re
-from collections import OrderedDict, Counter, defaultdict
+from collections import Counter, OrderedDict, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -34,10 +34,13 @@ from typing import Any, AsyncIterator, Literal, Optional
 
 import redis.exceptions
 
-from backend.api.models.shared import FeedbackRating, RATING_DOWN  # type: ignore[import, import-untyped, reportMissingImports]
+from backend.api.models.shared import (  # type: ignore[import, import-untyped, reportMissingImports]
+    RATING_DOWN,
+    FeedbackRating,
+)
 from backend.services.chat_history_service import (  # type: ignore[import]
-    FEEDBACK_KEY_PREFIX,
     _HISTORY_PREFIX,
+    FEEDBACK_KEY_PREFIX,
 )
 from backend.services.redis_pubsub import redis_client  # type: ignore[import]
 from backend.utils import mask_pii_id  # type: ignore[import]
@@ -147,13 +150,18 @@ def _now_utc_iso() -> str:
 
 def _get_eval_model() -> str:
     """환경 변수에서 평가 모델을 읽어 반환. 미설정 시 기본값 사용."""
-    return os.environ.get("EVAL_LLM_MODEL", _DEFAULT_EVAL_MODEL).strip() or _DEFAULT_EVAL_MODEL
+    return (
+        os.environ.get("EVAL_LLM_MODEL", _DEFAULT_EVAL_MODEL).strip()
+        or _DEFAULT_EVAL_MODEL
+    )
 
 
 def _get_max_eval_docs() -> int:
     """프롬프트에 포함할 최대 문서 개수를 환경 변수에서 읽어 반환."""
     try:
-        val = int(os.environ.get("EVAL_MAX_RETRIEVED_DOCS", str(_DEFAULT_MAX_EVAL_DOCS)))
+        val = int(
+            os.environ.get("EVAL_MAX_RETRIEVED_DOCS", str(_DEFAULT_MAX_EVAL_DOCS))
+        )
         return val if val > 0 else _DEFAULT_MAX_EVAL_DOCS
     except ValueError:
         return _DEFAULT_MAX_EVAL_DOCS
@@ -162,7 +170,11 @@ def _get_max_eval_docs() -> int:
 def _get_max_eval_doc_chars() -> int:
     """프롬프트에 포함할 문서 1개의 최대 문자 수를 환경 변수에서 읽어 반환."""
     try:
-        val = int(os.environ.get("EVAL_MAX_RETRIEVED_DOC_CHARS", str(_DEFAULT_MAX_EVAL_DOC_CHARS)))
+        val = int(
+            os.environ.get(
+                "EVAL_MAX_RETRIEVED_DOC_CHARS", str(_DEFAULT_MAX_EVAL_DOC_CHARS)
+            )
+        )
         return val if val > 0 else _DEFAULT_MAX_EVAL_DOC_CHARS
     except ValueError:
         return _DEFAULT_MAX_EVAL_DOC_CHARS
@@ -176,7 +188,11 @@ def _get_eval_history_scan_limit() -> int:
     과도한 Redis LRANGE 호출이 발생하지 않도록 보호합니다.
     """
     try:
-        val = int(os.environ.get("EVAL_HISTORY_SCAN_LIMIT", str(_DEFAULT_EVAL_HISTORY_SCAN_LIMIT)))
+        val = int(
+            os.environ.get(
+                "EVAL_HISTORY_SCAN_LIMIT", str(_DEFAULT_EVAL_HISTORY_SCAN_LIMIT)
+            )
+        )
         limit = val if val > 0 else _DEFAULT_EVAL_HISTORY_SCAN_LIMIT
     except ValueError:
         return _DEFAULT_EVAL_HISTORY_SCAN_LIMIT
@@ -372,9 +388,11 @@ def _build_eval_prompt(query: str, retrieved_docs: list[str], ai_response: str) 
     프롬프트는 명확한 구조(3섹션)로 구성하여 LLM 응답 정확도를 최대화합니다.
     한국어 응답을 요청하여 관리자 보고서 가독성을 높입니다.
     """
-    docs_text = "\n\n".join(
-        f"[문서 {i+1}]\n{doc}" for i, doc in enumerate(retrieved_docs)
-    ) if retrieved_docs else "(검색된 문서 없음)"
+    docs_text = (
+        "\n\n".join(f"[문서 {i+1}]\n{doc}" for i, doc in enumerate(retrieved_docs))
+        if retrieved_docs
+        else "(검색된 문서 없음)"
+    )
 
     return f"""당신은 AI 응답의 품질을 평가하는 전문 평가자입니다.
 아래의 세 가지 정보를 분석하여, AI 응답 실패의 근본 원인을 분류해주세요.
@@ -439,7 +457,10 @@ def _parse_eval_response(response_text: str) -> tuple[EvalLabel, str]:
             "[OBS] Failed to parse eval LLM response JSON; falling back to 'uncertain'.",
             extra={"error": str(e), "response_preview": response_text[:200]},
         )
-        return "uncertain", "LLM 응답 파싱에 실패하여 자동으로 'uncertain'으로 분류되었습니다."
+        return (
+            "uncertain",
+            "LLM 응답 파싱에 실패하여 자동으로 'uncertain'으로 분류되었습니다.",
+        )
 
 
 # ─────────────────────────────────────────────────────────────
@@ -488,7 +509,9 @@ async def save_rag_context(
             "retrieved_docs": retrieved_docs,
             "timestamp": _now_utc_iso(),
         }
-        await redis_client.redis.hset(key, message_id, json.dumps(payload, ensure_ascii=False))
+        await redis_client.redis.hset(
+            key, message_id, json.dumps(payload, ensure_ascii=False)
+        )
         await redis_client.redis.expire(key, ttl)
 
         logger.debug(
@@ -560,7 +583,11 @@ async def classify_negative_feedback(
 
         if raw_context:
             try:
-                ctx_str = raw_context.decode("utf-8") if isinstance(raw_context, bytes) else str(raw_context)
+                ctx_str = (
+                    raw_context.decode("utf-8")
+                    if isinstance(raw_context, bytes)
+                    else str(raw_context)
+                )
                 ctx = json.loads(ctx_str)
                 query = ctx.get("query", query)
                 raw_docs = ctx.get("retrieved_docs", [])
@@ -572,9 +599,7 @@ async def classify_negative_feedback(
                 # 과도한 토큰으로 인한 API 오류 및 응답 지연을 사전에 방지합니다.
                 max_docs = _get_max_eval_docs()
                 max_chars = _get_max_eval_doc_chars()
-                retrieved_docs = [
-                    doc[:max_chars] for doc in docs_as_str[:max_docs]
-                ]
+                retrieved_docs = [doc[:max_chars] for doc in docs_as_str[:max_docs]]
             except (JSONDecodeError, ValueError, AttributeError) as e:
                 logger.warning(
                     "[OBS] Failed to parse RAG context from Redis; proceeding with empty docs.",
@@ -712,7 +737,11 @@ async def run_negative_feedback_eval_pipeline(
         "skipped_sampling": 0,
         "skipped_no_response": 0,
         "errors": 0,
-        "label_counts": {"hallucination": 0, "rag_retrieval_failure": 0, "uncertain": 0},
+        "label_counts": {
+            "hallucination": 0,
+            "rag_retrieval_failure": 0,
+            "uncertain": 0,
+        },
     }
 
     logger.info(
@@ -736,18 +765,30 @@ async def run_negative_feedback_eval_pipeline(
             )
 
             for raw_key in partial_keys:
-                key_str = raw_key.decode("utf-8") if isinstance(raw_key, bytes) else str(raw_key)
+                key_str = (
+                    raw_key.decode("utf-8")
+                    if isinstance(raw_key, bytes)
+                    else str(raw_key)
+                )
                 session_id = key_str.removeprefix(FEEDBACK_KEY_PREFIX)
                 if not session_id:
                     continue
 
                 feedback_hash = await redis_client.redis.hgetall(key_str)
                 for msg_id_raw, meta_raw in feedback_hash.items():
-                    msg_id = msg_id_raw.decode("utf-8") if isinstance(msg_id_raw, bytes) else str(msg_id_raw)
+                    msg_id = (
+                        msg_id_raw.decode("utf-8")
+                        if isinstance(msg_id_raw, bytes)
+                        else str(msg_id_raw)
+                    )
 
                     # rating 파싱 및 'down' 필터링
                     try:
-                        meta_str = meta_raw.decode("utf-8") if isinstance(meta_raw, bytes) else str(meta_raw)
+                        meta_str = (
+                            meta_raw.decode("utf-8")
+                            if isinstance(meta_raw, bytes)
+                            else str(meta_raw)
+                        )
                         meta = json.loads(meta_str)
                     except (JSONDecodeError, ValueError):
                         continue
@@ -788,7 +829,9 @@ async def run_negative_feedback_eval_pipeline(
                         for item in history_raw:
                             try:
                                 msg_dict = json.loads(
-                                    item.decode("utf-8") if isinstance(item, bytes) else str(item)
+                                    item.decode("utf-8")
+                                    if isinstance(item, bytes)
+                                    else str(item)
                                 )
                                 if isinstance(msg_dict, dict):
                                     parsed.append(msg_dict)
@@ -802,12 +845,11 @@ async def run_negative_feedback_eval_pipeline(
                             logger.debug(
                                 "[OBS] session_history_cache LRU eviction: removed oldest session "
                                 "(evicted=%s, cache_size_after_insert=%s, max_size=%s).",
-                                mask_pii_id(evicted),       # PII 안전 익명화
-                                len(history_cache),         # 퇴출 + 삽입 후 실제 크기
+                                mask_pii_id(evicted),  # PII 안전 익명화
+                                len(history_cache),  # 퇴출 + 삽입 후 실제 크기
                                 _MAX_SESSION_HISTORY_CACHE_SIZE,
                             )
                         cached_history = history
-
 
                     # ── AI 응답 이중 매칭 전략 ────────────────────────────────
                     # 1순위: history 항목에 message_id 필드가 있다면 피드백 msg_id와 정확히 매칭
@@ -853,7 +895,9 @@ async def run_negative_feedback_eval_pipeline(
 
                     # 분류 실행
                     try:
-                        result = await classify_negative_feedback(session_id, msg_id, ai_response)
+                        result = await classify_negative_feedback(
+                            session_id, msg_id, ai_response
+                        )
                         if result:
                             summary["classified"] += 1
                             label_key = result.label
@@ -914,32 +958,79 @@ async def run_negative_feedback_eval_pipeline(
         )
         raise
 
+
 # ─────────────────────────────────────────────────────────────
 # 관리자 보고서(대시보드)용 키워드 클러스터링 및 통계 추출 로직
 # ─────────────────────────────────────────────────────────────
 
 # [Step 2-3] 관리자 보고서용 Redis SCAN 상한 (요청당 최대 반복 횟수)
 # 환경변수 EVAL_REPORT_MAX_SCAN_ITERATIONS 로 조정 가능
-_EVAL_REPORT_MAX_SCAN_ITERATIONS = safe_parse_env_int("EVAL_REPORT_MAX_SCAN_ITERATIONS", 100, min_val=1)
+_EVAL_REPORT_MAX_SCAN_ITERATIONS = safe_parse_env_int(
+    "EVAL_REPORT_MAX_SCAN_ITERATIONS", 100, min_val=1
+)
 
 # [Step 2-3] Redis SCAN 1회당 조회할 키 개수 (기본 500, 최소 1 이상 보장)
-_EVAL_REPORT_SCAN_BATCH_SIZE = safe_parse_env_int("EVAL_REPORT_SCAN_BATCH_SIZE", 500, min_val=1)
+_EVAL_REPORT_SCAN_BATCH_SIZE = safe_parse_env_int(
+    "EVAL_REPORT_SCAN_BATCH_SIZE", 500, min_val=1
+)
 
 # [Step 2-3] 조사 제거 및 TF 계산을 위한 경량화된 한국어 불용어
 _KOREAN_STOPWORDS = {
-    "어떻게", "무엇인가요", "알려줘", "설명해줘", "어떤", "무엇", "이건", "저건", 
-    "있나요", "어디서", "있을까", "인가요", "하는지", "방법", "대해", "대한", "그리고",
-    "이", "그", "저", "것", "수", "등", "때", "위해", "관련", "관련된"
+    "어떻게",
+    "무엇인가요",
+    "알려줘",
+    "설명해줘",
+    "어떤",
+    "무엇",
+    "이건",
+    "저건",
+    "있나요",
+    "어디서",
+    "있을까",
+    "인가요",
+    "하는지",
+    "방법",
+    "대해",
+    "대한",
+    "그리고",
+    "이",
+    "그",
+    "저",
+    "것",
+    "수",
+    "등",
+    "때",
+    "위해",
+    "관련",
+    "관련된",
 }
 
 # [Step 2-3] 연속 처리를 위해 미리 정렬된 조사 튜플 (길이 역순)
 _POSTPOSITIONS_SORTED = tuple(
     sorted(
-        ['은', '는', '이', '가', '을', '를', '의', '에', '에게', '에서', '으로', '로', '와', '과', '도', '만'],
+        [
+            "은",
+            "는",
+            "이",
+            "가",
+            "을",
+            "를",
+            "의",
+            "에",
+            "에게",
+            "에서",
+            "으로",
+            "로",
+            "와",
+            "과",
+            "도",
+            "만",
+        ],
         key=len,
-        reverse=True
+        reverse=True,
     )
 )
+
 
 def _strip_postpositions(token: str) -> str:
     """조사(은/는/이/가/...)를 가능한 한 반복적으로 제거합니다."""
@@ -948,12 +1039,13 @@ def _strip_postpositions(token: str) -> str:
         stripped = False
         for josa in _POSTPOSITIONS_SORTED:
             if stem.endswith(josa) and len(stem) > len(josa):
-                stem = stem[:-len(josa)]
+                stem = stem[: -len(josa)]
                 stripped = True
                 break
         if not stripped:
             break
     return stem
+
 
 def _extract_keywords(text: str) -> list[str]:
     """
@@ -963,59 +1055,67 @@ def _extract_keywords(text: str) -> list[str]:
     - 기본적인 한국어 조사 제거 (은/는/이/가/을/를/의/에/에서/으로/로/와/과/도/만/에게)
     - 불용어(Stopwords) 필터링
     """
-    cleaned = re.sub(r'[^\w\s]', '', text)
+    cleaned = re.sub(r"[^\w\s]", "", text)
     tokens = cleaned.split()
-    
+
     extracted: list[str] = []
-    
+
     for token in tokens:
         if token in _KOREAN_STOPWORDS:
             continue
-            
+
         stem = _strip_postpositions(token)
-                
+
         # 추출된 단어가 2글자 이상이고 불용어가 아닌 경우만 보존
         if len(stem) > 1 and stem not in _KOREAN_STOPWORDS:
             extracted.append(stem)
-            
+
     return extracted
+
 
 async def _iter_eval_records(
     redis_conn: Any,
     key_pattern: str,
     max_scan_iterations: int,
-    scan_batch_size: int = _EVAL_REPORT_SCAN_BATCH_SIZE
+    scan_batch_size: int = _EVAL_REPORT_SCAN_BATCH_SIZE,
 ) -> AsyncIterator[dict[str, Any]]:
     """Redis SCAN 및 JSON 파싱을 수행하는 async 제너레이터 헬퍼"""
     cursor = 0
     iteration = 0
-    
+
     while True:
         if iteration >= max_scan_iterations:
             break
         iteration += 1
-        
-        cursor, keys = await redis_conn.scan(cursor, match=key_pattern, count=scan_batch_size)
-        
+
+        cursor, keys = await redis_conn.scan(
+            cursor, match=key_pattern, count=scan_batch_size
+        )
+
         for key in keys:
             key_str = key.decode("utf-8") if isinstance(key, bytes) else str(key)
             eval_hash = await redis_conn.hgetall(key_str)
-            
+
             for _, raw_val in eval_hash.items():
                 try:
-                    val_str = raw_val.decode("utf-8") if isinstance(raw_val, bytes) else str(raw_val)
+                    val_str = (
+                        raw_val.decode("utf-8")
+                        if isinstance(raw_val, bytes)
+                        else str(raw_val)
+                    )
                     yield json.loads(val_str)
                 except (JSONDecodeError, ValueError):
                     continue
-                    
+
         if int(cursor) == 0:
             break
+
 
 async def generate_eval_report() -> dict[str, Any]:
     """
     [Step 2-3] 분류된 '실패 응답'들의 현황 및 키워드 클러스터링 보고서를 생성합니다.
     FastAPI 엔드포인트를 통해 JSON 형태로 관리자 대시보드에 제공됩니다.
-    
+
     기능:
     - 전체 분류(레이블) 분포 반환
     - 실패(hallucination, rag_retrieval_failure)로 분류된 질문(rag_query)들에서 핵심 키워드 추출
@@ -1023,46 +1123,48 @@ async def generate_eval_report() -> dict[str, Any]:
     """
     if not redis_client.is_connected():
         await redis_client.connect()
-        
+
     labels_count: dict[str, int] = defaultdict(int)
     failed_queries: list[str] = []
-    
+
     async for parsed in _iter_eval_records(
         redis_conn=redis_client.redis,
         key_pattern=f"{_EVAL_RESULT_PREFIX}*",
-        max_scan_iterations=_EVAL_REPORT_MAX_SCAN_ITERATIONS
+        max_scan_iterations=_EVAL_REPORT_MAX_SCAN_ITERATIONS,
     ):
         label = parsed.get("label", "uncertain")
         labels_count[label] += 1
-            
+
         # 실패 케이스의 질문 수집
         if label in ("hallucination", "rag_retrieval_failure"):
             query = parsed.get("rag_query")
             if query:
                 failed_queries.append(query)
-            
+
     # 키워드 TF 계산 (TF-IDF 경량 대안)
     keyword_counter: Counter = Counter()
     for q in failed_queries:
         keyword_counter.update(_extract_keywords(q))
-        
+
     # 클러스터링 (상위 5개의 핵심 키워드로 대표되는 토픽 반환)
-    top_5_keywords = [{"keyword": k, "count": c} for k, c in keyword_counter.most_common(5)]
-    
+    top_5_keywords = [
+        {"keyword": k, "count": c} for k, c in keyword_counter.most_common(5)
+    ]
+
     logger.info(
         "[OBS] Generated Admin Eval Report",
         extra={
             "total_evaluated": sum(labels_count.values()),
             "failed_query_count": len(failed_queries),
-            "top_keyword": top_5_keywords[0]["keyword"] if top_5_keywords else None
-        }
+            "top_keyword": top_5_keywords[0]["keyword"] if top_5_keywords else None,
+        },
     )
-    
+
     return {
         "status": "success",
         "total_evaluated": sum(labels_count.values()),
         "label_distribution": dict(labels_count),
         "top_failing_topics": top_5_keywords,
         "failed_query_count": len(failed_queries),
-        "timestamp": _now_utc_iso()
+        "timestamp": _now_utc_iso(),
     }
