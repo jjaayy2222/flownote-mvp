@@ -43,10 +43,10 @@ v10:  보안 강화 → 멀티유저 → 배포/확장 (프로덕션)
 - v9.0의 개인화 RAG가 실제로 동작하려면 진짜 `user_id` 가 필요함.
 
 ### 아이디어 (세부 Tasks - 미확정)
-- [ ] JWT 기반 실제 토큰 인증 로직 구현 (`verify_token` 함수)
-- [ ] `backend/config/AppConfig` 를 통한 글로벌 의존성 라우팅 정비
-- [ ] Sync DB 충돌 레코드 영구 저장 로직 (`_handle_conflict`)
-- [ ] Conflict Resolution 파일 시스템(JSONL) 안전 기록 완성
+- [ ] JWT 기반 실제 토큰 인증 로직 구현 (`backend/api/deps.py` 내 `verify_token` 함수 신설 예정 — 현재 TODO 주석으로만 존재)
+- [ ] `backend/core/config.py::Settings` 를 통한 글로벌 의존성 라우팅 정비
+- [ ] Sync DB 충돌 레코드 영구 저장 로직 (`sync_service.py::_handle_conflict`)
+- [ ] Conflict Resolution 파일 시스템(JSONL) 안전 기록 완성 (`backend/services/conflict_resolution_service.py`)
 
 ### 기대 효과
 - Mock 제거로 코드베이스 신뢰성 향상
@@ -79,8 +79,8 @@ v10:  보안 강화 → 멀티유저 → 배포/확장 (프로덕션)
 
 ## 📋 Phase 3: 다국어 확장 및 UX 고도화 (UX & Globalization)
 
-> 연결 이슈: README 로드맵 "진행 예정" 항목  
-> 연결 TODO: MCP/Obsidian Sync, Persistent Embeddings (`[P3]`)
+> 연결 이슈: TODO.md `[P3]` 항목 + README 로드맵 "진행 예정" 항목  
+> 기술 부채 해소: `backend/mcp/obsidian_server.py` Sync 비교 엔진, `backend/mcp/server.py` & `backend/celery_app/tasks/graph.py` Persistent Embeddings, `backend/api/endpoints/sync.py` Sync Status API
 
 ### 배경
 - v6.0에서 한/영 다국어를 구축했으나, 일본어·중국어 수요가 있음.
