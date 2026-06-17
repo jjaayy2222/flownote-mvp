@@ -1,7 +1,6 @@
 # backend/celery_app/tasks/monitoring.py
 
 import asyncio
-import json
 import logging
 import uuid
 from datetime import datetime

@@ -14,7 +14,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from backend.classifier.hybrid_classifier import HybridClassifier
 from backend.classifier.keyword import KeywordClassifier

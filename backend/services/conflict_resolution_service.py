@@ -6,11 +6,9 @@ Conflict Resolution Service
 """
 
 import logging
-import os
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 from uuid import uuid4
 
 from backend.mcp.sync_map_manager import SyncMapManager
@@ -20,9 +18,8 @@ from backend.models.conflict import (
     ResolutionStatus,
     ResolutionStrategy,
     SyncConflict,
-    SyncConflictType,
 )
-from backend.models.external_sync import ExternalSyncLog, ExternalToolType, SyncStatus
+from backend.models.external_sync import ExternalSyncLog, SyncStatus
 from backend.services.ignore_manager import ignore_manager
 from backend.services.sync_service import SyncServiceBase
 

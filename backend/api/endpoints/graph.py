@@ -17,22 +17,15 @@
 from __future__ import annotations
 
 import logging
-import random
-from typing import Any
 
 from fastapi import APIRouter
 
-from backend.database.connection import DatabaseConnection
 from backend.graph.analysis import find_orphan_nodes, get_orphan_degree_threshold
 from backend.schemas.graph import (
-    EdgeRelationshipType,
     GraphDataResponse,
-    GraphEdge,
-    GraphNode,
     NodeType,
     OrphanNotesResponse,
 )
-from backend.utils.common import mask_pii_id
 
 logger = logging.getLogger(__name__)
 

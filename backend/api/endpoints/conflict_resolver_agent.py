@@ -8,11 +8,8 @@ Conflict Resolution Agent (LangGraph 기반)
 
 import json
 import logging
-from pathlib import Path
 from typing import Any, Dict, List, TypedDict
 
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 
@@ -26,7 +23,6 @@ from backend.models import (
     ConflictType,
     ResolutionMethod,
     ResolutionStatus,
-    ResolutionStrategy,
 )
 
 logger = logging.getLogger(__name__)

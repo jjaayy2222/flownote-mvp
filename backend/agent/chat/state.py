@@ -1,7 +1,7 @@
 # backend/agent/chat/state.py
 
 import operator
-from typing import Annotated, Any, NotRequired, Optional, TypedDict
+from typing import Annotated, NotRequired, Optional, TypedDict
 
 from langchain_core.messages import BaseMessage
 

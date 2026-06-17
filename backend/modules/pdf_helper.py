@@ -6,8 +6,6 @@
 FlowNote MVP - PDF 처리 모듈
 """
 
-from pathlib import Path
-from typing import Union
 
 import pypdf
 

@@ -31,7 +31,6 @@ from functools import lru_cache
 from typing import Any, Callable, Dict, List, Optional, TypeVar
 
 import numpy as np
-import redis.exceptions
 from fastapi.concurrency import run_in_threadpool  # type: ignore[import]
 from redis.exceptions import RedisError  # 연결/타임아웃/명령 실패 포괄
 from sklearn.cluster import KMeans

@@ -7,7 +7,7 @@ import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Optional
 
 from backend.celery_app.celery import app
 

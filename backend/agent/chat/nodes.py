@@ -5,7 +5,7 @@ import numbers
 import re
 from collections.abc import Mapping, Sequence
 from itertools import islice
-from typing import Any, Dict, List, Literal, Optional, TypedDict, cast
+from typing import Any, Dict, List, Literal, TypedDict, cast
 
 from langchain_core.messages import (  # type: ignore[import, import-untyped, reportMissingImports]
     AIMessage,

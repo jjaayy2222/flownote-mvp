@@ -7,7 +7,7 @@ RuleEngine - 규칙 기반 분류 엔진
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional, TypedDict
+from typing import Any, Dict, List, Literal, Optional
 
 logger = logging.getLogger(__name__)
 

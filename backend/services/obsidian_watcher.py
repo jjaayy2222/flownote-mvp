@@ -1,10 +1,8 @@
 # backend/services/obsidian_watcher.py
 
 import logging
-import threading
-import time
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer

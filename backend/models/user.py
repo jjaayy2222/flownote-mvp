@@ -9,8 +9,7 @@
 - Context 관련 (UserContext)
 """
 
-from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from pydantic import BaseModel, ConfigDict, Field
 

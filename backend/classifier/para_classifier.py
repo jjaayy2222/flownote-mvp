@@ -9,7 +9,7 @@ PARA 분류기 - LangChain 기반
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 prompt_path = Path(__file__).parent / "prompts" / "para_system.txt"
 

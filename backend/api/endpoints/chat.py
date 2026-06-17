@@ -5,11 +5,10 @@
 """
 
 import logging
-import os
 import threading
 import time
 from collections import OrderedDict
-from typing import Dict, Optional
+from typing import Optional
 
 from fastapi import (
     APIRouter,

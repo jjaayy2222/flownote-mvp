@@ -30,7 +30,7 @@ from __future__ import annotations
 import logging
 import os
 from enum import Enum
-from typing import Callable, ClassVar, Dict, Literal, Mapping
+from typing import Callable, ClassVar, Dict, Mapping
 
 # 프로젝트 공통 유틸 재사용 — 중복 구현 금지
 from backend.config import ConfigRange, _clamp

@@ -1,7 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 from functools import lru_cache
-from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Protocol
+from typing import Any, AsyncGenerator, Dict, Literal, Protocol
 
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
@@ -87,7 +87,6 @@ class LifespanApp(Protocol):
     비어있는 상태(빈 프로토콜)로 정의되어 결합도를 최소화합니다.
     """
 
-    pass
 
 
 @asynccontextmanager

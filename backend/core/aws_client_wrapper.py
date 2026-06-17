@@ -1,17 +1,14 @@
 import asyncio
 import logging
-import os
 import random
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
-from typing import Any, Callable, Optional, Union
+from typing import Optional
 
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError, EndpointConnectionError, ReadTimeoutError
 
-from backend.core.config_validator import PersonalizedRAGConfig
 
 logger = logging.getLogger(__name__)
 
