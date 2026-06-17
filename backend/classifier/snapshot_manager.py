@@ -7,10 +7,9 @@ Snapshot 관리 클래스
 """
 
 import copy
-import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import List
 
 
 @dataclass

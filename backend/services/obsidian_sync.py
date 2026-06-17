@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from backend.models.conflict import SyncConflict
-from backend.models.external_sync import ExternalToolConnection, SyncStatus
+from backend.models.external_sync import ExternalToolConnection
 from backend.services.ignore_manager import ignore_manager
 from backend.services.sync_service import SyncServiceBase
 

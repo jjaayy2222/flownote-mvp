@@ -12,7 +12,6 @@ import logging
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.concurrency import run_in_threadpool
 
 from backend.api.deps import get_current_user, get_locale
 from backend.api.models import (

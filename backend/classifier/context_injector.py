@@ -7,7 +7,6 @@
 import json
 import logging
 import os
-import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -38,9 +37,6 @@ sys.path.insert(0, str(PROJECT_ROOT))
 # 3. 임포트
 # ============================================================
 
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
 
 # ============================================================
 # 4. Config Import (3-tier Fallback)

@@ -4,10 +4,9 @@
 메타데이터 기반 PARA 분류 전용 클래스
 """
 
-import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 

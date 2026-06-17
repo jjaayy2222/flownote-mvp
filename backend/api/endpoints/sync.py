@@ -12,13 +12,11 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.config.mcp_config import mcp_config
-from backend.models.external_sync import ExternalToolType, SyncStatus
 from backend.services.diff_service import generate_diff
-from backend.services.obsidian_sync import ObsidianSyncService
 
 logger = logging.getLogger(__name__)
 

@@ -5,20 +5,16 @@ import json
 import logging
 import uuid
 from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Any, Dict, List
+from typing import Dict, List
 
 from backend.celery_app.celery import app
 from backend.config import PathConfig
 from backend.models.automation import (
-    ArchivingRecord,
     AutomationLog,
     AutomationStatus,
     AutomationTaskType,
-    ReclassificationRecord,
 )
 from backend.models.report import Report, ReportMetric, ReportType
-from backend.services.file_access_logger import FileAccessLogger
 
 logger = logging.getLogger(__name__)
 

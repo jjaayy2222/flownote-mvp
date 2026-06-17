@@ -5,7 +5,6 @@ FastAPI 메인 서버
 """
 
 import logging
-import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 

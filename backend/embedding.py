@@ -11,7 +11,6 @@ from backend.config import (
     EMBEDDING_COSTS,
     EMBEDDING_MODEL,
     ModelConfig,
-    get_embedding_model,
 )
 from backend.utils import count_tokens, estimate_cost
 

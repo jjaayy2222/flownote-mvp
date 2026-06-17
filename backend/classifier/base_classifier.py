@@ -39,7 +39,6 @@ class BaseClassifier(ABC):
                 "metadata": dict       # 추가 정보
             }
         """
-        pass
 
     def validate_result(self, result: Dict[str, Any]) -> Tuple[bool, str]:
         """분류 결과 검증"""

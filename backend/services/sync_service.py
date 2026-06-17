@@ -8,14 +8,11 @@ Sync Service Abstraction
 import hashlib
 import logging
 from abc import ABC, abstractmethod
-from datetime import datetime
-from typing import Any, List, Optional
+from typing import List, Optional
 
-from backend.models.conflict import ResolutionMethod, SyncConflict, SyncConflictType
+from backend.models.conflict import SyncConflict, SyncConflictType
 from backend.models.external_sync import (
-    ExternalFileMapping,
     ExternalToolConnection,
-    SyncStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,22 +35,18 @@ class SyncServiceBase(ABC):
     @abstractmethod
     async def connect(self) -> bool:
         """도구 연결 확인"""
-        pass
 
     @abstractmethod
     async def sync_all(self) -> List[SyncConflict]:
         """전체 동기화 수행"""
-        pass
 
     @abstractmethod
     async def pull_file(self, external_id: str) -> Optional[str]:
         """외부 파일 가져오기 (내용 반환)"""
-        pass
 
     @abstractmethod
     async def push_file(self, internal_id: str, content: str) -> bool:
         """내부 파일을 외부로 내보내기"""
-        pass
 
     def calculate_file_hash(self, content: str) -> str:
         """

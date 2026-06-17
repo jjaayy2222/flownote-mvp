@@ -14,7 +14,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
 
@@ -35,7 +35,6 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
 
 # 통합 모델 마이그레이션 임포트
 from backend.models import PARAClassificationOutput

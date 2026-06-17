@@ -1,7 +1,7 @@
 # backend/agent/chat/graph.py
 
 # TYPE_CHECKING
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Optional
 
 from langgraph.graph import END, START, StateGraph
 

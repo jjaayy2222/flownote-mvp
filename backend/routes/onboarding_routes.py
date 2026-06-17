@@ -15,7 +15,7 @@ Refactored:
 """
 
 import logging
-from typing import Any, TypedDict
+from typing import TypedDict
 
 from fastapi import APIRouter, HTTPException, Query
 

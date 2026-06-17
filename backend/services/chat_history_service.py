@@ -1,6 +1,5 @@
 # backend/services/chat_history_service.py
 
-import hashlib
 import json
 import logging
 from datetime import datetime, timezone

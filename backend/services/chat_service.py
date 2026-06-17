@@ -1,13 +1,11 @@
 # backend/services/chat_service.py
 
 import asyncio
-import hashlib
 import json
 import logging
 import re
 import time
 from functools import lru_cache
-from itertools import islice
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -17,7 +15,6 @@ from typing import (
     Optional,
     Tuple,
     TypedDict,
-    cast,
 )
 
 if TYPE_CHECKING:

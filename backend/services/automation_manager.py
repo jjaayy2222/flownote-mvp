@@ -7,7 +7,6 @@ Automation Manager Service
 
 import json
 import logging
-from datetime import datetime
 from itertools import islice
 from pathlib import Path
 from typing import Any, Dict, List, Optional

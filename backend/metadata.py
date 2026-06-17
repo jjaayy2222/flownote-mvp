@@ -10,7 +10,7 @@ import json
 import os
 import uuid  # 추가!
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 
 class FileMetadata:

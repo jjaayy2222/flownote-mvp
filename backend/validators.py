@@ -21,7 +21,6 @@ from typing import Optional, Tuple
 class ValidationError(Exception):
     """커스텀 검증 에러 클래스"""
 
-    pass
 
 
 class FileValidator:
