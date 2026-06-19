@@ -6,7 +6,14 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-added-large-files
-        args: ['--maxkb=50000']
+        # 10MB threshold to catch large assets early while still allowing reasonable binaries
+        args: ['--maxkb=10240']
+        # Exclude known/legitimate large-file locations; adjust paths to your repo layout
+        exclude: >
+          (^docs/assets/)|
+          (^tests/data/)|
+          (^fixtures/)|
+          (^snapshots/)
 
   - repo: https://github.com/PyCQA/autoflake
     rev: v2.3.1
