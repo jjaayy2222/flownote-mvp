@@ -91,10 +91,10 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
             }
 
     Note:
-        지원되는 status_code ↔ message_key 매핑:
-        400 → "bad_request", 401 → "unauthorized", 403 → "forbidden",
-        404 → "not_found", 405 → "method_not_allowed", 413 → "payload_too_large",
-        422 → "validation_error", 500 → "server_error".
+        함수 내부에 정의된 ``status_to_key`` 로컬 딕셔너리를 기준으로 status_code를
+        message_key로 매핑합니다. 지원 상태 코드와 키 심볼을 확인하려면
+        이 함수의 코드 바디를 직접 참조하십시오.
+        매핑에 없는 status_code는 ``exc.detail``을 그대로 사용합니다.
     """
     from .deps import extract_locale_from_header
 
@@ -159,6 +159,12 @@ async def validation_exception_handler(
              이를 통해 의도치 않은 예외가 이 핸들러에 잘못 라우팅되는 것을 방지합니다.
 
     Note:
+        이 핸들러는 ``RequestValidationError``를 전용으로 처리합니다.
+        시그니처가 ``exc: Exception``으로 넓게 선언되어 있지만, 실제로 타입 판별(isinstance)을
+        통해 ``RequestValidationError``인 경우에만 응답을 반환하며, 그 외에는 원본 예외를
+        re-raise합니다. ``app.add_exception_handler(RequestValidationError, ...)``로
+        등록하여 사용하십시오.
+
         ``errors`` 필드는 프론트엔드가 필드별 에러 메시지를 표시할 때 활용할 수 있습니다.
         단, 각 오류 항목에 사용자 입력값(``input``)이 포함될 수 있으므로
         로그 저장 시 개인정보 포함 여부를 반드시 확인하십시오.
