@@ -179,22 +179,60 @@ class AuditConfigError(RuntimeError):
 
 
 def get_audit_log_backend() -> str:
-    """AUDIT_LOG_BACKEND 모듈 변수를 반환합니다. 테스트에서 monkeypatch 대상으로 활용 가능."""
+    """
+    현재 설정된 감사 로그 저장소 백엔드를 반환합니다.
+
+    모듈 레벨 ``AUDIT_LOG_BACKEND`` 상수를 간접 반환합니다.
+    직접 상수를 import하는 대신 이 getter를 사용하면
+    pytest ``monkeypatch``로 테스트 중 동적으로 백엔드를 교체할 수 있습니다.
+
+    Returns:
+        str: 현재 수용된 백엔드 심볼 (예: ``"file"``, ``"db"``, ``"cloudwatch"``).
+             유효하지 않은 환경 변수 값은 import 시점에 ``_DEFAULT_BACKEND``로
+             정규화되므로 항상 ``_VALID_BACKENDS`` 중 하나가 반환됩니다.
+    """
     return AUDIT_LOG_BACKEND
 
 
 def get_audit_log_file_path() -> str:
-    """AUDIT_LOG_FILE_PATH 모듈 변수를 반환합니다."""
+    """
+    감사 로그 파일의 저장 경로를 반환합니다.
+
+    ``file`` 백엔드 사용 시 ``_write_to_file()``에서 이 경로를 사용하여
+    JSON Lines 형식으로 감사 로그를 추가합니다.
+
+    Returns:
+        str: 감사 로그 파일의 절대/상대 경로.
+             ``AUDIT_LOG_FILE_PATH`` 환경 변수가 설정되지 않은 경우 ``_DEFAULT_AUDIT_LOG_FILE_PATH``가 반환됩니다.
+    """
     return AUDIT_LOG_FILE_PATH
 
 
 def get_audit_log_retention_days() -> int:
-    """AUDIT_LOG_RETENTION_DAYS 모듈 변수를 반환합니다."""
+    """
+    감사 로그 보관 일수를 반환합니다.
+
+    ``get_audit_log_cutoff_datetime()``와 스케줄러에서 삭제 대상 레코드의 기준이 됩니다.
+
+    Returns:
+        int: 보관 일수 (단위: 일).
+             ``AUDIT_LOG_RETENTION_DAYS`` 환경 변수가 유효하지 않으면
+             ``_DEFAULT_AUDIT_LOG_RETENTION_DAYS``(90일)이 반환됩니다.
+    """
     return AUDIT_LOG_RETENTION_DAYS
 
 
 def get_masked_uid_prefix_len() -> int:
-    """MASKED_UID_PREFIX_LEN 모듈 변수를 반환합니다."""
+    """
+    PII 마스킹 접두어 길이를 반환합니다.
+
+    ``mask_uid()``에서 사용하여 masked_uid의 노출 자릿수를 결정합니다.
+
+    Returns:
+        int: 마스킹되지 않고 노출할 hashed_user_id의 앞 자릿수.
+             ``MASKED_UID_PREFIX_LEN`` 환경 변수가 유효하지 않으면
+             ``_DEFAULT_MASKED_UID_PREFIX_LEN``(8)이 반환됩니다.
+    """
     return MASKED_UID_PREFIX_LEN
 
 
@@ -206,18 +244,30 @@ def get_masked_uid_prefix_len() -> int:
 class AuditEventType(str, Enum):
     """
     감사 로그에 기록되는 이벤트 유형.
-    향후 이벤트 추가 시 이 Enum에만 정의하여 하드코딩 방지.
+
+    향후 이벤트 추가 시 이 Enum에만 정의하여 하드코딩을 방지합니다.
+    ``str`` 믹스인 상속으로 JSON 직렬화 시 자동으로 문자열로 변환됩니다.
+
+    Note:
+        모든 이벤트 값은 하드코딩 금지 원칙에 따라 대문자+언더스코어
+        형식으로 선언하며, 실제 저장 값과 Enum 멤버명이 일치합니다.
     """
 
+    # 사용자가 개인정보 삭제를 요청한 시점 (실제 삭제 시작 전)
     DATA_DELETE_REQUESTED = "DATA_DELETE_REQUESTED"
+    # 개인정보 삭제가 성공적으로 완료된 시점
     DATA_DELETE_SUCCESS = "DATA_DELETE_SUCCESS"
+    # 개인정보 삭제 시도 중 오류가 발생한 시점
     DATA_DELETE_FAILURE = "DATA_DELETE_FAILURE"
-    DATA_ANONYMIZE_STARTED = (
-        "DATA_ANONYMIZE_STARTED"  # 익명화 파이프라인 시작 (결과 미확정)
-    )
+    # 익명화 파이프라인이 시작된 시점 (결과 미확정 상태)
+    DATA_ANONYMIZE_STARTED = "DATA_ANONYMIZE_STARTED"
+    # 익명화가 성공적으로 완료된 시점
     DATA_ANONYMIZE_SUCCESS = "DATA_ANONYMIZE_SUCCESS"
+    # 익명화 시도 중 오류가 발생한 시점
     DATA_ANONYMIZE_FAILURE = "DATA_ANONYMIZE_FAILURE"
+    # 감사 로그 보관 정책에 따라 만료 레코드를 자동 삭제하는 스케줄러가 트리거된 시점
     AUDIT_LOG_CLEANUP = "AUDIT_LOG_CLEANUP"
+    # 관리자 또는 시스템이 감사 로그에 접근한 시점
     ACCESS_AUDIT_LOG = "ACCESS_AUDIT_LOG"
 
 
@@ -328,7 +378,19 @@ def write_audit_log(
 def _write_to_file(record: dict[str, Any]) -> None:
     """
     감사 로그 레코드를 파일에 JSON Lines 형식으로 기록합니다.
-    디렉토리가 없을 경우 자동 생성합니다.
+
+    디렉토리가 없을 경우 ``os.makedirs``로 자동 생성합니다.
+    파일 I/O 실패 시 프로세스를 중단하지 않고 표준 로거로 폴백하여
+    관측성(Observability)을 유지합니다.
+
+    Args:
+        record (dict[str, Any]): ``_build_audit_record()``가 반환한 구조화 감사 로그
+                                 딕셔너리. PII가 포함되지 않아야 합니다.
+
+    Raises:
+        이 함수 자체는 예외를 발생시키지 않습니다.
+        ``OSError`` 발생 시 ``logger.error``로 폴백하여 프로세스
+        중단을 방지합니다 (비파괴 스코프 설계 의도).
     """
     log_path = get_audit_log_file_path()
     try:
@@ -357,10 +419,19 @@ def _write_to_file(record: dict[str, Any]) -> None:
 def get_audit_log_cutoff_datetime() -> datetime:
     """
     현재 시각을 기준으로 감사 로그 보관 만료 기준 시각을 반환합니다.
-    AUDIT_LOG_RETENTION_DAYS (환경 변수) 일 이전의 레코드는 삭제 대상입니다.
+
+    ``AUDIT_LOG_RETENTION_DAYS`` (환경 변수) 일 이전의 레코드는
+    삭제 대상입니다. 스케줄러에서 이 함수를 호출하여
+    실제 삭제 로직의 기준점으로 사용해야 합니다.
 
     Returns:
-        보관 만료 기준 datetime (UTC).
+        datetime: 보관 만료 기준 datetime (UTC 타임존).
+                  이 시각보다 오래된 레코드는 삭제 돼야 합니다.
+
+    Note:
+        이 함수는 현재 시각(``datetime.now``) 기준으로 매 호출마다 다른 값을 반환합니다.
+        테스트에서 결정적 값이 필요한 경우 ``datetime.now``를
+        monkeypatch하여 시각을 제어할 수 있습니다.
     """
     return datetime.now(tz=timezone.utc) - timedelta(
         days=get_audit_log_retention_days()
