@@ -190,9 +190,7 @@ def get_audit_log_backend() -> str:
 
     Returns:
         str: 설정된 백엔드 심볼 (예: ``"file"``, ``"db"``, ``"cloudwatch"``).
-
-    Note:
-        환경 변수 검증 및 정규화(coercion) 상세 동작은 모듈 상단 ``[설계 원칙]``을 참고하세요.
+             (※ 정규화 상세 동작은 모듈 상단 참고)
     """
     return AUDIT_LOG_BACKEND
 
@@ -204,10 +202,7 @@ def get_audit_log_file_path() -> str:
     ``file`` 백엔드 사용 시 감사 로그를 기록할 대상 경로로 사용됩니다.
 
     Returns:
-        str: 감사 로그 파일 경로.
-
-    Note:
-        환경 변수 검증 및 정규화(coercion) 상세 동작은 모듈 상단 ``[설계 원칙]``을 참고하세요.
+        str: 감사 로그 파일 경로. (※ 정규화 상세 동작은 모듈 상단 참고)
     """
     return AUDIT_LOG_FILE_PATH
 
@@ -219,10 +214,7 @@ def get_audit_log_retention_days() -> int:
     스케줄러 등에서 보관 만료 및 삭제 대상 레코드를 산정하는 기준으로 사용됩니다.
 
     Returns:
-        int: 보관 일수 (단위: 일).
-
-    Note:
-        환경 변수 검증 및 정규화(coercion) 상세 동작은 모듈 상단 ``[설계 원칙]``을 참고하세요.
+        int: 보관 일수 (단위: 일). (※ 정규화 상세 동작은 모듈 상단 참고)
     """
     return AUDIT_LOG_RETENTION_DAYS
 
@@ -234,10 +226,7 @@ def get_masked_uid_prefix_len() -> int:
     사용자 식별자를 마스킹할 때 원문에서 유지할 자릿수를 결정합니다.
 
     Returns:
-        int: 마스킹되지 않고 노출할 앞 자릿수.
-
-    Note:
-        환경 변수 검증 및 정규화(coercion) 상세 동작은 모듈 상단 ``[설계 원칙]``을 참고하세요.
+        int: 마스킹되지 않고 노출할 앞 자릿수. (※ 정규화 상세 동작은 모듈 상단 참고)
     """
     return MASKED_UID_PREFIX_LEN
 
