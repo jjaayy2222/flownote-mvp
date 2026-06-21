@@ -187,7 +187,8 @@ def get_audit_log_backend() -> str:
 
     Returns:
         str: 설정된 백엔드 심볼 (예: ``"file"``, ``"db"``, ``"cloudwatch"``).
-             환경 변수가 설정되지 않거나 유효하지 않으면 시스템 기본값이 반환됩니다.
+             초기화 시점에 환경 변수를 검증 및 정규화하며, 값이 누락되거나
+             유효하지 않은 경우 시스템 기본값으로 안전하게 대체되어 반환됩니다.
     """
     return AUDIT_LOG_BACKEND
 
@@ -199,8 +200,8 @@ def get_audit_log_file_path() -> str:
     ``file`` 백엔드 사용 시 감사 로그를 기록할 대상 경로로 사용됩니다.
 
     Returns:
-        str: 감사 로그 파일 경로. 환경 변수가 설정되지 않은 경우
-             시스템 기본 경로가 반환됩니다.
+        str: 감사 로그 파일 경로. 초기화 시점에 설정 여부를 검증하며,
+             값이 누락된 경우 시스템 기본 경로로 정규화되어 반환됩니다.
     """
     return AUDIT_LOG_FILE_PATH
 
@@ -213,7 +214,8 @@ def get_audit_log_retention_days() -> int:
 
     Returns:
         int: 보관 일수 (단위: 일).
-             환경 변수가 유효하지 않으면 시스템 기본 보관 일수가 반환됩니다.
+             초기화 시점에 타입 및 유효 범위를 검증하며, 잘못된 설정일 경우
+             시스템 기본 보관 일수로 자동 정규화되어 반환됩니다.
     """
     return AUDIT_LOG_RETENTION_DAYS
 
@@ -226,7 +228,8 @@ def get_masked_uid_prefix_len() -> int:
 
     Returns:
         int: 마스킹되지 않고 노출할 앞 자릿수.
-             환경 변수가 유효하지 않으면 시스템 기본값이 반환됩니다.
+             초기화 시점에 검증을 거치며, 유효하지 않은 값이 주입되면
+             시스템 기본값으로 안전하게 강제 변환(coerced)되어 반환됩니다.
     """
     return MASKED_UID_PREFIX_LEN
 
@@ -383,13 +386,16 @@ def _write_to_file(record: dict[str, Any]) -> None:
                                  PII가 포함되지 않아야 합니다.
 
     Raises:
-        일반적인 파일 I/O 오류(예: ``OSError``)는 내부적으로 처리되어
-        예외를 발생시키지 않도록 설계되었으나, 예상치 못한 시스템 환경 문제 등
-        예외적인 상황에서는 오류가 전파될 수 있습니다.
+        일반적인 I/O 예외(예: ``OSError``, ``PermissionError``)는 의도적으로
+        포착하여 표준 로거로 폴백 처리(Best-effort)하며 프로세스 중단을 방지합니다.
+        단, I/O와 무관한 예외(예: 직렬화 실패 ``TypeError``, 메모리 부족 등)나
+        시스템 레벨의 치명적 오류는 포착하지 않고 상위로 전파됩니다.
     """
     log_path = get_audit_log_file_path()
     try:
-        if log_dir := os.path.dirname(log_path):
+        # sourcery skip: use-named-expression
+        log_dir = os.path.dirname(log_path)
+        if log_dir:
             os.makedirs(log_dir, exist_ok=True)
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
