@@ -182,14 +182,12 @@ def get_audit_log_backend() -> str:
     """
     현재 설정된 감사 로그 저장소 백엔드를 반환합니다.
 
-    모듈 레벨 ``AUDIT_LOG_BACKEND`` 상수를 간접 반환합니다.
-    직접 상수를 import하는 대신 이 getter를 사용하면
-    pytest ``monkeypatch``로 테스트 중 동적으로 백엔드를 교체할 수 있습니다.
+    모듈 레벨 환경 구성을 간접적으로 반환하며,
+    테스트 환경 등에서 동적으로 백엔드를 교체할 때 유용합니다.
 
     Returns:
-        str: 현재 수용된 백엔드 심볼 (예: ``"file"``, ``"db"``, ``"cloudwatch"``).
-             유효하지 않은 환경 변수 값은 import 시점에 ``_DEFAULT_BACKEND``로
-             정규화되므로 항상 ``_VALID_BACKENDS`` 중 하나가 반환됩니다.
+        str: 설정된 백엔드 심볼 (예: ``"file"``, ``"db"``, ``"cloudwatch"``).
+             환경 변수가 설정되지 않거나 유효하지 않으면 시스템 기본값이 반환됩니다.
     """
     return AUDIT_LOG_BACKEND
 
@@ -198,12 +196,11 @@ def get_audit_log_file_path() -> str:
     """
     감사 로그 파일의 저장 경로를 반환합니다.
 
-    ``file`` 백엔드 사용 시 ``_write_to_file()``에서 이 경로를 사용하여
-    JSON Lines 형식으로 감사 로그를 추가합니다.
+    ``file`` 백엔드 사용 시 감사 로그를 기록할 대상 경로로 사용됩니다.
 
     Returns:
-        str: 감사 로그 파일의 절대/상대 경로.
-             ``AUDIT_LOG_FILE_PATH`` 환경 변수가 설정되지 않은 경우 ``_DEFAULT_AUDIT_LOG_FILE_PATH``가 반환됩니다.
+        str: 감사 로그 파일 경로. 환경 변수가 설정되지 않은 경우
+             시스템 기본 경로가 반환됩니다.
     """
     return AUDIT_LOG_FILE_PATH
 
@@ -212,26 +209,24 @@ def get_audit_log_retention_days() -> int:
     """
     감사 로그 보관 일수를 반환합니다.
 
-    ``get_audit_log_cutoff_datetime()``와 스케줄러에서 삭제 대상 레코드의 기준이 됩니다.
+    스케줄러 등에서 보관 만료 및 삭제 대상 레코드를 산정하는 기준으로 사용됩니다.
 
     Returns:
         int: 보관 일수 (단위: 일).
-             ``AUDIT_LOG_RETENTION_DAYS`` 환경 변수가 유효하지 않으면
-             ``_DEFAULT_AUDIT_LOG_RETENTION_DAYS``(90일)이 반환됩니다.
+             환경 변수가 유효하지 않으면 시스템 기본 보관 일수가 반환됩니다.
     """
     return AUDIT_LOG_RETENTION_DAYS
 
 
 def get_masked_uid_prefix_len() -> int:
     """
-    PII 마스킹 접두어 길이를 반환합니다.
+    PII 마스킹 시 노출할 접두어 길이를 반환합니다.
 
-    ``mask_uid()``에서 사용하여 masked_uid의 노출 자릿수를 결정합니다.
+    사용자 식별자를 마스킹할 때 원문에서 유지할 자릿수를 결정합니다.
 
     Returns:
-        int: 마스킹되지 않고 노출할 hashed_user_id의 앞 자릿수.
-             ``MASKED_UID_PREFIX_LEN`` 환경 변수가 유효하지 않으면
-             ``_DEFAULT_MASKED_UID_PREFIX_LEN``(8)이 반환됩니다.
+        int: 마스킹되지 않고 노출할 앞 자릿수.
+             환경 변수가 유효하지 않으면 시스템 기본값이 반환됩니다.
     """
     return MASKED_UID_PREFIX_LEN
 
@@ -379,23 +374,22 @@ def _write_to_file(record: dict[str, Any]) -> None:
     """
     감사 로그 레코드를 파일에 JSON Lines 형식으로 기록합니다.
 
-    디렉토리가 없을 경우 ``os.makedirs``로 자동 생성합니다.
-    파일 I/O 실패 시 프로세스를 중단하지 않고 표준 로거로 폴백하여
-    관측성(Observability)을 유지합니다.
+    디렉토리가 없을 경우 자동 생성을 시도합니다.
+    예상되는 I/O 오류 발생 시 프로세스를 중단하지 않고 표준 로거로 폴백하여
+    관측성(Observability)을 유지하도록 설계되었습니다.
 
     Args:
-        record (dict[str, Any]): ``_build_audit_record()``가 반환한 구조화 감사 로그
-                                 딕셔너리. PII가 포함되지 않아야 합니다.
+        record (dict[str, Any]): 기록할 구조화된 감사 로그 딕셔너리.
+                                 PII가 포함되지 않아야 합니다.
 
     Raises:
-        이 함수 자체는 예외를 발생시키지 않습니다.
-        ``OSError`` 발생 시 ``logger.error``로 폴백하여 프로세스
-        중단을 방지합니다 (비파괴 스코프 설계 의도).
+        일반적인 파일 I/O 오류(예: ``OSError``)는 내부적으로 처리되어
+        예외를 발생시키지 않도록 설계되었으나, 예상치 못한 시스템 환경 문제 등
+        예외적인 상황에서는 오류가 전파될 수 있습니다.
     """
     log_path = get_audit_log_file_path()
     try:
-        log_dir = os.path.dirname(log_path)
-        if log_dir:
+        if log_dir := os.path.dirname(log_path):
             os.makedirs(log_dir, exist_ok=True)
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
