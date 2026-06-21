@@ -12,6 +12,8 @@ GDPR Audit Logger — v9.0 Phase 2-4 (Privacy & Compliance)
   - 백엔드 외부화: 로그 저장소 백엔드(file / db / cloudwatch)를 AUDIT_LOG_BACKEND 환경 변수로 제어.
   - 보관 정책: 90일 보관 후 자동 영구 삭제 (트리거 인터페이스만 제공, 실제 실행은 스케줄러에 위임).
   - 하드코딩 금지: 모든 상수는 환경 변수 또는 모듈 레벨 상수로 외부화.
+  - 설정 정규화: 모듈 초기화(import) 시점에 환경 변수의 유효성을 1회 검증하며,
+    누락되거나 잘못된 값 주입 시 안전한 시스템 기본값으로 강제 변환(coerced)됩니다.
 
 [수명 주기]
   - FastAPI lifespan 또는 Celery 훅에서 schedule_audit_log_cleanup()을 등록하여 보관 정책을 강제.
@@ -187,8 +189,6 @@ def get_audit_log_backend() -> str:
 
     Returns:
         str: 설정된 백엔드 심볼 (예: ``"file"``, ``"db"``, ``"cloudwatch"``).
-             초기화 시점에 환경 변수를 검증 및 정규화하며, 값이 누락되거나
-             유효하지 않은 경우 시스템 기본값으로 안전하게 대체되어 반환됩니다.
     """
     return AUDIT_LOG_BACKEND
 
@@ -200,8 +200,7 @@ def get_audit_log_file_path() -> str:
     ``file`` 백엔드 사용 시 감사 로그를 기록할 대상 경로로 사용됩니다.
 
     Returns:
-        str: 감사 로그 파일 경로. 초기화 시점에 설정 여부를 검증하며,
-             값이 누락된 경우 시스템 기본 경로로 정규화되어 반환됩니다.
+        str: 감사 로그 파일 경로.
     """
     return AUDIT_LOG_FILE_PATH
 
@@ -214,8 +213,6 @@ def get_audit_log_retention_days() -> int:
 
     Returns:
         int: 보관 일수 (단위: 일).
-             초기화 시점에 타입 및 유효 범위를 검증하며, 잘못된 설정일 경우
-             시스템 기본 보관 일수로 자동 정규화되어 반환됩니다.
     """
     return AUDIT_LOG_RETENTION_DAYS
 
@@ -228,8 +225,6 @@ def get_masked_uid_prefix_len() -> int:
 
     Returns:
         int: 마스킹되지 않고 노출할 앞 자릿수.
-             초기화 시점에 검증을 거치며, 유효하지 않은 값이 주입되면
-             시스템 기본값으로 안전하게 강제 변환(coerced)되어 반환됩니다.
     """
     return MASKED_UID_PREFIX_LEN
 
