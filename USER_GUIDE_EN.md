@@ -25,6 +25,7 @@
 13. [🛠️ Technical & Developer Appendix](#13-technical--developer-appendix)
     - [13.1 RAG Eval & Performance (v8.0)](#131-rag-eval--performance-v80)
     - [13.2 Adaptive Intelligence (v9.0)](#132-adaptive-intelligence-v90)
+    - [13.3 Project Maintenance & Technical Debt Management](#133-project-maintenance--technical-debt-management)
 
 ---
 
@@ -702,6 +703,19 @@ Manages OpenAI Fine-tuning Jobs to continuously improve classification precision
 
 #### 2. Observability
 - Leverages structured tags (`ObsEvent`, `ObsMetaTag`) for auditing autonomous system actions.
+
+### 13.3 Project Maintenance & Technical Debt Management
+
+> [!NOTE]
+> **For Developers**: A management system designed for the sustainable growth of the project.
+
+#### 1. Centralized TODO Management
+Consolidates `TODO` and `FIXME` comments scattered across the codebase into a centralized `docs/A/TODO.md` document for safe tracking.
+- Avoids using hardcoded line numbers; instead, it references highly immutable elements like function names or core section names to ensure the document's durability even when the code changes.
+- Utilizes priority grouping (e.g., P1 ~ P4 based on project phases) to clearly identify the nature of technical debt and facilitate schedule management.
+
+#### 2. Next Milestone Planning Setup
+Before starting the development of the next phase (e.g., v10.0), an initial skeleton document such as `docs/A/v10_ideas.md` is set up to solidify the project's direction.
 
 ---
 

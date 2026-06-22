@@ -4,7 +4,7 @@
   <a href="./README.md">한국어</a> | <a href="./README_EN.md"><strong>English</strong></a>
 </p>
 
-> **AI automatically organizes your documents**  
+> **AI automatically organizes your documents**
 > Smart organization with PARA methodology (Projects, Areas, Resources, Archives)
 
 <br>
@@ -343,6 +343,8 @@ flownote-mvp/
 │   │   └── v9.0/                       # v9.0 (Adaptive Intelligence)
 │   ├── P/                              # In-progress phase documentation
 │   ├── A/                              # Analysis & Specs (Practices, Specs)
+│   │   ├── TODO.md                     # Technical debt & centralized task tracking (Priority-based)
+│   │   └── v10_ideas.md                # Initial skeleton document for the next milestone planning
 │   └── R/                              # Resources (Troubleshooting, etc.)
 ├── README.md                           # Korean documentation
 └── README_EN.md                        # This document (English)
