@@ -346,8 +346,8 @@ flownote-mvp/
 │   │   └── v9.0/                       # v9.0 (Adaptive Intelligence) ✨
 │   ├── P/                              # 진행 중인 페이즈 문서
 │   ├── A/                              # 분석 및 명세 (Practices, Specs)
-│   │   ├── TODO.md                     # 기술 부채 및 잔여 작업 추적 문서 (우선순위 기반)
-│   │   └── v10_ideas.md                # 차기 마일스톤 기획 초기 뼈대 문서
+│   │   ├── [TODO.md](docs/A/TODO.md)                     # 기술 부채 및 잔여 작업 추적 문서 (우선순위 기반)
+│   │   └── [v10_ideas.md](docs/A/v10_ideas.md)                # 차기 마일스톤 기획 초기 뼈대 문서
 │   └── R/                              # 리소스 (Troubleshooting 등)
 ├── README.md                           # 본 문서 (한국어)
 └── README_EN.md                        # 영문 문서
