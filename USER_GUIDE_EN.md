@@ -710,12 +710,14 @@ Manages OpenAI Fine-tuning Jobs to continuously improve classification precision
 > **For Developers**: A management system designed for the sustainable growth of the project.
 
 #### 1. Centralized TODO Management
-Consolidates `TODO` and `FIXME` comments scattered across the codebase into a centralized `docs/A/TODO.md` document for safe tracking.
+Consolidates `TODO` and `FIXME` comments scattered across the codebase into a centralized [`docs/A/TODO.md`](docs/A/TODO.md) document for safe tracking.
+- Expected Structure: Include fields for Priority, Owner, and Related Module to maintain a consistent format.
 - Avoids using hardcoded line numbers; instead, it references highly immutable elements like function names or core section names to ensure the document's durability even when the code changes.
 - Utilizes priority grouping (e.g., P1 ~ P4 based on project phases) to clearly identify the nature of technical debt and facilitate schedule management.
 
 #### 2. Next Milestone Planning Setup
-Before starting the development of the next phase (e.g., v10.0), an initial skeleton document such as `docs/A/v10_ideas.md` is set up to solidify the project's direction.
+Before starting the development of the next phase (e.g., v10.0), an initial skeleton document such as [`docs/A/v10_ideas.md`](docs/A/v10_ideas.md) is set up to solidify the project's direction.
+- Expected Structure: Include items like Goals, Key Features, and Timeline to follow a consistent planning format.
 
 ---
 

@@ -350,6 +350,10 @@ flownote-mvp/
 └── README_EN.md                        # This document (English)
 ```
 
+> **📌 Key Management Documents**
+> - 📝 [TODO.md](docs/A/TODO.md): Technical debt & centralized task tracking (Priority-based)
+> - 💡 [v10_ideas.md](docs/A/v10_ideas.md): Initial skeleton document for the next milestone planning
+
 ---
 
 ## 5. 🧪 Testing & Quality Assurance
