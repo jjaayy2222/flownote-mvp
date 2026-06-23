@@ -1,25 +1,26 @@
 # backend/core/health_registry.py
 
 """
-HealthRegistry — 단일 진실 공급원(SSOT) 기반 서브시스템 상태 레지스트리
-==========================================================================
+HealthRegistry - Single Source of Truth (SSOT) based subsystem status registry
+==============================================================================
 
-아키텍처 원칙:
-  - 단일 파드: 모듈 스코프 싱글톤(In-process) 우선 참조
-  - 멀티 파드: Redis를 SSOT로 사용, 파드 간 배포 상태 불일치 해소
-  - CAP 트레이드오프: Redis 파티션 시 REDIS_FALLBACK_TTL_SECS 내에서
-    로컬 캐시로 Graceful Fallback, TTL 초과 시 Hard Fallback
-  - Intra-process Lock: threading.Lock은 동일 프로세스 내 단일 세션
-    초기화만 보장. Inter-process 조율은 별도 메커니즘(파일 락 등) 필요.
+Architectural Principles:
+  - Single Pod: In-process module-scoped singleton as primary reference
+  - Multi-Pod: Redis as SSOT to resolve deployment state inconsistencies across pods
+  - CAP Trade-off: Graceful fallback to local cache within REDIS_FALLBACK_TTL_SECS
+    during Redis partition; hard fallback after TTL expires
+  - Intra-process Lock: threading.Lock only guarantees single-session initialization
+    within the same process. Inter-process coordination requires separate mechanisms
+    (e.g., file locks).
 
-SSOT 통신 시퀀스:
-  1. Publish: 에지 워커 → registry.report(subsystem, status)
-  2. Retrieve: /health 컨트롤러 → registry.get_summary() (폴링 없음)
-  3. Alert: DEGRADED 전환 시 HTTP 503 응답 + Prometheus 메트릭 노출
+SSOT Communication Sequence:
+  1. Publish: Edge Worker -> registry.report(subsystem, status)
+  2. Retrieve: /health controller -> registry.get_summary() (no polling)
+  3. Alert: Transition to DEGRADED exposes HTTP 503 response and Prometheus metrics
 
-보안 원칙:
-  - 민감 정보(연결 문자열, 키)는 절대 로그에 기록하지 않음
-  - Redis 키에 사용자 식별 정보 포함 금지
+Security Principles:
+  - Sensitive information (connection strings, keys) is never logged
+  - User identifiable information must not be included in Redis keys
 """
 
 from __future__ import annotations
@@ -32,51 +33,54 @@ from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 서브시스템 상태 열거형
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# Subsystem Status Enum
+# -----------------------------------------------------------------------------
 
 
 class SubsystemStatus(str, Enum):
-    """서브시스템 운영 상태."""
+    """Subsystem operational status."""
 
-    HEALTHY = "healthy"  # 정상 운영 중
-    DEGRADED = "degraded"  # 설정 오류 등으로 비활성화 (서비스는 유지)
-    FAILED = "failed"  # 런타임 장애 감지 (복구 시도 가능)
+    HEALTHY = "healthy"  # Operating normally
+    DEGRADED = (
+        "degraded"  # Disabled due to configuration error etc. (Service maintained)
+    )
+    FAILED = "failed"  # Runtime failure detected (Recovery attempt possible)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 모듈 스코프 싱글톤 락 — Double-checked locking 패턴용
-# 이 Lock은 동일 프로세스 내(Intra-process) 스레드 간 단일 세션 초기화만 보장.
-# 프로세스 간(Inter-process) 동기화는 OS 레벨 파일 락(단일 서버 표준) 또는
-# Redis 분산 락(다중 서버/컨테이너 환경)을 별도로 도입해야 함.
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# Module Scope Singleton Lock - For Double-checked locking pattern
+# This Lock only guarantees single session initialization between threads
+# in the same process (Intra-process).
+# Inter-process synchronization requires introducing an OS-level file lock
+# (single server standard) or Redis distributed lock (multi-server/container).
+# -----------------------------------------------------------------------------
 _REGISTRY_LOCK = threading.Lock()
 _registry_instance: Optional["HealthRegistry"] = None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # HealthRegistry
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 
 
 class HealthRegistry:
     """
-    서브시스템 상태 레지스트리 싱글톤.
+    Subsystem status registry singleton.
 
-    사용법:
+    Usage:
         registry = HealthRegistry.get_instance(
             redis_fallback_ttl_secs=300,
-            redis_url="redis://localhost:6379",   # 선택: 멀티 파드 환경
+            redis_url="redis://localhost:6379",   # Optional: Multi-pod environment
         )
         registry.report("faiss_compaction", SubsystemStatus.DEGRADED)
         summary = registry.get_summary()
         ttl_remaining = registry.get_fallback_ttl_remaining_seconds()
     """
 
-    # Redis 상태를 단일 Hash에 저장하여 HGETALL 한 번으로 전체 조회 (KEYS 살포 O(N) 블로킹 제거)
-    _REDIS_HASH_KEY = "flownote:health:summary"  # 불변 summary hash key
-    # TTL: Hash 전체에 적용 (개별 필드 만료 없음)
+    # Store Redis state in a single Hash to retrieve all at once with HGETALL
+    _REDIS_HASH_KEY = "flownote:health:summary"  # Immutable summary hash key
+    # TTL: Applied to the entire Hash (no individual field expiration)
 
     def __init__(
         self,
@@ -85,27 +89,27 @@ class HealthRegistry:
     ) -> None:
         """
         Args:
-            redis_fallback_ttl_secs: Redis 파티션 시 로컬 캐시 허용 최대 시간(초).
-            redis_url: Redis 연결 URL (미지정 시 단일 파드 In-process 모드).
-                       보안상 이 값은 절대 로그에 기록하지 않음.
+            redis_fallback_ttl_secs: Max time (seconds) to allow local cache during Redis partition.
+            redis_url: Redis connection URL (In-process mode if not specified).
+                       For security, this value is never logged.
         """
         self._redis_fallback_ttl_secs = redis_fallback_ttl_secs
         self._redis_url = redis_url
 
-        # In-process 상태 저장소
+        # In-process state storage
         self._local_state: Dict[str, SubsystemStatus] = {}
         self._state_lock = threading.Lock()
 
-        # Redis 폴백 추적
+        # Redis fallback tracking
         self._redis_available: bool = True
         self._redis_unavailable_since: Optional[float] = None  # monotonic timestamp
-        self._logged_empty_hash_fallback: bool = False  # 로그 스팸 방지 가드
+        self._logged_empty_hash_fallback: bool = False  # Anti-log-spam guard
 
-        # Redis 클라이언트 (지연 초기화, fork-safe)
+        # Redis client (Lazy initialization, fork-safe)
         self._redis_client = None
         self._redis_init_lock = threading.Lock()
 
-    # ── 싱글톤 팩토리 ─────────────────────────────────────────────────────
+    # -- Singleton Factory -----------------------------------------------------
 
     @classmethod
     def get_instance(
@@ -114,16 +118,16 @@ class HealthRegistry:
         redis_url: Optional[str] = None,
     ) -> "HealthRegistry":
         """
-        Double-checked locking 패턴으로 프로세스 내 단일 인스턴스를 반환한다.
+        Returns a single instance within the process using Double-checked locking.
 
-        동시성 보장:
-          - 모듈 스코프 _REGISTRY_LOCK을 통해 Intra-process 스레드 간 race condition 방지.
-          - 각 워커 프로세스는 포크 이후 독립적인 인스턴스를 가짐 (프로세스별 단일 세션).
+        Concurrency Guarantee:
+          - Prevents race conditions between intra-process threads via module-scope _REGISTRY_LOCK.
+          - Each worker process has an independent instance after fork (single session per process).
         """
         global _registry_instance
         if _registry_instance is None:
             with _REGISTRY_LOCK:
-                # 락 획득 후 이중 확인 (Double-checked locking)
+                # Double-checked locking
                 if _registry_instance is None:
                     logger.info(
                         "[HEALTH_REGISTRY] Initializing singleton instance "
@@ -135,8 +139,8 @@ class HealthRegistry:
                         redis_url=redis_url,
                     )
         else:
-            # 이미 생성된 싱글턴이 있을 때 다른 설정으로 허용되면 경고를 남김.
-            # Redis URL 값 자체는 credential 포함 가능성이 있으므로 절대 로그에 기록하지 않음.
+            # If an already created singleton is allowed with different settings, log a warning.
+            # The Redis URL value itself is never logged due to potential credentials.
             try:
                 inst = _registry_instance
                 configured_ttl = getattr(inst, "_redis_fallback_ttl_secs", None)
@@ -162,13 +166,13 @@ class HealthRegistry:
                 )
         return _registry_instance
 
-    # ── Redis 클라이언트 지연 초기화 (Fork-safe) ─────────────────────────
+    # -- Redis Client Lazy Initialization (Fork-safe) --------------------------
 
     def _get_redis(self):
         """
-        Redis 클라이언트를 지연 초기화하여 반환한다 (Fork-safe Lazy Initialization).
-        프로세스 포크 이후에만 연결을 생성하여 소켓 공유 크래시를 방지.
-        연결 실패 시 None을 반환하며 In-process 폴백 모드로 전환.
+        Lazily initializes and returns the Redis client (Fork-safe Lazy Initialization).
+        Creates connection only after process fork to prevent socket sharing crashes.
+        Returns None on connection failure and switches to In-process fallback mode.
         """
         if self._redis_url is None:
             return None
@@ -192,7 +196,7 @@ class HealthRegistry:
                 self._redis_client = client
                 logger.info("[HEALTH_REGISTRY] Redis connection established.")
             except Exception:
-                # Redis URL은 보안상 로그에 기록하지 않음
+                # Redis URL is not logged for security reasons
                 logger.warning(
                     "[HEALTH_REGISTRY] Redis connection failed. "
                     "Falling back to in-process state (single-pod mode)."
@@ -201,17 +205,17 @@ class HealthRegistry:
 
         return self._redis_client
 
-    # ── 상태 보고 (Publish) ───────────────────────────────────────────────
+    # -- Status Reporting (Publish) --------------------------------------------
 
     def report(self, subsystem: str, status: SubsystemStatus) -> None:
         """
-        서브시스템 상태를 레지스트리에 기록한다.
+        Records the subsystem status in the registry.
 
-        [에지 워커 스레드] → report() 호출 → 레지스트리 상태 갱신.
+        [Edge Worker Thread] -> report() called -> Registry status updated.
 
         Args:
-            subsystem: 서브시스템 식별자 (예: "faiss_compaction")
-            status: SubsystemStatus 열거값
+            subsystem: Subsystem identifier (e.g., "faiss_compaction")
+            status: SubsystemStatus enum value
         """
         with self._state_lock:
             prev = self._local_state.get(subsystem)
@@ -225,16 +229,16 @@ class HealthRegistry:
                 status.value,
             )
 
-        # Redis SSOT 동기화 시도 (멀티 파드 모드)
+        # Try Redis SSOT synchronization (Multi-pod mode)
         self._publish_to_redis(subsystem, status)
 
     def _publish_to_redis(self, subsystem: str, status: SubsystemStatus) -> None:
         """
-        Redis Hash에 서브시스템 상태를 HSET으로 게시한다.
+        Publishes the subsystem status to Redis Hash using HSET.
 
-        단일 Hash(_REDIS_HASH_KEY)에 모든 서브시스템 상태를 field로 저장하며,
-        GET N회 대신 HGETALL 1회로 전체 조회 가능 (라운드트립 1회로 축소).
-        실패 시 TTL 타이머 시작.
+        Stores all subsystem statuses as fields in a single Hash (_REDIS_HASH_KEY),
+        allowing full retrieval with one HGETALL instead of N GETs.
+        Starts TTL timer on failure.
         """
         client = self._get_redis()
         if client is None:
@@ -242,7 +246,7 @@ class HealthRegistry:
 
         try:
             client.hset(self._REDIS_HASH_KEY, subsystem, status.value)
-            # Hash 전체에 TTL 적용 (서브시스템 보고 없으면 자동 만료)
+            # Apply TTL to entire Hash (auto-expires if no subsystem reports)
             client.expire(self._REDIS_HASH_KEY, self._redis_fallback_ttl_secs * 2)
             if not self._redis_available:
                 logger.info(
@@ -254,25 +258,26 @@ class HealthRegistry:
         except Exception:
             self._on_redis_failure()
 
-    # ── 상태 조회 (Retrieve) ──────────────────────────────────────────────
+    # -- Status Retrieval (Retrieve) -------------------------------------------
 
     def get_summary(self) -> Dict[str, str]:
         """
-        모든 서브시스템의 현재 상태를 반환한다.
-        /health 컨트롤러는 주기적 폴링 없이 핑(Ping) 수신 시에만 이 메서드를 호출한다.
+        Returns the current status of all subsystems.
+        The /health controller calls this only upon Ping reception, without polling.
 
-        Redis 가용 시: Redis SSOT 참조.
-        Redis 파티션 시: REDIS_FALLBACK_TTL_SECS 내 → 로컬 캐시 반환 (Stale State 허용).
-                         TTL 초과 → 로컬 캐시 무효화 후 Hard Fallback (FAILED 처리).
+        If Redis is available: References Redis SSOT.
+        If Redis is partitioned: Within REDIS_FALLBACK_TTL_SECS -> Returns local cache (Stale State allowed).
+                                 TTL exceeded -> Local cache invalidated, Hard Fallback (FAILED).
 
         Returns:
             {"subsystem_name": "healthy"|"degraded"|"failed", ...}
         """
-        # Redis SSOT 조회 시도
+        # Attempt to retrieve Redis SSOT
         redis_state = self._fetch_from_redis()
         if redis_state is not None:
-            # Redis가 정상이나, 아직 리포트가 없어 빈 해시({})를 반환한 경우,
-            # 상태 은폐 방지를 위해 워커 로컬에 누적된 서브시스템 상태를 우선 노출합니다.
+            # If Redis is normal but no reports exist yet (returns empty hash {}),
+            # expose subsystem states accumulated in the worker local cache
+            # to prevent state concealment.
             if not redis_state:
                 should_log = False
                 with self._state_lock:
@@ -289,14 +294,14 @@ class HealthRegistry:
                             "(startup/lag condition)."
                         )
                     return local_cache
-            # 정상적으로 데이터를 수신하면 가드 리셋
+            # Reset guard upon successful data reception
             else:
                 with self._state_lock:
                     if self._logged_empty_hash_fallback:
                         self._logged_empty_hash_fallback = False
             return redis_state
 
-        # Redis 파티션 — 폴백 TTL 확인
+        # Redis Partition - Check fallback TTL
         if self._redis_unavailable_since is not None:
             elapsed = time.monotonic() - self._redis_unavailable_since
             if elapsed > self._redis_fallback_ttl_secs:
@@ -306,23 +311,23 @@ class HealthRegistry:
                     self._redis_fallback_ttl_secs,
                     elapsed,
                 )
-                # 로컬 캐시를 무효화: 모든 서브시스템을 FAILED로 처리
+                # Invalidate local cache: treat all subsystems as FAILED
                 with self._state_lock:
                     return {k: SubsystemStatus.FAILED.value for k in self._local_state}
 
-        # TTL 내 로컬 캐시 정상 반환 (Graceful Fallback)
+        # Return local cache normally within TTL (Graceful Fallback)
         with self._state_lock:
             return {k: v.value for k, v in self._local_state.items()}
 
     def _fetch_from_redis(self) -> Optional[Dict[str, str]]:
         """
-        Redis Hash에서 HGETALL로 전체 상태를 단일 Round-trip으로 조회한다.
+        Retrieves entire status from Redis Hash with a single Round-trip using HGETALL.
 
-        KEYS *를 O(N) 블로킹 명령 실행 없이 HGETALL로 맨점 방지.
-        실패 시 None 반환 (In-process 폴백 전환).
-        빈 dict {}는 "Redis 정상, 아직 보고된 서브시스템 없음"을 의미하므로,
-        None과 동일하게 취급하지 않음. 빈 hash를 None으로 반환하면 정상 Redis를
-        파티션 상황으로 오판하는 버그가 발생함.
+        Prevents blocking O(N) execution of KEYS * by using HGETALL.
+        Returns None on failure (switches to In-process fallback).
+        An empty dict {} means "Redis normal, no subsystems reported yet",
+        so it is not treated the same as None. Returning None for an empty hash
+        causes a bug that misjudges a normal Redis as partitioned.
         """
         client = self._get_redis()
         if client is None:
@@ -332,14 +337,14 @@ class HealthRegistry:
             result: Dict[str, str] = client.hgetall(self._REDIS_HASH_KEY)
             self._redis_available = True
             self._redis_unavailable_since = None
-            # 빈 dict {}도 유효한 결과 — None으로 변환하지 않음
+            # Empty dict {} is also a valid result - do not convert to None
             return result
         except Exception:
             self._on_redis_failure()
             return None
 
     def _on_redis_failure(self) -> None:
-        """Redis 장애 발생 시 폴백 타이머를 시작한다."""
+        """Starts the fallback timer when a Redis failure occurs."""
         if self._redis_available:
             self._redis_available = False
             self._redis_unavailable_since = time.monotonic()
@@ -350,19 +355,19 @@ class HealthRegistry:
                 self._redis_fallback_ttl_secs,
             )
 
-    # ── Prometheus 메트릭 ─────────────────────────────────────────────────
+    # -- Prometheus Metrics ----------------------------------------------------
 
     def get_fallback_ttl_remaining_seconds(self) -> float:
         """
-        Redis 폴백 잔여 TTL을 초 단위(Seconds)로 반환한다.
+        Returns the remaining Redis fallback TTL in seconds.
 
-        메트릭명: redis_fallback_ttl_remaining_seconds
-        계산 방식: 엄밀한 Timestamp 차이 연산 (추정값 아님)
-        노출 대상: Prometheus 스크래핑 엔드포인트 (/metrics)
+        Metric name: redis_fallback_ttl_remaining_seconds
+        Calculation: Exact timestamp difference (not an estimate)
+        Exposed to: Prometheus scraping endpoint (/metrics)
 
         Returns:
-            잔여 TTL(초). Redis 정상 시 full TTL 값 반환.
-            0.0 이하 시 TTL 초과 상태.
+            Remaining TTL in seconds. Full TTL if Redis is healthy.
+            0.0 or less if TTL is exceeded.
         """
         if self._redis_unavailable_since is None:
             return float(self._redis_fallback_ttl_secs)
@@ -371,7 +376,7 @@ class HealthRegistry:
         remaining = self._redis_fallback_ttl_secs - elapsed
         return max(0.0, remaining)
 
-    # ── 개별/전체 상태 판정 (SSOT 연동용) ────────────────────────────────
+    # -- Individual/Overall Status Checking (For SSOT Integration) -------------
 
     def is_ok(
         self,
@@ -381,20 +386,20 @@ class HealthRegistry:
         strict: bool = False,
     ) -> bool:
         """
-        특정 서브시스템의 상태가 정상(HEALTHY)인지 단일 진실 공급원(SSOT)을 통해 확인한다.
+        Checks if a specific subsystem is in a normal (HEALTHY) state via the Single Source of Truth (SSOT).
 
-        - 라우터 및 애플리케이션 계층에서 서브시스템 가동 여부 판별에 사용 (Fail-fast 연결).
-        - 명시적인 DEGRADED 또는 FAILED 상태일 경우 False를 반환한다.
+        - Used for fail-fast connection checks at the router/application layer.
+        - Returns False if explicitly in DEGRADED or FAILED state.
 
         Args:
-            subsystem: 확인할 서브시스템 식별자 (문자열 또는 Enum)
-            precomputed_summary: (선택) 최적화를 위한 사전 조회된 상태 요약 딕셔너리.
-                                 루프 내 등에서 반복 호출 시 Redis I/O를 최소화하기 위해 사용.
-            strict: (선택) True일 경우, 한 번도 보고되지 않은(None) 서브시스템은 비정상(False)으로 간주한다.
-                    오타나 설정 누락으로 인한 Wiring 실수를 방지할 때 유용하다. (기본값: False)
+            subsystem: Subsystem identifier to check (string or Enum)
+            precomputed_summary: (Optional) Pre-queried status summary dict for optimization.
+                                 Used to minimize Redis I/O during repeated calls.
+            strict: (Optional) If True, an unreported (None) subsystem is considered abnormal (False).
+                    Useful for preventing wiring mistakes from typos or missing configs. (Default: False)
         """
         if isinstance(subsystem, Enum):
-            # Enum의 값이 문자열이 아닐 경우(예: 정수형 Enum)를 대비하여 명시적으로 문자열 변환
+            # Explicit string conversion in case Enum value is not a string (e.g. integer Enum)
             key = str(subsystem.value)
         elif isinstance(subsystem, str):
             key = subsystem
@@ -419,17 +424,17 @@ class HealthRegistry:
 
     def is_healthy(self) -> bool:
         """
-        시스템 전체 상태가 HEALTHY인지 반환한다.
-        하나라도 FAILED/DEGRADED 서브시스템이 있으면 False.
-        /health 컨트롤러에서 HTTP 200 vs 503 분기에 사용.
+        Returns whether the overall system status is HEALTHY.
+        False if any subsystem is FAILED/DEGRADED.
+        Used by the /health controller to branch between HTTP 200 and 503.
         """
         summary = self.get_summary()
         return all(v == SubsystemStatus.HEALTHY.value for v in summary.values())
 
     def get_http_status_code(self) -> int:
         """
-        /health 응답 코드를 반환한다.
-          - 200: 모든 서브시스템 HEALTHY
-          - 503: 하나 이상 DEGRADED/FAILED (AWS ALB/K8s 트래픽 차단 신호)
+        Returns the /health response code.
+          - 200: All subsystems HEALTHY
+          - 503: One or more DEGRADED/FAILED (AWS ALB/K8s traffic block signal)
         """
         return 200 if self.is_healthy() else 503
