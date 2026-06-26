@@ -34,20 +34,19 @@ def _ensure_dev_environment(
     exception_factory: Callable[[], Union[HTTPException, WebSocketException]],
 ) -> None:
     """
-    현재 실행 환경이 개발(local 또는 development) 환경인지 검증하여,
-    그렇지 않은 경우 제공된 예외를 발생시킵니다.
+    현재 실행 환경이 개발 환경(ENVIRONMENT 값이 'local' 또는 'development')인지 검증하여,
+    그렇지 않은 비개발 환경인 경우 제공된 예외를 발생시킵니다.
 
-    이 함수는 Mock 인증 토큰이나 우회 로직이 스테이징(staging) 또는
-    프로덕션(production) 환경에서 실수로 적용되는 것을 방지하는 보안 계층 역할을 합니다.
+    이 함수는 테스트용 인증 토큰이나 우회 로직이 비개발 환경(예: staging, production 등 그 외 운영 계열 환경)에서
+    실수로 적용되는 것을 방지하는 보안 계층 역할을 합니다.
 
     Args:
-        exception_factory: 발생시킬 예외를 생성하여 반환하는 콜러블(Callable).
-            콜러블을 사용함으로써 예외 객체의 불필요한 사전 인스턴스화를 방지합니다.
+        exception_factory: 발생시킬 예외를 생성하여 반환하는 콜러블 객체.
+            콜러블 객체를 사용함으로써 예외 인스턴스의 불필요한 사전 생성을 방지합니다.
 
     Raises:
         HTTPException | WebSocketException:
-            환경 변수 'ENVIRONMENT'가 'local' 또는 'development'가 아닐 경우,
-            factory를 통해 생성된 예외를 즉시 발생시킵니다.
+            비개발 환경에서 호출될 경우, factory를 통해 생성된 예외를 즉시 발생시킵니다.
     """
     # Note: Accessing os.getenv directly as config module doesn't expose ENVIRONMENT yet.
     # TODO: Route this through backend.config.AppConfig when available.
@@ -58,11 +57,11 @@ def _ensure_dev_environment(
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
     """
-    HTTP 요청에 대한 현재 인증된 사용자 정보를 가져오는 FastAPI 의존성(Dependency)입니다.
+    HTTP 요청에 대한 현재 인증된 사용자 정보를 가져오는 FastAPI 의존성입니다.
 
-    현재 개발(local/development) 환경에서는 테스트 및 시스템 운영을 원활하게 하기 위해
-    Mock 어드민 사용자(MOCK_ADMIN_USER)를 반환합니다. 향후 Phase 2에서 실제 JWT 검증
-    로직이 구현될 예정이며, 현재 프로덕션 환경에서의 호출은 보안상 차단되어 있습니다.
+    개발 환경에서는 테스트 및 시스템 운영을 원활하게 하기 위해
+    테스트용 관리자 계정(MOCK_ADMIN_USER)을 반환합니다.
+    실제 인증 로직이 추가되기 전까지 비개발 환경에서의 호출은 보안상 차단됩니다.
 
     Args:
         token (str): 'Authorization' 헤더를 통해 전달된 OAuth2 Bearer 토큰.
@@ -76,8 +75,8 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
 
     Raises:
         HTTPException (501 Not Implemented):
-            개발/로컬 환경이 아닌 곳(프로덕션)에서 호출될 경우 발생하는 예외.
-            실제 인증 로직이 구현(Phase 2)되기 전까지 접근을 차단하기 위함입니다.
+            비개발 환경(예: staging, production 등 그 외 운영 계열 환경)에서 호출될 경우 발생하는 예외.
+            실제 인증 로직이 추가되기 전까지 접근을 차단하기 위함입니다.
     """
     # Default behavior: 501 Not Implemented in production
     _ensure_dev_environment(
@@ -87,7 +86,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
         )
     )
 
-    # TODO: [Phase 2] verify_token(token)
+    # TODO: Verify token logic
 
     return MOCK_ADMIN_USER
 
@@ -98,8 +97,8 @@ async def get_current_user_ws(
     """
     WebSocket 연결 시 쿼리 파라미터를 통해 전달된 토큰으로 인증된 사용자 정보를 반환하는 의존성입니다.
 
-    개발 및 로컬 환경에서는 표준 접근 제어 테스트를 위해 Mock 일반 사용자(MOCK_REGULAR_USER)를
-    반환합니다. HTTP와 마찬가지로 실제 인증이 구현되기 전까지 프로덕션 환경에서의 호출은 차단됩니다.
+    개발 환경에서는 표준 접근 제어 테스트를 위해 테스트용 일반 계정(MOCK_REGULAR_USER)을
+    반환합니다. HTTP 의존성과 마찬가지로 실제 인증 로직이 추가되기 전까지 비개발 환경에서의 호출은 차단됩니다.
 
     Args:
         websocket (WebSocket): 현재 연결을 시도하는 WebSocket 객체.
@@ -111,7 +110,7 @@ async def get_current_user_ws(
     Raises:
         WebSocketException (1008 Policy Violation):
             - 토큰이 쿼리 파라미터에서 누락된 경우.
-            - 개발/로컬 환경이 아닌 곳(프로덕션 등)에서 호출되어 인증 로직 부재로 차단될 경우.
+            - 비개발 환경(예: staging, production 등 그 외 운영 계열 환경)에서 호출되어 인증 로직 부재로 차단될 경우.
     """
     if token is None:
         # Strictly reject missing tokens with WebSocket Close Code 1008 (Policy Violation)
@@ -127,7 +126,7 @@ async def get_current_user_ws(
         )
     )
 
-    # TODO: [Phase 2] Verify token logic
+    # TODO: Verify token logic
 
     return MOCK_REGULAR_USER
 
@@ -139,7 +138,7 @@ class LanguageEntry(NamedTuple):
     Attributes:
         full_tag (str): 전체 언어 코드 (예: 'ko-KR', 'en-US').
         primary_tag (str): 기본 언어 서브태그 (예: 'ko', 'en').
-        q_value (float): 우선순위를 나타내는 품질 가중치 (quality value). 범위는 [0.0, 1.0].
+        q_value (float): 우선순위를 나타내는 품질 가중치(q-value). 범위는 [0.0, 1.0].
     """
 
     full_tag: str
@@ -210,7 +209,7 @@ def _parse_language_entry(part: str) -> Optional[LanguageEntry]:
 
 def normalize_locale(locale: Optional[str]) -> Optional[str]:
     """
-    로케일 문자열의 양쪽 공백을 제거하고 소문자로 정규화(Normalize)합니다.
+    로케일 문자열의 양쪽 공백을 제거하고 소문자로 정규화합니다.
 
     Args:
         locale (Optional[str]): 정규화할 원본 로케일 문자열.
@@ -278,7 +277,7 @@ def get_locale(
     """
     요청의 Accept-Language 헤더에서 적절한 로케일을 추출하여 제공하는 FastAPI 의존성입니다.
 
-    `extract_locale_from_header` 함수를 래핑하여, 라우트 핸들러(Route Handler)에서
+    `extract_locale_from_header` 함수를 래핑하여, 라우트 핸들러에서
     사용자의 선호 언어 설정을 문자열 형태로 자동 주입받을 수 있게 해줍니다.
 
     Args:
