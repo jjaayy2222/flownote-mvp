@@ -246,10 +246,7 @@ def extract_locale_from_header(accept_language: Optional[str]) -> str:
             continue
 
         # Keep only the highest q-value for each primary language
-        if (
-            entry.primary_tag not in lang_map
-            or entry.q_value > lang_map[entry.primary_tag]
-        ):
+        if entry.q_value > lang_map.get(entry.primary_tag, -1.0):
             lang_map[entry.primary_tag] = entry.q_value
 
     if not lang_map:
@@ -260,9 +257,10 @@ def extract_locale_from_header(accept_language: Optional[str]) -> str:
 
     # Sort by q-value (descending) and find first supported locale
     sorted_langs = sorted(lang_map.items(), key=lambda x: x[1], reverse=True)
-    for lang, _ in sorted_langs:
-        if lang in settings.SUPPORTED_LOCALES:
-            return lang
+    if match := next(
+        (lang for lang, _ in sorted_langs if lang in settings.SUPPORTED_LOCALES), None
+    ):
+        return match
 
     # Fallback to default if no supported locale found
     logger.debug(
