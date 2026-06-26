@@ -34,10 +34,10 @@ def _ensure_dev_environment(
     exception_factory: Callable[[], Union[HTTPException, WebSocketException]],
 ) -> None:
     """
-    현재 실행 환경이 개발 목적(예: local, development 등)인지 검증하여,
+    현재 실행 환경이 개발 환경(ENVIRONMENT 값이 'local' 또는 'development')인지 검증하여,
     그렇지 않은 비개발 환경인 경우 제공된 예외를 발생시킵니다.
 
-    이 함수는 테스트용 인증 토큰이나 우회 로직이 비개발 환경(예: staging, production 등)에서
+    이 함수는 테스트용 인증 토큰이나 우회 로직이 비개발 환경(예: staging, production 등 그 외 운영 계열 환경)에서
     실수로 적용되는 것을 방지하는 보안 계층 역할을 합니다.
 
     Args:
@@ -59,7 +59,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
     """
     HTTP 요청에 대한 현재 인증된 사용자 정보를 가져오는 FastAPI 의존성입니다.
 
-    현재 개발 환경에서는 테스트 및 시스템 운영을 원활하게 하기 위해
+    개발 환경에서는 테스트 및 시스템 운영을 원활하게 하기 위해
     테스트용 관리자 계정(MOCK_ADMIN_USER)을 반환합니다.
     실제 인증 로직이 추가되기 전까지 비개발 환경에서의 호출은 보안상 차단됩니다.
 
@@ -75,7 +75,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
 
     Raises:
         HTTPException (501 Not Implemented):
-            비개발 환경(예: staging, production 등)에서 호출될 경우 발생하는 예외.
+            비개발 환경(예: staging, production 등 그 외 운영 계열 환경)에서 호출될 경우 발생하는 예외.
             실제 인증 로직이 추가되기 전까지 접근을 차단하기 위함입니다.
     """
     # Default behavior: 501 Not Implemented in production
@@ -110,7 +110,7 @@ async def get_current_user_ws(
     Raises:
         WebSocketException (1008 Policy Violation):
             - 토큰이 쿼리 파라미터에서 누락된 경우.
-            - 비개발 환경(예: staging, production 등)에서 호출되어 인증 로직 부재로 차단될 경우.
+            - 비개발 환경(예: staging, production 등 그 외 운영 계열 환경)에서 호출되어 인증 로직 부재로 차단될 경우.
     """
     if token is None:
         # Strictly reject missing tokens with WebSocket Close Code 1008 (Policy Violation)
