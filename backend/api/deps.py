@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 # OAuth2 스키마 정의
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
+# 상수 정의
+MIN_Q_VALUE = float("-inf")
+
 # [Security] Mock User Definitions (Centralized)
 # Separate mocks for different roles to detect permission issues in dev environment.
 MOCK_ADMIN_USER: Dict[str, Any] = {"username": "dev_admin", "id": 1, "role": "admin"}
@@ -246,7 +249,7 @@ def extract_locale_from_header(accept_language: Optional[str]) -> str:
             continue
 
         # Keep only the highest q-value for each primary language
-        if entry.q_value > lang_map.get(entry.primary_tag, -1.0):
+        if entry.q_value > lang_map.get(entry.primary_tag, MIN_Q_VALUE):
             lang_map[entry.primary_tag] = entry.q_value
 
     if not lang_map:
@@ -257,10 +260,9 @@ def extract_locale_from_header(accept_language: Optional[str]) -> str:
 
     # Sort by q-value (descending) and find first supported locale
     sorted_langs = sorted(lang_map.items(), key=lambda x: x[1], reverse=True)
-    if match := next(
-        (lang for lang, _ in sorted_langs if lang in settings.SUPPORTED_LOCALES), None
-    ):
-        return match
+    for lang, _ in sorted_langs:
+        if lang in settings.SUPPORTED_LOCALES:
+            return lang
 
     # Fallback to default if no supported locale found
     logger.debug(
