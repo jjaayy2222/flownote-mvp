@@ -22,8 +22,6 @@ logger = logging.getLogger(__name__)
 # OAuth2 스키마 정의
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-# 상수 정의
-MIN_Q_VALUE = float("-inf")
 
 # [Security] Mock User Definitions (Centralized)
 # Separate mocks for different roles to detect permission issues in dev environment.
@@ -224,6 +222,9 @@ def normalize_locale(locale: Optional[str]) -> Optional[str]:
     return locale.strip().lower() if locale else None
 
 
+MIN_LOCALE_Q_VALUE = float("-inf")
+
+
 def extract_locale_from_header(accept_language: Optional[str]) -> str:
     """
     Accept-Language 헤더에서 애플리케이션이 지원하는 가장 적합한 로케일을 추출하여 반환합니다.
@@ -249,7 +250,7 @@ def extract_locale_from_header(accept_language: Optional[str]) -> str:
             continue
 
         # Keep only the highest q-value for each primary language
-        if entry.q_value > lang_map.get(entry.primary_tag, MIN_Q_VALUE):
+        if entry.q_value > lang_map.get(entry.primary_tag, MIN_LOCALE_Q_VALUE):
             lang_map[entry.primary_tag] = entry.q_value
 
     if not lang_map:
@@ -260,8 +261,9 @@ def extract_locale_from_header(accept_language: Optional[str]) -> str:
 
     # Sort by q-value (descending) and find first supported locale
     sorted_langs = sorted(lang_map.items(), key=lambda x: x[1], reverse=True)
+    supported = set(settings.SUPPORTED_LOCALES)
     for lang, _ in sorted_langs:
-        if lang in settings.SUPPORTED_LOCALES:
+        if lang in supported:
             return lang
 
     # Fallback to default if no supported locale found
