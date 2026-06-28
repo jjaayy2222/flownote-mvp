@@ -9,14 +9,16 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError, EndpointConnectionError, ReadTimeoutError
 
-
 logger = logging.getLogger(__name__)
 
 
 class SecurityExitCode(Enum):
     """
     FatalSecurityError 발생 시의 표준화된 프로세스 종료 코드 체계입니다.
+    Standardized process exit code system for FatalSecurityError.
+
     무분별한 임의 숫자 사용을 방지하고, K8s 등 외부 모니터링 시스템과의 정합성을 유지합니다.
+    Prevents the use of arbitrary magic numbers and maintains consistency with external monitoring systems (e.g., K8s).
     """
 
     GENERIC_FAILURE = 1
@@ -30,14 +32,20 @@ MAX_OS_EXIT_CODE = 255
 
 class FatalSecurityError(SystemExit):
     """
-    치명적인 보안 관련 에러에 사용되는 예외입니다.
-    일반 예외(Exception) 핸들러에서 삼켜지는 것(Swallowed)을 방지하고,
-    프로세스 Fail-fast(즉시 종료)를 보장하기 위해 SystemExit을 상속받습니다.
+    치명적인 보안 관련 에러에 사용되는 예외 클래스입니다.
+    Exception used for fatal security-related errors.
 
-    [종료 코드 정규화 정책]
-    임의의 exit_code 입력은 안전한 OS 종료 코드 범위(허용 한계치는 MIN_OS_EXIT_CODE 및 MAX_OS_EXIT_CODE 상수 참조)로 정규화됩니다.
-    정상 종료로 오인되는 0이나 허용 범위를 넘어서는 값, 혹은 Int 캐스팅이 불가능한 타입이 주입될 경우,
-    안전성을 위해 SecurityExitCode.GENERIC_FAILURE 로 자동 폴백(Fallback) 처리됩니다.
+    일반 예외(Exception) 핸들러에서 에러가 삼켜지는 현상(Swallowed)을 방지하고, 프로세스의 Fail-fast(즉시 종료)를 보장하기 위해 SystemExit을 상속받습니다.
+    Inherits from SystemExit to prevent errors from being swallowed by generic exception handlers and ensures fail-fast process termination.
+
+    Notes:
+        [종료 코드 정규화 정책 / Exit Code Normalization Policy]
+        임의의 `exit_code` 입력은 안전한 OS 종료 코드 범위(`MIN_OS_EXIT_CODE` ~ `MAX_OS_EXIT_CODE`)로 자동 정규화됩니다.
+        정상 종료로 오인될 수 있는 `0`이나 허용 범위를 넘어서는 값, 혹은 Int 캐스팅이 불가능한 타입이 주입될 경우, 안전성을 위해 `SecurityExitCode.GENERIC_FAILURE`로 자동 폴백(Fallback) 처리됩니다.
+
+    Args:
+        log_message (str): 로깅 및 출력에 사용할 에러 메시지.
+        exit_code (int | SecurityExitCode): 시스템 종료 시 반환할 종료 코드. 기본값은 `SecurityExitCode.GENERIC_FAILURE` (1).
     """
 
     def __init__(
@@ -74,15 +82,9 @@ class FatalSecurityError(SystemExit):
                 f"Expected int or SecurityExitCode, but explicitly got type: {injected_type}."
             )
         else:
-            try:
-                raw_code = int(exit_code)
-            except (ValueError, TypeError):
-                raw_code = SecurityExitCode.GENERIC_FAILURE.value
-                logger.warning(
-                    "[AWS][SECURITY] Invalid exit_code type provided: %s. Falling back to GENERIC_FAILURE.",
-                    injected_type,
-                    extra={**base_extra, "reason": "invalid_type"},
-                )
+            # SecurityExitCode 및 bool 분기를 제외하면 exit_code 타입은 int로 좁혀집니다.
+            # After ruling out SecurityExitCode and bool, exit_code is narrowed to int.
+            raw_code = exit_code
 
         # OS Exit Code 바운더리 검증
         # 0은 정상 종료인 false-positive를 유발하므로 허용하지 않으며, MAX 초과는 Unix에서 모듈로 연산됨
@@ -106,6 +108,7 @@ class FatalSecurityError(SystemExit):
         self.exit_code_int = raw_code  # 원시 정수 속성을 노출시켜 하위 계층 편의 제공
 
         # 2. 관측성 보장: 다운스트림 로거가 Enum의 풍부한 시맨틱(.name 등)을 읽을 수 있도록 보존
+        self.exit_code_enum: Optional[SecurityExitCode]
         try:
             self.exit_code_enum = SecurityExitCode(raw_code)
         except ValueError:
@@ -124,8 +127,13 @@ _boto_session: Optional[boto3.Session] = None
 
 def get_boto3_session() -> boto3.Session:
     """
-    동기(Synchronous) Boto3 Session 싱글톤 팩토리.
-    단일 공용 Lock을 사용하여 초기화 스레드 안전성을 보장합니다.
+    동기(Synchronous) 방식의 Boto3 Session 싱글톤 팩토리 함수입니다.
+    Synchronous Boto3 Session singleton factory.
+
+    단일 공용 Lock(`_session_lock`)을 사용하여 초기화 시 스레드 안전성(Thread-Safety)을 보장합니다. 지연 초기화(Lazy Initialization) 패턴을 적용합니다.
+
+    Returns:
+        boto3.Session: 초기화된 공용 Boto3 세션 객체.
     """
     global _boto_session
     with _session_lock:
@@ -137,8 +145,13 @@ def get_boto3_session() -> boto3.Session:
 
 async def get_boto3_session_async() -> boto3.Session:
     """
-    비동기 파이썬 환경에서 데드락(Deadlock)을 방지하기 위해
-    Boto3 초기화 연산을 기본 이벤트 루프 스레드 풀에 오프로드(Offload)합니다.
+    비동기(Asynchronous) 환경용 Boto3 Session 팩토리 함수입니다.
+    Asynchronous Boto3 Session factory.
+
+    비동기 파이썬 환경(Asyncio)에서 블로킹 연산으로 인한 데드락(Deadlock)을 방지하기 위해, Boto3 초기화 연산을 기본 이벤트 루프의 스레드 풀로 오프로드(Offload)합니다.
+
+    Returns:
+        boto3.Session: 초기화된 공용 Boto3 세션 객체.
     """
     global _boto_session
     if _boto_session is not None:
@@ -157,8 +170,18 @@ FATAL_CLIENT_ERRORS = {
 
 async def fetch_global_pepper() -> str:
     """
-    AWS Systems Manager Parameter Store(혹은 Secrets Manager)를 통해
-    global_pepper를 안전하게 메모리로만 페치합니다. (KMS 자동 복호화 포함)
+    AWS Systems Manager Parameter Store에서 전역 페퍼(Global Pepper) 값을 안전하게 페치합니다.
+    Fetches the global pepper securely from AWS Systems Manager Parameter Store.
+
+    값은 디스크에 저장되지 않고 메모리에만 적재되며, KMS를 통해 자동 복호화(`WithDecryption=True`)됩니다.
+    지수 백오프(Exponential Backoff) 및 지터(Jitter)가 적용된 재시도(Retry) 로직이 내장되어 있습니다.
+
+    Returns:
+        str: AWS SSM에서 조회한 복호화된 페퍼 문자열.
+
+    Raises:
+        FatalSecurityError: SSM에서 값을 가져오는 데 실패하거나(재시도 초과), 복구할 수 없는 AWS 권한/네트워크 예외가 발생한 경우.
+        ValueError: SSM에서 조회한 페퍼 값이 빈 문자열일 경우.
     """
     session = await get_boto3_session_async()
     client = session.client("ssm", config=AWS_CONFIG)
@@ -174,8 +197,8 @@ async def fetch_global_pepper() -> str:
                 Name="/v9/security/global_pepper",
                 WithDecryption=True,
             )
-            pepper = response["Parameter"]["Value"]
-            if not pepper:
+            # Validate and return pepper; reject empty strings immediately
+            if not (pepper := response["Parameter"]["Value"]):
                 raise ValueError("SSM returned empty string for global_pepper")
             return pepper
 
@@ -212,7 +235,7 @@ async def fetch_global_pepper() -> str:
             logger.error(
                 "[AWS][RETRY] Max retries reached for transient error: %s", error_code
             )
-            raise FatalSecurityError(f"Max retries reached: {error_code}") from e
+            raise FatalSecurityError(f"Max retries reached: {error_code}")
 
         delay = min(cap_delay, base_delay * (2**retry_index))
         jitter = random.uniform(0, delay)
@@ -226,3 +249,6 @@ async def fetch_global_pepper() -> str:
             max_retries,
         )
         await asyncio.sleep(jitter)
+
+    # 이 경로는 정상적으로 도달하지 않지만, 정적 분석 도구의 반환 타입 경고를 방지하기 위한 명시적 안전망입니다.
+    raise FatalSecurityError("Unexpected exit from retry loop without return or raise")
