@@ -82,9 +82,18 @@ class FatalSecurityError(SystemExit):
                 f"Expected int or SecurityExitCode, but explicitly got type: {injected_type}."
             )
         else:
-            # SecurityExitCode 및 bool 분기를 제외하면 exit_code 타입은 int로 좁혀집니다.
-            # After ruling out SecurityExitCode and bool, exit_code is narrowed to int.
-            raw_code = exit_code
+            # 방어적 정규화: float, Decimal 등 비표준 수치 타입도 int로 명시적으로 캐스팅합니다.
+            # Defensive normalization: explicitly cast to int for non-standard numeric types (e.g., float, Decimal).
+            # SecurityExitCode, bool 분기는 위에서 처리되었으며, 변환 불가 타입은 GENERIC_FAILURE로 폴백됩니다.
+            try:
+                raw_code = int(exit_code)
+            except (ValueError, TypeError):
+                raw_code = SecurityExitCode.GENERIC_FAILURE.value
+                logger.warning(
+                    "[AWS][SECURITY] Non-castable exit_code type provided: %s. Falling back to GENERIC_FAILURE.",
+                    injected_type,
+                    extra={**base_extra, "reason": "invalid_type"},
+                )
 
         # OS Exit Code 바운더리 검증
         # 0은 정상 종료인 false-positive를 유발하므로 허용하지 않으며, MAX 초과는 Unix에서 모듈로 연산됨
@@ -204,6 +213,9 @@ async def fetch_global_pepper() -> str:
 
         except (EndpointConnectionError, ReadTimeoutError) as e:
             error_code = type(e).__name__
+            last_error: BaseException = (
+                e  # except 블록 종료 후 예외 체인 보존을 위해 별도 변수에 캡처
+            )
             is_transient = True
 
         except ClientError as e:
@@ -222,6 +234,7 @@ async def fetch_global_pepper() -> str:
                 raise FatalSecurityError(
                     f"Unhandled AWS exception: {error_code}"
                 ) from e
+            last_error = e  # except 블록 종료 후 예외 체인 보존을 위해 별도 변수에 캡처
 
         except Exception as e:
             logger.critical(
@@ -235,7 +248,9 @@ async def fetch_global_pepper() -> str:
             logger.error(
                 "[AWS][RETRY] Max retries reached for transient error: %s", error_code
             )
-            raise FatalSecurityError(f"Max retries reached: {error_code}")
+            raise FatalSecurityError(
+                f"Max retries reached: {error_code}"
+            ) from last_error
 
         delay = min(cap_delay, base_delay * (2**retry_index))
         jitter = random.uniform(0, delay)
@@ -250,5 +265,10 @@ async def fetch_global_pepper() -> str:
         )
         await asyncio.sleep(jitter)
 
-    # 이 경로는 정상적으로 도달하지 않지만, 정적 분석 도구의 반환 타입 경고를 방지하기 위한 명시적 안전망입니다.
+    # NOTE: 이 라인은 정상적인 제어 흐름에서 절대 도달하지 않습니다.
+    # 모든 루프 반복은 return(성공) 또는 raise(실패)로 종료되므로, 루프 탈출 자체가 불가능합니다.
+    # 이 구문은 오직 정적 분석 도구(Pyrefly, mypy 등)의 'Missing return' 경고를 억제하기 위한 타입 안전망입니다.
+    # NOTE: This line is unreachable in normal control flow.
+    # Every loop iteration terminates with either return (success) or raise (failure).
+    # This exists solely to satisfy the static type checker's return annotation requirement.
     raise FatalSecurityError("Unexpected exit from retry loop without return or raise")
