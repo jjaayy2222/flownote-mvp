@@ -51,20 +51,19 @@ async def health_check(locale: str = Depends(get_locale)) -> HealthCheckResponse
 
 
 # 도메인별 하위 라우터 등록
-# [분류] 노트/파일 분류 관련 엔드포인트 (prefix: /classify)
+# [분류] 노트/파일 분류 관련 엔드포인트
 router.include_router(endpoints.classify_router)
-# [검색] 하이브리드 RAG 검색 엔드포인트 (prefix: /search)
+# [검색] 하이브리드 RAG 검색 엔드포인트
 router.include_router(endpoints.search_router)
-# [메타데이터] 파일 메타데이터 처리 엔드포인트 (prefix: /metadata)
+# [메타데이터] 파일 메타데이터 처리 엔드포인트
 router.include_router(endpoints.metadata_router)
-# [채팅] 채팅, 대화 히스토리 및 세션 관리 엔드포인트 (prefix: /chat)
+# [채팅] 채팅, 대화 히스토리 및 세션 관리 엔드포인트
 router.include_router(endpoints.chat_router)
-# [채팅 스트리밍] SSE 기반 실시간 채팅 스트리밍 엔드포인트 (prefix: /chat)
+# [채팅 스트리밍] SSE 기반 실시간 채팅 스트리밍 엔드포인트
 router.include_router(endpoints.chat_stream_router)
-# [어드민] 내부 운영 전용 관리자 엔드포인트 (prefix: /admin)
+# [어드민] 내부 운영 전용 관리자 엔드포인트
 router.include_router(endpoints.admin_router)
 
-# [개인정보] GDPR 삭제권(Right-to-Erasure) 엔드포인트 (prefix: /privacy)
-# NOTE: schedule_audit_log_cleanup()은 FastAPI lifespan 또는 Celery Beat에서 별도 등록 필요합니다.
-# 참조: backend.core.audit_logger.schedule_audit_log_cleanup
+# [개인정보] GDPR 삭제권(Right-to-Erasure) 엔드포인트
+# 참조: backend.core.audit_logger.schedule_audit_log_cleanup (등록 위치: backend/main.py lifespan)
 router.include_router(endpoints.privacy_router)
