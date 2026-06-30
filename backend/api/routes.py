@@ -2,14 +2,14 @@
 
 """
 중앙 집중식 API 라우터 엔트리포인트 모듈입니다.
-Centralized API router entry point module.
-
 이 모듈은 FastAPI 애플리케이션의 모든 하위 도메인 라우터를 단일 `APIRouter` 인스턴스(`router`)로
 통합하여 `prefix="/api"`를 기준으로 마운트합니다.
-This module aggregates all domain-specific sub-routers into a single `APIRouter` instance (`router`)
-mounted under the `/api` prefix.
 
-포함된 도메인 라우터:
+Centralized API router entry point module.
+This module aggregates all domain-specific sub-routers into a single
+`APIRouter` instance (`router`) mounted under the `/api` prefix.
+
+포함된 도메인 라우터 (Included Domain Routers):
     - `/classify` : 분류(Classification) 관련 엔드포인트
     - `/search`   : 검색(Search, 하이브리드 RAG) 관련 엔드포인트
     - `/metadata` : 파일 메타데이터 처리 엔드포인트
@@ -34,10 +34,12 @@ router = APIRouter(prefix="/api")
 async def health_check(locale: str = Depends(get_locale)) -> HealthCheckResponse:
     """
     서버 상태를 확인하는 헬스체크 엔드포인트입니다.
-    Health check endpoint that confirms the server is running and responsive.
-
     클라이언트의 `Accept-Language` 헤더를 기반으로 `get_locale` 의존성을 통해 로케일을 주입받으며,
     다국어(i18n)로 응답 메시지를 반환합니다.
+
+    Health check endpoint that confirms the server is running and responsive.
+    It injects the locale based on the client's `Accept-Language` header
+    via the `get_locale` dependency, returning an i18n response message.
 
     Args:
         locale (str): FastAPI `get_locale` 의존성을 통해 주입된 로케일 코드 (예: 'ko', 'en').

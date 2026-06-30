@@ -5,7 +5,8 @@ MCP (Model Context Protocol) 및 외부 도구 연결 설정 모듈입니다.
 이 모듈은 Obsidian, Notion 등 외부 도구와의 연동을 위한 환경 변수를 Pydantic 모델을 통해 검증하고 로드합니다.
 
 MCP (Model Context Protocol) and external tool connection configuration module.
-This module validates and loads environment variables for integrating with external tools like Obsidian and Notion using Pydantic models.
+This module validates and loads environment variables for integrating
+with external tools like Obsidian and Notion using Pydantic models.
 """
 
 import os
@@ -21,7 +22,8 @@ class ObsidianConfig(BaseModel):
     Vault 경로의 유효성을 런타임에 검사하는 프로퍼티를 제공합니다.
 
     Obsidian Vault connection and synchronization configuration model.
-    It is configured via environment variables and provides runtime validation for the Vault path.
+    It is configured via environment variables and provides runtime
+    validation for the Vault path.
 
     Attributes:
         vault_path (str): Obsidian Vault의 절대 또는 상대 경로 (기본값: $OBSIDIAN_VAULT_PATH)
@@ -88,7 +90,8 @@ class MCPConfig(BaseModel):
     Obsidian 및 Notion 설정 인스턴스를 포함하며, 전체 초기화 상태를 검증하는 메서드를 제공합니다.
 
     Top-level configuration model that aggregates all external tool (MCP) settings.
-    It includes instances of Obsidian and Notion configs and provides validation for the setup.
+    It includes instances of Obsidian and Notion configs and provides
+    validation for the setup.
 
     Attributes:
         obsidian (ObsidianConfig): Obsidian 동기화 설정 인스턴스
@@ -106,7 +109,8 @@ class MCPConfig(BaseModel):
         Obsidian의 활성화 여부 및 경로 유효성을 확인하고, Notion의 Phase 5 예정 상태를 표시합니다.
 
         Logs the current status of MCP (external tool) configurations to standard output.
-        Checks Obsidian's activation and path validity, and marks Notion as planned for Phase 5.
+        Checks Obsidian's activation and path validity, and marks Notion
+        as planned for Phase 5.
         """
         print("\n🔌 MCP Configuration Status:")
         print("=" * 30)
