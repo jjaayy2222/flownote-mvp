@@ -51,7 +51,7 @@ class DiscordAlertHandler(logging.Handler):
     [EN] Detects logs with the `[OBS]` tag or at ERROR level and above, sending them asynchronously.
 
     Throttling Semantics (알림 제한 규칙):
-    - Key: `f"{levelno}:{formatted_message}"` (Per log level and content).
+    - Key: `f"{record.levelno}:{record.getMessage()}"` (Per log level and unformatted content).
     - Window: `throttle_seconds` (Default: AlertConfig.DEFAULT_THROTTLE_SECONDS).
     - Behavior: Suppresses duplicate alerts within the same time window to prevent spam.
     """
@@ -88,7 +88,9 @@ class DiscordAlertHandler(logging.Handler):
         if not (is_obs or is_critical):
             return
 
-        # 2. 알림 임계값(Throttling) 체크 (포맷이 적용된 최종 메시지 기준)
+        # 2. 알림 임계값(Throttling) 체크
+        # record.msg 대신 getMessage()를 사용하여 파라미터가 포맷팅된 내용 기준으로 필터링
+        # (formatted_message를 쓰면 타임스탬프 등 가변 데이터 때문에 중복 제거가 안됨)
         alert_key = f"{record.levelno}:{record.getMessage()}"
         current_time = time.monotonic()
 
