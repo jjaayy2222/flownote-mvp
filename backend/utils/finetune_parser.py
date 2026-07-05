@@ -1,9 +1,16 @@
 # backend/utils/finetune_parser.py
 
+"""
+FlowNote MVP - Fine-tuning Dataset Parser Module (파인튜닝 데이터셋 파서).
+
+[KO] RAG 데이터셋을 OpenAI Fine-tuning 형식으로 변환 및 직렬화하고 PII(개인정보)를 마스킹합니다.
+[EN] Formats and serializes RAG datasets into OpenAI Fine-tuning format, with recursive PII masking capabilities.
+"""
+
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from backend.utils import mask_pii_id
 
@@ -16,15 +23,17 @@ def format_finetune_message(
     system_prompt: str = "You are a helpful AI assistant that answers questions based on the provided context.",
 ) -> Dict[str, List[Dict[str, str]]]:
     """
-    RAG 검색 컨텍스트(Q)와 LLM 생성 응답(A)을 OpenAI Chat Fine-tuning 포맷으로 변환합니다.
+    [KO] RAG 검색 컨텍스트(Q)와 LLM 생성 응답(A)을 OpenAI Chat Fine-tuning 포맷으로 변환합니다.
+    [EN] Formats RAG query context (Q) and LLM generated response (A) into OpenAI Chat Fine-tuning format.
 
     Args:
-        question: 사용자 질문 및 RAG 컨텍스트 (Q)
-        answer: LLM 생성 응답 (A)
-        system_prompt: 시스템 프롬프트 (옵션)
+        question: [KO] 사용자 질문 및 RAG 컨텍스트. [EN] User question and RAG context.
+        answer: [KO] LLM 생성 응답. [EN] LLM generated response.
+        system_prompt: [KO] 시스템 프롬프트 (옵션). [EN] System prompt (optional).
 
     Returns:
-        OpenAI Fine-tuning JSON 포맷 ({"messages": [...]})
+        [KO] OpenAI Fine-tuning JSON 포맷 ({"messages": [...]}).
+        [EN] OpenAI Fine-tuning JSON format ({"messages": [...]}).
     """
     # 사용자의 질문이나 응답 내에 있는 PII성 식별자(보통 이메일이나, 특정 패턴)를
     # 마스킹하는 로직이 필요한 경우 여기서 처리할 수 있습니다.
@@ -38,10 +47,18 @@ def format_finetune_message(
     }
 
 
-def _mask_nested_pii(data: Any, pii_fields: set[str]) -> Any:
+def _mask_nested_pii(data: Any, pii_fields: Set[str]) -> Any:
     """
-    딕셔너리와 컨테이너를 재귀적으로 탐색하여 pii_fields에 지정된 키를 찾아 안전하게 마스킹합니다.
-    (스칼라 값만 마스킹 처리하여 딕셔너리/리스트 등 중첩 구조 파괴를 방지합니다.)
+    [KO] 딕셔너리와 컨테이너를 재귀적으로 탐색하여 지정된 PII 필드를 찾아 안전하게 마스킹합니다.
+    [EN] Recursively searches dicts and containers to find and safely mask specified PII fields.
+
+    Args:
+        data: [KO] 탐색할 데이터 구조. [EN] The data structure to traverse.
+        pii_fields: [KO] 마스킹할 키 집합. [EN] Set of keys to mask.
+
+    Returns:
+        [KO] 마스킹 처리가 완료된 새로운 데이터 구조.
+        [EN] The masked new data structure.
     """
     if isinstance(data, dict):
         result = {}
@@ -73,18 +90,18 @@ def serialize_to_jsonl(
     strict_alert: bool = False,
 ) -> str:
     """
-    데이터셋을 .jsonl 파일로 직렬화하며, 필요한 경우 지정된 PII 필드들을 안전하게 마스킹 처리합니다.
+    [KO] 데이터셋을 .jsonl 파일로 직렬화하며, 필요한 경우 지정된 PII 필드들을 안전하게 마스킹 처리합니다.
+    [EN] Serializes the dataset to a .jsonl file, safely masking specified PII fields if needed.
 
     Args:
-        dataset: 변환된 OpenAI Fine-tuning 포맷 데이터셋 리스트
-        output_filepath: 저장할 jsonl 파일의 대상 경로
-        pii_fields: 값에 마스킹을 적용할 딕셔너리 필드 목록 (예: ["session_id", "user_id"])
-                    (중첩된 구조 내부의 필드 깊이와 관계없이 재귀적으로 찾아 마스킹함)
-        strict_alert: True일 경우 직렬화 폴백 발생 시 [OBS] 태그 기반 Warning을 통해 적극적인 운영 알람을 발생시킵니다.
-                      False(기본값)일 경우 일반 Info 레벨로 로깅하여 저위험 환경의 경고 피로(Alert Fatigue)를 방지합니다.
+        dataset: [KO] 변환된 OpenAI Fine-tuning 포맷 데이터셋 리스트. [EN] Transformed dataset in OpenAI Fine-tuning format.
+        output_filepath: [KO] 저장할 jsonl 파일의 대상 경로. [EN] Target path of the output jsonl file.
+        pii_fields: [KO] 마스킹을 적용할 딕셔너리 필드 목록 (중첩 구조 포함). [EN] List of dict keys to mask (including nested structures).
+        strict_alert: [KO] True일 경우 직렬화 실패 시 [OBS] Warning 알람 발생. [EN] If True, triggers an [OBS] Warning alert on serialization fallback.
 
     Returns:
-        성공적으로 저장된 파일의 절대 경로
+        [KO] 성공적으로 저장된 파일의 절대 경로.
+        [EN] The absolute path of the successfully saved file.
     """
     absolute_path = os.path.abspath(output_filepath)
     os.makedirs(os.path.dirname(absolute_path), exist_ok=True)
@@ -139,8 +156,8 @@ def serialize_to_jsonl(
             extra={
                 "filepath": absolute_path,
                 "total_items": len(dataset),
-                "masked_fields": list(pii_fields_set) if pii_fields_set else None,
-                "fallback_occurrences": fallback_counts if fallback_counts else None,
+                "masked_fields": list(pii_fields_set) or None,
+                "fallback_occurrences": fallback_counts or None,
             },
         )
         return absolute_path
