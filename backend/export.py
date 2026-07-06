@@ -8,7 +8,18 @@ FlowNote MVP - Markdown Exporter Module (마크다운 내보내기).
 """
 
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, NotRequired, TypedDict
+
+
+class SearchResult(TypedDict):
+    """
+    [KO] 검색 결과 항목의 타입 힌트를 위한 정적 타입 정의.
+    [EN] Static type definition for a search result item.
+    """
+
+    content: NotRequired[str]
+    score: NotRequired[float]
+    metadata: NotRequired[Dict[str, Any]]
 
 
 class MarkdownExporter:
@@ -21,20 +32,30 @@ class MarkdownExporter:
         pass
 
     def export_search_results(
-        self, query: str, results: List[Dict[str, Any]], include_metadata: bool = True
+        self, query: str, results: List[SearchResult], include_metadata: bool = True
     ) -> str:
         """
-        [KO] 검색 결과 리스트를 마크다운 형식의 문자열로 변환합니다.
-        [EN] Converts a list of search results into a Markdown formatted string.
+        [KO]
+        검색 결과 리스트를 마크다운 형식의 문자열로 변환합니다.
 
         Args:
-            query: [KO] 사용자가 입력한 원본 검색 쿼리. [EN] The original search query entered by the user.
-            results: [KO] 검색 엔진으로부터 반환된 결과 딕셔너리 리스트. [EN] List of result dictionaries returned from the search engine.
-            include_metadata: [KO] 문서 출처, 청크 번호 등 메타데이터 포함 여부 (기본값 True). [EN] Whether to include metadata such as source and chunk index (default True).
+            query: 사용자가 입력한 원본 검색 쿼리.
+            results: 검색 엔진으로부터 반환된 TypedDict 기반 결과 리스트.
+            include_metadata: 문서 출처, 청크 번호 등 메타데이터 포함 여부 (기본값 True).
 
         Returns:
-            [KO] 포맷팅이 완료된 마크다운 문자열.
-            [EN] The fully formatted Markdown string.
+            포맷팅이 완료된 마크다운 문자열.
+
+        [EN]
+        Converts a list of search results into a Markdown formatted string.
+
+        Args:
+            query: The original search query entered by the user.
+            results: List of result dictionaries matching the SearchResult TypedDict.
+            include_metadata: Whether to include metadata such as source and chunk index (default True).
+
+        Returns:
+            The fully formatted Markdown string.
         """
 
         # 시간
