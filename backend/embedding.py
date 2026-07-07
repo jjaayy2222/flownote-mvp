@@ -9,7 +9,7 @@ FlowNote MVP - Embedding Generator Module (임베딩 생성).
 [EN] Provides a class that takes text chunks and calls external APIs to convert them into embedding vectors.
 """
 
-from typing import Any, Dict, List, Tuple, Type
+from typing import Any, Dict, List, Mapping, Tuple, Type, cast
 
 from openai import APIConnectionError, APIError, APITimeoutError, RateLimitError
 
@@ -19,7 +19,7 @@ from backend.exceptions import EmbeddingError, EmbeddingErrorType
 from backend.utils import count_tokens, estimate_cost
 
 # 예외 클래스에 따른 에러 메시지 접두사와 관측성 타입을 매핑하는 모듈 상수
-ERROR_MAP: Dict[Type[Exception], Tuple[str, EmbeddingErrorType]] = {
+ERROR_MAP: Mapping[Type[Exception], Tuple[str, EmbeddingErrorType]] = {
     APITimeoutError: ("Embedding API call timed out", "timeout"),
     APIConnectionError: ("Embedding API connection error", "connection"),
     RateLimitError: ("Embedding API rate limit exceeded", "rate_limit"),
@@ -80,9 +80,9 @@ class EmbeddingGenerator:
             # OpenAI SDK 전용 예외(APIError 계열)만 래핑하여, 내부 코드 버그(TypeError 등)가 마스킹되지 않도록 합니다.
             response = self.client.embeddings.create(model=self.model_name, input=texts)
         except (APITimeoutError, APIConnectionError, RateLimitError, APIError) as e:
-            msg_prefix, err_type = ERROR_MAP.get(
-                type(e),
-                ("Embedding API error", "api_error"),
+            msg_prefix, err_type = next(
+                (v for k, v in ERROR_MAP.items() if isinstance(e, k)),
+                ("Embedding API error", cast(EmbeddingErrorType, "api_error")),
             )
 
             raise EmbeddingError(f"{msg_prefix}: {str(e)}", error_type=err_type) from e
