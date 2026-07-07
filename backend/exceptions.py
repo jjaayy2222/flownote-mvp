@@ -62,6 +62,15 @@ class APIKeyError(FlowNoteError):
     """
 
 
+class ConfigurationError(FlowNoteError):
+    """
+    [KO] 서버 구동 또는 모듈 초기화 시 구성이나 불변 조건(Invariant) 위배가 감지될 때 발생하는 예외. → HTTP 500 (Internal Server Error)
+         잘못된 하드코딩 매핑, 누락된 필수 시스템 설정 등 개발/운영 환경의 구조적 결함 시 발생합니다.
+    [EN] Raised when a structural configuration or invariant violation is detected. → HTTP 500 (Internal Server Error)
+         Used for invalid hardcoded mappings or missing essential system configurations.
+    """
+
+
 EmbeddingErrorType = Literal["timeout", "connection", "rate_limit", "api_error"]
 
 
