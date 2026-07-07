@@ -10,7 +10,7 @@ FlowNote MVP - Embedding Generator Module (임베딩 생성).
 """
 
 import types
-from typing import Any, Dict, List, Mapping, Tuple, Type, cast
+from typing import Any, Dict, List, Mapping, Tuple, Type
 
 from openai import APIConnectionError, APIError, APITimeoutError, RateLimitError
 
@@ -18,6 +18,9 @@ from openai import APIConnectionError, APIError, APITimeoutError, RateLimitError
 from backend.config import EMBEDDING_COSTS, EMBEDDING_MODEL, ModelConfig
 from backend.exceptions import EmbeddingError, EmbeddingErrorType
 from backend.utils import count_tokens, estimate_cost
+
+# 기본 예외 튜플 (Single Source of Truth)
+DEFAULT_API_ERROR: Tuple[str, EmbeddingErrorType] = ("Embedding API error", "api_error")
 
 # 예외 클래스에 따른 에러 메시지 접두사와 관측성 타입을 매핑하는 모듈 상수
 # 런타임 불변성을 보장하기 위해 MappingProxyType 사용
@@ -27,7 +30,7 @@ ERROR_MAP: Mapping[Type[Exception], Tuple[str, EmbeddingErrorType]] = (
             APITimeoutError: ("Embedding API call timed out", "timeout"),
             APIConnectionError: ("Embedding API connection error", "connection"),
             RateLimitError: ("Embedding API rate limit exceeded", "rate_limit"),
-            APIError: ("Embedding API error", "api_error"),
+            APIError: DEFAULT_API_ERROR,
         }
     )
 )
@@ -37,9 +40,7 @@ def _get_error_mapping(exc: Exception) -> Tuple[str, EmbeddingErrorType]:
     """주어진 예외 인스턴스에 가장 적합한 에러 메시지 접두사와 타입을 반환합니다."""
     return next(
         (v for k, v in ERROR_MAP.items() if isinstance(exc, k)),
-        ERROR_MAP.get(
-            APIError, ("Embedding API error", cast(EmbeddingErrorType, "api_error"))
-        ),
+        ERROR_MAP.get(APIError, DEFAULT_API_ERROR),
     )
 
 
