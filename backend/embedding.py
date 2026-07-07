@@ -11,6 +11,8 @@ FlowNote MVP - Embedding Generator Module (임베딩 생성).
 
 from typing import Any, Dict, List
 
+from openai import OpenAIError
+
 # from backend.config import get_embedding_model, EMBEDDING_MODEL, EMBEDDING_COSTS
 from backend.config import EMBEDDING_COSTS, EMBEDDING_MODEL, ModelConfig
 from backend.exceptions import EmbeddingError
@@ -69,7 +71,9 @@ class EmbeddingGenerator:
             # [NOTE] 이곳에서 통신 실패, Rate Limit 초과 등 외부 API 장애가 발생할 수 있습니다.
             # 클라이언트 잘못이 아닌 외부 연동 문제이므로 EmbeddingError(502 Bad Gateway)로 래핑하여 전달합니다.
             response = self.client.embeddings.create(model=self.model_name, input=texts)
-        except Exception as e:
+        except (TimeoutError, ConnectionError, OpenAIError) as e:
+            # 외부 통신/네트워크 계열 예외만 EmbeddingError로 래핑합니다.
+            # 클라이언트 사용상의 버그(예: TypeError, AttributeError 등)는 그대로 전파되어 디버깅 가능하도록 둡니다.
             raise EmbeddingError(
                 f"External API call failed during embedding generation: {str(e)}"
             ) from e
