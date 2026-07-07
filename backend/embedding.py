@@ -36,9 +36,9 @@ ERROR_MAP: Mapping[Type[Exception], Tuple[str, EmbeddingErrorType]] = (
 )
 
 # 불변 조건(Invariant): _get_error_mapping의 fallback이 항상 일치하도록 보장
-assert (
-    ERROR_MAP.get(APIError) == DEFAULT_API_ERROR
-), "APIError mapping must match DEFAULT_API_ERROR"
+# (python -O 환경에서도 안전하게 검증되도록 assert 대신 명시적 예외 발생)
+if ERROR_MAP.get(APIError) != DEFAULT_API_ERROR:
+    raise RuntimeError("APIError mapping must match DEFAULT_API_ERROR")
 
 
 def _get_error_mapping(exc: Exception) -> Tuple[str, EmbeddingErrorType]:
