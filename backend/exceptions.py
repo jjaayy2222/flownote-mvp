@@ -66,11 +66,22 @@ class EmbeddingError(FlowNoteError):
          외부 임베딩 서비스로부터 유효한 응답을 받지 못한 경우에 사용합니다.
          - 외부 임베딩 모델 API 호출에 실패한 경우
          - 임베딩 벡터 생성 결과가 예상과 다른 형식인 경우
+
+         `error_type` 필드를 통해 장애 원인을 분류하여 관측성(Observability)을 제공합니다.
+         (예: "timeout", "connection", "api_error")
+
     [EN] Raised when an error occurs during embedding generation. → HTTP 502 (Bad Gateway)
          Use when the server fails to receive a valid response from an external embedding service.
          - The external embedding model API call fails.
          - The resulting embedding vector has an unexpected format.
+
+         The `error_type` field classifies the failure cause for improved observability.
+         (e.g., "timeout", "connection", "api_error")
     """
+
+    def __init__(self, message: str = "", error_type: str = "api_error"):
+        super().__init__(message)
+        self.error_type = error_type
 
 
 class SearchError(FlowNoteError):
