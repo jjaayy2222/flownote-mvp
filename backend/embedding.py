@@ -40,7 +40,7 @@ def _get_error_mapping(exc: Exception) -> Tuple[str, EmbeddingErrorType]:
     """주어진 예외 인스턴스에 가장 적합한 에러 메시지 접두사와 타입을 반환합니다."""
     return next(
         (v for k, v in ERROR_MAP.items() if isinstance(exc, k)),
-        ERROR_MAP.get(APIError, DEFAULT_API_ERROR),
+        DEFAULT_API_ERROR,
     )
 
 
