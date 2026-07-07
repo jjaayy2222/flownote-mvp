@@ -15,7 +15,7 @@ from openai import APIConnectionError, APIError, APITimeoutError, RateLimitError
 
 # from backend.config import get_embedding_model, EMBEDDING_MODEL, EMBEDDING_COSTS
 from backend.config import EMBEDDING_COSTS, EMBEDDING_MODEL, ModelConfig
-from backend.exceptions import EmbeddingError
+from backend.exceptions import EmbeddingError, EmbeddingErrorType
 from backend.utils import count_tokens, estimate_cost
 
 
@@ -71,26 +71,26 @@ class EmbeddingGenerator:
             # [NOTE] 이곳에서 통신 실패, Rate Limit 초과 등 외부 API 장애가 발생할 수 있습니다.
             # OpenAI SDK 전용 예외(APIError 계열)만 래핑하여, 내부 코드 버그(TypeError 등)가 마스킹되지 않도록 합니다.
             response = self.client.embeddings.create(model=self.model_name, input=texts)
-        except APITimeoutError as e:
-            # 타임아웃: 요청이 응답 대기 시간 초과
-            raise EmbeddingError(
-                f"Embedding API call timed out: {str(e)}", error_type="timeout"
-            ) from e
-        except APIConnectionError as e:
-            # 네트워크 연결 실패 (DNS 오류, 소켓 오류 등)
-            raise EmbeddingError(
-                f"Embedding API connection error: {str(e)}", error_type="connection"
-            ) from e
-        except RateLimitError as e:
-            # 요청 횟수 초과 (Rate Limit)
-            raise EmbeddingError(
-                f"Embedding API rate limit exceeded: {str(e)}", error_type="rate_limit"
-            ) from e
-        except APIError as e:
-            # 그 외 OpenAI API 계열 오류 (4xx/5xx HTTP 상태 코드 등)
-            raise EmbeddingError(
-                f"Embedding API error: {str(e)}", error_type="api_error"
-            ) from e
+        except (APITimeoutError, APIConnectionError, RateLimitError, APIError) as e:
+            # 예외 클래스에 따른 에러 메시지 접두사와 관측성 타입을 매핑합니다.
+            error_map = {
+                APITimeoutError: ("Embedding API call timed out", "timeout"),
+                APIConnectionError: ("Embedding API connection error", "connection"),
+                RateLimitError: ("Embedding API rate limit exceeded", "rate_limit"),
+                APIError: ("Embedding API error", "api_error"),
+            }
+
+            msg_prefix = "Embedding API error"
+            err_type: EmbeddingErrorType = "api_error"
+
+            # 매핑 테이블에서 구체적인 예외 타입을 순서대로 확인합니다.
+            for exc_class, (prefix, type_str) in error_map.items():
+                if isinstance(e, exc_class):
+                    msg_prefix = prefix
+                    err_type = type_str  # type: ignore
+                    break
+
+            raise EmbeddingError(f"{msg_prefix}: {str(e)}", error_type=err_type) from e
 
         embeddings = [item.embedding for item in response.data]
 
