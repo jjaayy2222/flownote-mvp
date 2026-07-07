@@ -10,7 +10,7 @@ FlowNote MVP - Embedding Generator Module (임베딩 생성).
 """
 
 import types
-from typing import Any, Dict, List, Mapping, Tuple, Type, cast
+from typing import Any, Dict, List, Mapping, Tuple, Type
 
 from openai import APIConnectionError, APIError, APITimeoutError, RateLimitError
 
@@ -37,7 +37,7 @@ def _get_error_mapping(exc: Exception) -> Tuple[str, EmbeddingErrorType]:
     """주어진 예외 인스턴스에 가장 적합한 에러 메시지 접두사와 타입을 반환합니다."""
     return next(
         (v for k, v in ERROR_MAP.items() if isinstance(exc, k)),
-        ("Embedding API error", cast(EmbeddingErrorType, "api_error")),
+        ERROR_MAP[APIError],
     )
 
 
