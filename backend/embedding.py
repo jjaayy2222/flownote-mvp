@@ -16,7 +16,7 @@ from openai import APIConnectionError, APIError, APITimeoutError, RateLimitError
 
 # from backend.config import get_embedding_model, EMBEDDING_MODEL, EMBEDDING_COSTS
 from backend.config import EMBEDDING_COSTS, EMBEDDING_MODEL, ModelConfig
-from backend.exceptions import EmbeddingError, EmbeddingErrorType
+from backend.exceptions import ConfigurationError, EmbeddingError, EmbeddingErrorType
 from backend.utils import count_tokens, estimate_cost
 
 # 기본 예외 튜플 (Single Source of Truth)
@@ -35,10 +35,14 @@ ERROR_MAP: Mapping[Type[Exception], Tuple[str, EmbeddingErrorType]] = (
     )
 )
 
-# 불변 조건(Invariant): _get_error_mapping의 fallback이 항상 일치하도록 보장
-assert (
-    ERROR_MAP.get(APIError) == DEFAULT_API_ERROR
-), "APIError mapping must match DEFAULT_API_ERROR"
+
+def _verify_invariants() -> None:
+    """
+    [KO] 모듈 내 불변 조건(Invariant)을 검증하는 부트스트랩 함수입니다.
+         런타임에 안전한지 초기화 단계에서 명시적으로 확인합니다.
+    """
+    if ERROR_MAP.get(APIError) != DEFAULT_API_ERROR:
+        raise ConfigurationError("APIError mapping must match DEFAULT_API_ERROR")
 
 
 def _get_error_mapping(exc: Exception) -> Tuple[str, EmbeddingErrorType]:
@@ -56,6 +60,7 @@ class EmbeddingGenerator:
     """
 
     def __init__(self, model_name: str = EMBEDDING_MODEL):
+        _verify_invariants()
         self.model_name = model_name
         # self.client = get_embedding_model(model_name)
         self.client = ModelConfig.get_embedding_model(model_name)
