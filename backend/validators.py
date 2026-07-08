@@ -1,295 +1,299 @@
-# backend/balidators.py
+# backend/validators.py
 
 """
-FileValidator 클래스 = 파일 검증 모듈 ≒ 파일 문지기
-    - validate_file_size() = 파일 크기 검증 로직
-    - validate_extension() = 파일 확장자 검증 로직
-    - validate_file() = 전체 파일에 대한 종합 검증 로직
+FlowNote MVP - Input Validation Module (입력 검증 모듈).
 
-QueryValidator 클래스 = 검색 쿼리 검증 모듈 ≒ 검색어 경찰관
-    - validate_query() = 검색어 길이 및 내용 검증
+[KO] 사용자 입력(파일, 검색어, API 키 등)이 시스템에 진입하기 전에
+     유효성 검사를 수행하는 '입력 문지기' 역할의 모듈입니다.
+     - FileValidator  : 업로드 파일의 크기 및 확장자 검증
+     - QueryValidator : 검색 쿼리의 길이 및 내용 검증
+     - APIKeyValidator: 환경 변수에 설정된 API 키 및 Base URL 검증
 
-APIKeyValidator 클래스 = API 검증 모듈 ≒ 금고비밀번호 검사원
-    - validate_api_keys() = 모든 필수 API 키 및 BASE URL에 대한 통합 검증
+[EN] Acts as the 'gatekeeper' module that validates user inputs
+     (files, search queries, API keys, etc.) before they enter the system.
+     - FileValidator  : Validates file size and extension
+     - QueryValidator : Validates query length and content
+     - APIKeyValidator: Validates API keys and base URLs from environment variables
 """
 
 import os
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
+
+from backend.config import ModelConfig
 
 
 class ValidationError(Exception):
-    """커스텀 검증 에러 클래스"""
-
+    """
+    [KO] 입력 검증 실패 시 발생하는 커스텀 예외 클래스.
+    [EN] Custom exception raised when input validation fails.
+    """
 
 
 class FileValidator:
-    """파일 유효성 검증 클래스"""
+    """
+    [KO] 업로드 파일의 유효성을 검증하는 클래스.
+         파일 크기 제한과 허용 확장자 규칙을 적용합니다.
+    [EN] Validates uploaded files against size limits and allowed extension rules.
+    """
 
     def __init__(
         self,
-        max_file_size_mb: int = 200,  # 최대 파일 크기 기본값 (MB)
-        allowed_extensions: list = None,  # 허용된 파일 확장자 목록
-    ):
+        max_file_size_mb: int = 200,
+        allowed_extensions: Optional[List[str]] = None,
+    ) -> None:
         """
-        Args:
-            max_file_size_mb: 최대 파일 크기 (MB) 설정
-            allowed_extensions: 허용된 확장자 리스트 설정
+        [KO] FileValidator를 초기화합니다.
+             max_file_size_mb(int): 허용되는 최대 파일 크기 (단위: MB). 기본값 200.
+             allowed_extensions(Optional[List[str]]): 허용 확장자 목록.
+                 기본값 ['.pdf', '.txt', '.md'].
+        [EN] Initialize FileValidator.
+             max_file_size_mb(int): Maximum allowed file size in megabytes. Defaults to 200.
+             allowed_extensions(Optional[List[str]]): List of permitted file extensions.
+                 Defaults to ['.pdf', '.txt', '.md'].
         """
-        self.max_file_size_mb = max_file_size_mb  # 최대 파일 크기 저장
-        self.max_file_size_bytes = max_file_size_mb * 1024 * 1024  # 바이트 단위로 변환
+        self.max_file_size_mb = max_file_size_mb
+        self.max_file_size_bytes = max_file_size_mb * 1024 * 1024
         self.allowed_extensions = allowed_extensions or [
             ".pdf",
             ".txt",
             ".md",
-        ]  # 허용 확장자 초기화
+        ]
 
     def validate_file_size(self, file_path: str) -> Tuple[bool, Optional[str]]:
         """
-        파일 크기 검증 로직
-
-        Args:
-            file_path: 파일 경로 문자열
-
-        Returns:
-            (유효성, 에러 메시지) 튜플 반환
+        [KO] 파일 크기를 검증합니다.
+             빈 파일이거나 설정된 최대 크기를 초과하면 검증에 실패합니다.
+             file_path(str): 검증할 파일의 경로 문자열.
+             반환값(Tuple[bool, Optional[str]]): (is_valid, error_message) 형태의 튜플.
+             검증 성공 시 (True, None), 실패 시 (False, 오류 메시지 문자열).
+        [EN] Validates the size of a file.
+             Fails if the file is empty or exceeds the configured maximum size.
+             file_path(str): Path string of the file to validate.
+             Returns(Tuple[bool, Optional[str]]): A tuple of (is_valid, error_message).
+             Returns (True, None) on success, (False, error string) on failure.
         """
         try:
-            file_size = os.path.getsize(file_path)  # 파일 크기 획득
+            file_size = os.path.getsize(file_path)
 
-            # 빈 파일 검증 (크기 0 확인)
             if file_size == 0:
                 return False, "❌ 빈 파일입니다."
 
-            # 최대 크기 검증 (설정된 최대 바이트 초과 확인)
             if file_size > self.max_file_size_bytes:
-                size_mb = file_size / (1024 * 1024)  # MB 단위로 변환
+                size_mb = file_size / (1024 * 1024)
                 return (
                     False,
                     f"❌ 파일 크기가 너무 큽니다. ({size_mb:.1f}MB > {self.max_file_size_mb}MB)",
                 )
 
-            # 크기 유효성 통과
             return True, None
 
-        except Exception as e:
-            return False, f"❌ 파일 크기 확인 중 오류: {str(e)}"  # 오류 처리 및 반환
+        except OSError as e:
+            return False, f"❌ 파일 크기 확인 중 오류: {str(e)}"
 
     def validate_extension(self, file_path: str) -> Tuple[bool, Optional[str]]:
         """
-        파일 확장자 검증 로직
-
-        Args:
-            file_path: 파일 경로 문자열
-
-        Returns:
-            (유효성, 에러 메시지) 튜플 반환
+        [KO] 파일 확장자를 검증합니다.
+             허용된 확장자 목록에 없는 파일은 검증에 실패합니다.
+             file_path(str): 검증할 파일의 경로 문자열.
+             반환값(Tuple[bool, Optional[str]]): (is_valid, error_message) 형태의 튜플.
+             검증 성공 시 (True, None), 실패 시 (False, 오류 메시지 문자열).
+        [EN] Validates the file extension.
+             Fails if the extension is not in the list of allowed extensions.
+             file_path(str): Path string of the file to validate.
+             Returns(Tuple[bool, Optional[str]]): A tuple of (is_valid, error_message).
+             Returns (True, None) on success, (False, error string) on failure.
         """
-        ext = Path(file_path).suffix.lower()  # 파일 확장자 추출 및 소문자 변환
+        ext = Path(file_path).suffix.lower()
 
-        if ext not in self.allowed_extensions:
-            allowed = ", ".join(self.allowed_extensions)  # 허용 형식 목록 생성
-            # 확장자 불일치 처리
-            return (
-                False,
-                f"❌ 지원하지 않는 파일 형식입니다. ({ext})\n지원 형식: {allowed}",
-            )
+        if ext in self.allowed_extensions:
+            return True, None
 
-        # 확장자 유효성 통과
-        return True, None
+        allowed = ", ".join(self.allowed_extensions)
+        return (
+            False,
+            f"❌ 지원하지 않는 파일 형식입니다. ({ext})\n지원 형식: {allowed}",
+        )
 
     def validate_file(self, file_path: str) -> Tuple[bool, Optional[str]]:
         """
-        전체 파일에 대한 종합 검증 실행
-
-        Args:
-            file_path: 파일 경로 문자열
-
-        Returns:
-            (유효성, 에러 메시지) 튜플 반환
+        [KO] 파일에 대한 종합 검증을 순서대로 실행합니다.
+             파일 존재 여부 → 확장자 검증 → 크기 검증 순으로 진행하며,
+             첫 번째 실패 시 즉시 반환합니다.
+             file_path(str): 검증할 파일의 경로 문자열.
+             반환값(Tuple[bool, Optional[str]]): (is_valid, error_message) 형태의 튜플.
+             모든 검증 통과 시 (True, None), 실패 시 (False, 오류 메시지 문자열).
+        [EN] Runs comprehensive validation on a file in sequential order:
+             existence check → extension check → size check.
+             Returns immediately on the first failure.
+             file_path(str): Path string of the file to validate.
+             Returns(Tuple[bool, Optional[str]]): A tuple of (is_valid, error_message).
+             Returns (True, None) if all checks pass, (False, error string) on failure.
         """
-        # 1. 파일 존재 확인
         if not os.path.exists(file_path):
-            return False, f"❌ 파일이 존재하지 않습니다: {file_path}"  # 존재 여부 검증
+            return False, f"❌ 파일이 존재하지 않습니다: {file_path}"
 
-        # 2. 확장자 검증 실행
-        valid, error = self.validate_extension(file_path)
-        if not valid:
-            return False, error  # 검증 결과 반환
-
-        # 3. 크기 검증 실행
-        valid, error = self.validate_file_size(file_path)
-        if not valid:
-            return False, error  # 검증 결과 반환
-
-        return True, None  # 최종 유효성 통과
+        ext_result = self.validate_extension(file_path)
+        return self.validate_file_size(file_path) if ext_result[0] else ext_result
 
 
 class QueryValidator:
-    """검색 쿼리 유효성 검증 클래스"""
+    """
+    [KO] 검색 쿼리의 유효성을 검증하는 클래스.
+         빈 입력, 공백 전용 입력, 길이 제한 규칙을 적용합니다.
+    [EN] Validates search queries against blank input, whitespace-only input,
+         and minimum/maximum length rules.
+    """
 
     def __init__(
         self,
-        min_length: int = 2,  # 최소 쿼리 길이 설정
-        max_length: int = 500,  # 최대 쿼리 길이 설정
-    ):
+        min_length: int = 2,
+        max_length: int = 500,
+    ) -> None:
         """
-        Args:
-            min_length: 최소 쿼리 길이
-            max_length: 최대 쿼리 길이
+        [KO] QueryValidator를 초기화합니다.
+             min_length(int): 허용되는 최소 쿼리 길이 (공백 제거 후 기준). 기본값 2.
+             max_length(int): 허용되는 최대 쿼리 길이 (공백 제거 후 기준). 기본값 500.
+        [EN] Initialize QueryValidator.
+             min_length(int): Minimum allowed query length (after stripping whitespace). Defaults to 2.
+             max_length(int): Maximum allowed query length (after stripping whitespace). Defaults to 500.
         """
-        self.min_length = min_length  # 최소 길이 저장
-        self.max_length = max_length  # 최대 길이 저장
+        self.min_length = min_length
+        self.max_length = max_length
 
     def validate_query(self, query: str) -> Tuple[bool, Optional[str]]:
         """
-        검색 쿼리 검증 로직
-
-        Args:
-            query: 검색 쿼리 문자열
-
-        Returns:
-            (유효성, 에러 메시지) 튜플 반환
+        [KO] 검색 쿼리를 검증합니다.
+             None/빈 문자열, 공백 전용 문자열, 최소/최대 길이 조건을 순서대로 확인합니다.
+             query(str): 검증할 검색 쿼리 문자열.
+             반환값(Tuple[bool, Optional[str]]): (is_valid, error_message) 형태의 튜플.
+             검증 성공 시 (True, None), 실패 시 (False, 오류 메시지 문자열).
+        [EN] Validates a search query.
+             Checks for None/empty string, whitespace-only string, and min/max length in order.
+             query(str): Search query string to validate.
+             Returns(Tuple[bool, Optional[str]]): A tuple of (is_valid, error_message).
+             Returns (True, None) on success, (False, error string) on failure.
         """
-        # 1. None 또는 공백만 있는 문자열 검증
         if not query or not query.strip():
-            return False, "⚠️ 검색어를 입력해주세요."  # 빈 쿼리 처리
+            return False, "⚠️ 검색어를 입력해주세요."
 
-        # 2. 공백만 있는지 검증
         if query.isspace():
             return (
                 False,
                 "⚠️ 검색어는 공백만으로 구성될 수 없습니다.",
-            )  # 공백 문자열 처리
+            )
 
-        # 3. 길이 검증
-        # 앞뒤 공백 제거 후 실제 길이 계산
         query_length = len(query.strip())
 
         if query_length < self.min_length:
             return (
                 False,
                 f"⚠️ 검색어가 너무 짧습니다. (최소 {self.min_length}자)",
-            )  # 최소 길이 미달
+            )
 
         if query_length > self.max_length:
             return (
                 False,
                 f"⚠️ 검색어가 너무 깁니다. (최대 {self.max_length}자)",
-            )  # 최대 길이 초과
+            )
 
-        # 최종 유효성 통과
         return True, None
 
 
 class APIKeyValidator:
-    """API 키 유효성 검증 클래스 (mlapi.run 프록시 사용 기준)"""
+    """
+    [KO] 환경 변수에 설정된 API 키 및 Base URL의 유효성을 검증하는 클래스.
+         개인 정보 보호를 위해 키 값을 직접 인자로 받지 않고,
+         backend.config 모듈을 통해 환경 변수에서 간접 로드합니다.
+    [EN] Validates API keys and base URLs configured via environment variables.
+         To protect sensitive credentials, keys are not accepted as direct arguments
+         but are loaded indirectly from environment variables via the backend.config module.
+    """
 
     @staticmethod
     def validate_api_keys() -> Tuple[bool, Optional[str]]:
         """
-        모든 필수 API 키 및 BASE URL에 대한 통합 검증
-
-        Returns:
-            (유효성, 에러 메시지) 튜플 반환
+        [KO] 모든 필수 API 키 및 Base URL에 대한 통합 검증을 실행합니다.
+             임베딩 API 키(필수)와 GPT4O API 키(선택)를 순서대로 검증합니다.
+             반환값(Tuple[bool, Optional[str]]): (is_valid, error_message) 형태의 튜플.
+             모든 검증 통과 시 (True, None), 실패 시 (False, 오류 메시지 문자열).
+        [EN] Runs integrated validation for all required API keys and base URLs.
+             Validates the Embedding API key (required) and GPT4O API key (optional) in order.
+             Returns(Tuple[bool, Optional[str]]): A tuple of (is_valid, error_message).
+             Returns (True, None) if all checks pass, (False, error string) on failure.
         """
-        # config 파일에서 변수 직접 임포트 시도
-        try:
-            from backend.config import (
-                EMBEDDING_API_KEY,
-                EMBEDDING_BASE_URL,
-                GPT4O_API_KEY,
-                GPT4O_BASE_URL,
-            )
-        except ImportError as e:
-            # 임포트 실패 처리
-            return False, f"❌ config 파일 임포트 실패: {str(e)}"
+        embedding_api_key = ModelConfig.EMBEDDING_API_KEY
+        embedding_base_url = ModelConfig.EMBEDDING_BASE_URL
+        gpt4o_api_key = ModelConfig.GPT4O_API_KEY
+        gpt4o_base_url = ModelConfig.GPT4O_BASE_URL
 
-        # 1. 임베딩 API 키 검증 (필수 항목)
-        if not EMBEDDING_API_KEY:
-            # 키 존재 여부 확인
+        if not embedding_api_key:
             return (
                 False,
                 "❌ EMBEDDING_API_KEY가 설정되지 않았습니다.\n.env 파일을 확인하세요.",
             )
 
-        if not EMBEDDING_BASE_URL:
-            # BASE URL 존재 여부 확인
+        if not embedding_base_url:
             return (
                 False,
                 "❌ EMBEDDING_BASE_URL이 설정되지 않았습니다.\n.env 파일을 확인하세요.",
             )
 
-        # 2. API 키 형식 검증 (JWT 토큰 형식, 'eyJ'로 시작)
-        if not EMBEDDING_API_KEY.startswith("eyJ"):
-            # JWT 형식 확인
+        if not embedding_api_key.startswith("eyJ"):
             return (
                 False,
                 "❌ EMBEDDING_API_KEY 형식이 올바르지 않습니다.\nJWT 토큰이어야 합니다. (eyJ로 시작)",
             )
 
-        # 3. API 키 최소 길이 검증 (충분한 길이 확인)
-        if len(EMBEDDING_API_KEY) < 50:
-            # 길이 검증
+        if len(embedding_api_key) < 50:
             return (
                 False,
                 "❌ EMBEDDING_API_KEY가 너무 짧습니다.\n올바른 키인지 확인하세요.",
             )
 
-        # 4. BASE_URL 형식 검증 (http:// 또는 https:// 시작 확인)
-        if not EMBEDDING_BASE_URL.startswith(("http://", "https://")):
-            # URL 스키마 확인
+        if not embedding_base_url.startswith(("http://", "https://")):
             return (
                 False,
                 "❌ EMBEDDING_BASE_URL이 올바른 URL 형식이 아닙니다.\nhttp:// 또는 https://로 시작해야 합니다.",
             )
 
-        # 5. mlapi.run 프록시 URL 검증 (/v1 접미사 필수 확인)
-        if "mlapi.run" in EMBEDDING_BASE_URL and not EMBEDDING_BASE_URL.endswith("/v1"):
-            # mlapi.run 프록시 경로 검증
+        if "mlapi.run" in embedding_base_url and not embedding_base_url.endswith("/v1"):
             return (
                 False,
                 "⚠️ EMBEDDING_BASE_URL이 /v1로 끝나지 않습니다.\nmlapi.run 프록시는 /v1이 필요합니다.",
             )
 
-        # 6. GPT4O API 검증 (선택사항, 키가 있으면 BASE URL과 형식 검증)
-        if GPT4O_API_KEY:
-            if not GPT4O_API_KEY.startswith("eyJ"):
-                # GPT4O 키 JWT 형식 확인
+        if gpt4o_api_key:
+            if not gpt4o_api_key.startswith("eyJ"):
                 return (
                     False,
                     "❌ GPT4O_API_KEY 형식이 올바르지 않습니다.\nJWT 토큰이어야 합니다.",
                 )
 
-            if not GPT4O_BASE_URL:
-                # GPT4O BASE URL 존재 확인
+            if not gpt4o_base_url:
                 return False, "❌ GPT4O_API_KEY는 있지만 GPT4O_BASE_URL이 없습니다."
 
-        # 모든 키 및 URL 최종 유효성 통과
         return True, None
 
     @staticmethod
     def validate_embedding_api() -> Tuple[bool, Optional[str]]:
         """
-        임베딩 API 전용 검증 (단순 버전)
-
-        Returns:
-            (유효성, 에러 메시지) 튜플 반환
+        [KO] 임베딩 API 키 및 Base URL에 대한 단순 존재 여부 검증을 실행합니다.
+             전체 통합 검증(validate_api_keys)보다 가벼운 용도에 사용합니다.
+             반환값(Tuple[bool, Optional[str]]): (is_valid, error_message) 형태의 튜플.
+             검증 성공 시 (True, None), 실패 시 (False, 오류 메시지 문자열).
+        [EN] Runs a lightweight existence check for the Embedding API key and base URL.
+             Use this as a simpler alternative to the full validate_api_keys() validation.
+             Returns(Tuple[bool, Optional[str]]): A tuple of (is_valid, error_message).
+             Returns (True, None) on success, (False, error string) on failure.
         """
-        # config 파일에서 임베딩 관련 변수 임포트 시도
-        try:
-            from backend.config import EMBEDDING_API_KEY, EMBEDDING_BASE_URL
-        except ImportError as e:
-            return False, f"❌ config 임포트 실패: {str(e)}"  # 임포트 실패 처리
+        if not ModelConfig.EMBEDDING_API_KEY:
+            return False, "❌ 임베딩 API 키가 설정되지 않았습니다."
 
-        if not EMBEDDING_API_KEY:
-            return False, "❌ 임베딩 API 키가 설정되지 않았습니다."  # 키 존재 여부 확인
-
-        if not EMBEDDING_BASE_URL:
+        if not ModelConfig.EMBEDDING_BASE_URL:
             return (
                 False,
                 "❌ 임베딩 BASE URL이 설정되지 않았습니다.",
-            )  # BASE URL 존재 여부 확인
+            )
 
-        # 최종 유효성 통과
         return True, None
