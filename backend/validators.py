@@ -133,8 +133,11 @@ class FileValidator:
         if not os.path.exists(file_path):
             return False, f"❌ 파일이 존재하지 않습니다: {file_path}"
 
-        ext_result = self.validate_extension(file_path)
-        return self.validate_file_size(file_path) if ext_result[0] else ext_result
+        valid, error = self.validate_extension(file_path)
+        if valid:
+            valid, error = self.validate_file_size(file_path)
+
+        return valid, error
 
 
 class QueryValidator:
@@ -164,24 +167,18 @@ class QueryValidator:
     def validate_query(self, query: str) -> Tuple[bool, Optional[str]]:
         """
         [KO] 검색 쿼리를 검증합니다.
-             None/빈 문자열, 공백 전용 문자열, 최소/최대 길이 조건을 순서대로 확인합니다.
+             None/빈 문자열/공백 전용 문자열 및 최소/최대 길이 조건을 순서대로 확인합니다.
              query(str): 검증할 검색 쿼리 문자열.
              반환값(Tuple[bool, Optional[str]]): (is_valid, error_message) 형태의 튜플.
              검증 성공 시 (True, None), 실패 시 (False, 오류 메시지 문자열).
         [EN] Validates a search query.
-             Checks for None/empty string, whitespace-only string, and min/max length in order.
+             Checks for None/empty/whitespace-only string and min/max length in order.
              query(str): Search query string to validate.
              Returns(Tuple[bool, Optional[str]]): A tuple of (is_valid, error_message).
              Returns (True, None) on success, (False, error string) on failure.
         """
         if not query or not query.strip():
             return False, "⚠️ 검색어를 입력해주세요."
-
-        if query.isspace():
-            return (
-                False,
-                "⚠️ 검색어는 공백만으로 구성될 수 없습니다.",
-            )
 
         query_length = len(query.strip())
 
