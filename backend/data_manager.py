@@ -13,7 +13,7 @@ import csv
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 
 class DataManager:
@@ -89,11 +89,13 @@ class DataManager:
                 )
 
     @staticmethod
-    def _join_list(data) -> str:
+    def _join_list(data: Optional[Union[str, List[str]]]) -> str:
         """
         [KO] 리스트 데이터를 쉼표(,)로 연결된 문자열로 변환합니다.
         [EN] Converts list data to a comma-separated string.
         """
+        if data is None:
+            return ""
         if isinstance(data, str):
             return data
         return ", ".join(data) if isinstance(data, list) else ""
@@ -375,7 +377,7 @@ def save_json_log(
     file_name: str,
     category: str,
     confidence: float,
-    snapshot_id: str,
+    snapshot_id: Union[str, int],
     conflict_detected: bool,
     requires_review: bool,
     keyword_tags: list,
@@ -393,7 +395,7 @@ def save_json_log(
         file_name (str): 처리된 파일명 / Processed file name
         category (str): 결정된 카테고리 / Determined category
         confidence (float): 예측 신뢰도 / Prediction confidence
-        snapshot_id (str): 스냅샷 ID / Snapshot ID
+        snapshot_id (Union[str, int]): 스냅샷 ID / Snapshot ID
         conflict_detected (bool): 충돌 감지 여부 / Whether a conflict was detected
         requires_review (bool): 검토 필요 여부 / Whether review is required
         keyword_tags (list): 키워드 태그 리스트 / List of keyword tags
@@ -429,7 +431,7 @@ def save_json_log(
         "file_name": file_name,
         "category": category,
         "confidence": confidence,
-        "snapshot_id": snapshot_id,
+        "snapshot_id": str(snapshot_id),
         "conflict_detected": conflict_detected,
         "requires_review": requires_review,
         "keyword_tags": keyword_tags,
