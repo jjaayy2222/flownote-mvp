@@ -1,8 +1,12 @@
 # backend/data_manager.py
 
 """
-💾 데이터 관리 모듈
-CSV/JSON 파일 I/O + 사용자 데이터 관리
+FlowNote MVP - Data Management Module (데이터 관리 모듈).
+
+[KO] 사용자 프로필(CSV), 컨텍스트 맵핑(JSON), 분류 로그 등을 파일 입출력으로 관리합니다.
+     데이터를 로컬 파일 시스템에 저장하고 조회하는 역할을 담당합니다.
+[EN] Manages user profiles (CSV), context mapping (JSON), and classification logs via file I/O.
+     Responsible for saving and retrieving data from the local file system.
 """
 
 import csv
@@ -13,10 +17,16 @@ from typing import Dict, List, Optional
 
 
 class DataManager:
-    """데이터 저장/조회 담당"""
+    """
+    [KO] 데이터 저장 및 조회를 전담하는 매니저 클래스.
+    [EN] Manager class dedicated to saving and retrieving data.
+    """
 
     def __init__(self):
-        """초기화 및 디렉토리 생성"""
+        """
+        [KO] DataManager를 초기화하고 필요한 디렉토리(users, context, log 등)를 생성합니다.
+        [EN] Initializes the DataManager and creates necessary directories (users, context, log, etc.).
+        """
         self.data_dir = Path("data")
         self.users_dir = self.data_dir / "users"
         self.context_dir = self.data_dir / "context"
@@ -38,7 +48,10 @@ class DataManager:
         self._initialize_files()
 
     def _initialize_files(self):
-        """필요한 파일 초기화"""
+        """
+        [KO] 초기 CSV 및 JSON 파일(헤더 포함)이 존재하지 않으면 생성합니다.
+        [EN] Creates initial CSV and JSON files (including headers) if they do not exist.
+        """
         # users_profiles.csv 헤더
         if not self.users_csv.exists():
             with open(self.users_csv, "w", newline="", encoding="utf-8") as f:
@@ -75,67 +88,53 @@ class DataManager:
                     ]
                 )
 
+    @staticmethod
+    def _join_list(data) -> str:
+        """
+        [KO] 리스트 데이터를 쉼표(,)로 연결된 문자열로 변환합니다.
+        [EN] Converts list data to a comma-separated string.
+        """
+        if isinstance(data, str):
+            return data
+        return ", ".join(data) if isinstance(data, list) else ""
+
     # =====================
     # 👤 사용자 프로필 관리
     # =====================
+
+    def _write_profile_to_csv(
+        self, user_id: str, occupation: str, areas_str: str, interests_str: str
+    ):
+        """[KO] 사용자 프로필을 CSV에 물리적으로 기록합니다."""
+        now = datetime.now().isoformat()
+        with open(self.users_csv, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow([user_id, occupation, areas_str, interests_str, now, now])
 
     def save_user_profile(
         self,
         user_id: str,
         occupation: str,
-        areas: List[str] = None,
-        interests: List[str] = None,
+        areas: Optional[List[str]] = None,
+        interests: Optional[List[str]] = None,
     ):
         """
-        사용자 프로필 저장 (신규)
+        [KO] 신규 사용자 프로필을 CSV 파일에 저장합니다.
+        [EN] Saves a new user profile to the CSV file.
 
         Args:
-            user_id: 사용자 ID
-            occupation: 직업
-            areas: 관심 영역 리스트 (List[str])
-            interests: 관심사 리스트 (List[str])
+            user_id (str): 사용자 ID / User ID
+            occupation (str): 직업 / Occupation
+            areas (List[str], optional): 관심 영역 리스트 / List of areas of interest
+            interests (List[str], optional): 관심사 리스트 / List of specific interests
         """
         try:
-            # 디버깅 코드
-            print(
-                f"🔵 [DATA_MANAGER] 저장 시도: user_id={user_id}, occupation={occupation}"
-            )
-            print(
-                f"🔵 [DATA_MANAGER] areas type: {type(areas)}, interests type: {type(interests)}"
-            )
+            areas_str = self._join_list(areas)
+            interests_str = self._join_list(interests)
 
-            # None 처리
-            if areas is None:
-                areas = []
-            if interests is None:
-                interests = []
+            self._write_profile_to_csv(user_id, occupation, areas_str, interests_str)
 
-            # ✅ 타입 확인 및 변환
-            if isinstance(areas, str):
-                # 문자열인 경우 그대로 사용
-                areas_str = areas
-            elif isinstance(areas, list):
-                # 리스트인 경우 join
-                areas_str = ", ".join(areas)
-            else:
-                areas_str = ""
-
-            if isinstance(interests, str):
-                interests_str = interests
-            elif isinstance(interests, list):
-                interests_str = ", ".join(interests)
-            else:
-                interests_str = ""
-
-            now = datetime.now().isoformat()
-
-            with open(self.users_csv, "a", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow(
-                    [user_id, occupation, areas_str, interests_str, now, now]
-                )
-
-            print(f"✅ [DATA_MANAGER] 저장 완료!")
+            print("✅ [DATA_MANAGER] 저장 완료!")
             return {"status": "success", "user_id": user_id}
 
         except Exception as e:
@@ -147,7 +146,13 @@ class DataManager:
 
     def get_user_profile(self, user_id: str) -> Optional[Dict]:
         """
-        사용자 프로필 조회
+        [KO] CSV 파일에서 특정 사용자의 프로필 정보를 조회합니다.
+        [EN] Retrieves a specific user's profile information from the CSV file.
+
+        Args:
+            user_id (str): 조회할 사용자 ID / User ID to look up
+        Returns:
+            Optional[Dict]: 사용자 프로필 딕셔너리 또는 None / User profile dictionary or None if not found
         """
         try:
             with open(self.users_csv, "r", encoding="utf-8") as f:
@@ -162,14 +167,18 @@ class DataManager:
 
     def update_user_areas(self, user_id: str, areas: List[str]):
         """
-        사용자 영역 업데이트
+        [KO] 기존 사용자의 관심 영역(areas) 정보를 업데이트합니다.
+        [EN] Updates the areas of interest for an existing user.
+
+        Args:
+            user_id (str): 사용자 ID / User ID
+            areas (List[str]): 업데이트할 관심 영역 리스트 / Updated list of areas
+        Returns:
+            Dict: 업데이트 결과 상태 딕셔너리 / Dictionary containing the update status
         """
         try:
             # ✅ List[str] → str 변환
-            if isinstance(areas, list):
-                areas_str = ", ".join(areas)
-            else:
-                areas_str = areas  # 이미 문자열인 경우
+            areas_str = self._join_list(areas)
 
             rows = []
             with open(self.users_csv, "r", encoding="utf-8") as f:
@@ -205,7 +214,14 @@ class DataManager:
 
     def save_user_context(self, user_id: str, areas: List[str]):
         """
-        사용자 맥락 저장 (JSON)
+        [KO] 사용자 맥락(Context) 데이터를 JSON 파일에 저장합니다.
+        [EN] Saves user context data to the JSON file.
+
+        Args:
+            user_id (str): 사용자 ID / User ID
+            areas (List[str]): 사용자 맥락(영역) 리스트 / List of user context areas
+        Returns:
+            Dict: 저장 결과 상태 딕셔너리 / Dictionary containing the save status
         """
         try:
             with open(self.context_json, "r", encoding="utf-8") as f:
@@ -225,7 +241,13 @@ class DataManager:
 
     def get_user_context(self, user_id: str) -> Optional[Dict]:
         """
-        사용자 맥락 조회
+        [KO] JSON 파일에서 특정 사용자의 맥락(Context) 데이터를 조회합니다.
+        [EN] Retrieves a specific user's context data from the JSON file.
+
+        Args:
+            user_id (str): 사용자 ID / User ID
+        Returns:
+            Optional[Dict]: 사용자 맥락 딕셔너리 또는 None / User context dictionary or None if not found
         """
         try:
             with open(self.context_json, "r", encoding="utf-8") as f:
@@ -238,12 +260,16 @@ class DataManager:
 
     def get_user_areas(self, user_id: str) -> List[str]:
         """
-        사용자 영역 목록 반환
+        [KO] 사용자 맥락에서 영역(areas) 목록만 추출하여 반환합니다.
+        [EN] Extracts and returns only the areas list from the user's context.
+
+        Args:
+            user_id (str): 사용자 ID / User ID
+        Returns:
+            List[str]: 사용자 영역 리스트 / List of user areas
         """
         context = self.get_user_context(user_id)
-        if context:
-            return context.get("areas", [])
-        return []
+        return context.get("areas", []) if context else []
 
     # =====================
     # 📊 분류 로그 관리
@@ -258,7 +284,17 @@ class DataManager:
         confidence: float,
     ):
         """
-        분류 결과 로그 저장 (CSV)
+        [KO] AI의 분류 결과 및 사용자 선택 결과를 CSV 파일에 로그로 남깁니다.
+        [EN] Logs the AI classification and user selection results to the CSV file.
+
+        Args:
+            user_id (str): 사용자 ID / User ID
+            file_name (str): 분류된 파일명 / Name of the classified file
+            ai_prediction (str): AI가 예측한 분류 / AI predicted category
+            user_selected (Optional[str]): 사용자가 최종 선택한 분류 / Final category selected by the user
+            confidence (float): AI 예측 신뢰도 / AI prediction confidence score
+        Returns:
+            Dict: 저장 결과 상태 딕셔너리 / Dictionary containing the log status
         """
         try:
             now = datetime.now().isoformat()
@@ -286,14 +322,14 @@ class DataManager:
 
     def save_classification_json(self, result: Dict, filename: str) -> str:
         """
-        분류 결과 JSON 로그 저장 (data/log/)
+        [KO] 상세 분류 결과를 JSON 파일 형태로 지정된 로그 디렉토리에 저장합니다.
+        [EN] Saves the detailed classification results as a JSON file in the log directory.
 
         Args:
-            result: 분류 결과 딕셔너리
-            filename: 파일명
-
+            result (Dict): 분류 결과 딕셔너리 / Classification result dictionary
+            filename (str): 원본 파일명 / Original file name
         Returns:
-            저장된 JSON 파일 경로
+            str: 저장된 JSON 파일의 절대 경로 / Absolute path to the saved JSON file
         """
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -313,15 +349,20 @@ class DataManager:
 
     def get_user_classifications(self, user_id: str) -> List[Dict]:
         """
-        사용자의 분류 히스토리 조회
+        [KO] 특정 사용자의 과거 분류 히스토리를 CSV에서 읽어 반환합니다.
+        [EN] Retrieves a specific user's classification history from the CSV file.
+
+        Args:
+            user_id (str): 사용자 ID / User ID
+        Returns:
+            List[Dict]: 분류 히스토리 리스트 / List of classification history records
         """
         try:
-            classifications = []
             with open(self.classifications_csv, "r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
-                for row in reader:
-                    if row["user_id"] == user_id:
-                        classifications.append(dict(row))
+                classifications = [
+                    dict(row) for row in reader if row["user_id"] == user_id
+                ]
             return classifications
         except Exception as e:
             print(f"분류 히스토리 조회 실패: {str(e)}")
@@ -340,11 +381,28 @@ def save_json_log(
     keyword_tags: list,
     reasoning: str,
     user_context: str = "",
-    user_profile: dict = None,
+    user_profile: Optional[dict] = None,
     context_injected: bool = False,
 ):
     """
-    data/log/ 폴더에 날짜+시간 기반 JSON 파일 저장
+    [KO] 글로벌 함수: data/log/ 디렉토리에 타임스탬프를 포함한 JSON 로그를 저장합니다.
+    [EN] Global function: Saves a timestamped JSON log file in the data/log/ directory.
+
+    Args:
+        user_id (str): 사용자 ID / User ID
+        file_name (str): 처리된 파일명 / Processed file name
+        category (str): 결정된 카테고리 / Determined category
+        confidence (float): 예측 신뢰도 / Prediction confidence
+        snapshot_id (str): 스냅샷 ID / Snapshot ID
+        conflict_detected (bool): 충돌 감지 여부 / Whether a conflict was detected
+        requires_review (bool): 검토 필요 여부 / Whether review is required
+        keyword_tags (list): 키워드 태그 리스트 / List of keyword tags
+        reasoning (str): AI 추론 논리 / AI reasoning logic
+        user_context (str, optional): 사용자 컨텍스트 요약 / User context summary
+        user_profile (Optional[dict], optional): 사용자 프로필 데이터 / User profile data
+        context_injected (bool, optional): 컨텍스트 주입 여부 / Whether context was injected
+    Returns:
+        str: 저장된 JSON 로그 파일 경로 / Path to the saved JSON log file
     """
     import json
     from datetime import datetime
@@ -371,7 +429,7 @@ def save_json_log(
         "file_name": file_name,
         "category": category,
         "confidence": confidence,
-        "snapshot_id": str(snapshot_id),
+        "snapshot_id": snapshot_id,
         "conflict_detected": conflict_detected,
         "requires_review": requires_review,
         "keyword_tags": keyword_tags,
