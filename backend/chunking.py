@@ -183,9 +183,8 @@ class TextChunker:
                 extra={"context": {"type": type(text).__name__}},
             )
             raise TypeError(f"text must be of type str, got {type(text).__name__}")
-        if not text:
-            empty_chunks: List[str] = []
-            return empty_chunks
+        if not text:  # sourcery skip: assign-if-exp, replace-if-expression
+            return []
 
         return self._splitter.split_text(text)
 
