@@ -183,11 +183,10 @@ class TextChunker:
                 extra={"context": {"type": type(text).__name__}},
             )
             raise TypeError(f"text must be of type str, got {type(text).__name__}")
-        if not text:
-            empty_chunks: List[str] = []
-            return empty_chunks
-
-        return self._splitter.split_text(text)
+        elif not text:
+            return []
+        else:
+            return self._splitter.split_text(text)
 
     def chunk_with_metadata(
         self, text: str, metadata: Optional[Dict[str, Any]] = None

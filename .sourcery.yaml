@@ -1,0 +1,9 @@
+rule_settings:
+  enable:
+    - default
+  disable:
+    # Guard-clause style (if not x: return []) is intentionally preferred
+    # over ternary expressions for readability in this codebase.
+    - lift-return-into-if
+    - replace-if-statement-with-if-expression
+    - assign-if-exp
