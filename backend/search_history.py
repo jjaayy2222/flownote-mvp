@@ -10,6 +10,7 @@
 import json
 import os
 import uuid
+from collections import Counter
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -166,6 +167,9 @@ class SearchHistory:
         [KO] 누적된 검색 히스토리를 바탕으로 통계 정보를 계산합니다.
         [EN] Calculates statistical information based on the accumulated search history.
 
+        [KO] 성능 최적화: 가장 많이 검색된 쿼리를 찾을 때 O(n) 복잡도를 가지는 `collections.Counter`를 사용합니다.
+        [EN] Performance optimization: Uses `collections.Counter` with O(n) complexity to find the most common query.
+
         Returns:
             Dict: [KO] 총 검색 횟수, 평균 결과 수, 최다 검색 쿼리를 포함하는 통계 딕셔너리
                   / [EN] Statistics dictionary containing total searches, average results count, and most common query
@@ -182,8 +186,9 @@ class SearchHistory:
         )
 
         # 가장 많이 검색된 쿼리
-        if queries := [h["query"] for h in self.history.values()]:
-            most_common = max(set(queries), key=queries.count)
+        queries = [h["query"] for h in self.history.values()]
+        if queries:  # sourcery skip: use-named-expression
+            most_common = Counter(queries).most_common(1)[0][0]
         else:
             most_common = None
 
