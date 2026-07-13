@@ -12,7 +12,18 @@ import os
 import uuid
 from collections import Counter
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TypedDict
+
+
+class SearchStatistics(TypedDict):
+    """
+    [KO] 검색 통계 반환 타입
+    [EN] Return type for search statistics
+    """
+
+    total_searches: int
+    avg_results: float
+    most_common_query: Optional[str]
 
 
 class SearchHistory:
@@ -162,7 +173,7 @@ class SearchHistory:
         self.history = {}
         self._save_history()
 
-    def get_statistics(self) -> Dict:
+    def get_statistics(self) -> SearchStatistics:
         """
         [KO] 누적된 검색 히스토리를 바탕으로 통계 정보를 계산합니다.
         [EN] Calculates statistical information based on the accumulated search history.
@@ -171,11 +182,11 @@ class SearchHistory:
         [EN] Performance optimization: Uses `collections.Counter` with O(n) complexity to find the most common query.
 
         Returns:
-            Dict: [KO] 총 검색 횟수, 평균 결과 수, 최다 검색 쿼리를 포함하는 통계 딕셔너리
-                  / [EN] Statistics dictionary containing total searches, average results count, and most common query
+            SearchStatistics: [KO] 총 검색 횟수, 평균 결과 수, 최다 검색 쿼리를 포함하는 통계 딕셔너리
+                              / [EN] Statistics dictionary containing total searches, average results count, and most common query
         """
         if not self.history:
-            return {"total_searches": 0, "avg_results": 0, "most_common_query": ""}
+            return {"total_searches": 0, "avg_results": 0.0, "most_common_query": None}
 
         # 전체 검색 수
         total_searches = len(self.history)
@@ -188,7 +199,7 @@ class SearchHistory:
         # 가장 많이 검색된 쿼리 (메모리 최적화: 제너레이터 사용)
         query_counts = Counter(h["query"] for h in self.history.values())
         top_queries = query_counts.most_common(1)
-        most_common = top_queries[0][0] if top_queries else ""
+        most_common = top_queries[0][0] if top_queries else None
 
         return {
             "total_searches": total_searches,
