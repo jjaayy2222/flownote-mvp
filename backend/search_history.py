@@ -175,7 +175,7 @@ class SearchHistory:
                   / [EN] Statistics dictionary containing total searches, average results count, and most common query
         """
         if not self.history:
-            return {"total_searches": 0, "avg_results": 0, "most_common_query": None}
+            return {"total_searches": 0, "avg_results": 0, "most_common_query": ""}
 
         # 전체 검색 수
         total_searches = len(self.history)
@@ -188,7 +188,7 @@ class SearchHistory:
         # 가장 많이 검색된 쿼리 (메모리 최적화: 제너레이터 사용)
         query_counts = Counter(h["query"] for h in self.history.values())
         top_queries = query_counts.most_common(1)
-        most_common = top_queries[0][0] if top_queries else None
+        most_common = top_queries[0][0] if top_queries else ""
 
         return {
             "total_searches": total_searches,
