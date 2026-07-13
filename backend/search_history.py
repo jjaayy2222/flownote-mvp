@@ -3,7 +3,8 @@
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 """
-FlowNote MVP - 검색 히스토리 관리
+[KO] FlowNote MVP - 검색 히스토리 관리
+[EN] FlowNote MVP - Search History Management
 """
 
 import json
@@ -14,19 +15,28 @@ from typing import Dict, List, Optional
 
 
 class SearchHistory:
-    """검색 히스토리 관리 클래스"""
+    """
+    [KO] 검색 히스토리를 로컬 JSON 파일에 영속화하고 관리하는 클래스.
+    [EN] A class to persist and manage search history in a local JSON file.
+    """
 
     def __init__(self, storage_path: str = "data/search_history.json"):
         """
+        [KO] 히스토리 저장 경로를 설정하고 기존 데이터를 로드합니다.
+        [EN] Sets the history storage path and loads existing data.
+
         Args:
-            storage_path: 히스토리 저장 경로
+            storage_path (str): [KO] 히스토리를 저장할 JSON 파일 경로 / [EN] JSON file path to store history
         """
         self.storage_path = storage_path
         self.history: Dict[str, Dict] = {}
         self._load_history()
 
     def _load_history(self):
-        """저장된 히스토리 로드"""
+        """
+        [KO] 지정된 경로에서 저장된 검색 히스토리를 로드합니다. 파일이 없으면 새로 생성합니다.
+        [EN] Loads saved search history from the specified path. Creates it if it doesn't exist.
+        """
         if os.path.exists(self.storage_path):
             try:
                 with open(self.storage_path, "r", encoding="utf-8") as f:
@@ -40,7 +50,10 @@ class SearchHistory:
             self.history = {}
 
     def _save_history(self):
-        """히스토리 저장"""
+        """
+        [KO] 메모리의 히스토리 데이터를 JSON 파일에 저장합니다.
+        [EN] Saves the in-memory history data to a JSON file.
+        """
         try:
             with open(self.storage_path, "w", encoding="utf-8") as f:
                 json.dump(self.history, f, ensure_ascii=False, indent=2)
@@ -48,18 +61,19 @@ class SearchHistory:
             print(f"히스토리 저장 실패: {e}")
 
     def add_search(
-        self, query: str, results_count: int, top_results: List[str] = None
+        self, query: str, results_count: int, top_results: Optional[List[str]] = None
     ) -> str:
         """
-        검색 기록 추가
+        [KO] 새로운 검색 기록을 추가하고 저장합니다.
+        [EN] Adds and saves a new search record.
 
         Args:
-            query: 검색 쿼리
-            results_count: 결과 개수
-            top_results: 상위 결과 미리보기 (선택)
+            query (str): [KO] 검색에 사용된 쿼리 문자열 / [EN] Query string used for the search
+            results_count (int): [KO] 검색된 결과의 총 개수 / [EN] Total number of retrieved results
+            top_results (List[str], optional): [KO] 상위 검색 결과 미리보기 텍스트 리스트 / [EN] List of preview texts for top search results
 
         Returns:
-            search_id: 생성된 검색 ID
+            str: [KO] 새로 생성된 검색 고유 ID / [EN] Newly generated unique search ID
         """
         # 검색 ID 생성
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -82,25 +96,27 @@ class SearchHistory:
 
     def get_search(self, search_id: str) -> Optional[Dict]:
         """
-        검색 기록 조회
+        [KO] 특정 검색 ID에 해당하는 기록을 조회합니다.
+        [EN] Retrieves the record corresponding to a specific search ID.
 
         Args:
-            search_id: 검색 ID
+            search_id (str): [KO] 조회할 검색 고유 ID / [EN] Unique search ID to retrieve
 
         Returns:
-            히스토리 딕셔너리 또는 None
+            Optional[Dict]: [KO] 검색 히스토리 딕셔너리 (존재하지 않으면 None) / [EN] Search history dictionary (None if not found)
         """
         return self.history.get(search_id)
 
     def get_recent_searches(self, limit: int = 10) -> List[Dict]:
         """
-        최근 검색 기록 조회
+        [KO] 최근 수행된 검색 기록들을 최신순으로 정렬하여 조회합니다.
+        [EN] Retrieves recently performed search records, sorted from newest to oldest.
 
         Args:
-            limit: 조회할 개수
+            limit (int): [KO] 반환할 최대 결과 수 / [EN] Maximum number of results to return
 
         Returns:
-            최근 검색 기록 리스트
+            List[Dict]: [KO] 최신순으로 정렬된 검색 기록 리스트 / [EN] List of search records sorted by newest first
         """
         # 시간순 정렬 (최신순)
         sorted_history = sorted(
@@ -112,22 +128,24 @@ class SearchHistory:
 
     def get_all_searches(self) -> Dict[str, Dict]:
         """
-        모든 검색 기록 조회
+        [KO] 저장된 모든 검색 기록을 조회합니다.
+        [EN] Retrieves all saved search records.
 
         Returns:
-            전체 히스토리 딕셔너리
+            Dict[str, Dict]: [KO] 전체 검색 히스토리를 담은 딕셔너리 / [EN] Dictionary containing the entire search history
         """
         return self.history
 
     def delete_search(self, search_id: str) -> bool:
         """
-        검색 기록 삭제
+        [KO] 특정 검색 ID의 기록을 삭제합니다.
+        [EN] Deletes the record for a specific search ID.
 
         Args:
-            search_id: 검색 ID
+            search_id (str): [KO] 삭제할 검색 고유 ID / [EN] Unique search ID to delete
 
         Returns:
-            삭제 성공 여부
+            bool: [KO] 삭제 성공 시 True, 실패 시(ID 없음) False / [EN] True if successfully deleted, False otherwise (ID not found)
         """
         if search_id in self.history:
             del self.history[search_id]
@@ -136,16 +154,21 @@ class SearchHistory:
         return False
 
     def clear_all(self):
-        """모든 검색 기록 삭제"""
+        """
+        [KO] 모든 검색 기록을 영구적으로 삭제합니다.
+        [EN] Permanently clears all search records.
+        """
         self.history = {}
         self._save_history()
 
     def get_statistics(self) -> Dict:
         """
-        검색 통계 계산
+        [KO] 누적된 검색 히스토리를 바탕으로 통계 정보를 계산합니다.
+        [EN] Calculates statistical information based on the accumulated search history.
 
         Returns:
-            통계 딕셔너리
+            Dict: [KO] 총 검색 횟수, 평균 결과 수, 최다 검색 쿼리를 포함하는 통계 딕셔너리
+                  / [EN] Statistics dictionary containing total searches, average results count, and most common query
         """
         if not self.history:
             return {"total_searches": 0, "avg_results": 0, "most_common_query": None}
@@ -159,8 +182,7 @@ class SearchHistory:
         )
 
         # 가장 많이 검색된 쿼리
-        queries = [h["query"] for h in self.history.values()]
-        if queries:
+        if queries := [h["query"] for h in self.history.values()]:
             most_common = max(set(queries), key=queries.count)
         else:
             most_common = None
@@ -232,7 +254,7 @@ if __name__ == "__main__":
     print("-" * 50)
 
     stats = history.get_statistics()
-    print(f"📊 통계:")
+    print("📊 통계:")
     print(f"   - 총 검색: {stats['total_searches']}회")
     print(f"   - 평균 결과: {stats['avg_results']}개")
     print(f"   - 자주 검색: {stats['most_common_query']}")
@@ -240,145 +262,3 @@ if __name__ == "__main__":
     print("\n" + "=" * 50)
     print("테스트 완료!")
     print("=" * 50)
-
-
-"""result
-
-    ==================================================
-    검색 히스토리 테스트
-    ==================================================
-
-    1. 검색 기록 추가 테스트
-    --------------------------------------------------
-    ✅ 검색 추가 완료: search_20251025_133526_a51705db
-    ✅ 검색 추가 완료: search_20251025_133526_153790eb
-    ✅ 검색 추가 완료: search_20251025_133526_2df8ccf9
-
-    2. 최근 검색 조회 테스트
-    --------------------------------------------------
-    📚 최근 검색 3개:
-
-    1. FlowNote 사용법
-        - 결과: 5개
-        - 시간: 2025-10-25 13:35:26
-
-    2. 임베딩이란
-        - 결과: 8개
-        - 시간: 2025-10-25 13:35:26
-
-    3. FlowNote 사용법
-        - 결과: 5개
-        - 시간: 2025-10-25 13:35:26
-
-    3. 통계 테스트
-    --------------------------------------------------
-    📊 통계:
-        - 총 검색: 3회
-        - 평균 결과: 6.0개
-        - 자주 검색: FlowNote 사용법
-
-    ==================================================
-    테스트 완료!
-    ==================================================
-
-"""
-
-
-"""result_2
-
-    ==================================================
-    검색 히스토리 테스트
-    ==================================================
-
-    1. 검색 기록 추가 테스트
-    --------------------------------------------------
-    ✅ 검색 추가 완료: search_20251025_145632_376fe2ab
-    ✅ 검색 추가 완료: search_20251025_145632_c394435e
-    ✅ 검색 추가 완료: search_20251025_145632_d20d291c
-
-    2. 최근 검색 조회 테스트
-    --------------------------------------------------
-    📚 최근 검색 5개:
-
-    1. FlowNote 사용법
-        - 결과: 5개
-        - 시간: 2025-10-25 14:56:32
-
-    2. 임베딩이란
-        - 결과: 8개
-        - 시간: 2025-10-25 14:56:32
-
-    3. FlowNote 사용법
-        - 결과: 5개
-        - 시간: 2025-10-25 14:56:32
-
-    4. FlowNote 사용법
-        - 결과: 5개
-        - 시간: 2025-10-25 13:35:26
-
-    5. 임베딩이란
-        - 결과: 8개
-        - 시간: 2025-10-25 13:35:26
-
-    3. 통계 테스트
-    --------------------------------------------------
-    📊 통계:
-        - 총 검색: 6회
-        - 평균 결과: 6.0개
-        - 자주 검색: FlowNote 사용법
-
-    ==================================================
-    테스트 완료!
-    ==================================================
-
-"""
-
-
-"""result_3
-
-    ==================================================
-    검색 히스토리 테스트
-    ==================================================
-
-    1. 검색 기록 추가 테스트
-    --------------------------------------------------
-    ✅ 검색 추가 완료: search_20251025_151552_3c85657e
-    ✅ 검색 추가 완료: search_20251025_151552_bd489c20
-    ✅ 검색 추가 완료: search_20251025_151552_c5bbe03f
-
-    2. 최근 검색 조회 테스트
-    --------------------------------------------------
-    📚 최근 검색 5개:
-
-    1. FlowNote 사용법
-        - 결과: 5개
-        - 시간: 2025-10-25 15:15:52
-
-    2. 임베딩이란
-        - 결과: 8개
-        - 시간: 2025-10-25 15:15:52
-
-    3. FlowNote 사용법
-        - 결과: 5개
-        - 시간: 2025-10-25 15:15:52
-
-    4. 임베딩
-        - 결과: 0개
-        - 시간: 2025-10-25 15:09:10
-
-    5. 쿼리
-        - 결과: 0개
-        - 시간: 2025-10-25 15:08:59
-
-    3. 통계 테스트
-    --------------------------------------------------
-    📊 통계:
-        - 총 검색: 13회
-        - 평균 결과: 4.2개
-        - 자주 검색: FlowNote 사용법
-
-    ==================================================
-    테스트 완료!
-    ==================================================
-
-"""
