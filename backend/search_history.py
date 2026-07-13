@@ -185,12 +185,10 @@ class SearchHistory:
             sum(h["results_count"] for h in self.history.values()) / total_searches
         )
 
-        # 가장 많이 검색된 쿼리
-        queries = [h["query"] for h in self.history.values()]
-        if queries:  # sourcery skip: use-named-expression
-            most_common = Counter(queries).most_common(1)[0][0]
-        else:
-            most_common = None
+        # 가장 많이 검색된 쿼리 (메모리 최적화: 제너레이터 사용)
+        most_common = Counter(h["query"] for h in self.history.values()).most_common(1)[
+            0
+        ][0]
 
         return {
             "total_searches": total_searches,
