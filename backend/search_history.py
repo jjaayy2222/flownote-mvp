@@ -186,9 +186,9 @@ class SearchHistory:
         )
 
         # 가장 많이 검색된 쿼리 (메모리 최적화: 제너레이터 사용)
-        most_common = Counter(h["query"] for h in self.history.values()).most_common(1)[
-            0
-        ][0]
+        query_counts = Counter(h["query"] for h in self.history.values())
+        top_queries = query_counts.most_common(1)
+        most_common = top_queries[0][0] if top_queries else None
 
         return {
             "total_searches": total_searches,
