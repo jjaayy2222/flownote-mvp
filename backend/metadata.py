@@ -13,10 +13,13 @@
 """
 
 import json
+import logging
 import os
 import uuid
 from datetime import datetime
 from typing import Dict, List, Optional, TypedDict
+
+logger = logging.getLogger(__name__)
 
 
 class FileMetadataRecord(TypedDict):
@@ -82,10 +85,15 @@ class FileMetadata:
                 if isinstance(loaded, dict):
                     self.metadata = loaded
                 else:
-                    print("메타데이터 형식 오류: 딕셔너리가 아닙니다. 초기화합니다.")
+                    logger.warning(
+                        "메타데이터 형식 오류: 딕셔너리가 아닙니다. 초기화합니다."
+                    )
                     self.metadata = {}
-            except Exception as e:
-                print(f"메타데이터 로드 실패: {e}")
+            except json.JSONDecodeError as e:
+                logger.error("메타데이터 파일 JSON 파싱 실패: %s", e)
+                self.metadata = {}
+            except OSError as e:
+                logger.error("메타데이터 파일 읽기 실패: %s", e)
                 self.metadata = {}
         else:
             # [KO] storage_path에 디렉터리 구성 요소가 있을 때만 폴더 생성
@@ -103,8 +111,8 @@ class FileMetadata:
         try:
             with open(self.storage_path, "w", encoding="utf-8") as f:
                 json.dump(self.metadata, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"메타데이터 저장 실패: {e}")
+        except OSError as e:
+            logger.error("메타데이터 파일 저장 실패: %s", e)
 
     def add_file(
         self,
