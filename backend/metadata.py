@@ -3,30 +3,76 @@
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 """
-FlowNote MVP - 파일 메타데이터 관리
+[KO] FlowNote MVP - 파일 메타데이터 관리
+[EN] FlowNote MVP - File Metadata Management
+
+[KO] 파일 업로드 시 메타데이터(파일명, 크기, 청크 수, 임베딩 차원 등)를 추출·정규화하고
+     로컬 JSON 파일에 영속화하여 관리하는 모듈입니다.
+[EN] Extracts and normalizes file metadata (name, size, chunk count, embedding dimensions, etc.)
+     upon upload, and persists it to a local JSON file.
 """
 
 import json
 import os
-import uuid  # 추가!
+import uuid
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, List, Optional, TypedDict
+
+
+class FileMetadataRecord(TypedDict):
+    """
+    [KO] 개별 파일의 메타데이터 레코드 타입
+    [EN] TypedDict for a single file's metadata record
+    """
+
+    file_name: str
+    file_size: int
+    file_size_mb: float
+    chunk_count: int
+    embedding_dim: int
+    embedding_model: str
+    upload_time: str
+    created_at: str
+
+
+class MetadataStatistics(TypedDict):
+    """
+    [KO] 전체 파일 메타데이터 통계 반환 타입
+    [EN] Return type for overall file metadata statistics
+    """
+
+    total_files: int
+    total_chunks: int
+    total_size_mb: float
+    models_used: List[str]
 
 
 class FileMetadata:
-    """파일 메타데이터 관리 클래스"""
+    """
+    [KO] 파일 메타데이터를 로컬 JSON 파일에 영속화하고 관리하는 클래스.
+    [EN] A class to persist and manage file metadata in a local JSON file.
+    """
 
     def __init__(self, storage_path: str = "data/metadata.json"):
         """
+        [KO] 메타데이터 저장 경로를 설정하고, 기존에 저장된 데이터를 로드합니다.
+        [EN] Sets the metadata storage path and loads any previously saved data.
+
         Args:
-            storage_path: 메타데이터 저장 경로
+            storage_path (str): [KO] 메타데이터 JSON 파일 저장 경로 (기본값: "data/metadata.json")
+                                 / [EN] Path to the metadata JSON file (default: "data/metadata.json")
         """
         self.storage_path = storage_path
-        self.metadata: Dict[str, Dict] = {}
+        self.metadata: Dict[str, FileMetadataRecord] = {}
         self._load_metadata()
 
-    def _load_metadata(self):
-        """저장된 메타데이터 로드"""
+    def _load_metadata(self) -> None:
+        """
+        [KO] JSON 파일에서 저장된 메타데이터를 메모리로 로드합니다.
+             파일이 없을 경우 저장 디렉토리를 생성하고 빈 상태로 초기화합니다.
+        [EN] Loads saved metadata from the JSON file into memory.
+             If the file does not exist, creates the storage directory and initializes an empty state.
+        """
         if os.path.exists(self.storage_path):
             try:
                 with open(self.storage_path, "r", encoding="utf-8") as f:
@@ -39,8 +85,11 @@ class FileMetadata:
             os.makedirs(os.path.dirname(self.storage_path), exist_ok=True)
             self.metadata = {}
 
-    def _save_metadata(self):
-        """메타데이터 저장"""
+    def _save_metadata(self) -> None:
+        """
+        [KO] 현재 메모리에 있는 메타데이터를 JSON 파일에 영속화합니다.
+        [EN] Persists the current in-memory metadata to the JSON file.
+        """
         try:
             with open(self.storage_path, "w", encoding="utf-8") as f:
                 json.dump(self.metadata, f, ensure_ascii=False, indent=2)
@@ -56,19 +105,28 @@ class FileMetadata:
         model: str = "text-embedding-3-small",
     ) -> str:
         """
-        파일 메타데이터 추가
+        [KO] 새로운 파일의 메타데이터를 생성하고 저장소에 추가합니다.
+             파일 ID는 타임스탬프와 UUID를 조합하여 고유성을 보장합니다.
+        [EN] Creates and adds metadata for a new file to the storage.
+             The file ID is composed of a timestamp and UUID to ensure uniqueness.
 
         Args:
-            file_name: 파일명
-            file_size: 파일 크기 (bytes)
-            chunk_count: 청크 개수
-            embedding_dim: 임베딩 차원
-            model: 사용된 임베딩 모델
+            file_name (str): [KO] 업로드한 파일의 이름
+                             / [EN] Name of the uploaded file.
+            file_size (int): [KO] 파일 크기 (바이트 단위)
+                             / [EN] File size in bytes.
+            chunk_count (int): [KO] 파일이 분할된 청크의 개수
+                               / [EN] Number of chunks the file was split into.
+            embedding_dim (int): [KO] 생성된 임베딩 벡터의 차원 수
+                                 / [EN] Dimension of the generated embedding vectors.
+            model (str): [KO] 임베딩 생성에 사용된 모델 이름 (기본값: "text-embedding-3-small")
+                         / [EN] Name of the model used for embedding generation (default: "text-embedding-3-small").
 
         Returns:
-            file_id: 생성된 파일 ID
+            str: [KO] 생성된 고유 파일 ID (예: "file_20251025_131227_d9977552")
+                 / [EN] The generated unique file ID (e.g., "file_20251025_131227_d9977552").
         """
-        # 파일 ID 생성 (타임스탬프 + UUID로 고유성 보장!)
+        # 파일 ID 생성 (타임스탬프 + UUID로 고유성 보장)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         unique_id = uuid.uuid4().hex[:8]  # UUID의 앞 8자리
         file_id = f"file_{timestamp}_{unique_id}"
@@ -90,36 +148,44 @@ class FileMetadata:
 
         return file_id
 
-    def get_file(self, file_id: str) -> Optional[Dict]:
+    def get_file(self, file_id: str) -> Optional[FileMetadataRecord]:
         """
-        파일 메타데이터 조회
+        [KO] 특정 파일 ID에 해당하는 메타데이터를 반환합니다.
+        [EN] Returns the metadata corresponding to a specific file ID.
 
         Args:
-            file_id: 파일 ID
+            file_id (str): [KO] 조회할 파일의 고유 ID
+                           / [EN] The unique ID of the file to look up.
 
         Returns:
-            메타데이터 딕셔너리 또는 None
+            Optional[FileMetadataRecord]: [KO] 해당 파일의 메타데이터 딕셔너리, 존재하지 않으면 None
+                                         / [EN] The file's metadata dictionary, or None if not found.
         """
         return self.metadata.get(file_id)
 
-    def get_all_files(self) -> Dict[str, Dict]:
+    def get_all_files(self) -> Dict[str, FileMetadataRecord]:
         """
-        모든 파일 메타데이터 조회
+        [KO] 저장된 모든 파일의 메타데이터를 반환합니다.
+        [EN] Returns the metadata of all stored files.
 
         Returns:
-            전체 메타데이터 딕셔너리
+            Dict[str, FileMetadataRecord]: [KO] 파일 ID를 키로 하는 전체 메타데이터 딕셔너리
+                                           / [EN] A dictionary of all metadata keyed by file ID.
         """
         return self.metadata
 
     def delete_file(self, file_id: str) -> bool:
         """
-        파일 메타데이터 삭제
+        [KO] 특정 파일 ID에 해당하는 메타데이터를 삭제합니다.
+        [EN] Deletes the metadata corresponding to a specific file ID.
 
         Args:
-            file_id: 파일 ID
+            file_id (str): [KO] 삭제할 파일의 고유 ID
+                           / [EN] The unique ID of the file to delete.
 
         Returns:
-            삭제 성공 여부
+            bool: [KO] 삭제 성공 시 True, 파일 ID가 존재하지 않으면 False
+                  / [EN] True if deletion was successful, False if the file ID was not found.
         """
         if file_id in self.metadata:
             del self.metadata[file_id]
@@ -127,24 +193,26 @@ class FileMetadata:
             return True
         return False
 
-    def get_statistics(self) -> Dict:
+    def get_statistics(self) -> MetadataStatistics:
         """
-        전체 통계 계산
+        [KO] 저장된 전체 파일 메타데이터를 바탕으로 통계 정보를 계산합니다.
+        [EN] Calculates statistical information based on all stored file metadata.
 
         Returns:
-            통계 딕셔너리
+            MetadataStatistics: [KO] 총 파일 수, 총 청크 수, 총 크기(MB), 사용된 모델 목록을 포함한 통계 딕셔너리
+                                 / [EN] Statistics dictionary containing total files, chunks, size (MB), and models used.
         """
         if not self.metadata:
             return {
                 "total_files": 0,
                 "total_chunks": 0,
-                "total_size_mb": 0,
+                "total_size_mb": 0.0,
                 "models_used": [],
             }
 
         total_chunks = sum(m["chunk_count"] for m in self.metadata.values())
         total_size = sum(m["file_size"] for m in self.metadata.values())
-        models = list(set(m["embedding_model"] for m in self.metadata.values()))
+        models = list({m["embedding_model"] for m in self.metadata.values()})
 
         return {
             "total_files": len(self.metadata),
@@ -193,18 +261,20 @@ if __name__ == "__main__":
     print("-" * 50)
 
     file_info = metadata.get_file(file_id1)
-    print(f"📄 첫 번째 파일:")
-    print(f"   - 파일명: {file_info['file_name']}")
-    print(f"   - 크기: {file_info['file_size_mb']} MB")
-    print(f"   - 청크 수: {file_info['chunk_count']}")
-    print(f"   - 모델: {file_info['embedding_model']}")
+    print("📄 첫 번째 파일:")
+    if file_info is not None:
+        print(f"   - 파일명: {file_info['file_name']}")
+        print(f"   - 크기: {file_info['file_size_mb']} MB")
+        print(f"   - 청크 수: {file_info['chunk_count']}")
+        print(f"   - 모델: {file_info['embedding_model']}")
 
     file_info2 = metadata.get_file(file_id2)
-    print(f"\n📄 두 번째 파일:")
-    print(f"   - 파일명: {file_info2['file_name']}")
-    print(f"   - 크기: {file_info2['file_size_mb']} MB")
-    print(f"   - 청크 수: {file_info2['chunk_count']}")
-    print(f"   - 모델: {file_info2['embedding_model']}")
+    print("\n📄 두 번째 파일:")
+    if file_info2 is not None:
+        print(f"   - 파일명: {file_info2['file_name']}")
+        print(f"   - 크기: {file_info2['file_size_mb']} MB")
+        print(f"   - 청크 수: {file_info2['chunk_count']}")
+        print(f"   - 모델: {file_info2['embedding_model']}")
 
     # 전체 파일 확인
     print("\n3. 전체 파일 목록")
@@ -219,7 +289,7 @@ if __name__ == "__main__":
     print("-" * 50)
 
     stats = metadata.get_statistics()
-    print(f"📊 통계:")
+    print("📊 통계:")
     print(f"   - 총 파일: {stats['total_files']}개")
     print(f"   - 총 청크: {stats['total_chunks']}개")
     print(f"   - 총 크기: {stats['total_size_mb']} MB")
@@ -228,147 +298,3 @@ if __name__ == "__main__":
     print("\n" + "=" * 50)
     print("테스트 완료!")
     print("=" * 50)
-
-
-"""result
-
-    ==================================================
-    파일 메타데이터 테스트
-    ==================================================
-
-    1. 파일 추가 테스트
-    --------------------------------------------------
-    ✅ 파일 추가 완료: file_20251025_131227_d9977552
-    ✅ 파일 추가 완료: file_20251025_131227_2e480777
-
-    2. 파일 조회 테스트
-    --------------------------------------------------
-    📄 첫 번째 파일:
-        - 파일명: test_document.txt
-        - 크기: 0.05 MB
-        - 청크 수: 10
-        - 모델: text-embedding-3-small
-
-    📄 두 번째 파일:
-        - 파일명: large_document.txt
-        - 크기: 2.0 MB
-        - 청크 수: 50
-        - 모델: text-embedding-3-large
-
-    3. 전체 파일 목록
-    --------------------------------------------------
-    📚 등록된 파일: 2개
-        - file_20251025_131227_d9977552: test_document.txt
-        - file_20251025_131227_2e480777: large_document.txt
-
-    4. 통계 테스트
-    --------------------------------------------------
-    📊 통계:
-        - 총 파일: 2개
-        - 총 청크: 60개
-        - 총 크기: 2.05 MB
-        - 사용 모델: ['text-embedding-3-small', 'text-embedding-3-large']
-
-    ==================================================
-    테스트 완료!
-    ==================================================
-
-"""
-
-
-"""result_2
-
-    ==================================================
-    파일 메타데이터 테스트
-    ==================================================
-
-    1. 파일 추가 테스트
-    --------------------------------------------------
-    ✅ 파일 추가 완료: file_20251025_145527_16a6f607
-    ✅ 파일 추가 완료: file_20251025_145527_edb1679e
-
-    2. 파일 조회 테스트
-    --------------------------------------------------
-    📄 첫 번째 파일:
-        - 파일명: test_document.txt
-        - 크기: 0.05 MB
-        - 청크 수: 10
-        - 모델: text-embedding-3-small
-
-    📄 두 번째 파일:
-        - 파일명: large_document.txt
-        - 크기: 2.0 MB
-        - 청크 수: 50
-        - 모델: text-embedding-3-large
-
-    3. 전체 파일 목록
-    --------------------------------------------------
-    📚 등록된 파일: 4개
-        - file_20251025_131227_d9977552: test_document.txt
-        - file_20251025_131227_2e480777: large_document.txt
-        - file_20251025_145527_16a6f607: test_document.txt
-        - file_20251025_145527_edb1679e: large_document.txt
-
-    4. 통계 테스트
-    --------------------------------------------------
-    📊 통계:
-        - 총 파일: 4개
-        - 총 청크: 120개
-        - 총 크기: 4.1 MB
-        - 사용 모델: ['text-embedding-3-small', 'text-embedding-3-large']
-
-    ==================================================
-    테스트 완료!
-    ==================================================
-
-"""
-
-
-"""result_3
-
-    ==================================================
-    파일 메타데이터 테스트
-    ==================================================
-
-    1. 파일 추가 테스트
-    --------------------------------------------------
-    ✅ 파일 추가 완료: file_20251025_151445_84fb1fd3
-    ✅ 파일 추가 완료: file_20251025_151445_52a6b101
-
-    2. 파일 조회 테스트
-    --------------------------------------------------
-    📄 첫 번째 파일:
-        - 파일명: test_document.txt
-        - 크기: 0.05 MB
-        - 청크 수: 10
-        - 모델: text-embedding-3-small
-
-    📄 두 번째 파일:
-        - 파일명: large_document.txt
-        - 크기: 2.0 MB
-        - 청크 수: 50
-        - 모델: text-embedding-3-large
-
-    3. 전체 파일 목록
-    --------------------------------------------------
-    📚 등록된 파일: 6개
-        - file_20251025_131227_d9977552: test_document.txt
-        - file_20251025_131227_2e480777: large_document.txt
-        - file_20251025_145527_16a6f607: test_document.txt
-        - file_20251025_145527_edb1679e: large_document.txt
-        - file_20251025_151445_84fb1fd3: test_document.txt
-        - file_20251025_151445_52a6b101: large_document.txt
-
-    4. 통계 테스트
-    --------------------------------------------------
-    📊 통계:
-        - 총 파일: 6개
-        - 총 청크: 180개
-        - 총 크기: 6.15 MB
-        - 사용 모델: ['text-embedding-3-small', 'text-embedding-3-large']
-
-    ==================================================
-    테스트 완료!
-    ==================================================
-
-"""
