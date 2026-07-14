@@ -86,18 +86,22 @@ class FileMetadata:
                     self.metadata = loaded
                 else:
                     logger.warning(
-                        "메타데이터 형식 오류: 딕셔너리가 아닙니다. 초기화합니다. [path=%s]",
-                        self.storage_path,
+                        "메타데이터 형식 오류: 딕셔너리가 아닙니다. 초기화합니다.",
+                        extra={"storage_path": self.storage_path},
                     )
                     self.metadata = {}
             except json.JSONDecodeError as e:
                 logger.warning(
-                    "메타데이터 파일 JSON 파싱 실패 (path=%s): %s", self.storage_path, e
+                    "메타데이터 파일 JSON 파싱 실패: %s",
+                    e,
+                    extra={"storage_path": self.storage_path},
                 )
                 self.metadata = {}
             except OSError as e:
                 logger.error(
-                    "메타데이터 파일 읽기 실패 (path=%s): %s", self.storage_path, e
+                    "메타데이터 파일 읽기 실패: %s",
+                    e,
+                    extra={"storage_path": self.storage_path},
                 )
                 self.metadata = {}
         else:
@@ -118,7 +122,9 @@ class FileMetadata:
                 json.dump(self.metadata, f, ensure_ascii=False, indent=2)
         except OSError as e:
             logger.error(
-                "메타데이터 파일 저장 실패 (path=%s): %s", self.storage_path, e
+                "메타데이터 파일 저장 실패: %s",
+                e,
+                extra={"storage_path": self.storage_path},
             )
 
     def add_file(
