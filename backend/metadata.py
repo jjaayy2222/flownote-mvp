@@ -94,6 +94,7 @@ class FileMetadata:
                 logger.warning(
                     "메타데이터 파일 JSON 파싱 실패: %s",
                     e,
+                    exc_info=True,
                     extra={"storage_path": self.storage_path},
                 )
                 self.metadata = {}
@@ -101,6 +102,7 @@ class FileMetadata:
                 logger.error(
                     "메타데이터 파일 읽기 실패: %s",
                     e,
+                    exc_info=True,
                     extra={"storage_path": self.storage_path},
                 )
                 self.metadata = {}
@@ -124,6 +126,7 @@ class FileMetadata:
             logger.error(
                 "메타데이터 파일 저장 실패: %s",
                 e,
+                exc_info=True,
                 extra={"storage_path": self.storage_path},
             )
 
