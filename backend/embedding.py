@@ -11,7 +11,7 @@
 """
 
 import types
-from typing import Any, Dict, List, Mapping, Tuple, Type
+from typing import List, Mapping, Tuple, Type, TypedDict
 
 from openai import APIConnectionError, APIError, APITimeoutError, RateLimitError
 
@@ -24,6 +24,18 @@ from backend.utils import count_tokens, estimate_cost
 # [KO] API 오류 발생 시 반환할 기본 메시지와 에러 타입
 # [EN] Default message and error type returned upon API error
 DEFAULT_API_ERROR: Tuple[str, EmbeddingErrorType] = ("Embedding API error", "api_error")
+
+
+class EmbeddingResult(TypedDict):
+    """
+    [KO] 임베딩 생성 결과 반환 타입
+    [EN] Return type for embedding generation results
+    """
+
+    embeddings: List[List[float]]
+    tokens: int
+    cost: float
+
 
 # 예외 클래스에 따른 에러 메시지 접두사와 관측성 타입을 매핑하는 모듈 상수
 # 런타임 불변성을 보장하기 위해 MappingProxyType 사용
@@ -97,7 +109,7 @@ class EmbeddingGenerator:
             model_name.split("/")[-1], 0.02 / 1_000_000
         )  # ?
 
-    def generate_embeddings(self, texts: List[str]) -> Dict[str, Any]:
+    def generate_embeddings(self, texts: List[str]) -> EmbeddingResult:
         """
         [KO] 텍스트 리스트에 대한 임베딩 벡터를 생성하고 비용 및 토큰 수를 반환합니다.
         [EN] Generates embedding vectors for a list of texts and returns cost and token metrics.
@@ -107,7 +119,7 @@ class EmbeddingGenerator:
                                / [EN] List of text chunks to convert into embeddings.
 
         Returns:
-            Dict[str, Any]: [KO] 임베딩 벡터 리스트, 총 사용 토큰 수, 예상 비용을 포함한 딕셔너리
+            EmbeddingResult: [KO] 임베딩 벡터 리스트, 총 사용 토큰 수, 예상 비용을 포함한 딕셔너리
                             / [EN] Dictionary containing embedding vectors, total token count, and estimated cost.
 
         Raises:
