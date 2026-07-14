@@ -76,13 +76,23 @@ class FileMetadata:
         if os.path.exists(self.storage_path):
             try:
                 with open(self.storage_path, "r", encoding="utf-8") as f:
-                    self.metadata = json.load(f)
+                    loaded = json.load(f)
+                # [KO] json.load 결과가 dict인지 경량 검증 (손상된 파일 대비)
+                # [EN] Lightweight validation to ensure json.load result is a dict (guards against corrupted files)
+                if isinstance(loaded, dict):
+                    self.metadata = loaded
+                else:
+                    print("메타데이터 형식 오류: 딕셔너리가 아닙니다. 초기화합니다.")
+                    self.metadata = {}
             except Exception as e:
                 print(f"메타데이터 로드 실패: {e}")
                 self.metadata = {}
         else:
-            # data 폴더 생성
-            os.makedirs(os.path.dirname(self.storage_path), exist_ok=True)
+            # [KO] storage_path에 디렉터리 구성 요소가 있을 때만 폴더 생성
+            # [EN] Only create directory if storage_path contains a directory component
+            storage_dir = os.path.dirname(self.storage_path)
+            if storage_dir:
+                os.makedirs(storage_dir, exist_ok=True)
             self.metadata = {}
 
     def _save_metadata(self) -> None:
@@ -212,7 +222,7 @@ class FileMetadata:
 
         total_chunks = sum(m["chunk_count"] for m in self.metadata.values())
         total_size = sum(m["file_size"] for m in self.metadata.values())
-        models = list({m["embedding_model"] for m in self.metadata.values()})
+        models = sorted({m["embedding_model"] for m in self.metadata.values()})
 
         return {
             "total_files": len(self.metadata),
