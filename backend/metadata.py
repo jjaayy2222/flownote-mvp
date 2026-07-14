@@ -86,14 +86,19 @@ class FileMetadata:
                     self.metadata = loaded
                 else:
                     logger.warning(
-                        "메타데이터 형식 오류: 딕셔너리가 아닙니다. 초기화합니다."
+                        "메타데이터 형식 오류: 딕셔너리가 아닙니다. 초기화합니다. [path=%s]",
+                        self.storage_path,
                     )
                     self.metadata = {}
             except json.JSONDecodeError as e:
-                logger.error("메타데이터 파일 JSON 파싱 실패: %s", e)
+                logger.warning(
+                    "메타데이터 파일 JSON 파싱 실패 (path=%s): %s", self.storage_path, e
+                )
                 self.metadata = {}
             except OSError as e:
-                logger.error("메타데이터 파일 읽기 실패: %s", e)
+                logger.error(
+                    "메타데이터 파일 읽기 실패 (path=%s): %s", self.storage_path, e
+                )
                 self.metadata = {}
         else:
             # [KO] storage_path에 디렉터리 구성 요소가 있을 때만 폴더 생성
@@ -112,7 +117,9 @@ class FileMetadata:
             with open(self.storage_path, "w", encoding="utf-8") as f:
                 json.dump(self.metadata, f, ensure_ascii=False, indent=2)
         except OSError as e:
-            logger.error("메타데이터 파일 저장 실패: %s", e)
+            logger.error(
+                "메타데이터 파일 저장 실패 (path=%s): %s", self.storage_path, e
+            )
 
     def add_file(
         self,
