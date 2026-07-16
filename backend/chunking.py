@@ -60,6 +60,13 @@ class TextChunker:
     MAX_INVALID_VALUE_REPR_LEN: int = 100
 
     def _get_splitter_context(self) -> Dict[str, Any]:
+        """
+        [KO] 스플리터의 로깅용 컨텍스트(ID 및 타입)를 반환합니다.
+        [EN] Returns the logging context (ID and type) of the splitter.
+
+        Returns:
+            Dict[str, Any]: 로깅 컨텍스트 딕셔너리 / Logging context dictionary
+        """
         return {
             "splitter_id": id(self._splitter),
             "splitter_type": type(self._splitter).__name__,
@@ -68,6 +75,17 @@ class TextChunker:
     def _coerce_splitter_int_attr(
         self, attr_name: str, *, is_private: bool = False
     ) -> Optional[int]:
+        """
+        [KO] 스플리터의 특정 속성을 안전하게 정수형으로 변환하여 반환합니다.
+        [EN] Safely coerces and returns a specific attribute of the splitter as an integer.
+
+        Args:
+            attr_name (str): 가져올 속성 이름 / The name of the attribute to fetch
+            is_private (bool): 해당 속성이 비공개(private)인지 여부 / Whether the attribute is private
+
+        Returns:
+            Optional[int]: 변환된 정수값 또는 None / The coerced integer value or None
+        """
         if not hasattr(self._splitter, attr_name):
             return None
 
@@ -84,7 +102,15 @@ class TextChunker:
             return None
 
     def _log_invalid_int_attr(self, val: Any, attr_name: str, is_private: bool) -> None:
-        """유효하지 않은 int 속성 값을 안전하게 로깅합니다."""
+        """
+        [KO] 유효하지 않은 정수형 속성 값을 안전하게 로깅합니다.
+        [EN] Safely logs an invalid integer attribute value.
+
+        Args:
+            val (Any): 유효하지 않은 속성 값 / The invalid attribute value
+            attr_name (str): 속성 이름 / The attribute name
+            is_private (bool): 비공개(private) 속성 여부 / Whether the attribute is private
+        """
         val_repr = repr(val)
         max_len = self.MAX_INVALID_VALUE_REPR_LEN
         safe_val = f"{val_repr[:max_len]}..." if len(val_repr) > max_len else val_repr
@@ -104,6 +130,14 @@ class TextChunker:
         )
 
     def _log_missing_splitter_attr(self, attr_name: str, private_attr: str) -> None:
+        """
+        [KO] 스플리터에 필요한 속성이 없을 경우 중복을 방지하여 로깅합니다.
+        [EN] Logs a missing attribute on the splitter while preventing duplicate logs.
+
+        Args:
+            attr_name (str): 찾지 못한 공개 속성 이름 / The public attribute name that was not found
+            private_attr (str): 찾지 못한 비공개 속성 이름 / The private attribute name that was not found
+        """
         context = self._get_splitter_context()
         missing_attr_key = (
             context["splitter_id"],
