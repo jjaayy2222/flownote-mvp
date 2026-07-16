@@ -104,7 +104,9 @@ class TextChunker:
     def _log_invalid_int_attr(self, val: Any, attr_name: str, is_private: bool) -> None:
         """
         [KO] 유효하지 않은 정수형 속성 값을 안전하게 로깅합니다.
+             긴 문자열 값으로 인한 로그 비대화를 막기 위해 `MAX_INVALID_VALUE_REPR_LEN`(기본 100자) 기준으로 값을 생략(truncation) 처리합니다.
         [EN] Safely logs an invalid integer attribute value.
+             To prevent log bloat from long string values, the value is truncated based on `MAX_INVALID_VALUE_REPR_LEN` (default 100 chars).
 
         Args:
             val (Any): 유효하지 않은 속성 값 / The invalid attribute value
@@ -132,7 +134,9 @@ class TextChunker:
     def _log_missing_splitter_attr(self, attr_name: str, private_attr: str) -> None:
         """
         [KO] 스플리터에 필요한 속성이 없을 경우 중복을 방지하여 로깅합니다.
+             `(splitter_id, splitter_type, attr_name, private_attr)` 튜플을 중복 제거 키(deduplication key)로 사용하여, 동일 인스턴스의 동일 속성에 대한 반복적인 로깅을 억제합니다.
         [EN] Logs a missing attribute on the splitter while preventing duplicate logs.
+             Uses a tuple of `(splitter_id, splitter_type, attr_name, private_attr)` as a deduplication key to suppress repeated logging for the same attribute on the same instance.
 
         Args:
             attr_name (str): 찾지 못한 공개 속성 이름 / The public attribute name that was not found
