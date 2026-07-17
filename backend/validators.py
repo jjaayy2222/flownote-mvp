@@ -69,6 +69,7 @@ class FileValidator:
             file_path: 검증할 파일의 경로 문자열 / Path string of the file to validate
 
         Returns:
+            Tuple[bool, Optional[str]]: (is_valid, error_message)
             - `(True, None)`: 검증 성공 시 / On success
             - `(False, str)`: 검증 실패 시 (오류 메시지 포함) / On failure (includes error string)
         """
@@ -101,6 +102,7 @@ class FileValidator:
             file_path: 검증할 파일의 경로 문자열 / Path string of the file to validate
 
         Returns:
+            Tuple[bool, Optional[str]]: (is_valid, error_message)
             - `(True, None)`: 검증 성공 시 / On success
             - `(False, str)`: 검증 실패 시 (오류 메시지 포함) / On failure (includes error string)
         """
@@ -126,6 +128,7 @@ class FileValidator:
             file_path: 검증할 파일의 경로 문자열 / Path string of the file to validate
 
         Returns:
+            Tuple[bool, Optional[str]]: (is_valid, error_message)
             - `(True, None)`: 모든 검증 통과 시 / If all checks pass
             - `(False, str)`: 검증 실패 시 (오류 메시지 포함) / On failure (includes error string)
         """
@@ -174,6 +177,7 @@ class QueryValidator:
             query: 검증할 검색 쿼리 문자열 / Search query string to validate
 
         Returns:
+            Tuple[bool, Optional[str]]: (is_valid, error_message)
             - `(True, None)`: 검증 성공 시 / On success
             - `(False, str)`: 검증 실패 시 (오류 메시지 포함) / On failure (includes error string)
         """
@@ -216,6 +220,7 @@ class APIKeyValidator:
              Validates the Embedding API key (required) and GPT4O API key (optional) in order.
 
         Returns:
+            Tuple[bool, Optional[str]]: (is_valid, error_message)
             - `(True, None)`: 모든 검증 통과 시 / If all checks pass
             - `(False, str)`: 검증 실패 시 (오류 메시지 포함) / On failure (includes error string)
         """
@@ -281,6 +286,7 @@ class APIKeyValidator:
              Use this as a simpler alternative to the full validate_api_keys() validation.
 
         Returns:
+            Tuple[bool, Optional[str]]: (is_valid, error_message)
             - `(True, None)`: 검증 성공 시 / On success
             - `(False, str)`: 검증 실패 시 (오류 메시지 포함) / On failure (includes error string)
         """
