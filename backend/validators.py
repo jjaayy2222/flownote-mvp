@@ -47,8 +47,8 @@ class FileValidator:
         [EN] Initialize FileValidator.
 
         Args:
-            max_file_size_mb (int): 허용되는 최대 파일 크기 (단위: MB). 기본값 200. / Maximum allowed file size in megabytes. Defaults to 200.
-            allowed_extensions (Optional[List[str]]): 허용 확장자 목록. 기본값 ['.pdf', '.txt', '.md']. / List of permitted file extensions. Defaults to ['.pdf', '.txt', '.md'].
+            max_file_size_mb: 허용되는 최대 파일 크기 (단위: MB). 기본값 200. / Maximum allowed file size in megabytes. Defaults to 200.
+            allowed_extensions: 허용 확장자 목록. 기본값 ['.pdf', '.txt', '.md']. / List of permitted file extensions. Defaults to ['.pdf', '.txt', '.md'].
         """
         self.max_file_size_mb = max_file_size_mb
         self.max_file_size_bytes = max_file_size_mb * 1024 * 1024
@@ -66,10 +66,11 @@ class FileValidator:
              Fails if the file is empty or exceeds the configured maximum size.
 
         Args:
-            file_path (str): 검증할 파일의 경로 문자열 / Path string of the file to validate
+            file_path: 검증할 파일의 경로 문자열 / Path string of the file to validate
 
         Returns:
-            Tuple[bool, Optional[str]]: (is_valid, error_message) 형태의 튜플. 검증 성공 시 (True, None), 실패 시 (False, 오류 메시지 문자열). / A tuple of (is_valid, error_message). Returns (True, None) on success, (False, error string) on failure.
+            - `(True, None)`: 검증 성공 시 / On success
+            - `(False, str)`: 검증 실패 시 (오류 메시지 포함) / On failure (includes error string)
         """
         try:
             file_size = os.path.getsize(file_path)
@@ -97,10 +98,11 @@ class FileValidator:
              Fails if the extension is not in the list of allowed extensions.
 
         Args:
-            file_path (str): 검증할 파일의 경로 문자열 / Path string of the file to validate
+            file_path: 검증할 파일의 경로 문자열 / Path string of the file to validate
 
         Returns:
-            Tuple[bool, Optional[str]]: (is_valid, error_message) 형태의 튜플. 검증 성공 시 (True, None), 실패 시 (False, 오류 메시지 문자열). / A tuple of (is_valid, error_message). Returns (True, None) on success, (False, error string) on failure.
+            - `(True, None)`: 검증 성공 시 / On success
+            - `(False, str)`: 검증 실패 시 (오류 메시지 포함) / On failure (includes error string)
         """
         ext = Path(file_path).suffix.lower()
 
@@ -121,10 +123,11 @@ class FileValidator:
              Returns immediately on the first failure.
 
         Args:
-            file_path (str): 검증할 파일의 경로 문자열 / Path string of the file to validate
+            file_path: 검증할 파일의 경로 문자열 / Path string of the file to validate
 
         Returns:
-            Tuple[bool, Optional[str]]: (is_valid, error_message) 형태의 튜플. 모든 검증 통과 시 (True, None), 실패 시 (False, 오류 메시지 문자열). / A tuple of (is_valid, error_message). Returns (True, None) if all checks pass, (False, error string) on failure.
+            - `(True, None)`: 모든 검증 통과 시 / If all checks pass
+            - `(False, str)`: 검증 실패 시 (오류 메시지 포함) / On failure (includes error string)
         """
         if not os.path.exists(file_path):
             return False, f"❌ 파일이 존재하지 않습니다: {file_path}"
@@ -154,8 +157,8 @@ class QueryValidator:
         [EN] Initialize QueryValidator.
 
         Args:
-            min_length (int): 허용되는 최소 쿼리 길이 (공백 제거 후 기준). 기본값 2. / Minimum allowed query length (after stripping whitespace). Defaults to 2.
-            max_length (int): 허용되는 최대 쿼리 길이 (공백 제거 후 기준). 기본값 500. / Maximum allowed query length (after stripping whitespace). Defaults to 500.
+            min_length: 허용되는 최소 쿼리 길이 (공백 제거 후 기준). 기본값 2. / Minimum allowed query length (after stripping whitespace). Defaults to 2.
+            max_length: 허용되는 최대 쿼리 길이 (공백 제거 후 기준). 기본값 500. / Maximum allowed query length (after stripping whitespace). Defaults to 500.
         """
         self.min_length = min_length
         self.max_length = max_length
@@ -168,10 +171,11 @@ class QueryValidator:
              Checks for None/empty/whitespace-only string and min/max length in order.
 
         Args:
-            query (str): 검증할 검색 쿼리 문자열 / Search query string to validate
+            query: 검증할 검색 쿼리 문자열 / Search query string to validate
 
         Returns:
-            Tuple[bool, Optional[str]]: (is_valid, error_message) 형태의 튜플. 검증 성공 시 (True, None), 실패 시 (False, 오류 메시지 문자열). / A tuple of (is_valid, error_message). Returns (True, None) on success, (False, error string) on failure.
+            - `(True, None)`: 검증 성공 시 / On success
+            - `(False, str)`: 검증 실패 시 (오류 메시지 포함) / On failure (includes error string)
         """
         if not query or not query.strip():
             return False, "⚠️ 검색어를 입력해주세요."
@@ -212,7 +216,8 @@ class APIKeyValidator:
              Validates the Embedding API key (required) and GPT4O API key (optional) in order.
 
         Returns:
-            Tuple[bool, Optional[str]]: (is_valid, error_message) 형태의 튜플. 모든 검증 통과 시 (True, None), 실패 시 (False, 오류 메시지 문자열). / A tuple of (is_valid, error_message). Returns (True, None) if all checks pass, (False, error string) on failure.
+            - `(True, None)`: 모든 검증 통과 시 / If all checks pass
+            - `(False, str)`: 검증 실패 시 (오류 메시지 포함) / On failure (includes error string)
         """
         embedding_api_key = ModelConfig.EMBEDDING_API_KEY
         embedding_base_url = ModelConfig.EMBEDDING_BASE_URL
@@ -276,7 +281,8 @@ class APIKeyValidator:
              Use this as a simpler alternative to the full validate_api_keys() validation.
 
         Returns:
-            Tuple[bool, Optional[str]]: (is_valid, error_message) 형태의 튜플. 검증 성공 시 (True, None), 실패 시 (False, 오류 메시지 문자열). / A tuple of (is_valid, error_message). Returns (True, None) on success, (False, error string) on failure.
+            - `(True, None)`: 검증 성공 시 / On success
+            - `(False, str)`: 검증 실패 시 (오류 메시지 포함) / On failure (includes error string)
         """
         if not ModelConfig.EMBEDDING_API_KEY:
             return False, "❌ 임베딩 API 키가 설정되지 않았습니다."
