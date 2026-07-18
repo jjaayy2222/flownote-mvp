@@ -28,12 +28,6 @@ class MarkdownExporter:
     [EN] Class to convert search results into Markdown formatted strings.
     """
 
-    def __init__(self):
-        """
-        [KO] MarkdownExporter를 초기화합니다.
-        [EN] Initialize MarkdownExporter.
-        """
-
     def export_search_results(
         self, query: str, results: List[SearchResult], include_metadata: bool = True
     ) -> str:
