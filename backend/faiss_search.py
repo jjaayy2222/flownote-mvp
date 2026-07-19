@@ -28,13 +28,25 @@ from backend.utils import check_metadata_match
 
 
 class FAISSRetriever:
-    """FAISS 기반 벡터 검색"""
+    """
+    [KO] FAISS 기반 벡터 검색기입니다.
+    [EN] FAISS-based vector retriever.
+    """
 
     DEFAULT_FILTER_EXPANSION_FACTOR = 10  # 필터링 시 후보군 확장 기본 배수
 
     @staticmethod
     def _normalize_expansion_factor(value: Any) -> int:
-        """확장 배수 파라미터 유효성 검증 및 정규화 (정수 변환)"""
+        """
+        [KO] 확장 배수 파라미터의 유효성을 검증하고 정규화(정수 변환)합니다.
+        [EN] Validates and normalizes (converts to integer) the expansion factor parameter.
+
+        Args:
+            value: [KO] 검증할 확장 배수 값 / [EN] The expansion factor value to validate
+
+        Returns:
+            int: [KO] 정규화된 확장 배수 (정수) / [EN] The normalized expansion factor (integer)
+        """
         # bool은 numbers.Real의 서브클래스이지만 벡터 검색 배수로는 부적절하므로 차단
         if isinstance(value, bool) or not isinstance(value, numbers.Real):
             raise TypeError(
@@ -44,7 +56,8 @@ class FAISSRetriever:
         if value < 1:
             raise ValueError(f"filter_expansion_factor must be >= 1, got {value}")
 
-        normalized = int(value)
+        # 타입 체커를 만족시키기 위해 float로 변환 후 int로 캐스팅
+        normalized = int(float(value))
 
         if normalized < 1:
             # 0.5와 같이 (0.0, 1.0) 사이의 값이 들어온 경우 정수 변환 시 0이 됨
@@ -60,9 +73,12 @@ class FAISSRetriever:
         filter_expansion_factor: int = DEFAULT_FILTER_EXPANSION_FACTOR,
     ):
         """
+        [KO] FAISSRetriever 인스턴스를 초기화합니다.
+        [EN] Initializes the FAISSRetriever instance.
+
         Args:
-            dimension: 임베딩 벡터 차원 (text-embedding-3-small: 1536)
-            filter_expansion_factor: 메타데이터 필터링 시 FAISS에서 초기 추출할 후보군 배수
+            dimension: [KO] 임베딩 벡터 차원 (기본값: 1536) / [EN] Embedding vector dimension (default: 1536)
+            filter_expansion_factor: [KO] 메타데이터 필터링 시 FAISS에서 초기 추출할 후보군 배수 / [EN] Candidate expansion factor for metadata filtering
         """
         self.dimension = dimension
         self.index = faiss.IndexFlatL2(dimension)
@@ -78,11 +94,12 @@ class FAISSRetriever:
         documents: List[Dict],  # Dict 타입으로 변경
     ):
         """
-        문서와 임베딩 추가
+        [KO] 문서와 임베딩 벡터를 FAISS 인덱스에 추가합니다.
+        [EN] Adds documents and their embedding vectors to the FAISS index.
 
         Args:
-            embeddings: 임베딩 벡터 배열
-            documents: 문서 dict 리스트 (content, metadata 포함)
+            embeddings: [KO] 임베딩 벡터 배열 / [EN] Array of embedding vectors
+            documents: [KO] 문서 정보 딕셔너리 리스트 (content, metadata 포함) / [EN] List of document info dictionaries (including content, metadata)
         """
         if not documents or embeddings is None:
             return
@@ -98,8 +115,8 @@ class FAISSRetriever:
         else:
             embeddings_np = embeddings.astype(np.float32)
 
-        # FAISS 인덱스에 추가
-        self.index.add(embeddings_np)
+        # FAISS 인덱스에 추가 (타입 스텁 오류 무시)
+        self.index.add(embeddings_np)  # type: ignore[call-arg]
 
         # 문서 dict 그대로 저장
         self.documents.extend(documents)
@@ -113,16 +130,17 @@ class FAISSRetriever:
         filter_expansion_factor: Optional[int] = None,
     ) -> List[Dict]:
         """
-        쿼리에 가장 유사한 문서 검색
+        [KO] 주어진 쿼리와 가장 유사한 문서를 검색합니다.
+        [EN] Searches for documents most similar to the given query.
 
         Args:
-            query: 검색 쿼리
-            k: 반환할 결과 수
-            metadata_filter: 메타데이터 필터 조건 (예: {"category": "Projects"})
-            filter_expansion_factor: 이 검색에만 일시적으로 적용할 후보군 확장 배수 (None이면 인스턴스 값 사용)
+            query: [KO] 검색 쿼리 문자열 / [EN] The search query string
+            k: [KO] 반환할 최대 결과 수 / [EN] Maximum number of results to return
+            metadata_filter: [KO] 메타데이터 필터 조건 딕셔너리 (예: {"category": "Projects"}) / [EN] Metadata filter condition dictionary
+            filter_expansion_factor: [KO] 이 검색에만 일시적으로 적용할 후보군 확장 배수 (None이면 인스턴스 값 사용) / [EN] Temporary candidate expansion factor to apply (uses instance value if None)
 
         Returns:
-            검색 결과 리스트 (content, metadata, score 포함)
+            List[Dict]: [KO] 검색 결과 리스트 (content, metadata, score, distance 포함) / [EN] List of search results (including content, metadata, score, distance)
         """
         # 1. 파라미터 유효성 검증 (메타데이터 필터링이 활성화된 경우에만 후보군 확장 배수 적용)
         if metadata_filter is not None:
@@ -147,7 +165,8 @@ class FAISSRetriever:
         query_vector = np.array([query_embedding], dtype=np.float32)
 
         search_k = min(self.index.ntotal, k * expansion if metadata_filter else k)
-        distances, indices = self.index.search(query_vector, search_k)
+        # FAISS 타입 스텁 오류 무시
+        distances, indices = self.index.search(query_vector, search_k)  # type: ignore[call-arg]
 
         # 결과 반환 및 필터링
         results = []
@@ -182,16 +201,31 @@ class FAISSRetriever:
         return results
 
     def clear(self):
-        """인덱스 초기화"""
+        """
+        [KO] FAISS 인덱스와 저장된 문서를 모두 초기화합니다.
+        [EN] Clears the FAISS index and all stored documents.
+        """
         self.index = faiss.IndexFlatL2(self.dimension)
         self.documents = []
 
     def size(self) -> int:
-        """인덱스에 저장된 문서 수"""
+        """
+        [KO] 인덱스에 저장된 문서의 총 개수를 반환합니다.
+        [EN] Returns the total number of documents stored in the index.
+
+        Returns:
+            int: [KO] 저장된 문서 수 / [EN] The number of stored documents
+        """
         return self.index.ntotal
 
     def save(self, directory: Union[str, Path]) -> None:
-        """인덱스와 메타데이터를 디스크에 저장"""
+        """
+        [KO] 인덱스와 메타데이터를 지정된 디렉토리에 저장합니다.
+        [EN] Saves the index and metadata to the specified directory.
+
+        Args:
+            directory: [KO] 저장할 디렉토리 경로 / [EN] The directory path to save to
+        """
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
 
@@ -205,7 +239,13 @@ class FAISSRetriever:
         logger.info("FAISS 인덱스 및 메타데이터 저장 완료: %s", directory)
 
     def load(self, directory: Union[str, Path]) -> None:
-        """디스크에서 인덱스와 메타데이터 로드"""
+        """
+        [KO] 지정된 디렉토리에서 인덱스와 메타데이터를 로드합니다.
+        [EN] Loads the index and metadata from the specified directory.
+
+        Args:
+            directory: [KO] 로드할 파일이 있는 디렉토리 경로 / [EN] The directory path to load from
+        """
         directory = Path(directory)
         index_path = directory / "faiss.index"
         docs_path = directory / "documents.json"
@@ -264,7 +304,7 @@ if __name__ == "__main__":
 
     # 3. 임베딩 생성
     embedding_generator = EmbeddingGenerator()
-    texts = [doc["content"] for doc in docs]
+    texts = [str(doc["content"]) for doc in docs]
 
     # ✅ 수정: result에서 embeddings 추출!
     result = embedding_generator.generate_embeddings(texts)
