@@ -56,10 +56,8 @@ class FAISSRetriever:
         if value < 1:
             raise ValueError(f"filter_expansion_factor must be >= 1, got {value}")
 
-        # [KO] 타입 체커 오류(Real 형식이 int로 직접 변환되지 않는 문제)를 방지하고,
-        # numpy.float32, Decimal 등 다양한 숫자형 입력을 안전하게 처리하기 위해 float 변환 후 int로 캐스팅합니다.
-        # [EN] To prevent type checker errors (Real not directly convertible to int) and safely handle
-        # various numeric types like np.float32 or Decimal, we cast to float then int.
+        # [KO] numpy.float32 등 다양한 숫자형의 안전한 int 캐스팅을 위해 float를 거침 (타입 체커 오류 방지)
+        # [EN] Cast via float to safely handle numeric types like np.float32 and prevent type errors.
         normalized = int(float(value))
 
         if normalized < 1:
@@ -69,6 +67,21 @@ class FAISSRetriever:
             )
 
         return normalized
+
+    @staticmethod
+    def _validate_content(content: Any) -> str:
+        """
+        [KO] 문서 내용이 텍스트 형식이 되도록 검증 및 변환하는 헬퍼 메서드입니다.
+        [EN] Helper method to validate and convert document content to a string.
+        """
+        if isinstance(content, str):
+            return content
+        if content is None or isinstance(content, (list, dict)):
+            raise TypeError(
+                f"Document content cannot be a structured or None type, got {type(content).__name__}"
+            )
+        # Enum, Path 등 __str__이 유효한 객체는 문자열로 변환 허용
+        return str(content)
 
     def __init__(
         self,
@@ -118,8 +131,8 @@ class FAISSRetriever:
         else:
             embeddings_np = embeddings.astype(np.float32)
 
-        # [KO] FAISS 타입 스텁 오류 무시: add()는 np.ndarray를 정상적으로 받지만, mypy 스텁에서는 인자 매칭(x)이 실패하는 문제가 있습니다.
-        # [EN] Ignore FAISS type stub error: add() accepts np.ndarray correctly at runtime, but mypy stub fails on argument matching (x).
+        # [KO] FAISS mypy 스텁(x 인자 매칭) 오류 무시 (런타임은 정상 동작)
+        # [EN] Ignore FAISS mypy stub error for arg matching
         self.index.add(embeddings_np)  # type: ignore[call-arg]
 
         # 문서 dict 그대로 저장
@@ -169,8 +182,8 @@ class FAISSRetriever:
         query_vector = np.array([query_embedding], dtype=np.float32)
 
         search_k = min(self.index.ntotal, k * expansion if metadata_filter else k)
-        # [KO] FAISS 타입 스텁 오류 무시: search()는 정상 동작하지만, mypy 스텁에서 필요한 인자(k, distances 등)가 누락되었다고 잘못 경고하는 문제가 있습니다.
-        # [EN] Ignore FAISS type stub error: search() works correctly at runtime, but mypy stub incorrectly warns about missing arguments (k, distances, etc).
+        # [KO] FAISS mypy 스텁(누락된 인자 경고) 오류 무시 (런타임은 정상 동작)
+        # [EN] Ignore FAISS mypy stub error for missing args
         distances, indices = self.index.search(query_vector, search_k)  # type: ignore[call-arg]
 
         # 결과 반환 및 필터링
@@ -309,14 +322,8 @@ if __name__ == "__main__":
 
     # 3. 임베딩 생성
     embedding_generator = EmbeddingGenerator()
-    texts = []
-    for doc in docs:
-        content = doc.get("content")
-        if not isinstance(content, str):
-            raise TypeError(
-                f"Document content must be a string, got {type(content).__name__}"
-            )
-        texts.append(content)
+    # 헬퍼 메서드를 통해 안전하게 검증 및 변환
+    texts = [FAISSRetriever._validate_content(doc.get("content")) for doc in docs]
 
     # ✅ 수정: result에서 embeddings 추출!
     result = embedding_generator.generate_embeddings(texts)
