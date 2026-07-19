@@ -82,22 +82,31 @@ class FAISSRetriever:
         #      NumPy/Pandas의 배열형 객체(ndarray, DataFrame, Series)는 임베딩 대상이 아니므로 명시적으로 차단합니다.
         #      단, str/bytes/bytearray와 같은 스칼라형 값과, 단순히 __iter__만 구현한 커스텀 타입은 차단 대상이 아닙니다.
         # [EN] Block container types (abc.Collection covers Mapping, Sequence, Set and their subclasses) and
-        #      specific NumPy/Pandas array-like objects (ndarray, DataFrame, Series) as they are not embeddable.
+        #      NumPy/Pandas array-like objects (ndarray, DataFrame, Series) as they are not embeddable.
         #      Scalar text types (str/bytes/bytearray) and custom types that merely implement __iter__ remain allowed.
         scalar_like = isinstance(content, (str, bytes, bytearray))
         # abc.Collection은 Mapping/Sequence/Set을 모두 포함하므로 하나로 충분합니다.
         # abc.Collection covers abc.Mapping, abc.Sequence, and abc.Set as subclasses.
         container_like = isinstance(content, abc.Collection) and not scalar_like
-        # 모듈명 대신 구체적인 배열형 타입만 명시적으로 차단하여 np.float32 같은 스칼라 유사 타입이 잘못 차단되는 것을 방지합니다.
-        # Use explicit type checks (not module name) to avoid blocking scalar-like types such as np.float32.
-        is_array_like = isinstance(content, np.ndarray) or type(content).__name__ in (
-            "DataFrame",
-            "Series",
-        )
+        # [KO] numpy.ndarray는 직접 isinstance로 확인하고, pandas는 선택적 의존성이므로 try/except로 안전하게 처리합니다.
+        #      type().__name__ 기반 감지는 동명의 비관련 클래스를 오탐하거나 서브클래스를 누락할 수 있으므로 사용하지 않습니다.
+        # [EN] Check np.ndarray directly; pandas is an optional dep so handle via try/except.
+        #      Avoid type().__name__ matching which can cause false positives or miss subclasses.
+        is_array_like = isinstance(content, np.ndarray)
+        try:
+            import pandas as pd  # noqa: PLC0415
+
+            is_array_like = is_array_like or isinstance(
+                content, (pd.DataFrame, pd.Series)
+            )
+        except ImportError:  # sourcery skip: use-contextlib-suppress
+            pass  # pandas가 설치되지 않은 환경에서는 검사를 건너뜁니다. / pandas not installed; skip check.
 
         if container_like or is_array_like:
             raise TypeError(
-                f"Document content must be a scalar value, not a structured container type like {type(content).__name__}"
+                f"Document content must be a plain string or scalar value, not a "
+                f"container or array-like type ({type(content).__name__}). "
+                f"Collection, ndarray, DataFrame, and Series are not supported."
             )
 
         # Enum, Path 등 __str__이 유효한 단일(scalar) 객체는 문자열로 변환 허용
