@@ -78,27 +78,24 @@ class FAISSRetriever:
             return content
         if content is None:
             raise TypeError("Document content cannot be None.")
-        # [KO] 전형적인 컨테이너(Collection/Mapping/Sequence/Set) 및 NumPy/Pandas 객체는 문서 내용으로 사용할 수 없으므로 차단합니다.
-        #      단, 문자열/바이트와 같은 스칼라형 값은 허용합니다. __iter__만 구현한 커스텀 스칼라형 타입(예: 일부 Path 객체)은 차단 대상이 아닙니다.
-        # [EN] Block typical container-like structures (Collection/Mapping/Sequence/Set) and NumPy/Pandas objects as document content.
-        #      Scalar text-like values (str/bytes/bytearray) remain allowed; custom scalar-like types that merely implement __iter__
-        #      are not rejected solely for being Iterable.
+        # [KO] 전형적인 컨테이너 타입(abc.Collection의 서브클래스인 Mapping, Sequence, Set 등을 모두 포함) 및
+        #      NumPy/Pandas의 배열형 객체(ndarray, DataFrame, Series)는 임베딩 대상이 아니므로 명시적으로 차단합니다.
+        #      단, str/bytes/bytearray와 같은 스칼라형 값과, 단순히 __iter__만 구현한 커스텀 타입은 차단 대상이 아닙니다.
+        # [EN] Block container types (abc.Collection covers Mapping, Sequence, Set and their subclasses) and
+        #      specific NumPy/Pandas array-like objects (ndarray, DataFrame, Series) as they are not embeddable.
+        #      Scalar text types (str/bytes/bytearray) and custom types that merely implement __iter__ remain allowed.
         scalar_like = isinstance(content, (str, bytes, bytearray))
-        container_like = isinstance(
-            content,
-            (
-                abc.Mapping,
-                abc.Sequence,
-                abc.Set,
-                abc.Collection,
-            ),
-        )
-        module_name = getattr(type(content), "__module__", "")
-        is_numpy_or_pandas = module_name.startswith("numpy") or module_name.startswith(
-            "pandas"
+        # abc.Collection은 Mapping/Sequence/Set을 모두 포함하므로 하나로 충분합니다.
+        # abc.Collection covers abc.Mapping, abc.Sequence, and abc.Set as subclasses.
+        container_like = isinstance(content, abc.Collection) and not scalar_like
+        # 모듈명 대신 구체적인 배열형 타입만 명시적으로 차단하여 np.float32 같은 스칼라 유사 타입이 잘못 차단되는 것을 방지합니다.
+        # Use explicit type checks (not module name) to avoid blocking scalar-like types such as np.float32.
+        is_array_like = isinstance(content, np.ndarray) or type(content).__name__ in (
+            "DataFrame",
+            "Series",
         )
 
-        if (container_like or is_numpy_or_pandas) and not scalar_like:
+        if container_like or is_array_like:
             raise TypeError(
                 f"Document content must be a scalar value, not a structured container type like {type(content).__name__}"
             )
