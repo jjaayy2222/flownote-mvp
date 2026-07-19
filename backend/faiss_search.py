@@ -30,16 +30,19 @@ from backend.utils import check_metadata_match
 
 
 @functools.lru_cache(maxsize=None)
-def _get_pandas_array_types() -> Tuple[type, ...]:
-    """[KO] pandas DataFrame/Series 타입을 첫 호출 시점에 1회만 로드하고 이후 캐시합니다.
-    [EN] Lazily loads pandas DataFrame/Series types on first call and caches the result.
+def _get_array_like_types() -> Tuple[type, ...]:
+    """[KO] numpy.ndarray 및 pandas DataFrame/Series 타입을 포함하는 완전한 투플을 첫 호출 시 1회만 생성하고 이후 재사용합니다.
+    [EN] Lazily builds and caches a full tuple of array-like types (numpy.ndarray + pandas types) on first call.
+         Reusing this cached tuple avoids per-call tuple allocation in _validate_content.
     """
+    pandas_types: Tuple[type, ...] = ()
     try:
         import pandas as _pd  # noqa: PLC0415
 
-        return (_pd.DataFrame, _pd.Series)
+        pandas_types = (_pd.DataFrame, _pd.Series)
     except ImportError:  # sourcery skip: use-contextlib-suppress
-        return ()  # pandas 미설치 환경 / pandas not installed
+        pass  # pandas 미설치 환경 / pandas not installed
+    return (np.ndarray, *pandas_types)
 
 
 class FAISSRetriever:
@@ -102,9 +105,9 @@ class FAISSRetriever:
         # abc.Collection은 Mapping/Sequence/Set을 모두 포함하므로 하나로 충분합니다.
         # abc.Collection covers abc.Mapping, abc.Sequence, and abc.Set as subclasses.
         container_like = isinstance(content, abc.Collection) and not scalar_like
-        # [KO] numpy.ndarray 및 pandas 배열형 타입은 첫 호출 시 _get_pandas_array_types()를 통해 지연 로드 및 캐시합니다.
-        # [EN] np.ndarray and pandas array-like types use _get_pandas_array_types() for lazy-loaded, cached checking.
-        is_array_like = isinstance(content, (np.ndarray, *_get_pandas_array_types()))
+        # [KO] numpy.ndarray 및 pandas 배열형 타입은 _get_array_like_types()를 통해 첫 호출 시 1회만 투플을 생성하고 이후 재사용합니다.
+        # [EN] _get_array_like_types() builds the full type tuple once and caches it, avoiding per-call allocation.
+        is_array_like = isinstance(content, _get_array_like_types())
 
         if container_like or is_array_like:
             # [KO] 실제 타입명을 동적으로 표시하고, 대표적인 차단 타입 예시를 비전체 힌트로 제공하여 디버깅을 돕습니다.
