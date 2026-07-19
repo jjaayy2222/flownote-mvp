@@ -78,14 +78,31 @@ class FAISSRetriever:
             return content
         if content is None:
             raise TypeError("Document content cannot be None.")
-        # [KO] 문자열/바이트 이외의 Iterable(리스트, 딕셔너리, NumPy 배열, Pandas DataFrame 등) 객체는 임베딩할 수 없으므로 명시적으로 차단합니다.
-        # [EN] Explicitly block non-scalar Iterable structures (e.g. lists, dicts, np.ndarray, pandas DataFrames).
-        if isinstance(content, abc.Iterable) and not isinstance(
-            content, (str, bytes, bytearray)
-        ):
+        # [KO] 전형적인 컨테이너(Collection/Mapping/Sequence/Set) 및 NumPy/Pandas 객체는 문서 내용으로 사용할 수 없으므로 차단합니다.
+        #      단, 문자열/바이트와 같은 스칼라형 값은 허용합니다. __iter__만 구현한 커스텀 스칼라형 타입(예: 일부 Path 객체)은 차단 대상이 아닙니다.
+        # [EN] Block typical container-like structures (Collection/Mapping/Sequence/Set) and NumPy/Pandas objects as document content.
+        #      Scalar text-like values (str/bytes/bytearray) remain allowed; custom scalar-like types that merely implement __iter__
+        #      are not rejected solely for being Iterable.
+        scalar_like = isinstance(content, (str, bytes, bytearray))
+        container_like = isinstance(
+            content,
+            (
+                abc.Mapping,
+                abc.Sequence,
+                abc.Set,
+                abc.Collection,
+            ),
+        )
+        module_name = getattr(type(content), "__module__", "")
+        is_numpy_or_pandas = module_name.startswith("numpy") or module_name.startswith(
+            "pandas"
+        )
+
+        if (container_like or is_numpy_or_pandas) and not scalar_like:
             raise TypeError(
                 f"Document content must be a scalar value, not a structured container type like {type(content).__name__}"
             )
+
         # Enum, Path 등 __str__이 유효한 단일(scalar) 객체는 문자열로 변환 허용
         return str(content)
 
