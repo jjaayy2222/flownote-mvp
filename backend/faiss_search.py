@@ -18,6 +18,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 import numbers
+from collections import abc
 from typing import Any, Dict, List, Optional, Union
 
 import faiss
@@ -71,16 +72,23 @@ class FAISSRetriever:
     @staticmethod
     def _validate_content(content: Any) -> str:
         """
-        [KO] 문서 내용이 텍스트 형식이 되도록 검증 및 변환하는 헬퍼 메서드입니다.
+        [KO] 문서 내용이 스칼라(문자열 등)인지 검증 및 변환하는 헬퍼 메서드입니다.
         [EN] Helper method to validate and convert document content to a string.
         """
         if isinstance(content, str):
             return content
-        if content is None or isinstance(content, (list, dict)):
+        if content is None:
+            raise TypeError("Document content cannot be None.")
+        # [KO] 문자열/바이트 이외의 Sequence(리스트, 튜플 등)나 Mapping(딕셔너리 등) 같은 비스칼라 데이터 구조는 임베딩할 수 없으므로 명시적으로 차단합니다.
+        # [EN] Explicitly block non-scalar data structures like Sequence (excluding str/bytes) or Mapping (dicts) as they cannot be meaningfully embedded.
+        if isinstance(content, abc.Mapping) or (
+            isinstance(content, abc.Sequence)
+            and not isinstance(content, (str, bytes, bytearray))
+        ):
             raise TypeError(
-                f"Document content cannot be a structured or None type, got {type(content).__name__}"
+                f"Document content must be a scalar value, not a structured container type like {type(content).__name__}"
             )
-        # Enum, Path 등 __str__이 유효한 객체는 문자열로 변환 허용
+        # Enum, Path 등 __str__이 유효한 단일(scalar) 객체는 문자열로 변환 허용
         return str(content)
 
     def __init__(
@@ -322,8 +330,8 @@ if __name__ == "__main__":
 
     # 3. 임베딩 생성
     embedding_generator = EmbeddingGenerator()
-    # 헬퍼 메서드를 통해 안전하게 검증 및 변환
-    texts = [FAISSRetriever._validate_content(doc.get("content")) for doc in docs]
+    # 서브클래싱 등을 고려하여 정적 클래스명 대신 인스턴스의 클래스 메서드를 통해 헬퍼를 호출합니다.
+    texts = [type(retriever)._validate_content(doc.get("content")) for doc in docs]
 
     # ✅ 수정: result에서 embeddings 추출!
     result = embedding_generator.generate_embeddings(texts)
