@@ -27,6 +27,15 @@ import numpy as np
 from backend.embedding import EmbeddingGenerator
 from backend.utils import check_metadata_match
 
+# [KO] pandas는 선택적 의존성이므로 모듈 레벨에서 한 번만 임포트하여 호출마다 발생하는 import 비용을 방지합니다.
+# [EN] pandas is optional; import once at module level to avoid per-call import overhead.
+try:
+    import pandas as _pd
+
+    _PANDAS_ARRAY_TYPES: tuple = (_pd.DataFrame, _pd.Series)
+except ImportError:  # sourcery skip: use-contextlib-suppress
+    _PANDAS_ARRAY_TYPES = ()  # pandas 미설치 환경 / pandas not installed
+
 
 class FAISSRetriever:
     """
@@ -88,25 +97,19 @@ class FAISSRetriever:
         # abc.Collection은 Mapping/Sequence/Set을 모두 포함하므로 하나로 충분합니다.
         # abc.Collection covers abc.Mapping, abc.Sequence, and abc.Set as subclasses.
         container_like = isinstance(content, abc.Collection) and not scalar_like
-        # [KO] numpy.ndarray는 직접 isinstance로 확인하고, pandas는 선택적 의존성이므로 try/except로 안전하게 처리합니다.
-        #      type().__name__ 기반 감지는 동명의 비관련 클래스를 오탐하거나 서브클래스를 누락할 수 있으므로 사용하지 않습니다.
-        # [EN] Check np.ndarray directly; pandas is an optional dep so handle via try/except.
-        #      Avoid type().__name__ matching which can cause false positives or miss subclasses.
-        is_array_like = isinstance(content, np.ndarray)
-        try:
-            import pandas as pd  # noqa: PLC0415
-
-            is_array_like = is_array_like or isinstance(
-                content, (pd.DataFrame, pd.Series)
-            )
-        except ImportError:  # sourcery skip: use-contextlib-suppress
-            pass  # pandas가 설치되지 않은 환경에서는 검사를 건너뜁니다. / pandas not installed; skip check.
+        # [KO] numpy.ndarray 및 pandas 배열형 타입은 모듈 레벨 상수(_PANDAS_ARRAY_TYPES)로 캐시하여 호출마다 import 비용이 발생하지 않도록 합니다.
+        # [EN] np.ndarray and pandas array-like types are checked via the module-level constant _PANDAS_ARRAY_TYPES
+        #      to avoid per-call import overhead.
+        is_array_like = isinstance(content, np.ndarray) or (
+            bool(_PANDAS_ARRAY_TYPES) and isinstance(content, _PANDAS_ARRAY_TYPES)
+        )
 
         if container_like or is_array_like:
+            # [KO] 에러 메시지는 실제 타입명을 동적으로 표시하여 검증 로직 변경 시에도 메시지가 자동으로 일치하도록 합니다.
+            # [EN] Use the actual type name dynamically so the message stays accurate as validation logic evolves.
             raise TypeError(
-                f"Document content must be a plain string or scalar value, not a "
-                f"container or array-like type ({type(content).__name__}). "
-                f"Collection, ndarray, DataFrame, and Series are not supported."
+                f"Document content must be a plain string or scalar value. "
+                f"Got unsupported type {type(content).__name__!r}."
             )
 
         # Enum, Path 등 __str__이 유효한 단일(scalar) 객체는 문자열로 변환 허용
