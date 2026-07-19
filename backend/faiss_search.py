@@ -56,7 +56,10 @@ class FAISSRetriever:
         if value < 1:
             raise ValueError(f"filter_expansion_factor must be >= 1, got {value}")
 
-        # 타입 체커를 만족시키기 위해 float로 변환 후 int로 캐스팅
+        # [KO] 타입 체커 오류(Real 형식이 int로 직접 변환되지 않는 문제)를 방지하고,
+        # numpy.float32, Decimal 등 다양한 숫자형 입력을 안전하게 처리하기 위해 float 변환 후 int로 캐스팅합니다.
+        # [EN] To prevent type checker errors (Real not directly convertible to int) and safely handle
+        # various numeric types like np.float32 or Decimal, we cast to float then int.
         normalized = int(float(value))
 
         if normalized < 1:
@@ -115,7 +118,8 @@ class FAISSRetriever:
         else:
             embeddings_np = embeddings.astype(np.float32)
 
-        # FAISS 인덱스에 추가 (타입 스텁 오류 무시)
+        # [KO] FAISS 타입 스텁 오류 무시: add()는 np.ndarray를 정상적으로 받지만, mypy 스텁에서는 인자 매칭(x)이 실패하는 문제가 있습니다.
+        # [EN] Ignore FAISS type stub error: add() accepts np.ndarray correctly at runtime, but mypy stub fails on argument matching (x).
         self.index.add(embeddings_np)  # type: ignore[call-arg]
 
         # 문서 dict 그대로 저장
@@ -165,7 +169,8 @@ class FAISSRetriever:
         query_vector = np.array([query_embedding], dtype=np.float32)
 
         search_k = min(self.index.ntotal, k * expansion if metadata_filter else k)
-        # FAISS 타입 스텁 오류 무시
+        # [KO] FAISS 타입 스텁 오류 무시: search()는 정상 동작하지만, mypy 스텁에서 필요한 인자(k, distances 등)가 누락되었다고 잘못 경고하는 문제가 있습니다.
+        # [EN] Ignore FAISS type stub error: search() works correctly at runtime, but mypy stub incorrectly warns about missing arguments (k, distances, etc).
         distances, indices = self.index.search(query_vector, search_k)  # type: ignore[call-arg]
 
         # 결과 반환 및 필터링
@@ -304,7 +309,14 @@ if __name__ == "__main__":
 
     # 3. 임베딩 생성
     embedding_generator = EmbeddingGenerator()
-    texts = [str(doc["content"]) for doc in docs]
+    texts = []
+    for doc in docs:
+        content = doc.get("content")
+        if not isinstance(content, str):
+            raise TypeError(
+                f"Document content must be a string, got {type(content).__name__}"
+            )
+        texts.append(content)
 
     # ✅ 수정: result에서 embeddings 추출!
     result = embedding_generator.generate_embeddings(texts)
