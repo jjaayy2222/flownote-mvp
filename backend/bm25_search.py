@@ -3,14 +3,19 @@
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 """
-FlowNote MVP - BM25 희소 벡터(키워드) 검색
+[KO] FlowNote MVP - BM25 희소 벡터(키워드) 검색
+[EN] FlowNote MVP - BM25 Sparse Vector (Keyword) Search
 
-주의:
-- 현재 구현은 `add_documents` 호출 시마다 전체 BM25 인덱스를 재구성합니다.
-- 이는 O(N) 동작이며, 상대적으로 작은 규모의 코퍼스나 업데이트가 많지 않은
-  거의 정적인 코퍼스를 대상으로 설계되었습니다.
-- 대규모 또는 고빈도 업데이트가 필요한 경우, 배치 추가 후 명시적으로 인덱스를
-  빌드하는 별도 워크플로우를 고려하세요.
+주의 / Note:
+    [KO] 현재 구현은 `add_documents` 호출 시마다 전체 BM25 인덱스를 재구성합니다.
+    [EN] The current implementation rebuilds the entire BM25 index on every `add_documents` call.
+    [KO] 이는 O(N) 동작이며, 상대적으로 작은 규모의 코퍼스나 업데이트가 많지 않은
+    [EN] This is an O(N) operation, designed for relatively small corpora or
+         nearly-static corpora with infrequent updates.
+    [KO] 대규모 또는 고빈도 업데이트가 필요한 경우, 배치 추가 후 명시적으로 인덱스를
+    [EN] For large-scale or high-frequency updates, consider a separate workflow
+         빌드하는 별도 워크플로우를 고려하세요.
+         that builds the index explicitly after batch additions.
 """
 
 import json
@@ -30,7 +35,10 @@ DEFAULT_SAMPLE_MAX_VISIBLE = 3
 
 
 class FilterStats(TypedDict):
-    """문서 필터링 과정에서 수집된 통계와 샘플 데이터."""
+    """
+    [KO] 문서 필터링 과정에서 수집된 통계와 샘플 데이터.
+    [EN] Statistics and sample data collected during document filtering.
+    """
 
     removed_invalid_type: int
     removed_empty_token: int
@@ -39,21 +47,38 @@ class FilterStats(TypedDict):
 
 
 class RebuildStats(TypedDict):
-    """인덱스 재구축 시 영구 제외된 문서 통계."""
+    """
+    [KO] 인덱스 재구축 시 영구 제외된 문서 통계.
+    [EN] Statistics of permanently excluded documents during index rebuild.
+    """
 
     removed_invalid_type: int
     removed_empty_token: int
 
 
 class AddDocumentsStats(TypedDict):
-    """문서 추가 작업 결과 통계."""
+    """
+    [KO] 문서 추가 작업 결과 통계.
+    [EN] Statistics of the document addition operation result.
+    """
 
     rejected_format: int
     rebuild_stats: Optional[RebuildStats]
 
 
 def _format_samples(samples: List[str], total_count: int, max_visible: int) -> str:
-    """로그에 출력할 샘플 리스트 문자열 포맷팅 헬퍼. 정해진 개수를 초과하면 '...'을 붙입니다."""
+    """
+    [KO] 로그에 출력할 샘플 리스트 문자열을 포맷팅하는 헬퍼 함수입니다.
+    [EN] Helper function to format sample lists for log output.
+
+    Args:
+        samples: [KO] 포맷팅할 샘플 문자열 리스트 / [EN] List of sample strings to format
+        total_count: [KO] 실제 전체 샘플 충 개수 / [EN] Total number of samples
+        max_visible: [KO] 로그에 표시할 최대 샘플 수 / [EN] Maximum number of samples to display
+
+    Returns:
+        str: [KO] 지정된 개수를 초과하면 '...'이 붙는 포맷된 문자열 / [EN] Formatted string with '...' appended if count exceeds max_visible
+    """
     samples_str = ", ".join(samples[:max_visible])
     if total_count > max_visible:
         samples_str += ", ..."
@@ -62,12 +87,16 @@ def _format_samples(samples: List[str], total_count: int, max_visible: int) -> s
 
 class BM25Retriever:
     """
-    BM25 (Rank BM25) 기반 희소 벡터(키워드) 검색
+    [KO] BM25 (Rank BM25) 기반 희소 벡터(키워드) 검색기입니다.
+    [EN] BM25 (Rank BM25)-based sparse vector (keyword) retriever.
 
-    주의 (Side-Effect):
-        내부 무결성 보장을 위해, 인덱스를 재빌드(rebuild)할 때
-        비정상적인 형식의 데이터나 유효한 키워드 토큰을 생성하지 못하는(비어있는) 문서는
-        상위 호출자의 의도와 상관없이 `self.documents` 배열 리스트에서 영구적으로 제외(Filter-out)됩니다.
+    주의 (Side-Effect) / Note:
+        [KO] 내부 무결성 보장을 위해, 인덱스를 재빌드(rebuild)할 때
+        [EN] To maintain internal consistency, when rebuilding the index,
+        [KO] 비정상적인 형식의 데이터나 유효한 키워드 토큰을 생성하지 못하는(비어있는) 문서는
+        [EN] documents with invalid formats or those that produce no valid keyword tokens
+        [KO] 상위 호출자의 의도와 상관없이 `self.documents` 배열 리스트에서 영구적으로 제외(Filter-out)됩니다.
+        [EN] are permanently excluded from `self.documents` regardless of the caller's intent.
     """
 
     def __init__(
@@ -76,34 +105,50 @@ class BM25Retriever:
         coerce_all_strings: bool = False,
     ):
         """
-        BM25 검색 엔진 초기화
+        [KO] BM25 검색 엔진을 초기화합니다.
+        [EN] Initializes the BM25 search engine.
 
         Args:
-            tokenizer: 사용자 지정 토크나이저. 반환되는 이터러블/제너레이터는 즉시 `list()`로 소비됩니다.
-            coerce_all_strings: `dict`나 `list` 등 비문자열 객체가 content로 들어왔을 때, 조용히 건너뛰지 않고 무조건 `str()`로 강제 변환할지 여부.
+            tokenizer: [KO] 사용자 지정 토크나이저. 반환되는 이터러블/제너레이터는 즉시 `list()`로 소비됩니다. / [EN] Custom tokenizer. Returned iterables/generators are immediately consumed with `list()`.
+            coerce_all_strings: [KO] `dict`나 `list` 등 비문자열 객체가 content로 들어왔을 때, 조용히 건너뜨지 않고 무조건 `str()`로 강제 변환할지 여부. / [EN] Whether to forcibly cast non-string content to `str()` instead of silently skipping it.
         """
         self.bm25: Optional[BM25Okapi] = None
         self.documents: List[Dict[str, Any]] = []
         self.coerce_all_strings = coerce_all_strings
+        self.tokenizer: Callable[[str], List[str]]
 
         # 외부 토크나이저 주입 처리 방어
-        if tokenizer is not None and not callable(tokenizer):
-            logger.warning(
-                "제공된 토크나이저가 호출 가능하지 않습니다. 기본 토크나이저를 사용합니다."
-            )
-            self.tokenizer = self._default_tokenize
+        if tokenizer is not None and callable(tokenizer):
+            self.tokenizer = tokenizer
         else:
-            self.tokenizer = tokenizer or self._default_tokenize
+            if tokenizer is not None:
+                logger.warning(
+                    "제공된 토크나이저가 호출 가능하지 않습니다. 기본 토크나이저를 사용합니다."
+                )
+            self.tokenizer = self._default_tokenize
 
     def _default_tokenize(self, text: str) -> List[str]:
-        """간단한 띄어쓰기 기반 토크나이징"""
+        """
+        [KO] 간단한 떠어쓰기 기반 토크나이징 기본 구현입니다.
+        [EN] Simple whitespace-based tokenization (default implementation).
+        """
         # _safe_tokenize에서 이미 str 타입 여부 및 빈 문자열을 검증하므로 바로 처리
         return text.lower().split()
 
     def _safe_tokenize(
         self, text: Any, doc_metadata: Optional[Dict] = None
     ) -> List[str]:
-        """텍스트를 받아 안전하게 토크나이징을 수행하는 헬퍼 메서드"""
+        """
+        [KO] 텍스트를 받아 안전하게 토크나이징을 수행하는 헬퍼 메서드입니다.
+        [EN] Helper method that safely tokenizes text with fallback handling.
+
+        Args:
+            text: [KO] 토크나이징할 텍스트 (str 보장 없음) / [EN] Text to tokenize (not guaranteed to be str)
+            doc_metadata: [KO] 로그 힌트 생성용 문서 메타데이터 (Optional) / [EN] Document metadata used to generate log hints (Optional)
+
+        Returns:
+            List[str]: [KO] 토큰 리스트. 비정상 입력 또는 빈 문자열인 경우 빈 리스트([]) 반환. / [EN] List of tokens. Returns empty list ([]) for invalid input or empty text.
+        """
         if not isinstance(text, str):
             # 스칼라(숫자, 불리언)이거나 설정 상 강제 문자열 변환이 켜져있을 경우
             if self.coerce_all_strings or isinstance(text, (int, float, bool)):
@@ -153,7 +198,13 @@ class BM25Retriever:
         self,
     ) -> Tuple[List[Dict[str, Any]], List[List[str]], FilterStats]:
         """
-        인덱스 생성을 위한 유효 문서를 필터링하고 통계를 수집합니다.
+        [KO] 인덱스 생성을 위한 유효 문서를 필터링하고 통계를 수집합니다.
+        [EN] Filters valid documents for index construction and collects statistics.
+
+        Returns:
+            Tuple[List[Dict], List[List[str]], FilterStats]:
+                [KO] (유효 문서 리스트, 토큰화된 코퍼스, 필터링 통계) 튜플 /
+                [EN] Tuple of (valid document list, tokenized corpus, filter statistics)
         """
         valid_docs: List[Dict[str, Any]] = []
         corpus: List[List[str]] = []
@@ -197,17 +248,20 @@ class BM25Retriever:
 
     def _rebuild_index(self) -> RebuildStats:
         """
-        [내부 헬퍼 메서드] 현재 저장된 문서를 기반으로 BM25 인덱스를 재구성합니다.
+        [KO] [내부 헬퍼 메서드] 현재 저장된 문서를 기반으로 BM25 인덱스를 재구성합니다.
+        [EN] [Internal helper] Rebuilds the BM25 index from the currently stored documents.
 
-        주의:
-            이 메서드는 유효한 키워드가 없는 문서나 딕셔너리가 아닌 항목을
-            `self.documents` 리스트에서 영구적으로 필터링 및 제거 변경(mutate)합니다.
-            외부 호출자는 명시적 빌드가 필요한 경우 public API인 `build_index()`를 사용하세요.
+        주의 / Note:
+            [KO] 이 메서드는 유효한 키워드가 없는 문서나 딕셔너리가 아닌 항목을
+            [EN] This method permanently filters and removes from `self.documents`
+            [KO] `self.documents` 리스트에서 영구적으로 필터링 및 제거 변경(mutate)합니다.
+            [EN] any documents without valid keywords or non-dict entries.
+            [KO] 외부 호출자는 명시적 빌드가 필요한 경우 public API인 `build_index()`를 사용하세요.
+            [EN] External callers should use the public API `build_index()` when explicit builds are needed.
 
         Returns:
-            RebuildStats: 필터링 과정에서 제거된 문서들의 통계 딕셔너리.
-            주의: 이 통계는 `add_documents` 내부에서 처리 결과를 병합하는 데 사용되거나,
-            public API인 `build_index()` 호출 시 반환되어 외부 관측성(Observability)을 위해 활용됩니다.
+            RebuildStats: [KO] 필터링 과정에서 제거된 문서들의 통계 딕셔너리. /
+                         [EN] Statistics dictionary of documents removed during filtering.
         """
         stats: RebuildStats = {
             "removed_invalid_type": 0,
@@ -256,10 +310,11 @@ class BM25Retriever:
 
     def build_index(self) -> RebuildStats:
         """
-        명시적으로 BM25 인덱스를 (재)빌드합니다. 배치 업데이트 후 사용하세요.
+        [KO] 명시적으로 BM25 인덱스를 (재)빌드합니다. 배치 업데이트 후 사용하세요.
+        [EN] Explicitly (re)builds the BM25 index. Use after batch updates.
 
         Returns:
-            재빌드 과정에서 필터링 및 제외된 문서들의 통계 결과
+            RebuildStats: [KO] 재빌드 과정에서 필터링 및 제외된 문서들의 통계 결과 / [EN] Statistics of documents filtered and excluded during the rebuild
         """
         return self._rebuild_index()
 
@@ -267,23 +322,29 @@ class BM25Retriever:
         self, documents: List[Dict[str, Any]], rebuild: bool = True
     ) -> AddDocumentsStats:
         """
-        문서 추가 및 BM25 인덱스 빌드
+        [KO] 문서 추가 및 BM25 인덱스 빌드를 수행합니다.
+        [EN] Adds documents and (re)builds the BM25 index.
 
-        주의:
-            성공적으로 추가된 문서라 하더라도, `rebuild=True`에 의해 즉시 실행되거나 향후
-            `build_index()`에 의해 실행되는 인덱스 재구성 과정에서 유효한 검색 토큰(단어)을
-            만들어내지 못하는 문서들은 `self.documents` 배열에서 조용히 제거(Filter-out)됩니다.
+        주의 / Note:
+            [KO] 성공적으로 추가된 문서라 하더라도, `rebuild=True`에 의해 즉시 실행되거나 향후
+            [EN] Even successfully added documents may be silently removed during index
+            [KO] `build_index()`에 의해 실행되는 인덱스 재구성 과정에서 유효한 검색 토큰(단어)를
+            [EN] reconstruction triggered by `rebuild=True` or a future `build_index()` call,
+            [KO] 만들어내지 못하는 문서들은 `self.documents` 배열에서 조용히 제거(Filter-out)됩니다.
+            [EN] if they produce no valid keyword tokens.
 
         Args:
-            documents: 문서 dict 리스트 (content, metadata 포함)
-            rebuild: 문서 추가 후 즉시 인덱스를 재빌드할지 여부
+            documents: [KO] 문서 dict 리스트 (content, metadata 포함) / [EN] List of document dicts (including content, metadata)
+            rebuild: [KO] 문서 추가 후 즐시 인덱스를 재빌드할지 여부 / [EN] Whether to immediately rebuild the index after adding documents
 
         Returns:
-            추가 및 재빌드 과정에서 제거된 처리 통계를 담은 딕셔너리.
-
-            - `rebuild_stats` 가 `None` 인 경우: 인덱스 재빌드가 수행되지 않음
-              (예: `rebuild=False` 이거나 추가된 문서가 없음).
-            - `rebuild_stats` 가 dict 인 경우: 재빌드를 수행했고, 그 결과 통계를 담고 있음.
+            AddDocumentsStats:
+                [KO] 추가 및 재빌드 과정에서 제거된 처리 통계를 담은 딕셔너리. /
+                [EN] Dictionary containing processing statistics of removed docs during addition and rebuild.
+                [KO] `rebuild_stats`가 `None`인 경우: 인덱스 재빌드가 수행되지 않음 (예: `rebuild=False`이거나 추가된 문서가 없음).
+                [EN] `rebuild_stats` is `None`: no index rebuild was performed (e.g. `rebuild=False` or no documents added).
+                [KO] `rebuild_stats`가 dict인 경우: 재빌드를 수행했고, 그 결과 통계를 담고 있음.
+                [EN] `rebuild_stats` is a dict: a rebuild was performed and contains its result statistics.
         """
         stats: AddDocumentsStats = {"rejected_format": 0, "rebuild_stats": None}
         if not documents:
@@ -296,18 +357,17 @@ class BM25Retriever:
         for doc in documents:
             if isinstance(doc, dict) and "content" in doc:
                 valid_docs.append(doc)
-            else:
-                if len(rejected_samples) < 3:
-                    if isinstance(doc, dict):
-                        metadata = doc.get("metadata")
-                        hint = (
-                            metadata.get("source", "unknown")
-                            if isinstance(metadata, Mapping)
-                            else "unknown"
-                        )
-                        rejected_samples.append(f"Content missing (source: {hint})")
-                    else:
-                        rejected_samples.append(type(doc).__name__)
+            elif len(rejected_samples) < 3:
+                if isinstance(doc, dict):
+                    metadata = doc.get("metadata")
+                    hint = (
+                        metadata.get("source", "unknown")
+                        if isinstance(metadata, Mapping)
+                        else "unknown"
+                    )
+                    rejected_samples.append(f"Content missing (source: {hint})")
+                else:
+                    rejected_samples.append(type(doc).__name__)
 
         rejected_count = initial_count - len(valid_docs)
         stats["rejected_format"] = rejected_count
@@ -339,23 +399,27 @@ class BM25Retriever:
         metadata_filter: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """
-        쿼리에 가장 유사한 문서 검색
+        [KO] 쿼리에 가장 유사한 문서를 검색합니다.
+        [EN] Searches for documents most similar to the given query.
 
         Args:
-            query: 검색 쿼리
-            k: 반환할 결과 수
-            filter_zero_score: 점수가 0인 문서(연관성 없음)를 필터링할지 여부
-            metadata_filter: 메타데이터 필터 조건 (예: {"category": "Projects"})
+            query: [KO] 검색 쿼리 문자열 / [EN] The search query string
+            k: [KO] 반환할 최대 결과 수 / [EN] Maximum number of results to return
+            filter_zero_score: [KO] BM25 점수가 0인 문서(연관성 없음)를 필터링할지 여부 / [EN] Whether to filter out documents with a BM25 score of 0 (no relevance)
+            metadata_filter: [KO] 메타데이터 필터 조건 (예: {"category": "Projects"}) / [EN] Metadata filter condition dictionary (e.g. {"category": "Projects"})
 
         Returns:
-            검색 결과 리스트 (content, metadata, score 포함)
+            List[Dict]: [KO] 검색 결과 리스트 (content, metadata, score 포함) / [EN] List of search results (including content, metadata, score)
         """
         if not isinstance(query, str):
             logger.warning(
                 "검색 쿼리가 문자열이 아닙니다. 문자열로 변환하여 처리합니다.",
                 extra={"context": type(query).__name__},
             )
-            query = str(query) if query is not None else ""
+            if query is None:
+                query = ""
+            else:
+                query = f"{query}"
 
         query = query.strip()
         if not self.bm25 or not self.documents or not query:
@@ -403,16 +467,31 @@ class BM25Retriever:
         return results
 
     def clear(self):
-        """인덱스 초기화"""
+        """
+        [KO] FAISS 인덱스와 저장된 문서를 모두 초기화합니다.
+        [EN] Clears the BM25 index and all stored documents.
+        """
         self.bm25 = None
         self.documents = []
 
     def size(self) -> int:
-        """인덱스에 저장된 문서 수"""
+        """
+        [KO] 인덱스에 저장된 문서의 총 개수를 반환합니다.
+        [EN] Returns the total number of documents stored in the index.
+
+        Returns:
+            int: [KO] 저장된 문서 수 / [EN] The number of stored documents
+        """
         return len(self.documents)
 
     def save(self, directory: Union[str, Path]) -> None:
-        """인덱스와 메타데이터를 디스크에 저장"""
+        """
+        [KO] 인덱스와 메타데이터를 지정된 디렉토리에 저장합니다.
+        [EN] Saves the index and metadata to the specified directory.
+
+        Args:
+            directory: [KO] 저장할 디렉토리 경로 / [EN] The directory path to save to
+        """
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
 
@@ -427,7 +506,13 @@ class BM25Retriever:
         logger.info("BM25 인덱스 및 메타데이터 저장 완료: %s", directory)
 
     def load(self, directory: Union[str, Path]) -> None:
-        """디스크에서 인덱스와 메타데이터 로드"""
+        """
+        [KO] 지정된 디렉토리에서 인덱스와 메타데이터를 로드합니다.
+        [EN] Loads the index and metadata from the specified directory.
+
+        Args:
+            directory: [KO] 로드할 파일이 있는 디렉토리 경로 / [EN] The directory path to load from
+        """
         directory = Path(directory)
         docs_path = directory / "documents.json"
         index_path = directory / "bm25.pkl"
