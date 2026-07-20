@@ -23,7 +23,17 @@ import logging
 import pickle
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, TypedDict, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    TypedDict,
+    Union,
+)
 
 from rank_bm25 import BM25Okapi
 
@@ -73,7 +83,7 @@ def _format_samples(samples: List[str], total_count: int, max_visible: int) -> s
 
     Args:
         samples: [KO] 포맷팅할 샘플 문자열 리스트 / [EN] List of sample strings to format
-        total_count: [KO] 실제 전체 샘플 충 개수 / [EN] Total number of samples
+        total_count: [KO] 전체 샘플 총 개수 / [EN] Total number of samples
         max_visible: [KO] 로그에 표시할 최대 샘플 수 / [EN] Maximum number of samples to display
 
     Returns:
@@ -101,7 +111,7 @@ class BM25Retriever:
 
     def __init__(
         self,
-        tokenizer: Optional[Callable[[str], List[str]]] = None,
+        tokenizer: Optional[Callable[[str], Iterable[str]]] = None,
         coerce_all_strings: bool = False,
     ):
         """
@@ -110,12 +120,12 @@ class BM25Retriever:
 
         Args:
             tokenizer: [KO] 사용자 지정 토크나이저. 반환되는 이터러블/제너레이터는 즉시 `list()`로 소비됩니다. / [EN] Custom tokenizer. Returned iterables/generators are immediately consumed with `list()`.
-            coerce_all_strings: [KO] `dict`나 `list` 등 비문자열 객체가 content로 들어왔을 때, 조용히 건너뜨지 않고 무조건 `str()`로 강제 변환할지 여부. / [EN] Whether to forcibly cast non-string content to `str()` instead of silently skipping it.
+            coerce_all_strings: [KO] `dict`나 `list` 등 비문자열 객체가 content로 들어왔을 때, 조용히 건너뛰지 않고 무조건 `str()`로 강제 변환할지 여부. / [EN] Whether to forcibly cast non-string content to `str()` instead of silently skipping it.
         """
         self.bm25: Optional[BM25Okapi] = None
         self.documents: List[Dict[str, Any]] = []
         self.coerce_all_strings = coerce_all_strings
-        self.tokenizer: Callable[[str], List[str]]
+        self.tokenizer: Callable[[str], Iterable[str]]
 
         # 외부 토크나이저 주입 처리 방어
         if tokenizer is not None and callable(tokenizer):
@@ -129,7 +139,7 @@ class BM25Retriever:
 
     def _default_tokenize(self, text: str) -> List[str]:
         """
-        [KO] 간단한 떠어쓰기 기반 토크나이징 기본 구현입니다.
+        [KO] 간단한 띄어쓰기 기반 토크나이징 기본 구현입니다.
         [EN] Simple whitespace-based tokenization (default implementation).
         """
         # _safe_tokenize에서 이미 str 타입 여부 및 빈 문자열을 검증하므로 바로 처리
@@ -202,7 +212,7 @@ class BM25Retriever:
         [EN] Filters valid documents for index construction and collects statistics.
 
         Returns:
-            Tuple[List[Dict], List[List[str]], FilterStats]:
+            Tuple[List[Dict[str, Any]], List[List[str]], FilterStats]:
                 [KO] (유효 문서 리스트, 토큰화된 코퍼스, 필터링 통계) 튜플 /
                 [EN] Tuple of (valid document list, tokenized corpus, filter statistics)
         """
@@ -335,7 +345,7 @@ class BM25Retriever:
 
         Args:
             documents: [KO] 문서 dict 리스트 (content, metadata 포함) / [EN] List of document dicts (including content, metadata)
-            rebuild: [KO] 문서 추가 후 즐시 인덱스를 재빌드할지 여부 / [EN] Whether to immediately rebuild the index after adding documents
+            rebuild: [KO] 문서 추가 후 즉시 인덱스를 재빌드할지 여부 / [EN] Whether to immediately rebuild the index after adding documents
 
         Returns:
             AddDocumentsStats:
@@ -409,7 +419,7 @@ class BM25Retriever:
             metadata_filter: [KO] 메타데이터 필터 조건 (예: {"category": "Projects"}) / [EN] Metadata filter condition dictionary (e.g. {"category": "Projects"})
 
         Returns:
-            List[Dict]: [KO] 검색 결과 리스트 (content, metadata, score 포함) / [EN] List of search results (including content, metadata, score)
+            List[Dict[str, Any]]: [KO] 검색 결과 리스트 (content, metadata, score 포함) / [EN] List of search results (including content, metadata, score)
         """
         if not isinstance(query, str):
             logger.warning(
@@ -468,7 +478,7 @@ class BM25Retriever:
 
     def clear(self):
         """
-        [KO] FAISS 인덱스와 저장된 문서를 모두 초기화합니다.
+        [KO] BM25 인덱스와 저장된 문서를 모두 초기화합니다.
         [EN] Clears the BM25 index and all stored documents.
         """
         self.bm25 = None
