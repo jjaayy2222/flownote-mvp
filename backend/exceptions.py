@@ -1,7 +1,8 @@
 # backend/exceptions.py
 
 """
-FlowNote MVP - Custom Exception Hierarchy (커스텀 예외 클래스 계층 구조).
+[KO] FlowNote MVP - 커스텀 예외 클래스 계층 구조
+[EN] FlowNote MVP - Custom Exception Hierarchy
 
 [KO] 백엔드 전역에서 사용되는 커스텀 예외 클래스를 정의합니다.
      호출자(API 라우터 등)는 각 예외 타입에 따라 아래에 명시된 HTTP 상태 코드를 결정론적으로 매핑해야 합니다.
@@ -72,6 +73,10 @@ class ConfigurationError(FlowNoteError):
 
 
 EmbeddingErrorType = Literal["timeout", "connection", "rate_limit", "api_error"]
+"""
+[KO] 임베딩 에러의 세부 원인을 분류하는 타입입니다.
+[EN] Type representing the detailed cause of an embedding error.
+"""
 
 
 class EmbeddingError(FlowNoteError):
@@ -94,6 +99,14 @@ class EmbeddingError(FlowNoteError):
     """
 
     def __init__(self, message: str = "", error_type: EmbeddingErrorType = "api_error"):
+        """
+        [KO] EmbeddingError 인스턴스를 초기화합니다.
+        [EN] Initializes an EmbeddingError instance.
+
+        Args:
+            message: [KO] 예외 메시지 / [EN] Exception message
+            error_type: [KO] 오류 세부 유형 분류 / [EN] Detailed categorization of the error
+        """
         super().__init__(message)
         self.error_type = error_type
 
