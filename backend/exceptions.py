@@ -72,11 +72,9 @@ class ConfigurationError(FlowNoteError):
     """
 
 
+# [KO] 임베딩 에러의 세부 원인을 분류하는 타입입니다.
+# [EN] Type representing the detailed cause of an embedding error.
 EmbeddingErrorType = Literal["timeout", "connection", "rate_limit", "api_error"]
-"""
-[KO] 임베딩 에러의 세부 원인을 분류하는 타입입니다.
-[EN] Type representing the detailed cause of an embedding error.
-"""
 
 
 class EmbeddingError(FlowNoteError):
