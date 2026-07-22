@@ -4,7 +4,7 @@
 
 """
 [KO] FlowNote MVP - 하이브리드 검색 및 RRF 병합 모듈
-[EN] FlowNote MVP - Hybrid Search and RRF Merging module
+[EN] FlowNote MVP - Hybrid Search and RRF Merging Module
 """
 
 import hashlib
@@ -43,14 +43,12 @@ class Retriever(Protocol):
         the score field is recommended for interface consistency.
 
         Args:
-            query (str): [KO] 검색 질의 / [EN] Search query string
-            k (int): [KO] 반환할 최대 결과 수 / [EN] Maximum number of results to return
-            metadata_filter (Optional[Dict[str, Any]]): [KO] 메타데이터 필터 조건 (예: {"category": "Projects"})
-                / [EN] Metadata filter conditions (e.g., {"category": "Projects"})
+            query: [KO] 검색 질의 / [EN] Search query string
+            k: [KO] 반환할 최대 결과 수 / [EN] Maximum number of results to return
+            metadata_filter: [KO] 메타데이터 필터 조건 (예: {"category": "Projects"}) / [EN] Metadata filter conditions (e.g., {"category": "Projects"})
 
         Returns:
-            List[Dict[str, Any]]: [KO] 검색 결과 딕셔너리의 리스트 (content, metadata, score 포함)
-                / [EN] List of search result dictionaries (including content, metadata, score)
+            List[Dict[str, Any]]: [KO] 검색 결과 딕셔너리의 리스트 (content, metadata, score 포함) / [EN] List of search result dictionaries (including content, metadata, score)
         """
         ...
 
@@ -81,14 +79,9 @@ class HybridSearcher:
         [EN] Initialization: Injects FAISS/BM25 retrievers and configures the RRF penalty constant.
 
         Args:
-            faiss_retriever (Retriever): [KO] `search()` 메서드를 가진 Dense 벡터 리트리버
-                / [EN] Dense vector retriever with a `search()` method
-            bm25_retriever (Retriever): [KO] `search()` 메서드를 가진 Sparse 키워드 리트리버
-                / [EN] Sparse keyword retriever with a `search()` method
-            rrf_k (int): [KO] RRF 페널티 상수 (기본값: 60, 반드시 양수여야 함).
-                값이 클수록 고순위 문서 간의 점수 차이가 완만해집니다.
-                / [EN] RRF penalty constant (default: 60, must be positive).
-                Larger values smooth out score differences between top-ranked documents.
+            faiss_retriever: [KO] `search()` 메서드를 가진 Dense 벡터 리트리버 / [EN] Dense vector retriever with a `search()` method
+            bm25_retriever: [KO] `search()` 메서드를 가진 Sparse 키워드 리트리버 / [EN] Sparse keyword retriever with a `search()` method
+            rrf_k: [KO] RRF 페널티 상수 (기본값: 60, 반드시 양수여야 함). 값이 클수록 고순위 문서 간의 점수 차이가 완만해집니다. / [EN] RRF penalty constant (default: 60, must be positive). Larger values smooth out score differences between top-ranked documents.
 
         Raises:
             ValueError: [KO] rrf_k가 0 이하인 경우 / [EN] If rrf_k is not positive
@@ -109,12 +102,10 @@ class HybridSearcher:
         [EN] Used to prevent duplicate aggregation when the same document is returned by both FAISS and BM25.
 
         Args:
-            doc (Dict[str, Any]): [KO] 리트리버가 반환한 단일 검색 결과 딕셔너리
-                / [EN] A single search result dictionary returned by a retriever
+            doc: [KO] 리트리버가 반환한 단일 검색 결과 딕셔너리 / [EN] A single search result dictionary returned by a retriever
 
         Returns:
-            str: [KO] 문서의 고유 식별자 (metadata["id"] 또는 SHA-256 해시)
-                / [EN] Unique identifier for the document (metadata["id"] or SHA-256 hash)
+            str: [KO] 문서의 고유 식별자 (metadata["id"] 또는 SHA-256 해시) / [EN] Unique identifier for the document (metadata["id"] or SHA-256 hash)
         """
         metadata = doc.get("metadata")
         if isinstance(metadata, dict) and "id" in metadata:
@@ -156,32 +147,19 @@ class HybridSearcher:
            [EN] Sort in descending order by final RRF score and return the top-k results.
 
         Args:
-            query (str): [KO] 검색 질의 / [EN] Search query string
-            k (int): [KO] 최종 반환할 문서 수 (0 이상) / [EN] Number of final results to return (non-negative)
-            faiss_k (Optional[int]): [KO] FAISS에서 가져올 후보 수 (기본값: k × filter_expansion_factor, 필터 시만 적용)
-                / [EN] Number of candidates to fetch from FAISS (default: k × filter_expansion_factor, only when filtering)
-            bm25_k (Optional[int]): [KO] BM25에서 가져올 후보 수 (기본값: k × filter_expansion_factor, 필터 시만 적용)
-                / [EN] Number of candidates to fetch from BM25 (default: k × filter_expansion_factor, only when filtering)
-            alpha (float): [KO] [0, 1] 범위의 Dense/Sparse 가중치. 1.0에 가까울수록 FAISS 비중이 커짐.
-                / [EN] Dense/Sparse weight in [0, 1]. Values closer to 1.0 increase FAISS influence.
-            metadata_filter (Optional[Dict[str, Any]]): [KO] 메타데이터 필터 조건 (예: {"category": "Projects"})
-                / [EN] Metadata filter conditions (e.g., {"category": "Projects"})
-            filter_expansion_factor (int): [KO] 후보군 확장 계수 (기본값: 2).
-                metadata_filter가 제공되고 faiss_k/bm25_k가 None인 경우에만 적용됩니다.
-                / [EN] Candidate expansion factor (default: 2).
-                Applied only when metadata_filter is provided and faiss_k/bm25_k are None.
+            query: [KO] 검색 질의 / [EN] Search query string
+            k: [KO] 최종 반환할 문서 수 (0 이상) / [EN] Number of final results to return (non-negative)
+            faiss_k: [KO] FAISS에서 가져올 후보 수 (기본값: k × filter_expansion_factor, 필터 시만 적용) / [EN] Number of candidates to fetch from FAISS (default: k × filter_expansion_factor, only when filtering)
+            bm25_k: [KO] BM25에서 가져올 후보 수 (기본값: k × filter_expansion_factor, 필터 시만 적용) / [EN] Number of candidates to fetch from BM25 (default: k × filter_expansion_factor, only when filtering)
+            alpha: [KO] [0, 1] 범위의 Dense/Sparse 가중치. 1.0에 가까울수록 FAISS 비중이 커짐. / [EN] Dense/Sparse weight in [0, 1]. Values closer to 1.0 increase FAISS influence.
+            metadata_filter: [KO] 메타데이터 필터 조건 (예: {"category": "Projects"}) / [EN] Metadata filter conditions (e.g., {"category": "Projects"})
+            filter_expansion_factor: [KO] 후보군 확장 계수 (기본값: 2). metadata_filter가 제공되고 faiss_k/bm25_k가 None인 경우에만 적용됩니다. / [EN] Candidate expansion factor (default: 2). Applied only when metadata_filter is provided and faiss_k/bm25_k are None.
 
         Returns:
-            List[Dict[str, Any]]: [KO] RRF 점수 기준 내림차순으로 정렬된 검색 결과 리스트
-                (각 항목은 content, metadata, id, score 포함)
-                / [EN] List of search results sorted by RRF score in descending order
-                (each item includes content, metadata, id, score)
+            List[Dict[str, Any]]: [KO] RRF 점수 기준 내림차순으로 정렬된 검색 결과 리스트 (각 항목은 content, metadata, id, score 포함) / [EN] List of search results sorted by RRF score in descending order (each item includes content, metadata, id, score)
 
         Raises:
-            ValueError: [KO] alpha가 [0, 1] 범위를 벗어나거나, k/faiss_k/bm25_k가 음수이거나,
-                filter_expansion_factor가 1 미만인 경우
-                / [EN] If alpha is out of [0, 1] range, k/faiss_k/bm25_k is negative,
-                or filter_expansion_factor is less than 1
+            ValueError: [KO] alpha가 [0, 1] 범위를 벗어나거나, k/faiss_k/bm25_k가 음수이거나, filter_expansion_factor가 1 미만인 경우 / [EN] If alpha is out of [0, 1] range, k/faiss_k/bm25_k is negative, or filter_expansion_factor is less than 1
         """
         # [KO] 파라미터 유효 범위 검증
         # [EN] Validate parameter value ranges
