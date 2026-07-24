@@ -74,11 +74,10 @@ def _get_error_mapping(exc: Exception) -> Tuple[str, EmbeddingErrorType]:
     [EN] Returns the most appropriate error message prefix and type for a given exception instance.
 
     Args:
-        exc (Exception): [KO] 발생한 예외 객체 / [EN] The exception object that was raised
+        exc: [KO] 발생한 예외 객체 / [EN] The exception object that was raised
 
     Returns:
-        Tuple[str, EmbeddingErrorType]: [KO] 메시지 접두어와 에러 타입을 포함하는 튜플
-                                        / [EN] A tuple containing the message prefix and error type
+        [KO] 메시지 접두어와 에러 타입을 포함하는 튜플 / [EN] A tuple containing the message prefix and error type
     """
     return next(
         (v for k, v in ERROR_MAP.items() if isinstance(exc, k)),
@@ -98,8 +97,7 @@ class EmbeddingGenerator:
         [EN] Sets the embedding model to use and initializes the API client.
 
         Args:
-            model_name (str): [KO] 사용할 임베딩 모델의 이름 (기본값: EMBEDDING_MODEL)
-                              / [EN] Name of the embedding model to use (default: EMBEDDING_MODEL)
+            model_name: [KO] 사용할 임베딩 모델의 이름 (기본값: EMBEDDING_MODEL) / [EN] Name of the embedding model to use (default: EMBEDDING_MODEL)
         """
         _verify_invariants()
         self.model_name = model_name
@@ -115,16 +113,13 @@ class EmbeddingGenerator:
         [EN] Generates embedding vectors for a list of texts and returns cost and token metrics.
 
         Args:
-            texts (List[str]): [KO] 임베딩으로 변환할 텍스트 청크 리스트
-                               / [EN] List of text chunks to convert into embeddings.
+            texts: [KO] 임베딩으로 변환할 텍스트 청크 리스트 / [EN] List of text chunks to convert into embeddings.
 
         Returns:
-            EmbeddingResult: [KO] 임베딩 벡터 리스트, 총 사용 토큰 수, 예상 비용을 포함한 딕셔너리
-                            / [EN] Dictionary containing embedding vectors, total token count, and estimated cost.
+            [KO] 임베딩 벡터 리스트, 총 사용 토큰 수, 예상 비용을 포함한 딕셔너리 / [EN] Dictionary containing embedding vectors, total token count, and estimated cost.
 
         Raises:
-            EmbeddingError: [KO] 외부 임베딩 모델 API 호출에 실패한 경우 (HTTP 502 매핑 대상)
-                            / [EN] If the external embedding model API call fails (mapped to HTTP 502).
+            EmbeddingError: [KO] 외부 임베딩 모델 API 호출에 실패한 경우 (HTTP 502 매핑 대상) / [EN] If the external embedding model API call fails (mapped to HTTP 502).
         """
         if not texts:
             return {"embeddings": [], "tokens": 0, "cost": 0.0}
