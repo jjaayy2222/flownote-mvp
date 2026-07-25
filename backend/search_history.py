@@ -115,7 +115,8 @@ class SearchHistory:
             search_id: [KO] 조회할 검색 고유 ID / [EN] Unique search ID to retrieve
 
         Returns:
-            [KO] 검색 히스토리 딕셔너리 (존재하지 않으면 None) / [EN] Search history dictionary (None if not found)
+            [KO] 해당 ID의 검색 기록 딕셔너리(키: query, results_count, top_results, search_time, created_at), 없으면 None
+            / [EN] Search record dict (keys: query, results_count, top_results, search_time, created_at), or None if not found
         """
         return self.history.get(search_id)
 
@@ -128,7 +129,8 @@ class SearchHistory:
             limit: [KO] 반환할 최대 결과 수 / [EN] Maximum number of results to return
 
         Returns:
-            [KO] 최신순으로 정렬된 검색 기록 리스트 / [EN] List of search records sorted by newest first
+            [KO] 최신순 정렬된 검색 기록 리스트. 각 항목은 id, query, results_count, top_results, search_time, created_at 키를 포함
+            / [EN] List of search records sorted newest-first; each item contains id, query, results_count, top_results, search_time, created_at
         """
         # 시간순 정렬 (최신순)
         sorted_history = sorted(
@@ -144,7 +146,7 @@ class SearchHistory:
         [EN] Retrieves all saved search records.
 
         Returns:
-            [KO] 전체 검색 히스토리를 담은 딕셔너리 / [EN] Dictionary containing the entire search history
+            [KO] search_id를 키, 검색 기록 딕셔너리를 값으로 하는 전체 히스토리 / [EN] Full history dict keyed by search_id, with each value being a search record dict
         """
         return self.history
 
