@@ -38,7 +38,7 @@ class SearchHistory:
         [EN] Sets the history storage path and loads existing data.
 
         Args:
-            storage_path (str): [KO] 히스토리를 저장할 JSON 파일 경로 / [EN] JSON file path to store history
+            storage_path: [KO] 히스토리를 저장할 JSON 파일 경로 / [EN] JSON file path to store history
         """
         self.storage_path = storage_path
         self.history: Dict[str, Dict] = {}
@@ -80,12 +80,12 @@ class SearchHistory:
         [EN] Adds and saves a new search record.
 
         Args:
-            query (str): [KO] 검색에 사용된 쿼리 문자열 / [EN] Query string used for the search
-            results_count (int): [KO] 검색된 결과의 총 개수 / [EN] Total number of retrieved results
-            top_results (List[str], optional): [KO] 상위 검색 결과 미리보기 텍스트 리스트 / [EN] List of preview texts for top search results
+            query: [KO] 검색에 사용된 쿼리 문자열 / [EN] Query string used for the search
+            results_count: [KO] 검색된 결과의 총 개수 / [EN] Total number of retrieved results
+            top_results: [KO] 상위 검색 결과 미리보기 텍스트 리스트 / [EN] List of preview texts for top search results
 
         Returns:
-            str: [KO] 새로 생성된 검색 고유 ID / [EN] Newly generated unique search ID
+            [KO] 새로 생성된 검색 고유 ID / [EN] Newly generated unique search ID
         """
         # 검색 ID 생성
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -112,10 +112,10 @@ class SearchHistory:
         [EN] Retrieves the record corresponding to a specific search ID.
 
         Args:
-            search_id (str): [KO] 조회할 검색 고유 ID / [EN] Unique search ID to retrieve
+            search_id: [KO] 조회할 검색 고유 ID / [EN] Unique search ID to retrieve
 
         Returns:
-            Optional[Dict]: [KO] 검색 히스토리 딕셔너리 (존재하지 않으면 None) / [EN] Search history dictionary (None if not found)
+            [KO] 검색 히스토리 딕셔너리 (존재하지 않으면 None) / [EN] Search history dictionary (None if not found)
         """
         return self.history.get(search_id)
 
@@ -125,10 +125,10 @@ class SearchHistory:
         [EN] Retrieves recently performed search records, sorted from newest to oldest.
 
         Args:
-            limit (int): [KO] 반환할 최대 결과 수 / [EN] Maximum number of results to return
+            limit: [KO] 반환할 최대 결과 수 / [EN] Maximum number of results to return
 
         Returns:
-            List[Dict]: [KO] 최신순으로 정렬된 검색 기록 리스트 / [EN] List of search records sorted by newest first
+            [KO] 최신순으로 정렬된 검색 기록 리스트 / [EN] List of search records sorted by newest first
         """
         # 시간순 정렬 (최신순)
         sorted_history = sorted(
@@ -144,7 +144,7 @@ class SearchHistory:
         [EN] Retrieves all saved search records.
 
         Returns:
-            Dict[str, Dict]: [KO] 전체 검색 히스토리를 담은 딕셔너리 / [EN] Dictionary containing the entire search history
+            [KO] 전체 검색 히스토리를 담은 딕셔너리 / [EN] Dictionary containing the entire search history
         """
         return self.history
 
@@ -154,10 +154,10 @@ class SearchHistory:
         [EN] Deletes the record for a specific search ID.
 
         Args:
-            search_id (str): [KO] 삭제할 검색 고유 ID / [EN] Unique search ID to delete
+            search_id: [KO] 삭제할 검색 고유 ID / [EN] Unique search ID to delete
 
         Returns:
-            bool: [KO] 삭제 성공 시 True, 실패 시(ID 없음) False / [EN] True if successfully deleted, False otherwise (ID not found)
+            [KO] 삭제 성공 시 True, 실패 시(ID 없음) False / [EN] True if successfully deleted, False otherwise (ID not found)
         """
         if search_id in self.history:
             del self.history[search_id]
@@ -182,8 +182,7 @@ class SearchHistory:
         [EN] Performance optimization: Uses `collections.Counter` with O(n) complexity to find the most common query.
 
         Returns:
-            SearchStatistics: [KO] 총 검색 횟수, 평균 결과 수, 최다 검색 쿼리를 포함하는 통계 딕셔너리
-                              / [EN] Statistics dictionary containing total searches, average results count, and most common query
+            [KO] 총 검색 횟수, 평균 결과 수, 최다 검색 쿼리를 포함하는 통계 딕셔너리 / [EN] Statistics dictionary containing total searches, average results count, and most common query
         """
         if not self.history:
             return {"total_searches": 0, "avg_results": 0.0, "most_common_query": None}
