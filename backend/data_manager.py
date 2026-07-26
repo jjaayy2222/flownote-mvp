@@ -1,7 +1,8 @@
 # backend/data_manager.py
 
 """
-FlowNote MVP - Data Management Module (데이터 관리 모듈).
+[KO] FlowNote MVP - 데이터 관리 모듈
+[EN] FlowNote MVP - Data Management Module
 
 [KO] 사용자 프로필(CSV), 컨텍스트 맵핑(JSON), 분류 로그 등을 파일 입출력으로 관리합니다.
      데이터를 로컬 파일 시스템에 저장하고 조회하는 역할을 담당합니다.
@@ -110,7 +111,10 @@ class DataManager:
     def _write_profile_to_csv(
         self, user_id: str, occupation: str, areas_str: str, interests_str: str
     ):
-        """[KO] 사용자 프로필을 CSV에 물리적으로 기록합니다."""
+        """
+        [KO] 사용자 프로필을 CSV에 물리적으로 기록합니다.
+        [EN] Physically writes a user profile to the CSV file.
+        """
         now = datetime.now().isoformat()
         with open(self.users_csv, "a", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
@@ -128,10 +132,13 @@ class DataManager:
         [EN] Saves a new user profile to the CSV file.
 
         Args:
-            user_id (str): 사용자 ID / User ID
-            occupation (str): 직업 / Occupation
-            areas (List[str], optional): 관심 영역 리스트 / List of areas of interest
-            interests (List[str], optional): 관심사 리스트 / List of specific interests
+            user_id: [KO] 사용자 ID / [EN] User ID
+            occupation: [KO] 직업 / [EN] Occupation
+            areas: [KO] 관심 영역 리스트 / [EN] List of areas of interest
+            interests: [KO] 관심사 리스트 / [EN] List of specific interests
+
+        Returns:
+            [KO] 저장 결과 딕셔너리(status, user_id 또는 message) / [EN] Result dict (status, user_id or message)
         """
         try:
             areas_str = self._join_list(areas)
@@ -155,9 +162,11 @@ class DataManager:
         [EN] Retrieves a specific user's profile information from the CSV file.
 
         Args:
-            user_id (str): 조회할 사용자 ID / User ID to look up
+            user_id: [KO] 조회할 사용자 ID / [EN] User ID to look up
+
         Returns:
-            Optional[Dict]: 사용자 프로필 딕셔너리 또는 None / User profile dictionary or None if not found
+            [KO] 사용자 프로필 딕셔너리(user_id, occupation, areas, interests, created_at, updated_at), 없으면 None
+            / [EN] User profile dict (user_id, occupation, areas, interests, created_at, updated_at), or None if not found
         """
         try:
             with open(self.users_csv, "r", encoding="utf-8") as f:
@@ -176,10 +185,11 @@ class DataManager:
         [EN] Updates the areas of interest for an existing user.
 
         Args:
-            user_id (str): 사용자 ID / User ID
-            areas (List[str]): 업데이트할 관심 영역 리스트 / Updated list of areas
+            user_id: [KO] 사용자 ID / [EN] User ID
+            areas: [KO] 업데이트할 관심 영역 리스트 / [EN] Updated list of areas
+
         Returns:
-            Dict: 업데이트 결과 상태 딕셔너리 / Dictionary containing the update status
+            [KO] 업데이트 결과 딕셔너리(status 또는 message) / [EN] Result dict (status or message)
         """
         try:
             # ✅ List[str] → str 변환
@@ -223,10 +233,11 @@ class DataManager:
         [EN] Saves user context data to the JSON file.
 
         Args:
-            user_id (str): 사용자 ID / User ID
-            areas (List[str]): 사용자 맥락(영역) 리스트 / List of user context areas
+            user_id: [KO] 사용자 ID / [EN] User ID
+            areas: [KO] 사용자 맥락(영역) 리스트 / [EN] List of user context areas
+
         Returns:
-            Dict: 저장 결과 상태 딕셔너리 / Dictionary containing the save status
+            [KO] 저장 결과 딕셔너리(status 또는 message) / [EN] Result dict (status or message)
         """
         try:
             with open(self.context_json, "r", encoding="utf-8") as f:
@@ -250,9 +261,10 @@ class DataManager:
         [EN] Retrieves a specific user's context data from the JSON file.
 
         Args:
-            user_id (str): 사용자 ID / User ID
+            user_id: [KO] 사용자 ID / [EN] User ID
+
         Returns:
-            Optional[Dict]: 사용자 맥락 딕셔너리 또는 None / User context dictionary or None if not found
+            [KO] 사용자 맥락 딕셔너리(areas, created_at), 없으면 None / [EN] User context dict (areas, created_at), or None if not found
         """
         try:
             with open(self.context_json, "r", encoding="utf-8") as f:
@@ -269,9 +281,10 @@ class DataManager:
         [EN] Extracts and returns only the areas list from the user's context.
 
         Args:
-            user_id (str): 사용자 ID / User ID
+            user_id: [KO] 사용자 ID / [EN] User ID
+
         Returns:
-            List[str]: 사용자 영역 리스트 / List of user areas
+            [KO] 사용자 영역 리스트. 컨텍스트가 없으면 빈 리스트 반환 / [EN] List of user areas; returns empty list if context is not found
         """
         context = self.get_user_context(user_id)
         return context.get("areas", []) if context else []
@@ -293,13 +306,14 @@ class DataManager:
         [EN] Logs the AI classification and user selection results to the CSV file.
 
         Args:
-            user_id (str): 사용자 ID / User ID
-            file_name (str): 분류된 파일명 / Name of the classified file
-            ai_prediction (str): AI가 예측한 분류 / AI predicted category
-            user_selected (Optional[str]): 사용자가 최종 선택한 분류 / Final category selected by the user
-            confidence (float): AI 예측 신뢰도 / AI prediction confidence score
+            user_id: [KO] 사용자 ID / [EN] User ID
+            file_name: [KO] 분류된 파일명 / [EN] Name of the classified file
+            ai_prediction: [KO] AI가 예측한 분류 / [EN] AI predicted category
+            user_selected: [KO] 사용자가 최종 선택한 분류 / [EN] Final category selected by the user
+            confidence: [KO] AI 예측 신뢰도 / [EN] AI prediction confidence score
+
         Returns:
-            Dict: 저장 결과 상태 딕셔너리 / Dictionary containing the log status
+            [KO] 저장 결과 딕셔너리(status 또는 message) / [EN] Result dict (status or message)
         """
         try:
             now = datetime.now().isoformat()
@@ -331,10 +345,11 @@ class DataManager:
         [EN] Saves the detailed classification results as a JSON file in the log directory.
 
         Args:
-            result (Dict): 분류 결과 딕셔너리 / Classification result dictionary
-            filename (str): 원본 파일명 / Original file name
+            result: [KO] 분류 결과 딕셔너리 / [EN] Classification result dictionary
+            filename: [KO] 원본 파일명 / [EN] Original file name
+
         Returns:
-            str: 저장된 JSON 파일의 절대 경로 / Absolute path to the saved JSON file
+            [KO] 저장된 JSON 파일의 절대 경로. 실패 시 빈 문자열 반환 / [EN] Absolute path to the saved JSON file; empty string on failure
         """
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -358,9 +373,11 @@ class DataManager:
         [EN] Retrieves a specific user's classification history from the CSV file.
 
         Args:
-            user_id (str): 사용자 ID / User ID
+            user_id: [KO] 사용자 ID / [EN] User ID
+
         Returns:
-            List[Dict]: 분류 히스토리 리스트 / List of classification history records
+            [KO] 분류 히스토리 리스트(timestamp, user_id, file_name, ai_prediction, user_selected, confidence, status 포함). 조회 실패 시 빈 리스트 반환
+            / [EN] List of classification records (including timestamp, user_id, file_name, ai_prediction, user_selected, confidence, status); empty list on failure
         """
         try:
             with open(self.classifications_csv, "r", encoding="utf-8") as f:
@@ -375,7 +392,6 @@ class DataManager:
 
 
 def save_json_log(
-    # self,
     user_id: str,
     file_name: str,
     category: str,
@@ -394,20 +410,21 @@ def save_json_log(
     [EN] Global function: Saves a timestamped JSON log file in the data/log/ directory.
 
     Args:
-        user_id (str): 사용자 ID / User ID
-        file_name (str): 처리된 파일명 / Processed file name
-        category (str): 결정된 카테고리 / Determined category
-        confidence (float): 예측 신뢰도 / Prediction confidence
-        snapshot_id (str): 스냅샷 ID (숫자인 경우 호출자가 str로 변환하여 전달해야 함) / Snapshot ID
-        conflict_detected (bool): 충돌 감지 여부 / Whether a conflict was detected
-        requires_review (bool): 검토 필요 여부 / Whether review is required
-        keyword_tags (list): 키워드 태그 리스트 / List of keyword tags
-        reasoning (str): AI 추론 논리 / AI reasoning logic
-        user_context (str, optional): 사용자 컨텍스트 요약 / User context summary
-        user_profile (Optional[dict], optional): 사용자 프로필 데이터 / User profile data
-        context_injected (bool, optional): 컨텍스트 주입 여부 / Whether context was injected
+        user_id: [KO] 사용자 ID / [EN] User ID
+        file_name: [KO] 처리된 파일명 / [EN] Processed file name
+        category: [KO] 결정된 카테고리 / [EN] Determined category
+        confidence: [KO] 예측 신뢰도 / [EN] Prediction confidence
+        snapshot_id: [KO] 스냅샷 ID (숫자인 경우 호출자가 str로 변환하여 전달해야 함) / [EN] Snapshot ID (caller must convert to str if numeric)
+        conflict_detected: [KO] 충돌 감지 여부 / [EN] Whether a conflict was detected
+        requires_review: [KO] 검토 필요 여부 / [EN] Whether review is required
+        keyword_tags: [KO] 키워드 태그 리스트 / [EN] List of keyword tags
+        reasoning: [KO] AI 추론 논리 / [EN] AI reasoning logic
+        user_context: [KO] 사용자 컨텍스트 요약 / [EN] User context summary
+        user_profile: [KO] 사용자 프로필 데이터 / [EN] User profile data
+        context_injected: [KO] 컨텍스트 주입 여부 / [EN] Whether context was injected
+
     Returns:
-        str: 저장된 JSON 로그 파일 경로 / Path to the saved JSON log file
+        [KO] 저장된 JSON 로그 파일 경로. 실패 시 빈 문자열 반환 / [EN] Path to the saved JSON log file; empty string on failure
     """
     import json
     from datetime import datetime
