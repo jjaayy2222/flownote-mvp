@@ -62,8 +62,7 @@ class FileMetadata:
         [EN] Sets the metadata storage path and loads any previously saved data.
 
         Args:
-            storage_path (str): [KO] 메타데이터 JSON 파일 저장 경로 (기본값: "data/metadata.json")
-                                 / [EN] Path to the metadata JSON file (default: "data/metadata.json")
+            storage_path: [KO] 메타데이터 JSON 파일 저장 경로 (기본값: "data/metadata.json") / [EN] Path to the metadata JSON file (default: "data/metadata.json")
         """
         self.storage_path = storage_path
         self.metadata: Dict[str, FileMetadataRecord] = {}
@@ -109,8 +108,7 @@ class FileMetadata:
         else:
             # [KO] storage_path에 디렉터리 구성 요소가 있을 때만 폴더 생성
             # [EN] Only create directory if storage_path contains a directory component
-            storage_dir = os.path.dirname(self.storage_path)
-            if storage_dir:
+            if storage_dir := os.path.dirname(self.storage_path):
                 os.makedirs(storage_dir, exist_ok=True)
             self.metadata = {}
 
@@ -145,20 +143,14 @@ class FileMetadata:
              The file ID is composed of a timestamp and UUID to ensure uniqueness.
 
         Args:
-            file_name (str): [KO] 업로드한 파일의 이름
-                             / [EN] Name of the uploaded file.
-            file_size (int): [KO] 파일 크기 (바이트 단위)
-                             / [EN] File size in bytes.
-            chunk_count (int): [KO] 파일이 분할된 청크의 개수
-                               / [EN] Number of chunks the file was split into.
-            embedding_dim (int): [KO] 생성된 임베딩 벡터의 차원 수
-                                 / [EN] Dimension of the generated embedding vectors.
-            model (str): [KO] 임베딩 생성에 사용된 모델 이름 (기본값: "text-embedding-3-small")
-                         / [EN] Name of the model used for embedding generation (default: "text-embedding-3-small").
+            file_name: [KO] 업로드한 파일의 이름 / [EN] Name of the uploaded file.
+            file_size: [KO] 파일 크기 (바이트 단위) / [EN] File size in bytes.
+            chunk_count: [KO] 파일이 분할된 청크의 개수 / [EN] Number of chunks the file was split into.
+            embedding_dim: [KO] 생성된 임베딩 벡터의 차원 수 / [EN] Dimension of the generated embedding vectors.
+            model: [KO] 임베딩 생성에 사용된 모델 이름 (기본값: "text-embedding-3-small") / [EN] Name of the model used for embedding generation (default: "text-embedding-3-small").
 
         Returns:
-            str: [KO] 생성된 고유 파일 ID (예: "file_20251025_131227_d9977552")
-                 / [EN] The generated unique file ID (e.g., "file_20251025_131227_d9977552").
+            [KO] 생성된 고유 파일 ID (예: "file_20251025_131227_d9977552") / [EN] The generated unique file ID (e.g., "file_20251025_131227_d9977552").
         """
         # 파일 ID 생성 (타임스탬프 + UUID로 고유성 보장)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -188,12 +180,11 @@ class FileMetadata:
         [EN] Returns the metadata corresponding to a specific file ID.
 
         Args:
-            file_id (str): [KO] 조회할 파일의 고유 ID
-                           / [EN] The unique ID of the file to look up.
+            file_id: [KO] 조회할 파일의 고유 ID / [EN] The unique ID of the file to look up.
 
         Returns:
-            Optional[FileMetadataRecord]: [KO] 해당 파일의 메타데이터 딕셔너리, 존재하지 않으면 None
-                                         / [EN] The file's metadata dictionary, or None if not found.
+            [KO] 해당 파일의 메타데이터 딕셔너리(키: file_name, file_size, file_size_mb, chunk_count, embedding_dim, embedding_model, upload_time, created_at), 없으면 None
+            / [EN] The file's metadata dict (keys: file_name, file_size, file_size_mb, chunk_count, embedding_dim, embedding_model, upload_time, created_at), or None if not found.
         """
         return self.metadata.get(file_id)
 
@@ -203,8 +194,7 @@ class FileMetadata:
         [EN] Returns the metadata of all stored files.
 
         Returns:
-            Dict[str, FileMetadataRecord]: [KO] 파일 ID를 키로 하는 전체 메타데이터 딕셔너리
-                                           / [EN] A dictionary of all metadata keyed by file ID.
+            [KO] 파일 ID를 키, 파일 메타데이터 딕셔너리를 값으로 하는 전체 메타데이터 / [EN] A dictionary of all metadata keyed by file ID.
         """
         return self.metadata
 
@@ -214,12 +204,10 @@ class FileMetadata:
         [EN] Deletes the metadata corresponding to a specific file ID.
 
         Args:
-            file_id (str): [KO] 삭제할 파일의 고유 ID
-                           / [EN] The unique ID of the file to delete.
+            file_id: [KO] 삭제할 파일의 고유 ID / [EN] The unique ID of the file to delete.
 
         Returns:
-            bool: [KO] 삭제 성공 시 True, 파일 ID가 존재하지 않으면 False
-                  / [EN] True if deletion was successful, False if the file ID was not found.
+            [KO] 삭제 성공 시 True, 파일 ID가 존재하지 않으면 False / [EN] True if deletion was successful, False if the file ID was not found.
         """
         if file_id in self.metadata:
             del self.metadata[file_id]
@@ -233,8 +221,7 @@ class FileMetadata:
         [EN] Calculates statistical information based on all stored file metadata.
 
         Returns:
-            MetadataStatistics: [KO] 총 파일 수, 총 청크 수, 총 크기(MB), 사용된 모델 목록을 포함한 통계 딕셔너리
-                                 / [EN] Statistics dictionary containing total files, chunks, size (MB), and models used.
+            [KO] 총 파일 수, 총 청크 수, 총 크기(MB), 사용된 모델 목록을 포함한 통계 딕셔너리 / [EN] Statistics dict containing total files, chunks, size (MB), and models used.
         """
         if not self.metadata:
             return {
