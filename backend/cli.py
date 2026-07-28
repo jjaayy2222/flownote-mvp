@@ -9,12 +9,23 @@
 import asyncio
 import logging
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 # Service imports
 from backend.services.classification_service import ClassificationService
 from backend.services.onboarding_service import OnboardingService
+
+
+@dataclass
+class UserContextData:
+    """[KO] 사용자 컨텍스트 데이터 구조"""
+
+    occupation: Optional[str] = None
+    areas: Optional[list[str]] = None
 
 
 class FlowNoteCLI:
@@ -27,9 +38,7 @@ class FlowNoteCLI:
         self.classification_service = ClassificationService()
         self.onboarding_service = OnboardingService()
 
-    def _get_user_context(
-        self, user_id: str
-    ) -> tuple[Optional[str], Optional[list[str]]]:
+    def _get_user_context(self, user_id: str) -> UserContextData:
         """[KO] 사용자 컨텍스트(occupation, areas)를 조회하고 검증하여 반환합니다."""
         valid_occ = None
         valid_areas = None
@@ -46,9 +55,10 @@ class FlowNoteCLI:
 
                 if isinstance(raw_occ := status.get("occupation"), str):
                     valid_occ = raw_occ
-        except Exception as e:
-            print(f"⚠️ 사용자 정보 조회 실패 (무시): {e}")
-        return valid_occ, valid_areas
+        except Exception:
+            logger.exception("⚠️ 사용자 정보 조회 실패 (무시)")
+
+        return UserContextData(occupation=valid_occ, areas=valid_areas)
 
     async def classify_file(self, file_path: str, user_id: Optional[str] = None):
         """
@@ -97,10 +107,9 @@ class FlowNoteCLI:
             safe_file_id = f"{path_obj.name}_{file_hash}"
 
             # 사용자 컨텍스트 가져오기
-            valid_occ = None
-            valid_areas = None
+            user_context = UserContextData()
             if user_id:
-                valid_occ, valid_areas = self._get_user_context(user_id)
+                user_context = self._get_user_context(user_id)
 
             # 분류 실행 (HTTP 없이 직접 호출!)
             print(f"🔍 분류 시작: {path_obj.name} (User: {user_id or 'Anonymous'})")
@@ -108,8 +117,8 @@ class FlowNoteCLI:
                 text=text,
                 user_id=user_id,
                 file_id=safe_file_id,
-                occupation=valid_occ,
-                areas=valid_areas,
+                occupation=user_context.occupation,
+                areas=user_context.areas,
             )
 
             print(f"✅ 분류 완료: {result.category}")
