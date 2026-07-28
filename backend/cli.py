@@ -27,6 +27,29 @@ class FlowNoteCLI:
         self.classification_service = ClassificationService()
         self.onboarding_service = OnboardingService()
 
+    def _get_user_context(
+        self, user_id: str
+    ) -> tuple[Optional[str], Optional[list[str]]]:
+        """[KO] 사용자 컨텍스트(occupation, areas)를 조회하고 검증하여 반환합니다."""
+        valid_occ = None
+        valid_areas = None
+        try:
+            status = self.onboarding_service.get_user_status(user_id)
+            if status and status.get("status") == "success":
+                if raw_areas := status.get("areas"):
+                    if isinstance(raw_areas, list):
+                        valid_areas = [str(a) for a in raw_areas]
+                    elif isinstance(raw_areas, str):
+                        valid_areas = [
+                            a.strip() for a in raw_areas.split(",") if a.strip()
+                        ]
+
+                if isinstance(raw_occ := status.get("occupation"), str):
+                    valid_occ = raw_occ
+        except Exception as e:
+            print(f"⚠️ 사용자 정보 조회 실패 (무시): {e}")
+        return valid_occ, valid_areas
+
     async def classify_file(self, file_path: str, user_id: Optional[str] = None):
         """
         [KO] 단일 파일 분류를 실행합니다 (MCP 직접 호출용).
@@ -74,19 +97,10 @@ class FlowNoteCLI:
             safe_file_id = f"{path_obj.name}_{file_hash}"
 
             # 사용자 컨텍스트 가져오기
-            user_context = {}
+            valid_occ = None
+            valid_areas = None
             if user_id:
-                # OnboardingService를 통해 사용자 정보 조회 (실제 DB 연동 시)
-                # 현재는 mock 데이터나 로직에 따라 다를 수 있음
-                try:
-                    status = self.onboarding_service.get_user_status(user_id)
-                    if status and status.get("status") == "success":
-                        user_context = {
-                            "occupation": status.get("occupation"),
-                            "areas": status.get("areas", []),
-                        }
-                except Exception as e:
-                    print(f"⚠️ 사용자 정보 조회 실패 (무시): {e}")
+                valid_occ, valid_areas = self._get_user_context(user_id)
 
             # 분류 실행 (HTTP 없이 직접 호출!)
             print(f"🔍 분류 시작: {path_obj.name} (User: {user_id or 'Anonymous'})")
@@ -94,8 +108,8 @@ class FlowNoteCLI:
                 text=text,
                 user_id=user_id,
                 file_id=safe_file_id,
-                occupation=user_context.get("occupation"),
-                areas=user_context.get("areas"),
+                occupation=valid_occ,
+                areas=valid_areas,
             )
 
             print(f"✅ 분류 완료: {result.category}")
