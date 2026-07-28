@@ -37,7 +37,7 @@ class FlowNoteCLI:
             user_id: [KO] 사용자 ID (선택) / [EN] User ID (optional)
 
         Returns:
-            [KO] 분류 결과 객체, 실패 시 None / [EN] Classification result object, or None on failure
+            [KO] 분류 결과 객체(ClassifyResponse), 실패 시 None / [EN] Classification result object (ClassifyResponse), or None on failure
         """
         try:
             path_obj = Path(file_path)
@@ -92,10 +92,10 @@ class FlowNoteCLI:
             print(f"🔍 분류 시작: {path_obj.name} (User: {user_id or 'Anonymous'})")
             result = await self.classification_service.classify(
                 text=text,
-                user_id=user_id or "anonymous",
+                user_id=user_id,
                 file_id=safe_file_id,
-                occupation=user_context.get("occupation") or "",
-                areas=user_context.get("areas") or [],
+                occupation=user_context.get("occupation"),
+                areas=user_context.get("areas"),
             )
 
             print(f"✅ 분류 완료: {result.category}")
@@ -118,7 +118,7 @@ class FlowNoteCLI:
             user_id: [KO] 사용자 ID (선택) / [EN] User ID (optional)
 
         Returns:
-            [KO] 각 파일의 분류 결과 딕셔너리 리스트 (file, category, confidence 포함) / [EN] List of classification result dictionaries for each file
+            [KO] 각 파일의 분류 결과 딕셔너리 리스트 (키: file, category, confidence) / [EN] List of classification result dicts (keys: file, category, confidence)
         """
         dir_path = Path(directory)
 

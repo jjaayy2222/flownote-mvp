@@ -14,7 +14,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 from backend.classifier.hybrid_classifier import HybridClassifier
 from backend.classifier.keyword import KeywordClassifier
@@ -53,11 +53,11 @@ class ClassificationService:
     async def classify(
         self,
         text: str,
-        user_id: str = None,
-        file_id: str = None,
-        occupation: str = None,
-        areas: list = None,
-        interests: list = None,
+        user_id: Optional[str] = None,
+        file_id: Optional[str] = None,
+        occupation: Optional[str] = None,
+        areas: Optional[List[str]] = None,
+        interests: Optional[List[str]] = None,
     ) -> ClassifyResponse:
         """
         통합 분류 메서드 (Main Entry Point)
@@ -279,7 +279,7 @@ class ClassificationService:
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(json_data, f, ensure_ascii=False, indent=2)
 
-            logger.info(f"✅ 로그 저장: CSV + JSON")
+            logger.info("✅ 로그 저장: CSV + JSON")
 
             return {
                 "csv_saved": True,
