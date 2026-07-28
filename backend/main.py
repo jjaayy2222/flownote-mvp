@@ -57,10 +57,17 @@ from backend.services.scheduler_service import shutdown_scheduler, start_schedul
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    [KO] FastAPI 앱의 수명 주기(시작/종료)를 관리합니다. / [EN] Manages the FastAPI app lifespan (startup/shutdown).
+    [KO]
+    FastAPI 앱의 수명 주기(시작/종료)를 관리합니다.
 
     Args:
-        app: [KO] FastAPI 앱 인스턴스 / [EN] FastAPI app instance
+        app: FastAPI 앱 인스턴스
+
+    [EN]
+    Manages the FastAPI app lifespan (startup/shutdown).
+
+    Args:
+        app: FastAPI app instance
     """
     # Startup
     logger.info("Starting up: Initializing WebSocket Manager & Redis...")
@@ -130,6 +137,8 @@ app.add_middleware(
 # Exception Handlers (i18n support)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+from typing import Any, Callable, cast
+
 from fastapi import Request  # type: ignore[import]
 from fastapi.exceptions import RequestValidationError  # type: ignore[import]
 from fastapi.responses import JSONResponse  # type: ignore[import]
@@ -142,8 +151,13 @@ from backend.services.chat_history_service import (  # type: ignore[import]
     RedisUnavailableError,
 )
 
-app.add_exception_handler(HTTPException, http_exception_handler)  # type: ignore[arg-type]
-app.add_exception_handler(RequestValidationError, validation_exception_handler)  # type: ignore[arg-type]
+app.add_exception_handler(
+    HTTPException, cast(Callable[[Request, Any], Any], http_exception_handler)
+)
+app.add_exception_handler(
+    RequestValidationError,
+    cast(Callable[[Request, Any], Any], validation_exception_handler),
+)
 
 
 @app.exception_handler(RedisUnavailableError)
@@ -151,17 +165,27 @@ async def redis_unavailable_handler(
     request: Request, exc: RedisUnavailableError
 ) -> JSONResponse:
     """
-    [KO] Redis 연결 불가 시 전역 503 응답을 반환합니다. / [EN] Returns a global 503 response when Redis is unavailable.
-
-    [KO] 개별 엔드포인트에서 에러를 처리하지 않아도 이 핸들러가 자동으로 503으로 변환합니다.
-    [EN] Automatically converts RedisUnavailableError to 503 without individual endpoint handling.
+    [KO]
+    Redis 연결 불가 시 전역 503 응답을 반환합니다.
+    개별 엔드포인트에서 에러를 처리하지 않아도 이 핸들러가 자동으로 503으로 변환합니다.
 
     Args:
-        request: [KO] FastAPI 요청 객체 / [EN] FastAPI request object
-        exc: [KO] Redis 예외 객체 / [EN] Redis exception object
+        request: FastAPI 요청 객체
+        exc: Redis 예외 객체
 
     Returns:
-        [KO] 503 상태 코드의 JSON 응답 / [EN] JSON response with 503 status code
+        503 상태 코드의 JSON 응답
+
+    [EN]
+    Returns a global 503 response when Redis is unavailable.
+    Automatically converts RedisUnavailableError to 503 without individual endpoint handling.
+
+    Args:
+        request: FastAPI request object
+        exc: Redis exception object
+
+    Returns:
+        JSON response with 503 status code
     """
     logger.warning(
         "Redis unavailable: %s",
@@ -229,10 +253,17 @@ logger.info("✅ chat_router 등록 완료 (RAG Streaming Chat)")
 @app.get("/health", response_model=HealthCheckResponse, tags=["System"])
 async def health():
     """
-    [KO] 서버 상태를 확인합니다. / [EN] Checks the server health status.
+    [KO]
+    서버 상태를 확인합니다.
 
     Returns:
-        [KO] 서버 상태 정보 (HealthCheckResponse) / [EN] Server health information (HealthCheckResponse)
+        서버 상태 정보 (HealthCheckResponse)
+
+    [EN]
+    Checks the server health status.
+
+    Returns:
+        Server health information (HealthCheckResponse)
     """
     return HealthCheckResponse(
         status="healthy",
@@ -244,10 +275,17 @@ async def health():
 @app.get("/", tags=["System"])
 async def root():
     """
-    [KO] API 루트 엔드포인트입니다. / [EN] API root endpoint.
+    [KO]
+    API 루트 엔드포인트입니다.
 
     Returns:
-        [KO] API 기본 정보 딕셔너리 / [EN] API basic information dictionary
+        API 기본 정보 딕셔너리
+
+    [EN]
+    API root endpoint.
+
+    Returns:
+        API basic information dictionary
     """
     return {
         "name": "FlowNote API",
