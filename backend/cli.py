@@ -1,12 +1,16 @@
 """
-CLI Interface for MCP Integration
-- Demonstrates how MCP can call services directly without HTTP
+[KO] FlowNote CLI - MCP 통합 인터페이스
+[EN] FlowNote CLI - MCP Integration Interface
+
+[KO] MCP가 HTTP 없이 서비스를 직접 호출하는 방법을 시연하는 모듈입니다.
+[EN] Demonstrates how MCP can call services directly without HTTP.
 """
 
 import asyncio
 import logging
 import sys
 from pathlib import Path
+from typing import Optional
 
 # Service imports
 from backend.services.classification_service import ClassificationService
@@ -14,18 +18,26 @@ from backend.services.onboarding_service import OnboardingService
 
 
 class FlowNoteCLI:
-    """FlowNote CLI - MCP 통합 시뮬레이션"""
+    """
+    [KO] FlowNote CLI - MCP 통합 시뮬레이션
+    [EN] FlowNote CLI - MCP Integration Simulation
+    """
 
     def __init__(self):
         self.classification_service = ClassificationService()
         self.onboarding_service = OnboardingService()
 
-    async def classify_file(self, file_path: str, user_id: str = None):
-        """파일 분류 (MCP가 이렇게 호출할 것)
+    async def classify_file(self, file_path: str, user_id: Optional[str] = None):
+        """
+        [KO] 단일 파일 분류를 실행합니다 (MCP 직접 호출용).
+        [EN] Executes single file classification (for direct MCP calls).
 
         Args:
-            file_path: 로컬 파일 경로
-            user_id: 사용자 ID (선택)
+            file_path: [KO] 로컬 파일 경로 / [EN] Local file path
+            user_id: [KO] 사용자 ID (선택) / [EN] User ID (optional)
+
+        Returns:
+            [KO] 분류 결과 객체, 실패 시 None / [EN] Classification result object, or None on failure
         """
         try:
             path_obj = Path(file_path)
@@ -80,10 +92,10 @@ class FlowNoteCLI:
             print(f"🔍 분류 시작: {path_obj.name} (User: {user_id or 'Anonymous'})")
             result = await self.classification_service.classify(
                 text=text,
-                user_id=user_id,
+                user_id=user_id or "anonymous",
                 file_id=safe_file_id,
-                occupation=user_context.get("occupation"),
-                areas=user_context.get("areas"),
+                occupation=user_context.get("occupation") or "",
+                areas=user_context.get("areas") or [],
             )
 
             print(f"✅ 분류 완료: {result.category}")
@@ -96,10 +108,17 @@ class FlowNoteCLI:
             print(f"❌ 분류 실패: {e}")
             return None
 
-    async def batch_classify(self, directory: str, user_id: str = None):
-        """디렉토리 내 모든 파일 분류
+    async def batch_classify(self, directory: str, user_id: Optional[str] = None):
+        """
+        [KO] 지정한 디렉토리 내의 모든 텍스트/마크다운 파일을 분류합니다. (MCP 워크스페이스 전체 분류용)
+        [EN] Classifies all text/markdown files in a specified directory. (For MCP workspace-wide classification)
 
-        MCP가 워크스페이스 전체를 분류할 때 사용
+        Args:
+            directory: [KO] 분석할 디렉토리 경로 / [EN] Directory path to analyze
+            user_id: [KO] 사용자 ID (선택) / [EN] User ID (optional)
+
+        Returns:
+            [KO] 각 파일의 분류 결과 딕셔너리 리스트 (file, category, confidence 포함) / [EN] List of classification result dictionaries for each file
         """
         dir_path = Path(directory)
 
@@ -134,7 +153,10 @@ class FlowNoteCLI:
 
 
 async def main():
-    """CLI 실행 예제"""
+    """
+    [KO] CLI 실행 진입점 예제
+    [EN] CLI execution entry point example
+    """
     cli = FlowNoteCLI()
 
     if len(sys.argv) < 2:
