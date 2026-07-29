@@ -23,10 +23,13 @@ from backend.config import AlertConfig
 
 class ObsEvent(str, Enum):
     """
-    Standard event names for the observability system (표준 관측성 이벤트 이름).
+    [KO]
+    표준 관측성 이벤트 이름입니다.
+    모니터링 대시보드(ELK 등)와 알림 규칙 엔진에서 사용할 수 있도록 중앙화된 이벤트 식별자를 제공합니다.
 
-    [KO] 모니터링 대시보드(ELK 등)와 알림 규칙 엔진에서 사용할 수 있도록 중앙화된 이벤트 식별자를 제공합니다.
-    [EN] Provides centralized event identifiers for monitoring dashboards (e.g., ELK) and alert rule engines.
+    [EN]
+    Standard event names for the observability system.
+    Provides centralized event identifiers for monitoring dashboards (e.g., ELK) and alert rule engines.
     """
 
     FINETUNE_RESERVED_REDIS_KEY_VIOLATION = "reserved_redis_keys_in_extra_fields"
@@ -34,10 +37,13 @@ class ObsEvent(str, Enum):
 
 class ObsMetaTag(str, Enum):
     """
-    Metadata flags for the observability system (관측성 메타데이터 태그).
+    [KO]
+    관측성 메타데이터 태그입니다.
+    `meta_` 네임스페이스를 사용하여 시스템 제어용 데이터를 비즈니스 데이터와 분리합니다.
 
-    [KO] `meta_` 네임스페이스를 사용하여 시스템 제어용 데이터를 비즈니스 데이터와 분리합니다.
-    [EN] Uses the `meta_` namespace to separate system control data from business data.
+    [EN]
+    Metadata flags for the observability system.
+    Uses the `meta_` namespace to separate system control data from business data.
     """
 
     INTENTIONAL_WARNING = "meta_intentional_warning"
@@ -45,24 +51,38 @@ class ObsMetaTag(str, Enum):
 
 class DiscordAlertHandler(logging.Handler):
     """
-    Discord Webhook Alert Handler (Discord 알림 전송 핸들러).
+    [KO]
+    Discord 웹훅 알림 전송 핸들러입니다.
+    `[OBS]` 태그가 포함되거나 ERROR 레벨 이상인 로그를 감지하여 비동기로 전송합니다.
 
-    [KO] `[OBS]` 태그가 포함되거나 ERROR 레벨 이상인 로그를 감지하여 비동기로 전송합니다.
-    [EN] Detects logs with the `[OBS]` tag or at ERROR level and above, sending them asynchronously.
+    알림 제한 규칙 (Throttling Semantics):
+    - Key: 로그 레벨 및 포맷팅되지 않은 원본 메시지 기준
+    - Window: `throttle_seconds` (기본값: AlertConfig.DEFAULT_THROTTLE_SECONDS)
+    - Behavior: 동일한 시간 창(Window) 내의 중복 알림을 억제하여 스팸을 방지합니다.
 
-    Throttling Semantics (알림 제한 규칙):
-    - Key: `f"{record.levelno}:{record.getMessage()}"` (Per log level and unformatted content).
-    - Window: `throttle_seconds` (Default: AlertConfig.DEFAULT_THROTTLE_SECONDS).
+    [EN]
+    Discord Webhook Alert Handler.
+    Detects logs with the `[OBS]` tag or at ERROR level and above, sending them asynchronously.
+
+    Throttling Semantics:
+    - Key: Per log level and unformatted content
+    - Window: `throttle_seconds` (Default: AlertConfig.DEFAULT_THROTTLE_SECONDS)
     - Behavior: Suppresses duplicate alerts within the same time window to prevent spam.
     """
 
     def __init__(self, webhook_url: Optional[str] = None):
         """
-        [KO] 핸들러 및 Throttling 제어 상태를 초기화합니다.
-        [EN] Initializes the handler and its throttling control state.
+        [KO]
+        핸들러 및 Throttling 제어 상태를 초기화합니다.
 
         Args:
-            webhook_url: Discord webhook URL. (Default: AlertConfig.DISCORD_WEBHOOK_URL)
+            webhook_url: Discord 웹훅 URL (기본값: AlertConfig.DISCORD_WEBHOOK_URL)
+
+        [EN]
+        Initializes the handler and its throttling control state.
+
+        Args:
+            webhook_url: Discord webhook URL (Default: AlertConfig.DISCORD_WEBHOOK_URL)
         """
         super().__init__()
         self.webhook_url = webhook_url or AlertConfig.DISCORD_WEBHOOK_URL
@@ -77,8 +97,11 @@ class DiscordAlertHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord):
         """
-        [KO] 로그 레코드를 평가하여 Throttling 규칙 통과 시 Discord 알림을 트리거합니다.
-        [EN] Evaluates the log record and triggers a Discord alert if it passes throttling rules.
+        [KO]
+        로그 레코드를 평가하여 Throttling 규칙 통과 시 Discord 알림을 트리거합니다.
+
+        [EN]
+        Evaluates the log record and triggers a Discord alert if it passes throttling rules.
         """
         # 1. 대상 필터링: [OBS] 태그 체크 또는 ERROR 레벨 이상
         message = self.format(record)
@@ -119,8 +142,11 @@ class DiscordAlertHandler(logging.Handler):
 
     def _send_discord_alert(self, formatted_message: str, record: logging.LogRecord):
         """
-        [KO] HTTP 통신을 통해 구성된 Embed 데이터를 Discord 웹훅으로 전송합니다.
-        [EN] Sends the constructed Embed data to the Discord webhook via HTTP request.
+        [KO]
+        HTTP 통신을 통해 구성된 Embed 데이터를 Discord 웹훅으로 전송합니다.
+
+        [EN]
+        Sends the constructed Embed data to the Discord webhook via HTTP request.
         """
         if not self.webhook_url:
             return
@@ -178,8 +204,11 @@ class DiscordAlertHandler(logging.Handler):
 
     def close(self):
         """
-        [KO] 로깅 시스템 종료 시 ThreadPool 자원을 회수하며(Shutdown Hook), 부모 핸들러의 close()를 호출합니다.
-        [EN] Reclaims ThreadPool resources on system shutdown and calls the parent handler's close().
+        [KO]
+        로깅 시스템 종료 시 ThreadPool 자원을 회수하며(Shutdown Hook), 부모 핸들러의 close()를 호출합니다.
+
+        [EN]
+        Reclaims ThreadPool resources on system shutdown and calls the parent handler's close().
         """
         if hasattr(self, "_executor"):
             # 최대한 생성된 알림 전송 태스크가 완료되도록 대기 (Best-effort delivery)
