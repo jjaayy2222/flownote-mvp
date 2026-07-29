@@ -39,23 +39,29 @@ def safe_parse_env_int(
     env_var_name: str, default: int, min_val: Optional[int] = None
 ) -> int:
     """
+    [KO]
     환경 변수를 정수형(int)으로 안전하게 파싱합니다.
     실패 시 로그를 남기고 기본값을 반환합니다.
 
+    Args:
+        env_var_name: 파싱할 환경 변수의 이름
+        default: 파싱 실패 시 반환할 기본값
+        min_val: 허용되는 최소값 (지정 시 이보다 작으면 기본값 반환)
+
+    Returns:
+        파싱된 정수값 또는 기본값
+
+    [EN]
     Safely parses an environment variable into an integer.
     Logs a warning and returns the default value upon failure.
 
     Args:
-        env_var_name (str): 파싱할 환경 변수의 이름.
-            The name of the environment variable to parse.
-        default (int): 파싱 실패 시 반환할 기본값.
-            The default value to return if parsing fails.
-        min_val (Optional[int]): 허용되는 최소값 (지정 시 이보다 작으면 기본값 반환).
-            The minimum allowed value (returns default if parsed value is smaller).
+        env_var_name: The name of the environment variable to parse
+        default: The default value to return if parsing fails
+        min_val: The minimum allowed value (returns default if parsed value is smaller)
 
     Returns:
-        int: 파싱된 정수값 또는 기본값.
-            The parsed integer or the default value.
+        The parsed integer or the default value
     """
     val = os.getenv(env_var_name)
     if val is None:
@@ -86,23 +92,29 @@ def safe_parse_env_float(
     env_var_name: str, default: float, min_val: Optional[float] = None
 ) -> float:
     """
+    [KO]
     환경 변수를 실수형(float)으로 안전하게 파싱합니다.
     실패 시 로그를 남기고 기본값을 반환합니다.
 
+    Args:
+        env_var_name: 파싱할 환경 변수의 이름
+        default: 파싱 실패 시 반환할 기본값
+        min_val: 허용되는 최소값 (지정 시 이보다 작으면 기본값 반환)
+
+    Returns:
+        파싱된 실수값 또는 기본값
+
+    [EN]
     Safely parses an environment variable into a float.
     Logs a warning and returns the default value upon failure.
 
     Args:
-        env_var_name (str): 파싱할 환경 변수의 이름.
-            The name of the environment variable to parse.
-        default (float): 파싱 실패 시 반환할 기본값.
-            The default value to return if parsing fails.
-        min_val (Optional[float]): 허용되는 최소값 (지정 시 이보다 작으면 기본값 반환).
-            The minimum allowed value (returns default if parsed value is smaller).
+        env_var_name: The name of the environment variable to parse
+        default: The default value to return if parsing fails
+        min_val: The minimum allowed value (returns default if parsed value is smaller)
 
     Returns:
-        float: 파싱된 실수값 또는 기본값.
-            The parsed float or the default value.
+        The parsed float or the default value
     """
     val = os.getenv(env_var_name)
     if val is None:
@@ -131,25 +143,31 @@ def safe_parse_env_float(
 
 def mask_pii_id(value: Optional[str], truncate_len: int = 12) -> str:
     """
-    민감 문자열(user_id, session_id 등)을 SHA-256으로 해시화하는 중앙 유틸리티.
+    [KO]
+    민감 문자열(user_id, session_id 등)을 SHA-256으로 해시화하는 중앙 유틸리티입니다.
     로그에 개인정보(PII)가 노출되지 않도록 안전하게 마스킹합니다.
 
+    Args:
+        value: 마스킹할 원본 문자열
+        truncate_len: 반환할 해시 문자열의 최대 길이 (기본값 12)
+            - 0이면 전체 해시 문자열 반환
+            - 음수 전달 시 0으로 정규화(안전 폴백)하여 전체 반환
+
+    Returns:
+        안전하게 마스킹된 해시 문자열 또는 INVALID_PII_SENTINEL
+
+    [EN]
     Central utility to hash sensitive strings (e.g., user_id, session_id) using SHA-256.
     Safely masks Personally Identifiable Information (PII) to prevent log exposure.
 
     Args:
-        value (Optional[str]): 마스킹할 원본 문자열.
-            The original string to mask.
-        truncate_len (int): 반환할 해시 문자열의 최대 길이 (기본값 12).
-            - 0이면 전체 해시 문자열 반환.
-            - 음수 전달 시 0으로 정규화(안전 폴백)하여 전체 반환.
-            Maximum length of the returned hash string (default 12).
-            - If 0, returns the full hash string.
-            - If negative, normalizes to 0 (safe fallback) and returns full.
+        value: The original string to mask
+        truncate_len: Maximum length of the returned hash string (default 12)
+            - If 0, returns the full hash string
+            - If negative, normalizes to 0 (safe fallback) and returns full
 
     Returns:
-        str: 안전하게 마스킹된 해시 문자열 또는 INVALID_PII_SENTINEL.
-            Safely masked hash string or INVALID_PII_SENTINEL.
+        Safely masked hash string or INVALID_PII_SENTINEL
     """
     if not value or not isinstance(value, str):
         return INVALID_PII_SENTINEL
@@ -163,23 +181,25 @@ def mask_pii_id(value: Optional[str], truncate_len: int = 12) -> str:
 
 def get_chat_log_extra(request_or_body: Any) -> Dict[str, Any]:
     """
+    [KO]
     채팅 엔드포인트에서 공통으로 사용하는 안전한 로깅 딕셔너리를 생성합니다.
-
-    입력 객체의 형태를 검사하여 (dict 또는 BaseModel 등)
-    안전하게 필드를 추출하고 민감 정보를 마스킹 처리합니다.
-
-    Creates a safe logging dictionary commonly used across chat endpoints.
-
-    Inspects the input object type (dict or BaseModel) to safely extract
-    fields and mask sensitive information.
+    입력 객체의 형태를 검사하여 (dict 또는 BaseModel 등) 안전하게 필드를 추출하고 민감 정보를 마스킹 처리합니다.
 
     Args:
-        request_or_body (Any): 파싱할 요청 객체 또는 딕셔너리.
-            The request object or dictionary to parse.
+        request_or_body: 파싱할 요청 객체 또는 딕셔너리
 
     Returns:
-        Dict[str, Any]: 마스킹된 사용자 ID와 축약된 쿼리 문자열이 포함된 딕셔너리.
-            A dictionary containing the masked user ID and truncated query string.
+        마스킹된 사용자 ID와 축약된 쿼리 문자열이 포함된 딕셔너리
+
+    [EN]
+    Creates a safe logging dictionary commonly used across chat endpoints.
+    Inspects the input object type (dict or BaseModel) to safely extract fields and mask sensitive information.
+
+    Args:
+        request_or_body: The request object or dictionary to parse
+
+    Returns:
+        A dictionary containing the masked user ID and truncated query string
     """
     if isinstance(request_or_body, Mapping):
         raw_user_id = request_or_body.get("user_id")
@@ -208,25 +228,29 @@ def check_metadata_match(
     doc_metadata: Optional[Dict[str, Any]], metadata_filter: Optional[Dict[str, Any]]
 ) -> bool:
     """
+    [KO]
     문서의 메타데이터가 지정된 필터 조건에 부합하는지 확인합니다.
-
     OR 시맨틱을 적용하여 문서의 값 중 하나라도 필터 후보군에 포함되는지 검사합니다.
     빈 리스트 필터([])는 유효한 매칭 후보가 없는 것으로 간주하여 즉시 False를 반환합니다.
 
-    Checks if the document's metadata matches the specified filter conditions.
+    Args:
+        doc_metadata: 문서에서 추출한 메타데이터 딕셔너리
+        metadata_filter: 적용할 필터 조건
 
+    Returns:
+        모든 필터 조건을 만족하면 True, 하나라도 불일치하면 False
+
+    [EN]
+    Checks if the document's metadata matches the specified filter conditions.
     Applies OR semantics to check if any document value is included in the filter candidates.
     An empty list filter ([]) is considered to have no valid matching candidates, returning False immediately.
 
     Args:
-        doc_metadata (Optional[Dict[str, Any]]): 문서에서 추출한 메타데이터 딕셔너리.
-            The metadata dictionary extracted from the document.
-        metadata_filter (Optional[Dict[str, Any]]): 적용할 필터 조건.
-            The filter conditions to apply.
+        doc_metadata: The metadata dictionary extracted from the document
+        metadata_filter: The filter conditions to apply
 
     Returns:
-        bool: 모든 필터 조건을 만족하면 True, 하나라도 불일치하면 False.
-            True if all conditions are met, False if any condition fails.
+        True if all conditions are met, False if any condition fails
     """
     if not metadata_filter:
         return True
@@ -259,25 +283,27 @@ def check_metadata_match(
 
 def count_tokens(text: str, model: str = "gpt-4") -> int:
     """
+    [KO]
     주어진 텍스트와 모델에 대한 토큰 수를 계산합니다.
-
-    tiktoken을 사용하여 정확한 토큰 수를 산출하며,
-    실패 시 단순 문자 길이 기반 휴리스틱(문자수 // 4)으로 대체합니다.
-
-    Calculates the number of tokens for a given text and model.
-
-    Uses tiktoken for accurate calculation, falling back to a simple
-    character length heuristic (char length // 4) on failure.
+    tiktoken을 사용하여 정확한 토큰 수를 산출하며, 실패 시 단순 문자 길이 기반 휴리스틱(문자수 // 4)으로 대체합니다.
 
     Args:
-        text (str): 토큰 수를 계산할 텍스트.
-            The text to count tokens for.
-        model (str): 기준이 되는 모델명 (기본값: "gpt-4").
-            The reference model name (default: "gpt-4").
+        text: 토큰 수를 계산할 텍스트
+        model: 기준이 되는 모델명 (기본값: "gpt-4")
 
     Returns:
-        int: 계산된 토큰 수.
-            The calculated number of tokens.
+        계산된 토큰 수
+
+    [EN]
+    Calculates the number of tokens for a given text and model.
+    Uses tiktoken for accurate calculation, falling back to a simple character length heuristic (char length // 4) on failure.
+
+    Args:
+        text: The text to count tokens for
+        model: The reference model name (default: "gpt-4")
+
+    Returns:
+        The calculated number of tokens
     """
     try:
         encoding = tiktoken.encoding_for_model(model)
@@ -289,42 +315,56 @@ def count_tokens(text: str, model: str = "gpt-4") -> int:
 
 def read_file_content(file_path: str) -> str:
     """
+    [KO]
     지정된 경로의 파일 내용을 읽어 문자열로 반환합니다.
 
+    Args:
+        file_path: 읽어올 파일의 경로
+
+    Returns:
+        파일의 텍스트 내용
+
+    Raises:
+        RuntimeError: 파일 읽기에 실패했을 때 발생
+
+    [EN]
     Reads the contents of a file at the specified path and returns it as a string.
 
     Args:
-        file_path (str): 읽어올 파일의 경로.
-            The path of the file to read.
+        file_path: The path of the file to read
 
     Returns:
-        str: 파일의 텍스트 내용.
-            The text content of the file.
+        The text content of the file
 
     Raises:
-        Exception: 파일 읽기에 실패했을 때 발생.
-            Raised when reading the file fails.
+        RuntimeError: Raised when reading the file fails
     """
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             return f.read()
-    except Exception as e:
-        raise Exception(f"파일 읽기 실패: {str(e)}")
+    except OSError as e:
+        raise RuntimeError(f"파일 읽기 실패: {str(e)}") from e
 
 
 def format_file_size(size_bytes: int) -> str:
     """
+    [KO]
     바이트 단위의 파일 크기를 사람이 읽기 쉬운 형식(B, KB, MB, GB, TB)으로 변환합니다.
 
+    Args:
+        size_bytes: 변환할 파일 크기(바이트)
+
+    Returns:
+        변환된 문자열 포맷
+
+    [EN]
     Converts a file size in bytes to a human-readable format (B, KB, MB, GB, TB).
 
     Args:
-        size_bytes (int): 변환할 파일 크기(바이트).
-            The file size in bytes to convert.
+        size_bytes: The file size in bytes to convert
 
     Returns:
-        str: 변환된 문자열 포맷.
-            The formatted file size string.
+        The formatted file size string
     """
     # [Validation] 음수 용량 예외 방어
     current_size: float = max(0.0, float(size_bytes))
@@ -337,40 +377,54 @@ def format_file_size(size_bytes: int) -> str:
 
 def estimate_cost(tokens: int, cost_per_token: float) -> float:
     """
+    [KO]
     총 토큰 수와 토큰당 단가를 기반으로 예상 비용(USD)을 추정합니다.
 
+    Args:
+        tokens: 사용된 전체 토큰 수
+        cost_per_token: 1 토큰당 비용
+
+    Returns:
+        추정된 총 비용
+
+    [EN]
     Estimates the expected cost (in USD) based on total tokens and cost per token.
 
     Args:
-        tokens (int): 사용된 전체 토큰 수.
-            The total number of tokens used.
-        cost_per_token (float): 1 토큰당 비용.
-            The cost per single token.
+        tokens: The total number of tokens used
+        cost_per_token: The cost per single token
 
     Returns:
-        float: 추정된 총 비용.
-            The estimated total cost.
+        The estimated total cost
     """
     return tokens * cost_per_token
 
 
 def load_pdf(file) -> str:
     """
+    [KO]
     Streamlit 인터페이스를 통해 업로드된 PDF 파일에서 텍스트를 추출합니다.
 
+    Args:
+        file: Streamlit의 UploadedFile 객체
+
+    Returns:
+        PDF에서 추출된 전체 텍스트
+
+    Raises:
+        RuntimeError: PDF 파싱이나 텍스트 추출에 실패했을 때 발생
+
+    [EN]
     Extracts text from a PDF file uploaded via the Streamlit interface.
 
     Args:
-        file: Streamlit의 UploadedFile 객체.
-            The UploadedFile object from Streamlit.
+        file: The UploadedFile object from Streamlit
 
     Returns:
-        str: PDF에서 추출된 전체 텍스트.
-            The complete text extracted from the PDF.
+        The complete text extracted from the PDF
 
     Raises:
-        Exception: PDF 파싱이나 텍스트 추출에 실패했을 때 발생.
-            Raised when PDF parsing or text extraction fails.
+        RuntimeError: Raised when PDF parsing or text extraction fails
     """
     try:
         import pypdf  # type: ignore[import]
@@ -387,27 +441,28 @@ def load_pdf(file) -> str:
         return "\n".join(pages_text).strip()
 
     except Exception as e:
-        raise Exception(f"PDF 읽기 실패: {str(e)}")
+        raise RuntimeError(f"PDF 읽기 실패: {str(e)}") from e
 
 
 def save_to_markdown(text: str, filepath: str, title: str = "Untitled"):
     """
+    [KO]
     추출된 텍스트를 지정된 경로에 마크다운(.md) 파일로 저장합니다.
-
     디렉터리가 존재하지 않으면 자동으로 생성하고, 문서 상단에 메타데이터를 추가합니다.
 
-    Saves the extracted text to a Markdown (.md) file at the specified path.
+    Args:
+        text: 저장할 본문 텍스트
+        filepath: 생성할 마크다운 파일의 절대 또는 상대 경로
+        title: 문서 상단 헤더에 들어갈 제목 (기본값: "Untitled")
 
-    Automatically creates parent directories if they do not exist, and prepends
-    metadata to the top of the document.
+    [EN]
+    Saves the extracted text to a Markdown (.md) file at the specified path.
+    Automatically creates parent directories if they do not exist, and prepends metadata to the top of the document.
 
     Args:
-        text (str): 저장할 본문 텍스트.
-            The body text to save.
-        filepath (str): 생성할 마크다운 파일의 절대 또는 상대 경로.
-            The absolute or relative path for the generated markdown file.
-        title (str): 문서 상단 헤더에 들어갈 제목 (기본값: "Untitled").
-            The title to insert at the top header of the document (default: "Untitled").
+        text: The body text to save
+        filepath: The absolute or relative path for the generated markdown file
+        title: The title to insert at the top header of the document (default: "Untitled")
     """
     # 디렉토리 생성
     Path(filepath).parent.mkdir(parents=True, exist_ok=True)
