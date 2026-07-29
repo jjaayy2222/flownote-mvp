@@ -426,7 +426,8 @@ def load_pdf(file) -> str:
 
     Raises:
         RuntimeError: Raised when pypdf is not installed, or when PDF reading fails.
-            Message format: ``PDF 읽기 실패: ExcType: message`` for debuggability.
+            Format: ``PDF 읽기 실패: ExcType: message``
+            (note: the ``PDF 읽기 실패`` prefix is Korean-localized)
     """
     try:
         from pypdf import PdfReader  # type: ignore[import]
@@ -446,11 +447,8 @@ def load_pdf(file) -> str:
 
         return "\n".join(pages_text).strip()
 
-    except PyPdfError as e:
-        # PDF 파싱 오류 (pypdf 내부 예외 계층 base)
-        raise RuntimeError(f"PDF 읽기 실패: {type(e).__name__}: {e}") from e
-    except (ValueError, OSError) as e:
-        # 잘못된 입력값 또는 I/O 오류
+    except (PyPdfError, ValueError, OSError) as e:
+        # PDF 파싱 오류(PyPdfError), 잘못된 입력값(ValueError), 또는 I/O 오류(OSError)
         raise RuntimeError(f"PDF 읽기 실패: {type(e).__name__}: {e}") from e
 
 
