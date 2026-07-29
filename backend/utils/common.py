@@ -412,8 +412,8 @@ def load_pdf(file) -> str:
         PDF에서 추출된 전체 텍스트
 
     Raises:
-        RuntimeError: pypdf 라이브러리가 설치되지 않았을 때, PDF 파싱 오류(PyPdfError),
-            입력값 오류(ValueError), 또는 I/O 오류(OSError) 발생 시
+        RuntimeError: pypdf 라이브러리가 설치되지 않았을 때, 또는 PDF 읽기 실패 시
+            (예외 유형 포함: ``PDF 읽기 실패: ExcType: 메시지`` 형식으로 디버깅 지원)
 
     [EN]
     Extracts text from a PDF file uploaded via the Streamlit interface.
@@ -425,18 +425,18 @@ def load_pdf(file) -> str:
         The complete text extracted from the PDF
 
     Raises:
-        RuntimeError: Raised when pypdf is not installed, on PDF parsing error (PyPdfError),
-            invalid input (ValueError), or I/O error (OSError)
+        RuntimeError: Raised when pypdf is not installed, or when PDF reading fails.
+            Message format: ``PDF 읽기 실패: ExcType: message`` for debuggability.
     """
     try:
-        import pypdf  # type: ignore[import]
-        import pypdf.errors  # type: ignore[import]
+        from pypdf import PdfReader  # type: ignore[import]
+        from pypdf.errors import PyPdfError  # type: ignore[import]
     except ImportError as e:
         raise RuntimeError("pypdf 라이브러리가 설치되어 있지 않습니다.") from e
 
     try:
         # PDF 리더 생성
-        pdf_reader = pypdf.PdfReader(file)
+        pdf_reader = PdfReader(file)
 
         # 모든 페이지의 텍스트 추출 (리스트 컴프리헨션 및 join 사용으로 성능 최적화)
         pages_text = []
@@ -446,12 +446,12 @@ def load_pdf(file) -> str:
 
         return "\n".join(pages_text).strip()
 
-    except pypdf.errors.PyPdfError as e:
+    except PyPdfError as e:
         # PDF 파싱 오류 (pypdf 내부 예외 계층 base)
-        raise RuntimeError(f"PDF 파싱 실패: {str(e)}") from e
+        raise RuntimeError(f"PDF 읽기 실패: {type(e).__name__}: {e}") from e
     except (ValueError, OSError) as e:
         # 잘못된 입력값 또는 I/O 오류
-        raise RuntimeError(f"PDF 읽기 실패: {str(e)}") from e
+        raise RuntimeError(f"PDF 읽기 실패: {type(e).__name__}: {e}") from e
 
 
 def save_to_markdown(text: str, filepath: str, title: str = "Untitled"):
