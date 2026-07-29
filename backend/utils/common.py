@@ -412,7 +412,8 @@ def load_pdf(file) -> str:
         PDF에서 추출된 전체 텍스트
 
     Raises:
-        RuntimeError: PDF 파싱이나 텍스트 추출에 실패했을 때 발생
+        RuntimeError: pypdf 라이브러리가 설치되지 않았을 때, PDF 파싱 오류(PyPdfError),
+            입력값 오류(ValueError), 또는 I/O 오류(OSError) 발생 시
 
     [EN]
     Extracts text from a PDF file uploaded via the Streamlit interface.
@@ -424,11 +425,16 @@ def load_pdf(file) -> str:
         The complete text extracted from the PDF
 
     Raises:
-        RuntimeError: Raised when PDF parsing or text extraction fails
+        RuntimeError: Raised when pypdf is not installed, on PDF parsing error (PyPdfError),
+            invalid input (ValueError), or I/O error (OSError)
     """
     try:
         import pypdf  # type: ignore[import]
+        import pypdf.errors  # type: ignore[import]
+    except ImportError as e:
+        raise RuntimeError("pypdf 라이브러리가 설치되어 있지 않습니다.") from e
 
+    try:
         # PDF 리더 생성
         pdf_reader = pypdf.PdfReader(file)
 
@@ -440,7 +446,11 @@ def load_pdf(file) -> str:
 
         return "\n".join(pages_text).strip()
 
-    except Exception as e:
+    except pypdf.errors.PyPdfError as e:
+        # PDF 파싱 오류 (pypdf 내부 예외 계층 base)
+        raise RuntimeError(f"PDF 파싱 실패: {str(e)}") from e
+    except (ValueError, OSError) as e:
+        # 잘못된 입력값 또는 I/O 오류
         raise RuntimeError(f"PDF 읽기 실패: {str(e)}") from e
 
 
