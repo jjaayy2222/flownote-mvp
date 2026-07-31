@@ -17,6 +17,9 @@ from pypdf.errors import PyPdfError
 
 logger = logging.getLogger(__name__)
 
+# 민감 정보(PII) 유출 방지를 위한 에러 메시지 최대 로깅 길이
+MAX_ERROR_LOG_LENGTH = 100
+
 
 def extract_text_from_pdf(file) -> str:
     """
@@ -61,11 +64,16 @@ def extract_text_from_pdf(file) -> str:
                 if page_text := page.extract_text():
                     text += page_text + "\n"
             except (PyPdfError, ValueError, OSError) as e:
+                error_str = str(e)
+                if len(error_str) > MAX_ERROR_LOG_LENGTH:
+                    error_str = f"{error_str[:MAX_ERROR_LOG_LENGTH]}..."
+
                 logger.warning(
                     "PDF page text extraction failed",
                     extra={
                         "page": page_num + 1,
                         "error_type": type(e).__name__,
+                        "error": error_str,
                     },
                     exc_info=e,
                 )
