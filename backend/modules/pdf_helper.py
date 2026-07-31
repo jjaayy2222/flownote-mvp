@@ -64,10 +64,10 @@ def extract_text_from_pdf(file) -> str:
                 logger.warning(
                     "PDF page text extraction failed",
                     extra={
-                        "page_number": page_num + 1,
-                        "exception_type": type(e).__name__,
-                        "error_message": str(e),
+                        "page": page_num + 1,
+                        "error_type": type(e).__name__,
                     },
+                    exc_info=e,
                 )
                 continue
 
