@@ -3,60 +3,93 @@
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 """
-FlowNote MVP - PDF 처리 모듈
+[KO] FlowNote MVP - PDF 처리 모듈
+[EN] FlowNote MVP - PDF Helper Module
+
+[KO] 업로드된 PDF 파일에서 텍스트를 추출하거나 유효성을 검증하는 헬퍼 모듈입니다.
+[EN] Helper module for extracting text or validating uploaded PDF files.
 """
 
-
-import pypdf
+from pypdf import PdfReader
+from pypdf.errors import PyPdfError
 
 
 def extract_text_from_pdf(file) -> str:
     """
-    PDF 파일에서 텍스트 추출 (Streamlit UploadedFile 또는 파일 경로)
+    [KO]
+    PDF 파일에서 텍스트를 추출합니다.
 
     Args:
         file: Streamlit UploadedFile 객체 또는 파일 경로
 
     Returns:
-        str: 추출된 텍스트
+        추출된 전체 텍스트
+
+    Raises:
+        RuntimeError: PDF 읽기 실패 시 발생
+            (예외 유형 포함: ``PDF 읽기 실패: ExcType: 메시지`` 형식으로 디버깅 지원)
+
+    [EN]
+    Extracts text from a PDF file.
+
+    Args:
+        file: Streamlit UploadedFile object or file path
+
+    Returns:
+        The complete text extracted from the PDF
+
+    Raises:
+        RuntimeError: Raised when PDF reading fails.
+            Format: ``PDF 읽기 실패: ExcType: message``
+            (note: the ``PDF 읽기 실패`` prefix is Korean-localized)
     """
     try:
         # UploadedFile인 경우
         if hasattr(file, "read"):
-            pdf_reader = pypdf.PdfReader(file)
+            pdf_reader = PdfReader(file)
         else:
             # 파일 경로인 경우
-            pdf_reader = pypdf.PdfReader(str(file))
+            pdf_reader = PdfReader(str(file))
 
         text = ""
         for page_num, page in enumerate(pdf_reader.pages):
             try:
-                page_text = page.extract_text()
-                if page_text:
+                if page_text := page.extract_text():
                     text += page_text + "\n"
-            except Exception as e:
-                print(f"⚠️ Page {page_num+1} extraction failed: {e}")
+            except (PyPdfError, ValueError, OSError) as e:
+                print(f"⚠️ Page {page_num+1} extraction failed: {type(e).__name__}: {e}")
                 continue
 
         return text.strip()
 
-    except Exception as e:
-        raise Exception(f"PDF 읽기 실패: {str(e)}")
+    except (PyPdfError, ValueError, OSError) as e:
+        # PDF 파싱 오류(PyPdfError), 잘못된 입력값(ValueError), 또는 I/O 오류(OSError)
+        raise RuntimeError(f"PDF 읽기 실패: {type(e).__name__}: {e}") from e
 
 
 def is_valid_pdf(file) -> bool:
     """
-    PDF 파일이 유효한지 확인
+    [KO]
+    PDF 파일이 유효한지 확인합니다.
 
     Args:
-        file: PDF 파일 객체
+        file: PDF 파일 객체 (Streamlit UploadedFile 또는 파일 경로)
 
     Returns:
-        bool: 유효하면 True
+        최소 1페이지 이상 존재하고 파싱 가능한 경우 True, 그렇지 않으면 False
+
+    [EN]
+    Validates if a PDF file is readable.
+
+    Args:
+        file: PDF file object (Streamlit UploadedFile or file path)
+
+    Returns:
+        True if the PDF has at least 1 page and can be parsed, False otherwise
     """
     try:
-        pdf_reader = pypdf.PdfReader(file)
+        pdf_reader = PdfReader(file)
         # 최소 1페이지 이상 있는지 확인
         return len(pdf_reader.pages) > 0
-    except Exception:
+    except (PyPdfError, ValueError, OSError):
         return False
