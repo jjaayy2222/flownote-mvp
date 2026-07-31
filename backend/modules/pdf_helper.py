@@ -10,8 +10,12 @@
 [EN] Helper module for extracting text or validating uploaded PDF files.
 """
 
+import logging
+
 from pypdf import PdfReader
 from pypdf.errors import PyPdfError
+
+logger = logging.getLogger(__name__)
 
 
 def extract_text_from_pdf(file) -> str:
@@ -57,7 +61,14 @@ def extract_text_from_pdf(file) -> str:
                 if page_text := page.extract_text():
                     text += page_text + "\n"
             except (PyPdfError, ValueError, OSError) as e:
-                print(f"⚠️ Page {page_num+1} extraction failed: {type(e).__name__}: {e}")
+                logger.warning(
+                    "PDF page text extraction failed",
+                    extra={
+                        "page_number": page_num + 1,
+                        "exception_type": type(e).__name__,
+                        "error_message": str(e),
+                    },
+                )
                 continue
 
         return text.strip()
