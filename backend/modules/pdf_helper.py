@@ -66,6 +66,9 @@ def extract_text_from_pdf(file) -> str:
                     extra={
                         "page": page_num + 1,
                         "error_type": type(e).__name__,
+                        "error": str(e)[
+                            :100
+                        ],  # 민감 정보 유출 방지를 위한 100자 제한 정제
                     },
                     exc_info=e,
                 )
