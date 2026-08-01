@@ -30,14 +30,23 @@ class TextChunker:
         **splitter_kwargs: Any,
     ) -> None:
         """
-        [KO] 초기화: splitter를 주입하거나 기본 RecursiveCharacterTextSplitter를 사용합니다.
-        [EN] Initialization: Injects a splitter or uses the default RecursiveCharacterTextSplitter.
+        [KO]
+        초기화: splitter를 주입하거나 기본 RecursiveCharacterTextSplitter를 사용합니다.
 
         Args:
-            splitter: [KO] 의존성 주입을 위한 TextSplitter 객체 / [EN] TextSplitter object for dependency injection
-            chunk_size: [KO] 청크 크기 (기본 스플리터 사용 시) / [EN] Chunk size (when using default splitter)
-            chunk_overlap: [KO] 청크 중첩 크기 (기본 스플리터 사용 시) / [EN] Chunk overlap size (when using default splitter)
-            **splitter_kwargs: [KO] 기본 스플리터에 전달할 추가 옵션 / [EN] Additional options to pass to the default splitter
+            splitter: 의존성 주입을 위한 TextSplitter 객체
+            chunk_size: 청크 크기 (기본 스플리터 사용 시)
+            chunk_overlap: 청크 중첩 크기 (기본 스플리터 사용 시)
+            **splitter_kwargs: 기본 스플리터에 전달할 추가 옵션
+
+        [EN]
+        Initialization: Injects a splitter or uses the default RecursiveCharacterTextSplitter.
+
+        Args:
+            splitter: TextSplitter object for dependency injection
+            chunk_size: Chunk size (when using the default splitter)
+            chunk_overlap: Chunk overlap size (when using the default splitter)
+            **splitter_kwargs: Additional options to pass to the default splitter
         """
         if splitter is None:
             # 중복 키워드 인자 충돌 방지 (방어적 코딩)
@@ -61,11 +70,17 @@ class TextChunker:
 
     def _get_splitter_context(self) -> Dict[str, Any]:
         """
-        [KO] 스플리터의 로깅용 컨텍스트(ID 및 타입)를 반환합니다.
-        [EN] Returns the logging context (ID and type) of the splitter.
+        [KO]
+        스플리터의 로깅용 컨텍스트(ID 및 타입)를 반환합니다.
 
         Returns:
-            Dict[str, Any]: [KO] 로깅 컨텍스트 딕셔너리 / [EN] Logging context dictionary
+            로깅 컨텍스트 딕셔너리
+
+        [EN]
+        Returns the logging context (ID and type) of the splitter.
+
+        Returns:
+            Logging context dictionary
         """
         return {
             "splitter_id": id(self._splitter),
@@ -76,15 +91,25 @@ class TextChunker:
         self, attr_name: str, *, is_private: bool = False
     ) -> Optional[int]:
         """
-        [KO] 스플리터의 특정 속성을 안전하게 정수형으로 변환하여 반환합니다.
-        [EN] Safely coerces and returns a specific attribute of the splitter as an integer.
+        [KO]
+        스플리터의 특정 속성을 안전하게 정수형으로 변환하여 반환합니다.
 
         Args:
-            attr_name: [KO] 가져올 속성 이름 / [EN] The name of the attribute to fetch
-            is_private: [KO] 해당 속성이 비공개(private)인지 여부 / [EN] Whether the attribute is private
+            attr_name: 가져올 속성 이름
+            is_private: 해당 속성이 비공개(private)인지 여부
 
         Returns:
-            Optional[int]: [KO] 변환된 정수값 또는 None / [EN] The coerced integer value or None
+            변환된 정수값 또는 None
+
+        [EN]
+        Safely coerces and returns a specific attribute of the splitter as an integer.
+
+        Args:
+            attr_name: The name of the attribute to fetch
+            is_private: Whether the attribute is private
+
+        Returns:
+            The coerced integer value or None
         """
         if not hasattr(self._splitter, attr_name):
             return None
@@ -103,15 +128,25 @@ class TextChunker:
 
     def _log_invalid_int_attr(self, val: Any, attr_name: str, is_private: bool) -> None:
         """
-        [KO] 유효하지 않은 정수형 속성 값을 안전하게 로깅합니다.
-             긴 문자열 값으로 인한 로그 비대화를 막기 위해 `MAX_INVALID_VALUE_REPR_LEN`(기본 100자) 기준으로 값을 생략(truncation) 처리합니다.
-        [EN] Safely logs an invalid integer attribute value.
-             To prevent log bloat from long string values, the value is truncated based on `MAX_INVALID_VALUE_REPR_LEN` (default 100 chars).
+        [KO]
+        유효하지 않은 정수형 속성 값을 안전하게 로깅합니다.
+        긴 문자열 값으로 인한 로그 비대화를 막기 위해
+        `MAX_INVALID_VALUE_REPR_LEN`(기본 100자) 기준으로 값을 생략(truncation) 처리합니다.
 
         Args:
-            val: [KO] 유효하지 않은 속성 값 / [EN] The invalid attribute value
-            attr_name: [KO] 속성 이름 / [EN] The attribute name
-            is_private: [KO] 비공개(private) 속성 여부 / [EN] Whether the attribute is private
+            val: 유효하지 않은 속성 값
+            attr_name: 속성 이름
+            is_private: 비공개(private) 속성 여부
+
+        [EN]
+        Safely logs an invalid integer attribute value.
+        To prevent log bloat from long string values, the value is truncated
+        based on `MAX_INVALID_VALUE_REPR_LEN` (default 100 chars).
+
+        Args:
+            val: The invalid attribute value
+            attr_name: The attribute name
+            is_private: Whether the attribute is private
         """
         val_repr = repr(val)
         max_len = self.MAX_INVALID_VALUE_REPR_LEN
@@ -133,14 +168,23 @@ class TextChunker:
 
     def _log_missing_splitter_attr(self, attr_name: str, private_attr: str) -> None:
         """
-        [KO] 스플리터에 필요한 속성이 없을 경우 중복을 방지하여 로깅합니다.
-             `(splitter_id, splitter_type, attr_name, private_attr)` 튜플을 중복 제거 키(deduplication key)로 사용하여, 동일 인스턴스의 동일 속성에 대한 반복적인 로깅을 억제합니다.
-        [EN] Logs a missing attribute on the splitter while preventing duplicate logs.
-             Uses a tuple of `(splitter_id, splitter_type, attr_name, private_attr)` as a deduplication key to suppress repeated logging for the same attribute on the same instance.
+        [KO]
+        스플리터에 필요한 속성이 없을 경우 중복을 방지하여 로깅합니다.
+        `(splitter_id, splitter_type, attr_name, private_attr)` 튜플을 중복 제거 키(deduplication key)로 사용하여,
+        동일 인스턴스의 동일 속성에 대한 반복적인 로깅을 억제합니다.
 
         Args:
-            attr_name: [KO] 찾지 못한 공개 속성 이름 / [EN] The public attribute name that was not found
-            private_attr: [KO] 찾지 못한 비공개 속성 이름 / [EN] The private attribute name that was not found
+            attr_name: 찾지 못한 공개 속성 이름
+            private_attr: 찾지 못한 비공개 속성 이름
+
+        [EN]
+        Logs a missing attribute on the splitter while preventing duplicate logs.
+        Uses a tuple of `(splitter_id, splitter_type, attr_name, private_attr)` as a deduplication key
+        to suppress repeated logging for the same attribute on the same instance.
+
+        Args:
+            attr_name: The public attribute name that was not found
+            private_attr: The private attribute name that was not found
         """
         context = self._get_splitter_context()
         missing_attr_key = (
@@ -169,15 +213,25 @@ class TextChunker:
         self, attr_name: str, fallback_attr: Optional[str] = None
     ) -> Optional[int]:
         """
-        [KO] 스플리터에서 동적으로 속성을 읽어옵니다. (Public 및 명시적 Fallback 속성 지원)
-        [EN] Dynamically reads an attribute from the splitter. (Supports Public and explicit Fallback attributes)
+        [KO]
+        스플리터에서 동적으로 속성을 읽어옵니다. (Public 및 명시적 Fallback 속성 지원)
 
         Args:
-            attr_name: [KO] 가져올 속성 이름 / [EN] The attribute name to fetch
-            fallback_attr: [KO] 대체하여 가져올 속성 이름 (비공개 속성 등) / [EN] Fallback attribute name to fetch (private attribute, etc.)
+            attr_name: 가져올 속성 이름
+            fallback_attr: 대체하여 가져올 속성 이름 (비공개 속성 등)
 
         Returns:
-            Optional[int]: [KO] 조회된 정수값 또는 None / [EN] The retrieved integer value or None
+            조회된 정수값 또는 None
+
+        [EN]
+        Dynamically reads an attribute from the splitter. (Supports Public and explicit Fallback attributes)
+
+        Args:
+            attr_name: The attribute name to fetch
+            fallback_attr: Fallback attribute name to fetch (private attribute, etc.)
+
+        Returns:
+            The retrieved integer value or None
         """
         # 1. Public 속성 시도
         val = self._coerce_splitter_int_attr(attr_name, is_private=False)
@@ -197,38 +251,62 @@ class TextChunker:
     @property
     def chunk_size(self) -> Optional[int]:
         """
-        [KO] 현재 스플리터에 설정된 chunk_size 동적 반환 (런타임 변경 반영)
-        [EN] Dynamically returns the chunk_size set on the current splitter (reflects runtime changes)
+        [KO]
+        현재 스플리터에 설정된 chunk_size 동적 반환 (런타임 변경 반영)
 
         Returns:
-            Optional[int]: [KO] 현재 청크 크기 또는 None / [EN] Current chunk size or None
+            현재 청크 크기 또는 None
+
+        [EN]
+        Dynamically returns the chunk_size set on the current splitter (reflects runtime changes)
+
+        Returns:
+            Current chunk size or None
         """
         return self._get_splitter_attr("chunk_size")
 
     @property
     def chunk_overlap(self) -> Optional[int]:
         """
-        [KO] 현재 스플리터에 설정된 chunk_overlap 동적 반환 (런타임 변경 반영)
-        [EN] Dynamically returns the chunk_overlap set on the current splitter (reflects runtime changes)
+        [KO]
+        현재 스플리터에 설정된 chunk_overlap 동적 반환 (런타임 변경 반영)
 
         Returns:
-            Optional[int]: [KO] 현재 청크 중첩 크기 또는 None / [EN] Current chunk overlap size or None
+            현재 청크 중첩 크기 또는 None
+
+        [EN]
+        Dynamically returns the chunk_overlap set on the current splitter (reflects runtime changes)
+
+        Returns:
+            Current chunk overlap size or None
         """
         return self._get_splitter_attr("chunk_overlap")
 
     def chunk_text(self, text: str) -> List[str]:
         """
-        [KO] 텍스트를 청크 단위로 분할합니다.
-        [EN] Splits text into chunks.
+        [KO]
+        텍스트를 청크 단위로 분할합니다.
 
         Args:
-            text: [KO] 분할할 텍스트 / [EN] The text to split
+            text: 분할할 텍스트
 
         Returns:
-            List[str]: [KO] 분할된 문자열 청크 리스트 / [EN] List of string chunks
+            분할된 문자열 청크 리스트
 
         Raises:
-            TypeError: [KO] text가 str 타입이 아닌 경우 / [EN] If text is not a string type
+            TypeError: text가 str 타입이 아닌 경우
+
+        [EN]
+        Splits text into chunks.
+
+        Args:
+            text: The text to split
+
+        Returns:
+            List of string chunks
+
+        Raises:
+            TypeError: If text is not a string type
         """
         if not isinstance(text, str):
             logger.error(
@@ -245,18 +323,31 @@ class TextChunker:
         self, text: str, metadata: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """
-        [KO] 메타데이터와 함께 텍스트 청크를 생성합니다.
-        [EN] Generates text chunks along with metadata.
+        [KO]
+        메타데이터와 함께 텍스트 청크를 생성합니다.
 
         Args:
-            text: [KO] 분할할 원본 텍스트 / [EN] The original text to split
-            metadata: [KO] 각 청크에 포함할 메타데이터 / [EN] Metadata to include in each chunk
+            text: 분할할 원본 텍스트
+            metadata: 각 청크에 포함할 메타데이터
 
         Returns:
-            List[Dict[str, Any]]: [KO] 텍스트와 메타데이터가 결합된 청크 리스트 / [EN] List of chunks combined with text and metadata
+            텍스트와 메타데이터가 결합된 청크 리스트
 
         Raises:
-            TypeError: [KO] metadata가 딕셔너리 타입이 아닌 경우 / [EN] If metadata is not a dictionary type
+            TypeError: metadata가 딕셔너리 타입이 아닌 경우
+
+        [EN]
+        Generates text chunks along with metadata.
+
+        Args:
+            text: The original text to split
+            metadata: Metadata to include in each chunk
+
+        Returns:
+            List of chunks combined with text and metadata
+
+        Raises:
+            TypeError: If metadata is not a dictionary type
         """
         if metadata is not None and not isinstance(metadata, dict):
             logger.error(
