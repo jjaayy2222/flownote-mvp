@@ -79,7 +79,8 @@ class SearchHistory:
                     self.history = json.load(f)
             except (OSError, ValueError, json.JSONDecodeError) as e:
                 logger.warning(
-                    f"히스토리 로드 실패: {type(e).__name__}: {_format_error_msg(e)}"
+                    f"히스토리 로드 실패: {type(e).__name__}: {_format_error_msg(e)}",
+                    extra={"action": "load_history", "path": self.storage_path},
                 )
                 self.history = {}
         else:
@@ -97,10 +98,11 @@ class SearchHistory:
         """
         try:
             with open(self.storage_path, "w", encoding="utf-8") as f:
-                json.dump(self.history, f, ensure_ascii=False, indent=2)
+                json.dump(self.history, f, ensure_ascii=False, indent=2, default=str)
         except (OSError, TypeError, ValueError) as e:
             logger.warning(
-                f"히스토리 저장 실패: {type(e).__name__}: {_format_error_msg(e)}"
+                f"히스토리 저장 실패: {type(e).__name__}: {_format_error_msg(e)}",
+                extra={"action": "save_history", "path": self.storage_path},
             )
 
     def add_search(
