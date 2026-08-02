@@ -12,12 +12,19 @@ import logging
 import os
 import uuid
 from collections import Counter
-from datetime import datetime
-from typing import Dict, List, Optional, TypedDict
+from datetime import date, datetime
+from typing import Any, Dict, List, Optional, TypedDict
 
 logger = logging.getLogger(__name__)
 
 MAX_ERROR_LOG_LENGTH = 100
+
+
+def _custom_json_serializer(obj: Any) -> str:
+    """JSON 직렬화 불가 객체를 위한 커스텀 직렬화 헬퍼"""
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    raise TypeError(f"Type {type(obj)} not serializable")
 
 
 def _format_error_msg(e: Exception) -> str:
@@ -80,7 +87,11 @@ class SearchHistory:
             except (OSError, ValueError, json.JSONDecodeError) as e:
                 logger.warning(
                     f"히스토리 로드 실패: {type(e).__name__}: {_format_error_msg(e)}",
-                    extra={"action": "load_history", "path": self.storage_path},
+                    extra={
+                        "action": "load_history",
+                        "path": self.storage_path,
+                        "error_type": type(e).__name__,
+                    },
                 )
                 self.history = {}
         else:
@@ -98,11 +109,21 @@ class SearchHistory:
         """
         try:
             with open(self.storage_path, "w", encoding="utf-8") as f:
-                json.dump(self.history, f, ensure_ascii=False, indent=2, default=str)
+                json.dump(
+                    self.history,
+                    f,
+                    ensure_ascii=False,
+                    indent=2,
+                    default=_custom_json_serializer,
+                )
         except (OSError, TypeError, ValueError) as e:
             logger.warning(
                 f"히스토리 저장 실패: {type(e).__name__}: {_format_error_msg(e)}",
-                extra={"action": "save_history", "path": self.storage_path},
+                extra={
+                    "action": "save_history",
+                    "path": self.storage_path,
+                    "error_type": type(e).__name__,
+                },
             )
 
     def add_search(
