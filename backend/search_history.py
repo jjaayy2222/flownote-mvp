@@ -8,11 +8,26 @@
 """
 
 import json
+import logging
 import os
 import uuid
 from collections import Counter
 from datetime import datetime
 from typing import Dict, List, Optional, TypedDict
+
+logger = logging.getLogger(__name__)
+
+MAX_ERROR_LOG_LENGTH = 100
+
+
+def _format_error_msg(e: Exception) -> str:
+    """Exception 메시지 축약 헬퍼 함수"""
+    err_msg = str(e)
+    return (
+        f"{err_msg[:MAX_ERROR_LOG_LENGTH]}..."
+        if len(err_msg) > MAX_ERROR_LOG_LENGTH
+        else err_msg
+    )
 
 
 class SearchStatistics(TypedDict):
@@ -34,11 +49,17 @@ class SearchHistory:
 
     def __init__(self, storage_path: str = "data/search_history.json"):
         """
-        [KO] 히스토리 저장 경로를 설정하고 기존 데이터를 로드합니다.
-        [EN] Sets the history storage path and loads existing data.
+        [KO]
+        히스토리 저장 경로를 설정하고 기존 데이터를 로드합니다.
 
         Args:
-            storage_path: [KO] 히스토리를 저장할 JSON 파일 경로 / [EN] JSON file path to store history
+            storage_path: 히스토리를 저장할 JSON 파일 경로
+
+        [EN]
+        Sets the history storage path and loads existing data.
+
+        Args:
+            storage_path: JSON file path to store history
         """
         self.storage_path = storage_path
         self.history: Dict[str, Dict] = {}
@@ -46,15 +67,21 @@ class SearchHistory:
 
     def _load_history(self):
         """
-        [KO] 지정된 경로에서 저장된 검색 히스토리를 로드합니다. 파일이 없으면 새로 생성합니다.
-        [EN] Loads saved search history from the specified path. Creates it if it doesn't exist.
+        [KO]
+        지정된 경로에서 저장된 검색 히스토리를 로드합니다. 파일이 없으면 새로 생성합니다.
+
+        [EN]
+        Loads saved search history from the specified path. Creates it if it doesn't exist.
         """
         if os.path.exists(self.storage_path):
             try:
                 with open(self.storage_path, "r", encoding="utf-8") as f:
                     self.history = json.load(f)
-            except Exception as e:
-                print(f"히스토리 로드 실패: {e}")
+            except (OSError, ValueError, json.JSONDecodeError) as e:
+                logger.warning(
+                    f"히스토리 로드 실패: {type(e).__name__}: {_format_error_msg(e)}",
+                    exc_info=e,
+                )
                 self.history = {}
         else:
             # data 폴더 확인
@@ -63,29 +90,46 @@ class SearchHistory:
 
     def _save_history(self):
         """
-        [KO] 메모리의 히스토리 데이터를 JSON 파일에 저장합니다.
-        [EN] Saves the in-memory history data to a JSON file.
+        [KO]
+        메모리의 히스토리 데이터를 JSON 파일에 저장합니다.
+
+        [EN]
+        Saves the in-memory history data to a JSON file.
         """
         try:
             with open(self.storage_path, "w", encoding="utf-8") as f:
                 json.dump(self.history, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"히스토리 저장 실패: {e}")
+        except OSError as e:
+            logger.warning(
+                f"히스토리 저장 실패: {type(e).__name__}: {_format_error_msg(e)}",
+                exc_info=e,
+            )
 
     def add_search(
         self, query: str, results_count: int, top_results: Optional[List[str]] = None
     ) -> str:
         """
-        [KO] 새로운 검색 기록을 추가하고 저장합니다.
-        [EN] Adds and saves a new search record.
+        [KO]
+        새로운 검색 기록을 추가하고 저장합니다.
 
         Args:
-            query: [KO] 검색에 사용된 쿼리 문자열 / [EN] Query string used for the search
-            results_count: [KO] 검색된 결과의 총 개수 / [EN] Total number of retrieved results
-            top_results: [KO] 상위 검색 결과 미리보기 텍스트 리스트 / [EN] List of preview texts for top search results
+            query: 검색에 사용된 쿼리 문자열
+            results_count: 검색된 결과의 총 개수
+            top_results: 상위 검색 결과 미리보기 텍스트 리스트
 
         Returns:
-            [KO] 새로 생성된 검색 고유 ID / [EN] Newly generated unique search ID
+            새로 생성된 검색 고유 ID
+
+        [EN]
+        Adds and saves a new search record.
+
+        Args:
+            query: Query string used for the search
+            results_count: Total number of retrieved results
+            top_results: List of preview texts for top search results
+
+        Returns:
+            Newly generated unique search ID
         """
         # 검색 ID 생성
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -108,29 +152,45 @@ class SearchHistory:
 
     def get_search(self, search_id: str) -> Optional[Dict]:
         """
-        [KO] 특정 검색 ID에 해당하는 기록을 조회합니다.
-        [EN] Retrieves the record corresponding to a specific search ID.
+        [KO]
+        특정 검색 ID에 해당하는 기록을 조회합니다.
 
         Args:
-            search_id: [KO] 조회할 검색 고유 ID / [EN] Unique search ID to retrieve
+            search_id: 조회할 검색 고유 ID
 
         Returns:
-            [KO] 해당 ID의 검색 기록 딕셔너리(키: query, results_count, top_results, search_time, created_at), 없으면 None
-            / [EN] Search record dict (keys: query, results_count, top_results, search_time, created_at), or None if not found
+            해당 ID의 검색 기록 딕셔너리(키: query, results_count, top_results, search_time, created_at), 없으면 None
+
+        [EN]
+        Retrieves the record corresponding to a specific search ID.
+
+        Args:
+            search_id: Unique search ID to retrieve
+
+        Returns:
+            Search record dict (keys: query, results_count, top_results, search_time, created_at), or None if not found
         """
         return self.history.get(search_id)
 
     def get_recent_searches(self, limit: int = 10) -> List[Dict]:
         """
-        [KO] 최근 수행된 검색 기록들을 최신순으로 정렬하여 조회합니다.
-        [EN] Retrieves recently performed search records, sorted from newest to oldest.
+        [KO]
+        최근 수행된 검색 기록들을 최신순으로 정렬하여 조회합니다.
 
         Args:
-            limit: [KO] 반환할 최대 결과 수 / [EN] Maximum number of results to return
+            limit: 반환할 최대 결과 수
 
         Returns:
-            [KO] 최신순 정렬된 검색 기록 리스트. 각 항목은 id, query, results_count, top_results, search_time, created_at 키를 포함
-            / [EN] List of search records sorted newest-first; each item contains id, query, results_count, top_results, search_time, created_at
+            최신순 정렬된 검색 기록 리스트. 각 항목은 id, query, results_count, top_results, search_time, created_at 키를 포함
+
+        [EN]
+        Retrieves recently performed search records, sorted from newest to oldest.
+
+        Args:
+            limit: Maximum number of results to return
+
+        Returns:
+            List of search records sorted newest-first; each item contains id, query, results_count, top_results, search_time, created_at
         """
         # 시간순 정렬 (최신순)
         sorted_history = sorted(
@@ -142,24 +202,39 @@ class SearchHistory:
 
     def get_all_searches(self) -> Dict[str, Dict]:
         """
-        [KO] 저장된 모든 검색 기록을 조회합니다.
-        [EN] Retrieves all saved search records.
+        [KO]
+        저장된 모든 검색 기록을 조회합니다.
 
         Returns:
-            [KO] search_id를 키, 검색 기록 딕셔너리를 값으로 하는 전체 히스토리 / [EN] Full history dict keyed by search_id, with each value being a search record dict
+            search_id를 키, 검색 기록 딕셔너리를 값으로 하는 전체 히스토리
+
+        [EN]
+        Retrieves all saved search records.
+
+        Returns:
+            Full history dict keyed by search_id, with each value being a search record dict
         """
         return self.history
 
     def delete_search(self, search_id: str) -> bool:
         """
-        [KO] 특정 검색 ID의 기록을 삭제합니다.
-        [EN] Deletes the record for a specific search ID.
+        [KO]
+        특정 검색 ID의 기록을 삭제합니다.
 
         Args:
-            search_id: [KO] 삭제할 검색 고유 ID / [EN] Unique search ID to delete
+            search_id: 삭제할 검색 고유 ID
 
         Returns:
-            [KO] 삭제 성공 시 True, 실패 시(ID 없음) False / [EN] True if successfully deleted, False otherwise (ID not found)
+            삭제 성공 시 True, 실패 시(ID 없음) False
+
+        [EN]
+        Deletes the record for a specific search ID.
+
+        Args:
+            search_id: Unique search ID to delete
+
+        Returns:
+            True if successfully deleted, False otherwise (ID not found)
         """
         if search_id in self.history:
             del self.history[search_id]
@@ -169,22 +244,30 @@ class SearchHistory:
 
     def clear_all(self):
         """
-        [KO] 모든 검색 기록을 영구적으로 삭제합니다.
-        [EN] Permanently clears all search records.
+        [KO]
+        모든 검색 기록을 영구적으로 삭제합니다.
+
+        [EN]
+        Permanently clears all search records.
         """
         self.history = {}
         self._save_history()
 
     def get_statistics(self) -> SearchStatistics:
         """
-        [KO] 누적된 검색 히스토리를 바탕으로 통계 정보를 계산합니다.
-        [EN] Calculates statistical information based on the accumulated search history.
-
-        [KO] 성능 최적화: 가장 많이 검색된 쿼리를 찾을 때 O(n) 복잡도를 가지는 `collections.Counter`를 사용합니다.
-        [EN] Performance optimization: Uses `collections.Counter` with O(n) complexity to find the most common query.
+        [KO]
+        누적된 검색 히스토리를 바탕으로 통계 정보를 계산합니다.
+        성능 최적화: 가장 많이 검색된 쿼리를 찾을 때 O(n) 복잡도를 가지는 `collections.Counter`를 사용합니다.
 
         Returns:
-            [KO] 총 검색 횟수, 평균 결과 수, 최다 검색 쿼리를 포함하는 통계 딕셔너리 / [EN] Statistics dictionary containing total searches, average results count, and most common query
+            총 검색 횟수, 평균 결과 수, 최다 검색 쿼리를 포함하는 통계 딕셔너리
+
+        [EN]
+        Calculates statistical information based on the accumulated search history.
+        Performance optimization: Uses `collections.Counter` with O(n) complexity to find the most common query.
+
+        Returns:
+            Statistics dictionary containing total searches, average results count, and most common query
         """
         if not self.history:
             return {"total_searches": 0, "avg_results": 0.0, "most_common_query": None}
