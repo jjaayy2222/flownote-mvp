@@ -159,21 +159,38 @@ MAX_ERROR_LOG_LENGTH: int = safe_parse_env_int(
 )
 
 
-def format_error_msg(e: Exception) -> str:
+def format_error_msg(e: Exception, mask_paths: Optional[bool] = None) -> str:
     """
     [KO]
-    Exception \uba54\uc2dc\uc9c0\uc5d0\uc11c \ud30c\uc77c \uacbd\ub85c\ub97c \ub9c8\uc2a4\ud0b9\ud558\uace0, \ud658\uacbd \ubcc0\uc218\ub85c \uc124\uc815\ub41c \ucd5c\ub300 \uae38\uc774\ub85c \uc798\ub77c\ub0b4\ub294 \uacf5\uc6a9 \ud5ec\ud37c.
-    - OSError: \ud30c\uc77c \uacbd\ub85c(PII \uc9c1\uc811 \ub178\ucd9c \uc704\ud611)\ub97c [REDACTED_PATH]\ub85c \uce58\ud658 \ud6c4 \uc5ed\uc0b0
-    - \uae30\ud0c0 \uc608\uc678: \uacbd\ub85c \ub9c8\uc2a4\ud0b9 \uc5c6\uc774 \ucd5c\ub300 \uae38\uc774\ub9cc \uc801\uc6a9
+    Exception 메시지에서 파일 경로를 마스킹하고, 환경 변수로 설정된 최대 길이로 잘라내는 공용 헬퍼.
+    - mask_paths=None (기본값): OSError 등 파일 경로가 포함되는 예외 타입인 경우 파일 경로를 [REDACTED_PATH]로 자동 치환 후 최대 길이 축약
+    - mask_paths=True: 예외 타입과 무관하게 파일 경로 마스킹 강제 적용
+    - mask_paths=False: 경로 마스킹을 수행하지 않고 최대 길이 축약만 적용
+
+    Args:
+        e: 처리할 예외 객체 (Exception)
+        mask_paths: 경로 마스킹 여부 (None일 경우 OSError 타입일 때 자동 마스킹)
+
+    Returns:
+        마스킹 및 축약 처리된 에러 메시지 문자열
 
     [EN]
     Shared helper that masks file paths in Exception messages and truncates to the
     configured max length.
-    - OSError: replaces file paths (primary PII exposure risk) with [REDACTED_PATH]
-    - Other exceptions: only truncation applied (no path masking)
+    - mask_paths=None (default): Automatically replaces file paths with [REDACTED_PATH] for file-related exceptions like OSError.
+    - mask_paths=True: Forces path masking regardless of exception type.
+    - mask_paths=False: Bypasses path masking and applies truncation only.
+
+    Args:
+        e: The exception instance to format
+        mask_paths: Whether to apply path masking (None auto-masks for OSError)
+
+    Returns:
+        The formatted, masked, and truncated error message string
     """
     err_msg = str(e)
-    if isinstance(e, OSError):
+    should_mask = mask_paths if mask_paths is not None else isinstance(e, OSError)
+    if should_mask:
         err_msg = _SENSITIVE_PATH_RE.sub("[REDACTED_PATH]", err_msg)
     if len(err_msg) > MAX_ERROR_LOG_LENGTH:
         return f"{err_msg[:MAX_ERROR_LOG_LENGTH]}..."
