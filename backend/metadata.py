@@ -19,34 +19,13 @@ upon upload, and persists it to a local JSON file.
 import json
 import logging
 import os
-import re
 import uuid
 from datetime import datetime
 from typing import Dict, List, Optional, TypedDict
 
+from backend.utils.common import format_error_msg  # type: ignore[import]
+
 logger = logging.getLogger(__name__)
-
-# 환경변수(배포 정마다 조정 가능) / Configurable via env var per deployment policy
-MAX_ERROR_LOG_LENGTH = int(os.getenv("FLOWNOTE_MAX_ERROR_LOG_LENGTH", "100"))
-
-# 파일 경로 패턴 (주요 PII 노출 원인) / Detects Unix/Windows absolute paths (primary PII risk)
-_SENSITIVE_PATH_RE = re.compile(r"(?:[A-Za-z]:[\\/]|/)(?:[\w.\-\\/]+)")
-
-
-def _format_error_msg(e: Exception) -> str:
-    """
-    [KO]
-    Exception 메시지의 파일 경로 패턴을 마스킹하고, 환경 변수로 설정된 최대 길이로 잘라내는 헬퍼.
-    주요 PII 위협: OSError에 포함된 파일 경로를 시작점으로 차단합니다.
-
-    [EN]
-    Masks file path patterns in the Exception message, then truncates to the
-    configured max length. Primary PII risk: file paths embedded in OSError.
-    """
-    err_msg = _SENSITIVE_PATH_RE.sub("[REDACTED_PATH]", str(e))
-    if len(err_msg) > MAX_ERROR_LOG_LENGTH:
-        return f"{err_msg[:MAX_ERROR_LOG_LENGTH]}..."
-    return err_msg
 
 
 class FileMetadataRecord(TypedDict):
@@ -136,7 +115,7 @@ class FileMetadata:
                     self.metadata = {}
             except json.JSONDecodeError as e:
                 logger.warning(
-                    f"메타데이터 파일 JSON 파싱 실패: {type(e).__name__}: {_format_error_msg(e)}",
+                    f"메타데이터 파일 JSON 파싱 실패: {type(e).__name__}: {format_error_msg(e)}",
                     extra={
                         "action": "load_metadata",
                         "storage_path": self.storage_path,
@@ -146,7 +125,7 @@ class FileMetadata:
                 self.metadata = {}
             except OSError as e:
                 logger.error(
-                    f"메타데이터 파일 읽기 실패: {type(e).__name__}: {_format_error_msg(e)}",
+                    f"메타데이터 파일 읽기 실패: {type(e).__name__}: {format_error_msg(e)}",
                     extra={
                         "action": "load_metadata",
                         "storage_path": self.storage_path,
@@ -174,7 +153,7 @@ class FileMetadata:
                 json.dump(self.metadata, f, ensure_ascii=False, indent=2)
         except OSError as e:
             logger.error(
-                f"메타데이터 파일 저장 실패: {type(e).__name__}: {_format_error_msg(e)}",
+                f"메타데이터 파일 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
                 extra={
                     "action": "save_metadata",
                     "storage_path": self.storage_path,
