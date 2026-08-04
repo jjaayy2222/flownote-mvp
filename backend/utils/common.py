@@ -21,7 +21,7 @@ import re
 from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 import tiktoken  # type: ignore[import]
 
@@ -159,17 +159,19 @@ MAX_ERROR_LOG_LENGTH: int = safe_parse_env_int(
 )
 
 
-def format_error_msg(e: Exception, mask_paths: Optional[bool] = None) -> str:
+def format_error_msg(
+    e: Exception, mask_mode: Literal["auto", "force", "off"] = "auto"
+) -> str:
     """
     [KO]
     Exception 메시지에서 파일 경로를 마스킹하고, 환경 변수로 설정된 최대 길이로 잘라내는 공용 헬퍼.
-    - mask_paths=None (기본값): OSError 등 파일 경로가 포함되는 예외 타입인 경우 파일 경로를 [REDACTED_PATH]로 자동 치환 후 최대 길이 축약
-    - mask_paths=True: 예외 타입과 무관하게 파일 경로 마스킹 강제 적용
-    - mask_paths=False: 경로 마스킹을 수행하지 않고 최대 길이 축약만 적용
+    - mask_mode='auto' (기본값): OSError 등 파일 경로가 포함되는 예외 타입인 경우 파일 경로를 [REDACTED_PATH]로 자동 치환 후 최대 길이 축약
+    - mask_mode='force': 예외 타입과 무관하게 파일 경로 마스킹 강제 적용
+    - mask_mode='off': 경로 마스킹을 수행하지 않고 최대 길이 축약만 적용
 
     Args:
         e: 처리할 예외 객체 (Exception)
-        mask_paths: 경로 마스킹 여부 (None일 경우 OSError 타입일 때 자동 마스킹)
+        mask_mode: 마스킹 모드 제어 ('auto', 'force', 'off')
 
     Returns:
         마스킹 및 축약 처리된 에러 메시지 문자열
@@ -177,21 +179,21 @@ def format_error_msg(e: Exception, mask_paths: Optional[bool] = None) -> str:
     [EN]
     Shared helper that masks file paths in Exception messages and truncates to the
     configured max length.
-    - mask_paths=None (default): Automatically replaces file paths with [REDACTED_PATH] for file-related exceptions like OSError.
-    - mask_paths=True: Forces path masking regardless of exception type.
-    - mask_paths=False: Bypasses path masking and applies truncation only.
+    - mask_mode='auto' (default): Automatically replaces file paths with [REDACTED_PATH] for file-related exceptions like OSError.
+    - mask_mode='force': Forces path masking regardless of exception type.
+    - mask_mode='off': Bypasses path masking and applies truncation only.
 
     Args:
         e: The exception instance to format
-        mask_paths: Whether to apply path masking (None auto-masks for OSError)
+        mask_mode: The masking mode to apply ('auto', 'force', 'off')
 
     Returns:
         The formatted, masked, and truncated error message string
     """
     err_msg = str(e)
-    should_mask = mask_paths if mask_paths is not None else isinstance(e, OSError)
-    if should_mask:
+    if mask_mode == "force" or (mask_mode == "auto" and isinstance(e, OSError)):
         err_msg = _SENSITIVE_PATH_RE.sub("[REDACTED_PATH]", err_msg)
+
     if len(err_msg) > MAX_ERROR_LOG_LENGTH:
         return f"{err_msg[:MAX_ERROR_LOG_LENGTH]}..."
     return err_msg

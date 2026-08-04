@@ -115,7 +115,7 @@ class FileMetadata:
                     self.metadata = {}
             except json.JSONDecodeError as e:
                 logger.warning(
-                    f"메타데이터 파일 JSON 파싱 실패: {type(e).__name__}: {format_error_msg(e)}",
+                    f"메타데이터 파일 JSON 파싱 실패: {type(e).__name__}: {format_error_msg(e, mask_mode='auto')}",
                     extra={
                         "action": "load_metadata",
                         "storage_path": self.storage_path,
@@ -125,7 +125,7 @@ class FileMetadata:
                 self.metadata = {}
             except OSError as e:
                 logger.error(
-                    f"메타데이터 파일 읽기 실패: {type(e).__name__}: {format_error_msg(e)}",
+                    f"메타데이터 파일 읽기 실패: {type(e).__name__}: {format_error_msg(e, mask_mode='auto')}",
                     extra={
                         "action": "load_metadata",
                         "storage_path": self.storage_path,
@@ -153,7 +153,7 @@ class FileMetadata:
                 json.dump(self.metadata, f, ensure_ascii=False, indent=2)
         except OSError as e:
             logger.error(
-                f"메타데이터 파일 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
+                f"메타데이터 파일 저장 실패: {type(e).__name__}: {format_error_msg(e, mask_mode='auto')}",
                 extra={
                     "action": "save_metadata",
                     "storage_path": self.storage_path,
