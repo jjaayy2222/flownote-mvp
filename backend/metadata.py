@@ -3,13 +3,17 @@
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 """
-[KO] FlowNote MVP - 파일 메타데이터 관리
-[EN] FlowNote MVP - File Metadata Management
+[KO]
+FlowNote MVP - 파일 메타데이터 관리
 
-[KO] 파일 업로드 시 메타데이터(파일명, 크기, 청크 수, 임베딩 차원 등)를 추출·정규화하고
-     로컬 JSON 파일에 영속화하여 관리하는 모듈입니다.
-[EN] Extracts and normalizes file metadata (name, size, chunk count, embedding dimensions, etc.)
-     upon upload, and persists it to a local JSON file.
+파일 업로드 시 메타데이터(파일명, 크기, 청크 수, 임베딩 차원 등)를 추출·정규화하고
+로컬 JSON 파일에 영속화하여 관리하는 모듈입니다.
+
+[EN]
+FlowNote MVP - File Metadata Management
+
+Extracts and normalizes file metadata (name, size, chunk count, embedding dimensions, etc.)
+upon upload, and persists it to a local JSON file.
 """
 
 import json
@@ -21,11 +25,24 @@ from typing import Dict, List, Optional, TypedDict
 
 logger = logging.getLogger(__name__)
 
+MAX_ERROR_LOG_LENGTH = 100
+
+
+def _format_error_msg(e: Exception) -> str:
+    """Exception 메시지 축약 헬퍼 함수"""
+    err_msg = str(e)
+    if len(err_msg) > MAX_ERROR_LOG_LENGTH:
+        return f"{err_msg[:MAX_ERROR_LOG_LENGTH]}..."
+    return err_msg
+
 
 class FileMetadataRecord(TypedDict):
     """
-    [KO] 개별 파일의 메타데이터 레코드 타입
-    [EN] TypedDict for a single file's metadata record
+    [KO]
+    개별 파일의 메타데이터 레코드 타입
+
+    [EN]
+    TypedDict for a single file's metadata record
     """
 
     file_name: str
@@ -40,8 +57,11 @@ class FileMetadataRecord(TypedDict):
 
 class MetadataStatistics(TypedDict):
     """
-    [KO] 전체 파일 메타데이터 통계 반환 타입
-    [EN] Return type for overall file metadata statistics
+    [KO]
+    전체 파일 메타데이터 통계 반환 타입
+
+    [EN]
+    Return type for overall file metadata statistics
     """
 
     total_files: int
@@ -52,17 +72,26 @@ class MetadataStatistics(TypedDict):
 
 class FileMetadata:
     """
-    [KO] 파일 메타데이터를 로컬 JSON 파일에 영속화하고 관리하는 클래스.
-    [EN] A class to persist and manage file metadata in a local JSON file.
+    [KO]
+    파일 메타데이터를 로컬 JSON 파일에 영속화하고 관리하는 클래스.
+
+    [EN]
+    A class to persist and manage file metadata in a local JSON file.
     """
 
     def __init__(self, storage_path: str = "data/metadata.json"):
         """
-        [KO] 메타데이터 저장 경로를 설정하고, 기존에 저장된 데이터를 로드합니다.
-        [EN] Sets the metadata storage path and loads any previously saved data.
+        [KO]
+        메타데이터 저장 경로를 설정하고, 기존에 저장된 데이터를 로드합니다.
 
         Args:
-            storage_path: [KO] 메타데이터 JSON 파일 저장 경로 (기본값: "data/metadata.json") / [EN] Path to the metadata JSON file (default: "data/metadata.json")
+            storage_path: 메타데이터 JSON 파일 저장 경로 (기본값: "data/metadata.json")
+
+        [EN]
+        Sets the metadata storage path and loads any previously saved data.
+
+        Args:
+            storage_path: Path to the metadata JSON file (default: "data/metadata.json")
         """
         self.storage_path = storage_path
         self.metadata: Dict[str, FileMetadataRecord] = {}
@@ -70,10 +99,13 @@ class FileMetadata:
 
     def _load_metadata(self) -> None:
         """
-        [KO] JSON 파일에서 저장된 메타데이터를 메모리로 로드합니다.
-             파일이 없을 경우 저장 디렉토리를 생성하고 빈 상태로 초기화합니다.
-        [EN] Loads saved metadata from the JSON file into memory.
-             If the file does not exist, creates the storage directory and initializes an empty state.
+        [KO]
+        JSON 파일에서 저장된 메타데이터를 메모리로 로드합니다.
+        파일이 없을 경우 저장 디렉토리를 생성하고 빈 상태로 초기화합니다.
+
+        [EN]
+        Loads saved metadata from the JSON file into memory.
+        If the file does not exist, creates the storage directory and initializes an empty state.
         """
         if os.path.exists(self.storage_path):
             try:
@@ -91,18 +123,22 @@ class FileMetadata:
                     self.metadata = {}
             except json.JSONDecodeError as e:
                 logger.warning(
-                    "메타데이터 파일 JSON 파싱 실패: %s",
-                    e,
-                    exc_info=True,
-                    extra={"storage_path": self.storage_path},
+                    f"메타데이터 파일 JSON 파싱 실패: {type(e).__name__}: {_format_error_msg(e)}",
+                    extra={
+                        "action": "load_metadata",
+                        "storage_path": self.storage_path,
+                        "error_type": type(e).__name__,
+                    },
                 )
                 self.metadata = {}
             except OSError as e:
                 logger.error(
-                    "메타데이터 파일 읽기 실패: %s",
-                    e,
-                    exc_info=True,
-                    extra={"storage_path": self.storage_path},
+                    f"메타데이터 파일 읽기 실패: {type(e).__name__}: {_format_error_msg(e)}",
+                    extra={
+                        "action": "load_metadata",
+                        "storage_path": self.storage_path,
+                        "error_type": type(e).__name__,
+                    },
                 )
                 self.metadata = {}
         else:
@@ -114,18 +150,23 @@ class FileMetadata:
 
     def _save_metadata(self) -> None:
         """
-        [KO] 현재 메모리에 있는 메타데이터를 JSON 파일에 영속화합니다.
-        [EN] Persists the current in-memory metadata to the JSON file.
+        [KO]
+        현재 메모리에 있는 메타데이터를 JSON 파일에 영속화합니다.
+
+        [EN]
+        Persists the current in-memory metadata to the JSON file.
         """
         try:
             with open(self.storage_path, "w", encoding="utf-8") as f:
                 json.dump(self.metadata, f, ensure_ascii=False, indent=2)
         except OSError as e:
             logger.error(
-                "메타데이터 파일 저장 실패: %s",
-                e,
-                exc_info=True,
-                extra={"storage_path": self.storage_path},
+                f"메타데이터 파일 저장 실패: {type(e).__name__}: {_format_error_msg(e)}",
+                extra={
+                    "action": "save_metadata",
+                    "storage_path": self.storage_path,
+                    "error_type": type(e).__name__,
+                },
             )
 
     def add_file(
@@ -137,20 +178,33 @@ class FileMetadata:
         model: str = "text-embedding-3-small",
     ) -> str:
         """
-        [KO] 새로운 파일의 메타데이터를 생성하고 저장소에 추가합니다.
-             파일 ID는 타임스탬프와 UUID를 조합하여 고유성을 보장합니다.
-        [EN] Creates and adds metadata for a new file to the storage.
-             The file ID is composed of a timestamp and UUID to ensure uniqueness.
+        [KO]
+        새로운 파일의 메타데이터를 생성하고 저장소에 추가합니다.
+        파일 ID는 타임스탬프와 UUID를 조합하여 고유성을 보장합니다.
 
         Args:
-            file_name: [KO] 업로드한 파일의 이름 / [EN] Name of the uploaded file.
-            file_size: [KO] 파일 크기 (바이트 단위) / [EN] File size in bytes.
-            chunk_count: [KO] 파일이 분할된 청크의 개수 / [EN] Number of chunks the file was split into.
-            embedding_dim: [KO] 생성된 임베딩 벡터의 차원 수 / [EN] Dimension of the generated embedding vectors.
-            model: [KO] 임베딩 생성에 사용된 모델 이름 (기본값: "text-embedding-3-small") / [EN] Name of the model used for embedding generation (default: "text-embedding-3-small").
+            file_name: 업로드한 파일의 이름
+            file_size: 파일 크기 (바이트 단위)
+            chunk_count: 파일이 분할된 청크의 개수
+            embedding_dim: 생성된 임베딩 벡터의 차원 수
+            model: 임베딩 생성에 사용된 모델 이름 (기본값: "text-embedding-3-small")
 
         Returns:
-            [KO] 생성된 고유 파일 ID (예: "file_20251025_131227_d9977552") / [EN] The generated unique file ID (e.g., "file_20251025_131227_d9977552").
+            생성된 고유 파일 ID (예: "file_20251025_131227_d9977552")
+
+        [EN]
+        Creates and adds metadata for a new file to the storage.
+        The file ID is composed of a timestamp and UUID to ensure uniqueness.
+
+        Args:
+            file_name: Name of the uploaded file.
+            file_size: File size in bytes.
+            chunk_count: Number of chunks the file was split into.
+            embedding_dim: Dimension of the generated embedding vectors.
+            model: Name of the model used for embedding generation (default: "text-embedding-3-small").
+
+        Returns:
+            The generated unique file ID (e.g., "file_20251025_131227_d9977552").
         """
         # 파일 ID 생성 (타임스탬프 + UUID로 고유성 보장)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -176,38 +230,61 @@ class FileMetadata:
 
     def get_file(self, file_id: str) -> Optional[FileMetadataRecord]:
         """
-        [KO] 특정 파일 ID에 해당하는 메타데이터를 반환합니다.
-        [EN] Returns the metadata corresponding to a specific file ID.
+        [KO]
+        특정 파일 ID에 해당하는 메타데이터를 반환합니다.
 
         Args:
-            file_id: [KO] 조회할 파일의 고유 ID / [EN] The unique ID of the file to look up.
+            file_id: 조회할 파일의 고유 ID
 
         Returns:
-            [KO] 해당 파일의 메타데이터 딕셔너리(키: file_name, file_size, file_size_mb, chunk_count, embedding_dim, embedding_model, upload_time, created_at), 없으면 None
-            / [EN] The file's metadata dict (keys: file_name, file_size, file_size_mb, chunk_count, embedding_dim, embedding_model, upload_time, created_at), or None if not found.
+            해당 파일의 메타데이터 딕셔너리(키: file_name, file_size, file_size_mb, chunk_count, embedding_dim, embedding_model, upload_time, created_at), 없으면 None
+
+        [EN]
+        Returns the metadata corresponding to a specific file ID.
+
+        Args:
+            file_id: The unique ID of the file to look up.
+
+        Returns:
+            The file's metadata dict (keys: file_name, file_size, file_size_mb, chunk_count, embedding_dim, embedding_model, upload_time, created_at), or None if not found.
         """
         return self.metadata.get(file_id)
 
     def get_all_files(self) -> Dict[str, FileMetadataRecord]:
         """
-        [KO] 저장된 모든 파일의 메타데이터를 반환합니다.
-        [EN] Returns the metadata of all stored files.
+        [KO]
+        저장된 모든 파일의 메타데이터를 반환합니다.
 
         Returns:
-            [KO] 파일 ID를 키, 파일 메타데이터 딕셔너리를 값으로 하는 전체 메타데이터 / [EN] A dictionary of all metadata keyed by file ID.
+            파일 ID를 키, 파일 메타데이터 딕셔너리를 값으로 하는 전체 메타데이터
+
+        [EN]
+        Returns the metadata of all stored files.
+
+        Returns:
+            A dictionary of all metadata keyed by file ID.
         """
         return self.metadata
 
     def delete_file(self, file_id: str) -> bool:
         """
-        [KO] 특정 파일 ID에 해당하는 메타데이터를 삭제합니다.
-        [EN] Deletes the metadata corresponding to a specific file ID.
+        [KO]
+        특정 파일 ID에 해당하는 메타데이터를 삭제합니다.
 
         Args:
-            file_id: [KO] 삭제할 파일의 고유 ID / [EN] The unique ID of the file to delete.
+            file_id: 삭제할 파일의 고유 ID
 
         Returns:
-            [KO] 삭제 성공 시 True, 파일 ID가 존재하지 않으면 False / [EN] True if deletion was successful, False if the file ID was not found.
+            삭제 성공 시 True, 파일 ID가 존재하지 않으면 False
+
+        [EN]
+        Deletes the metadata corresponding to a specific file ID.
+
+        Args:
+            file_id: The unique ID of the file to delete.
+
+        Returns:
+            True if deletion was successful, False if the file ID was not found.
         """
         if file_id in self.metadata:
             del self.metadata[file_id]
@@ -217,11 +294,17 @@ class FileMetadata:
 
     def get_statistics(self) -> MetadataStatistics:
         """
-        [KO] 저장된 전체 파일 메타데이터를 바탕으로 통계 정보를 계산합니다.
-        [EN] Calculates statistical information based on all stored file metadata.
+        [KO]
+        저장된 전체 파일 메타데이터를 바탕으로 통계 정보를 계산합니다.
 
         Returns:
-            [KO] 총 파일 수, 총 청크 수, 총 크기(MB), 사용된 모델 목록을 포함한 통계 딕셔너리 / [EN] Statistics dict containing total files, chunks, size (MB), and models used.
+            총 파일 수, 총 청크 수, 총 크기(MB), 사용된 모델 목록을 포함한 통계 딕셔너리
+
+        [EN]
+        Calculates statistical information based on all stored file metadata.
+
+        Returns:
+            Statistics dict containing total files, chunks, size (MB), and models used.
         """
         if not self.metadata:
             return {
