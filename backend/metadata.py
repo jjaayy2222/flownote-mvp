@@ -23,7 +23,7 @@ import uuid
 from datetime import datetime
 from typing import Dict, List, Optional, TypedDict
 
-from backend.utils.common import format_error_msg  # type: ignore[import]
+from backend.utils.common import format_error_msg
 
 logger = logging.getLogger(__name__)
 

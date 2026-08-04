@@ -15,7 +15,7 @@ from collections import Counter
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, TypedDict
 
-from backend.utils.common import format_error_msg  # type: ignore[import]
+from backend.utils.common import format_error_msg
 
 logger = logging.getLogger(__name__)
 
