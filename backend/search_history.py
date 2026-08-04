@@ -76,7 +76,7 @@ class SearchHistory:
                     self.history = json.load(f)
             except (OSError, ValueError, json.JSONDecodeError) as e:
                 logger.warning(
-                    f"히스토리 로드 실패: {type(e).__name__}: {format_error_msg(e, mask_mode='auto')}",
+                    f"히스토리 로드 실패: {type(e).__name__}: {format_error_msg(e)}",
                     extra={
                         "action": "load_history",
                         "path": self.storage_path,
@@ -108,7 +108,7 @@ class SearchHistory:
                 )
         except (OSError, TypeError, ValueError) as e:
             logger.warning(
-                f"히스토리 저장 실패: {type(e).__name__}: {format_error_msg(e, mask_mode='auto')}",
+                f"히스토리 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
                 extra={
                     "action": "save_history",
                     "path": self.storage_path,

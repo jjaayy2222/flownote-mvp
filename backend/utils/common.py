@@ -191,6 +191,11 @@ def format_error_msg(
         The formatted, masked, and truncated error message string
     """
     err_msg = str(e)
+    if mask_mode not in ("auto", "force", "off"):
+        raise ValueError(
+            f"Invalid mask_mode: '{mask_mode}'. Expected 'auto', 'force', or 'off'."
+        )
+
     if mask_mode == "force" or (mask_mode == "auto" and isinstance(e, OSError)):
         err_msg = _SENSITIVE_PATH_RE.sub("[REDACTED_PATH]", err_msg)
 
