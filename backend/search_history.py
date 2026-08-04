@@ -10,6 +10,7 @@
 import json
 import logging
 import os
+import re
 import uuid
 from collections import Counter
 from datetime import date, datetime
@@ -17,7 +18,11 @@ from typing import Any, Dict, List, Optional, TypedDict
 
 logger = logging.getLogger(__name__)
 
-MAX_ERROR_LOG_LENGTH = 100
+# 환경변수(배포 정마다 조정 가능) / Configurable via env var per deployment policy
+MAX_ERROR_LOG_LENGTH = int(os.getenv("FLOWNOTE_MAX_ERROR_LOG_LENGTH", "100"))
+
+# 파일 경로 패턴 (주요 PII 노출 원인) / Detects Unix/Windows absolute paths (primary PII risk)
+_SENSITIVE_PATH_RE = re.compile(r"(?:[A-Za-z]:[\\/]|/)(?:[\w.\-\\/]+)")
 
 
 def _custom_json_serializer(obj: Any) -> str:
@@ -28,13 +33,19 @@ def _custom_json_serializer(obj: Any) -> str:
 
 
 def _format_error_msg(e: Exception) -> str:
-    """Exception 메시지 축약 헬퍼 함수"""
-    err_msg = str(e)
-    return (
-        f"{err_msg[:MAX_ERROR_LOG_LENGTH]}..."
-        if len(err_msg) > MAX_ERROR_LOG_LENGTH
-        else err_msg
-    )
+    """
+    [KO]
+    Exception 메시지의 파일 경로 패턴을 마스킹하고, 환경 변수로 설정된 최대 길이로 잘라내는 헬퍼.
+    주요 PII 위협: OSError에 포함된 파일 경로를 시작점으로 차단합니다.
+
+    [EN]
+    Masks file path patterns in the Exception message, then truncates to the
+    configured max length. Primary PII risk: file paths embedded in OSError.
+    """
+    err_msg = _SENSITIVE_PATH_RE.sub("[REDACTED_PATH]", str(e))
+    if len(err_msg) > MAX_ERROR_LOG_LENGTH:
+        return f"{err_msg[:MAX_ERROR_LOG_LENGTH]}..."
+    return err_msg
 
 
 class SearchStatistics(TypedDict):
