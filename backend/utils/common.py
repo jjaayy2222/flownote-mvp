@@ -21,7 +21,10 @@ import re
 from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Literal, Optional, get_args
+
+MaskMode = Literal["auto", "force", "off"]
+VALID_MASK_MODES = get_args(MaskMode)
 
 import tiktoken  # type: ignore[import]
 
@@ -152,16 +155,14 @@ def safe_parse_env_float(
         return default
 
 
-# \ud658\uacbd\ubcc0\uc218\ub85c \uc870\uc815 \uac00\ub2a5; \uc798\ubabb\ub41c \uac12 \uc785\ub825 \uc2dc safe_parse_env_int\uc774 \uae30\ubcf8\uac12 \uc0ac\uc6a9 + warning \ub85c\uae45
+# 환경변수로 조정 가능; 잘못된 값 입력 시 safe_parse_env_int이 기본값 사용 + warning 로깅
 # Configurable via env var; safe_parse_env_int uses default + warning on invalid input
 MAX_ERROR_LOG_LENGTH: int = safe_parse_env_int(
     "FLOWNOTE_MAX_ERROR_LOG_LENGTH", _DEFAULT_MAX_ERROR_LOG_LENGTH, min_val=1
 )
 
 
-def format_error_msg(
-    e: Exception, mask_mode: Literal["auto", "force", "off"] = "auto"
-) -> str:
+def format_error_msg(e: Exception, mask_mode: MaskMode = "auto") -> str:
     """
     [KO]
     Exception 메시지에서 파일 경로를 마스킹하고, 환경 변수로 설정된 최대 길이로 잘라내는 공용 헬퍼.
@@ -191,9 +192,10 @@ def format_error_msg(
         The formatted, masked, and truncated error message string
     """
     err_msg = str(e)
-    if mask_mode not in ("auto", "force", "off"):
+    if mask_mode not in VALID_MASK_MODES:
+        valid_modes_str = ", ".join(f"'{m}'" for m in VALID_MASK_MODES)
         raise ValueError(
-            f"Invalid mask_mode: '{mask_mode}'. Expected 'auto', 'force', or 'off'."
+            f"Invalid mask_mode: '{mask_mode}'. Expected one of: {valid_modes_str}."
         )
 
     if mask_mode == "force" or (mask_mode == "auto" and isinstance(e, OSError)):
