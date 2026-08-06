@@ -140,13 +140,19 @@ class FileMetadata:
                 os.makedirs(storage_dir, exist_ok=True)
             self.metadata = {}
 
-    def _save_metadata(self) -> None:
+    def _save_metadata(self) -> bool:
         """
         [KO]
         현재 메모리에 있는 메타데이터를 JSON 파일에 영속화합니다.
 
+        Returns:
+            저장 성공 시 True, 직렬화 또는 I/O 실패 시 False
+
         [EN]
         Persists the current in-memory metadata to the JSON file.
+
+        Returns:
+            True if saved successfully, False on serialization or I/O failure.
         """
         # [KO] 1단계: 직렬화 - 파일 I/O와 분리하여 예외 범위를 명확히 제한
         # [EN] Step 1: Serialization — separated from file I/O to narrow the exception scope
@@ -161,7 +167,7 @@ class FileMetadata:
                     "error_type": type(e).__name__,
                 },
             )
-            return
+            return False
 
         # [KO] 2단계: 파일 I/O - 직렬화 성공 후에만 파일에 기록
         # [EN] Step 2: File I/O — only writes to disk after successful serialization
@@ -177,6 +183,9 @@ class FileMetadata:
                     "error_type": type(e).__name__,
                 },
             )
+            return False
+
+        return True
 
     def add_file(
         self,
@@ -232,8 +241,15 @@ class FileMetadata:
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-        # 저장
-        self._save_metadata()
+        # [KO] 저장 - 실패 시 메모리에서도 롤백하여 일관성 유지
+        # [EN] Save — roll back from memory on failure to maintain consistency
+        if not self._save_metadata():
+            del self.metadata[file_id]
+            logger.error(
+                "메타데이터 저장 실패로 파일 추가가 취소되었습니다.",
+                extra={"action": "add_file_rollback", "error_type": "save_failure"},
+            )
+            return file_id
 
         return file_id
 
@@ -296,8 +312,19 @@ class FileMetadata:
             True if deletion was successful, False if the file ID was not found.
         """
         if file_id in self.metadata:
-            del self.metadata[file_id]
-            self._save_metadata()
+            record = self.metadata.pop(file_id)
+            # [KO] 저장 실패 시 삭제된 레코드를 메모리에 복원하여 일관성 유지
+            # [EN] Restore the deleted record on save failure to maintain consistency
+            if not self._save_metadata():
+                self.metadata[file_id] = record
+                logger.error(
+                    "메타데이터 저장 실패로 파일 삭제가 취소되었습니다.",
+                    extra={
+                        "action": "delete_file_rollback",
+                        "error_type": "save_failure",
+                    },
+                )
+                return False
             return True
         return False
 

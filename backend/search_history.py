@@ -89,13 +89,19 @@ class SearchHistory:
             os.makedirs(os.path.dirname(self.storage_path), exist_ok=True)
             self.history = {}
 
-    def _save_history(self):
+    def _save_history(self) -> bool:
         """
         [KO]
         메모리의 히스토리 데이터를 JSON 파일에 저장합니다.
 
+        Returns:
+            저장 성공 시 True, 직렬화 또는 I/O 실패 시 False
+
         [EN]
         Saves the in-memory history data to a JSON file.
+
+        Returns:
+            True if saved successfully, False on serialization or I/O failure.
         """
         # [KO] 1단계: 직렬화 - 파일 I/O와 분리하여 예외 범위를 명확히 제한
         # [EN] Step 1: Serialization — separated from file I/O to narrow the exception scope
@@ -107,7 +113,7 @@ class SearchHistory:
                 default=_custom_json_serializer,
             )
         except (TypeError, ValueError) as e:
-            logger.warning(
+            logger.error(
                 f"히스토리 직렬화 실패: {type(e).__name__}: {format_error_msg(e)}",
                 extra={
                     "action": "save_history_serialize",
@@ -115,7 +121,7 @@ class SearchHistory:
                     "error_type": type(e).__name__,
                 },
             )
-            return
+            return False
 
         # [KO] 2단계: 파일 I/O - 직렬화 성공 후에만 파일에 기록
         # [EN] Step 2: File I/O — only writes to disk after successful serialization
@@ -123,7 +129,7 @@ class SearchHistory:
             with open(self.storage_path, "w", encoding="utf-8") as f:
                 f.write(serialized)
         except OSError as e:
-            logger.warning(
+            logger.error(
                 f"히스토리 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
                 extra={
                     "action": "save_history_write",
@@ -131,6 +137,9 @@ class SearchHistory:
                     "error_type": type(e).__name__,
                 },
             )
+            return False
+
+        return True
 
     def add_search(
         self, query: str, results_count: int, top_results: Optional[List[str]] = None
@@ -172,8 +181,14 @@ class SearchHistory:
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-        # 저장
-        self._save_history()
+        # [KO] 저장 - 실패 시 메모리에서도 롤백하여 일관성 유지
+        # [EN] Save — roll back from memory on failure to maintain consistency
+        if not self._save_history():
+            del self.history[search_id]
+            logger.error(
+                "히스토리 저장 실패로 검색 기록 추가가 취소되었습니다.",
+                extra={"action": "add_search_rollback", "error_type": "save_failure"},
+            )
 
         return search_id
 
@@ -264,8 +279,19 @@ class SearchHistory:
             True if successfully deleted, False otherwise (ID not found)
         """
         if search_id in self.history:
-            del self.history[search_id]
-            self._save_history()
+            record = self.history.pop(search_id)
+            # [KO] 저장 실패 시 삭제된 레코드를 메모리에 복원하여 일관성 유지
+            # [EN] Restore the deleted record on save failure to maintain consistency
+            if not self._save_history():
+                self.history[search_id] = record
+                logger.error(
+                    "히스토리 저장 실패로 검색 기록 삭제가 취소되었습니다.",
+                    extra={
+                        "action": "delete_search_rollback",
+                        "error_type": "save_failure",
+                    },
+                )
+                return False
             return True
         return False
 
@@ -277,8 +303,16 @@ class SearchHistory:
         [EN]
         Permanently clears all search records.
         """
+        prev_history = self.history
         self.history = {}
-        self._save_history()
+        # [KO] 저장 실패 시 이전 히스토리를 메모리에 복원하여 일관성 유지
+        # [EN] Restore previous history on save failure to maintain consistency
+        if not self._save_history():
+            self.history = prev_history
+            logger.error(
+                "히스토리 저장 실패로 전체 삭제가 취소되었습니다.",
+                extra={"action": "clear_all_rollback", "error_type": "save_failure"},
+            )
 
     def get_statistics(self) -> SearchStatistics:
         """
