@@ -97,20 +97,36 @@ class SearchHistory:
         [EN]
         Saves the in-memory history data to a JSON file.
         """
+        # [KO] 1단계: 직렬화 - 파일 I/O와 분리하여 예외 범위를 명확히 제한
+        # [EN] Step 1: Serialization — separated from file I/O to narrow the exception scope
+        try:
+            serialized = json.dumps(
+                self.history,
+                ensure_ascii=False,
+                indent=2,
+                default=_custom_json_serializer,
+            )
+        except (TypeError, ValueError) as e:
+            logger.warning(
+                f"히스토리 직렬화 실패: {type(e).__name__}: {format_error_msg(e)}",
+                extra={
+                    "action": "save_history_serialize",
+                    "path": self.storage_path,
+                    "error_type": type(e).__name__,
+                },
+            )
+            return
+
+        # [KO] 2단계: 파일 I/O - 직렬화 성공 후에만 파일에 기록
+        # [EN] Step 2: File I/O — only writes to disk after successful serialization
         try:
             with open(self.storage_path, "w", encoding="utf-8") as f:
-                json.dump(
-                    self.history,
-                    f,
-                    ensure_ascii=False,
-                    indent=2,
-                    default=_custom_json_serializer,
-                )
-        except (OSError, TypeError, ValueError) as e:
+                f.write(serialized)
+        except OSError as e:
             logger.warning(
                 f"히스토리 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
                 extra={
-                    "action": "save_history",
+                    "action": "save_history_write",
                     "path": self.storage_path,
                     "error_type": type(e).__name__,
                 },
