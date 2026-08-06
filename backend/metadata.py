@@ -148,25 +148,31 @@ class FileMetadata:
         [EN]
         Persists the current in-memory metadata to the JSON file.
         """
+        # [KO] 1단계: 직렬화 - 파일 I/O와 분리하여 예외 범위를 명확히 제한
+        # [EN] Step 1: Serialization — separated from file I/O to narrow the exception scope
         try:
-            with open(self.storage_path, "w", encoding="utf-8") as f:
-                json.dump(self.metadata, f, ensure_ascii=False, indent=2)
-        except OSError as e:
+            serialized = json.dumps(self.metadata, ensure_ascii=False, indent=2)
+        except (TypeError, ValueError) as e:
             logger.error(
-                f"메타데이터 파일 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
+                f"메타데이터 직렬화 실패: {type(e).__name__}: {format_error_msg(e)}",
                 extra={
-                    "action": "save_metadata",
+                    "action": "save_metadata_serialize",
                     "storage_path": self.storage_path,
                     "error_type": type(e).__name__,
                 },
             )
-        except (TypeError, ValueError) as e:
-            # [KO] json.dump에서 직렬화 불가 타입(예: datetime, 커스텀 객체) 발생 시
-            # [EN] Raised when json.dump encounters a non-serializable type (e.g., datetime, custom objects)
+            return
+
+        # [KO] 2단계: 파일 I/O - 직렬화 성공 후에만 파일에 기록
+        # [EN] Step 2: File I/O — only writes to disk after successful serialization
+        try:
+            with open(self.storage_path, "w", encoding="utf-8") as f:
+                f.write(serialized)
+        except OSError as e:
             logger.error(
-                f"메타데이터 직렬화 실패: {type(e).__name__}: {format_error_msg(e)}",
+                f"메타데이터 파일 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
                 extra={
-                    "action": "save_metadata",
+                    "action": "save_metadata_write",
                     "storage_path": self.storage_path,
                     "error_type": type(e).__name__,
                 },
