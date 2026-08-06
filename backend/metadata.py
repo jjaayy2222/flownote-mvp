@@ -160,6 +160,17 @@ class FileMetadata:
                     "error_type": type(e).__name__,
                 },
             )
+        except (TypeError, ValueError) as e:
+            # [KO] json.dump에서 직렬화 불가 타입(예: datetime, 커스텀 객체) 발생 시
+            # [EN] Raised when json.dump encounters a non-serializable type (e.g., datetime, custom objects)
+            logger.error(
+                f"메타데이터 직렬화 실패: {type(e).__name__}: {format_error_msg(e)}",
+                extra={
+                    "action": "save_metadata",
+                    "storage_path": self.storage_path,
+                    "error_type": type(e).__name__,
+                },
+            )
 
     def add_file(
         self,
