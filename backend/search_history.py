@@ -13,7 +13,7 @@ import os
 import uuid
 from collections import Counter
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Callable, Dict, List, Optional, TypedDict
 
 from backend.utils.common import format_error_msg
 
@@ -89,13 +89,19 @@ class SearchHistory:
             os.makedirs(os.path.dirname(self.storage_path), exist_ok=True)
             self.history = {}
 
-    def _save_history(self):
+    def _save_history(self) -> bool:
         """
         [KO]
         메모리의 히스토리 데이터를 JSON 파일에 저장합니다.
 
+        Returns:
+            저장 성공 시 True, 직렬화 또는 I/O 실패 시 False
+
         [EN]
         Saves the in-memory history data to a JSON file.
+
+        Returns:
+            True if saved successfully, False on serialization or I/O failure.
         """
         # [KO] 1단계: 직렬화 - 파일 I/O와 분리하여 예외 범위를 명확히 제한
         # [EN] Step 1: Serialization — separated from file I/O to narrow the exception scope
@@ -107,7 +113,7 @@ class SearchHistory:
                 default=_custom_json_serializer,
             )
         except (TypeError, ValueError) as e:
-            logger.warning(
+            logger.error(
                 f"히스토리 직렬화 실패: {type(e).__name__}: {format_error_msg(e)}",
                 extra={
                     "action": "save_history_serialize",
@@ -115,7 +121,7 @@ class SearchHistory:
                     "error_type": type(e).__name__,
                 },
             )
-            return
+            return False
 
         # [KO] 2단계: 파일 I/O - 직렬화 성공 후에만 파일에 기록
         # [EN] Step 2: File I/O — only writes to disk after successful serialization
@@ -123,7 +129,7 @@ class SearchHistory:
             with open(self.storage_path, "w", encoding="utf-8") as f:
                 f.write(serialized)
         except OSError as e:
-            logger.warning(
+            logger.error(
                 f"히스토리 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
                 extra={
                     "action": "save_history_write",
@@ -131,13 +137,61 @@ class SearchHistory:
                     "error_type": type(e).__name__,
                 },
             )
+            return False
+
+        return True
+
+    def _apply_and_persist(
+        self,
+        mutate: Callable[[], object],
+        rollback: Callable[[], object],
+        rollback_msg: str,
+        action: str,
+    ) -> bool:
+        """
+        [KO]
+        메모리 변경 → 저장 → 실패 시 롤백을 단일 헬퍼로 코드화합니다.
+        add_search, delete_search, clear_all 등에서 반복되는 저장/롤백 패턴을 중앙화합니다.
+
+        Args:
+            mutate: 메모리 상태를 변경하는 함수
+            rollback: 저장 실패 시 메모리를 원복하는 함수
+            rollback_msg: 롤백 시 로그에 남길 메시지
+            action: 로그 extra에 포함할 액션 식별자
+
+        Returns:
+            영속화 성공 시 True, 실패(롤백 완료) 시 False
+
+        [EN]
+        Encapsulates the mutate → persist → rollback-on-failure pattern into a single helper.
+        Centralizes the repeated save/rollback pattern used by add_search, delete_search, clear_all, etc.
+
+        Args:
+            mutate: Function that applies the in-memory change
+            rollback: Function that reverts the in-memory change on save failure
+            rollback_msg: Log message to emit on rollback
+            action: Action identifier included in the log extra dict
+
+        Returns:
+            True if persisted successfully, False if rolled back due to failure.
+        """
+        mutate()
+        if self._save_history():
+            return True
+        rollback()
+        logger.error(
+            rollback_msg,
+            extra={"action": action, "error_type": "save_failure"},
+        )
+        return False
 
     def add_search(
         self, query: str, results_count: int, top_results: Optional[List[str]] = None
-    ) -> str:
+    ) -> Optional[str]:
         """
         [KO]
         새로운 검색 기록을 추가하고 저장합니다.
+        영속화(디스크 저장)가 실패하면 메모리도 롤백되고 None을 반환합니다.
 
         Args:
             query: 검색에 사용된 쿼리 문자열
@@ -145,10 +199,11 @@ class SearchHistory:
             top_results: 상위 검색 결과 미리보기 텍스트 리스트
 
         Returns:
-            새로 생성된 검색 고유 ID
+            저장 성공 시 새로 생성된 검색 고유 ID, 실패 시 None
 
         [EN]
         Adds and saves a new search record.
+        Returns None if persistence fails; in-memory state is also rolled back.
 
         Args:
             query: Query string used for the search
@@ -156,15 +211,12 @@ class SearchHistory:
             top_results: List of preview texts for top search results
 
         Returns:
-            Newly generated unique search ID
+            Newly generated unique search ID on success, or None on failure.
         """
-        # 검색 ID 생성
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         unique_id = uuid.uuid4().hex[:8]
         search_id = f"search_{timestamp}_{unique_id}"
-
-        # 히스토리 생성
-        self.history[search_id] = {
+        record = {
             "query": query,
             "results_count": results_count,
             "top_results": top_results[:3] if top_results else [],
@@ -172,10 +224,13 @@ class SearchHistory:
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-        # 저장
-        self._save_history()
-
-        return search_id
+        persisted = self._apply_and_persist(
+            mutate=lambda: self.history.update({search_id: record}),
+            rollback=lambda: self.history.pop(search_id, None),
+            rollback_msg="히스토리 저장 실패로 검색 기록 추가가 취소되었습니다.",
+            action="add_search_rollback",
+        )
+        return search_id if persisted else None
 
     def get_search(self, search_id: str) -> Optional[Dict]:
         """
@@ -247,38 +302,57 @@ class SearchHistory:
         """
         [KO]
         특정 검색 ID의 기록을 삭제합니다.
+        영속화 실패 시 메모리에서도 롤백되고 False를 반환합니다.
 
         Args:
             search_id: 삭제할 검색 고유 ID
 
         Returns:
-            삭제 성공 시 True, 실패 시(ID 없음) False
+            삭제 및 영속화 성공 시 True, 실패 시(없는 ID 또는 저장 실패) False
 
         [EN]
         Deletes the record for a specific search ID.
+        Rolls back in-memory state on persistence failure and returns False.
 
         Args:
             search_id: Unique search ID to delete
 
         Returns:
-            True if successfully deleted, False otherwise (ID not found)
+            True if deletion and persistence succeeded, False otherwise
         """
-        if search_id in self.history:
-            del self.history[search_id]
-            self._save_history()
-            return True
-        return False
+        if search_id not in self.history:
+            return False
+        record = self.history[search_id]
+        return self._apply_and_persist(
+            mutate=lambda: self.history.pop(search_id, None),
+            rollback=lambda: self.history.update({search_id: record}),
+            rollback_msg="히스토리 저장 실패로 검색 기록 삭제가 취소되었습니다.",
+            action="delete_search_rollback",
+        )
 
-    def clear_all(self):
+    def clear_all(self) -> bool:
         """
         [KO]
         모든 검색 기록을 영구적으로 삭제합니다.
+        영속화 실패 시 이전 히스토리를 복원하고 False를 반환합니다.
+
+        Returns:
+            성공 시 True, 영속화 실패(이전 상태 복원) 시 False
 
         [EN]
         Permanently clears all search records.
+        Restores previous history on persistence failure and returns False.
+
+        Returns:
+            True if cleared and persisted successfully, False if rollback occurred.
         """
-        self.history = {}
-        self._save_history()
+        prev_history = self.history
+        return self._apply_and_persist(
+            mutate=lambda: setattr(self, "history", {}),
+            rollback=lambda: setattr(self, "history", prev_history),
+            rollback_msg="히스토리 저장 실패로 전체 삭제가 취소되었습니다.",
+            action="clear_all_rollback",
+        )
 
     def get_statistics(self) -> SearchStatistics:
         """
