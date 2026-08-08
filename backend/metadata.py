@@ -21,7 +21,7 @@ import logging
 import os
 import uuid
 from datetime import datetime
-from typing import Dict, List, Optional, TypedDict
+from typing import Callable, Dict, List, Optional, TypedDict
 
 from backend.utils.common import format_error_msg
 
@@ -187,6 +187,47 @@ class FileMetadata:
 
         return True
 
+    def _apply_with_persistence(
+        self,
+        mutate: Callable[[], object],
+        rollback: Callable[[], object],
+        action: str,
+    ) -> bool:
+        """
+        [KO]
+        메모리 변경 → 저장 → 실패 시 롤백을 단일 헬퍼로 캡슐화합니다.
+        add_file, delete_file 등에서 반복되는 저장/롤백 패턴을 중앙화합니다.
+
+        Args:
+            mutate: 메모리 상태를 변경하는 함수
+            rollback: 저장 실패 시 메모리를 원복하는 함수
+            action: 로그 extra에 포함할 액션 식별자
+
+        Returns:
+            영속화 성공 시 True, 실패(롤백 완료) 시 False
+
+        [EN]
+        Encapsulates the mutate → persist → rollback-on-failure pattern into a single helper.
+        Centralizes the repeated save/rollback pattern used by add_file, delete_file, etc.
+
+        Args:
+            mutate: Function that applies the in-memory change
+            rollback: Function that reverts the in-memory change on save failure
+            action: Action identifier included in the log extra dict
+
+        Returns:
+            True if persisted successfully, False if rolled back due to failure.
+        """
+        mutate()
+        if self._save_metadata():
+            return True
+        rollback()
+        logger.error(
+            "메타데이터 저장 실패로 작업이 취소되었습니다.",
+            extra={"action": action, "error_type": "save_failure"},
+        )
+        return False
+
     def add_file(
         self,
         file_name: str,
@@ -194,11 +235,12 @@ class FileMetadata:
         chunk_count: int,
         embedding_dim: int,
         model: str = "text-embedding-3-small",
-    ) -> str:
+    ) -> Optional[str]:
         """
         [KO]
         새로운 파일의 메타데이터를 생성하고 저장소에 추가합니다.
         파일 ID는 타임스탬프와 UUID를 조합하여 고유성을 보장합니다.
+        영속화(디스크 저장)가 실패하면 메모리도 롤백되고 None을 반환합니다.
 
         Args:
             file_name: 업로드한 파일의 이름
@@ -208,11 +250,12 @@ class FileMetadata:
             model: 임베딩 생성에 사용된 모델 이름 (기본값: "text-embedding-3-small")
 
         Returns:
-            생성된 고유 파일 ID (예: "file_20251025_131227_d9977552")
+            저장 성공 시 고유 파일 ID (예: "file_20251025_131227_d9977552"), 실패 시 None
 
         [EN]
         Creates and adds metadata for a new file to the storage.
         The file ID is composed of a timestamp and UUID to ensure uniqueness.
+        Returns None if persistence fails; in-memory state is also rolled back.
 
         Args:
             file_name: Name of the uploaded file.
@@ -222,15 +265,12 @@ class FileMetadata:
             model: Name of the model used for embedding generation (default: "text-embedding-3-small").
 
         Returns:
-            The generated unique file ID (e.g., "file_20251025_131227_d9977552").
+            The unique file ID (e.g., "file_20251025_131227_d9977552") on success, or None on failure.
         """
-        # 파일 ID 생성 (타임스탬프 + UUID로 고유성 보장)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        unique_id = uuid.uuid4().hex[:8]  # UUID의 앞 8자리
+        unique_id = uuid.uuid4().hex[:8]
         file_id = f"file_{timestamp}_{unique_id}"
-
-        # 메타데이터 생성
-        self.metadata[file_id] = {
+        record: FileMetadataRecord = {
             "file_name": file_name,
             "file_size": file_size,
             "file_size_mb": round(file_size / (1024 * 1024), 2),
@@ -241,17 +281,12 @@ class FileMetadata:
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-        # [KO] 저장 - 실패 시 메모리에서도 롤백하여 일관성 유지
-        # [EN] Save — roll back from memory on failure to maintain consistency
-        if not self._save_metadata():
-            del self.metadata[file_id]
-            logger.error(
-                "메타데이터 저장 실패로 파일 추가가 취소되었습니다.",
-                extra={"action": "add_file_rollback", "error_type": "save_failure"},
-            )
-            return file_id
-
-        return file_id
+        persisted = self._apply_with_persistence(
+            mutate=lambda: self.metadata.update({file_id: record}),
+            rollback=lambda: self.metadata.pop(file_id, None),
+            action="add_file_rollback",
+        )
+        return file_id if persisted else None
 
     def get_file(self, file_id: str) -> Optional[FileMetadataRecord]:
         """
@@ -295,38 +330,32 @@ class FileMetadata:
         """
         [KO]
         특정 파일 ID에 해당하는 메타데이터를 삭제합니다.
+        영속화 실패 시 메모리에서도 롤백되고 False를 반환합니다.
 
         Args:
             file_id: 삭제할 파일의 고유 ID
 
         Returns:
-            삭제 성공 시 True, 파일 ID가 존재하지 않으면 False
+            삭제 및 영속화 성공 시 True, 파일 ID가 없거나 저장 실패 시 False
 
         [EN]
         Deletes the metadata corresponding to a specific file ID.
+        Rolls back in-memory state on persistence failure and returns False.
 
         Args:
             file_id: The unique ID of the file to delete.
 
         Returns:
-            True if deletion was successful, False if the file ID was not found.
+            True if deletion and persistence succeeded, False if file ID not found or save failed.
         """
-        if file_id in self.metadata:
-            record = self.metadata.pop(file_id)
-            # [KO] 저장 실패 시 삭제된 레코드를 메모리에 복원하여 일관성 유지
-            # [EN] Restore the deleted record on save failure to maintain consistency
-            if not self._save_metadata():
-                self.metadata[file_id] = record
-                logger.error(
-                    "메타데이터 저장 실패로 파일 삭제가 취소되었습니다.",
-                    extra={
-                        "action": "delete_file_rollback",
-                        "error_type": "save_failure",
-                    },
-                )
-                return False
-            return True
-        return False
+        if file_id not in self.metadata:
+            return False
+        record = self.metadata[file_id]
+        return self._apply_with_persistence(
+            mutate=lambda: self.metadata.pop(file_id, None),
+            rollback=lambda: self.metadata.update({file_id: record}),
+            action="delete_file_rollback",
+        )
 
     def get_statistics(self) -> MetadataStatistics:
         """
@@ -400,7 +429,7 @@ if __name__ == "__main__":
     print("\n2. 파일 조회 테스트")
     print("-" * 50)
 
-    file_info = metadata.get_file(file_id1)
+    file_info = metadata.get_file(file_id1) if file_id1 else None
     print("📄 첫 번째 파일:")
     if file_info is not None:
         print(f"   - 파일명: {file_info['file_name']}")
@@ -408,7 +437,7 @@ if __name__ == "__main__":
         print(f"   - 청크 수: {file_info['chunk_count']}")
         print(f"   - 모델: {file_info['embedding_model']}")
 
-    file_info2 = metadata.get_file(file_id2)
+    file_info2 = metadata.get_file(file_id2) if file_id2 else None
     print("\n📄 두 번째 파일:")
     if file_info2 is not None:
         print(f"   - 파일명: {file_info2['file_name']}")
