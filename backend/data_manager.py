@@ -12,9 +12,14 @@
 
 import csv
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Union
+
+from backend.utils.common import format_error_msg
+
+logger = logging.getLogger(__name__)
 
 
 class DataManager:
@@ -146,14 +151,22 @@ class DataManager:
 
             self._write_profile_to_csv(user_id, occupation, areas_str, interests_str)
 
-            print("✅ [DATA_MANAGER] 저장 완료!")
+            logger.info(
+                "사용자 프로필 저장 완료",
+                extra={"action": "save_user_profile", "user_id": user_id},
+            )
             return {"status": "success", "user_id": user_id}
 
-        except Exception as e:
-            print(f"❌ [DATA_MANAGER] 저장 실패: {str(e)}")
-            import traceback
-
-            traceback.print_exc()
+        except (OSError, csv.Error) as e:
+            logger.error(
+                f"사용자 프로필 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
+                extra={
+                    "action": "save_user_profile_error",
+                    "user_id": user_id,
+                    "error_type": type(e).__name__,
+                },
+                exc_info=True,
+            )
             return {"status": "error", "message": str(e)}
 
     def get_user_profile(self, user_id: str) -> Optional[Dict]:
@@ -175,8 +188,15 @@ class DataManager:
                     if row["user_id"] == user_id:
                         return dict(row)
             return None
-        except Exception as e:
-            print(f"프로필 조회 실패: {str(e)}")
+        except (OSError, csv.Error) as e:
+            logger.warning(
+                f"프로필 조회 실패: {type(e).__name__}: {format_error_msg(e)}",
+                extra={
+                    "action": "get_user_profile_error",
+                    "user_id": user_id,
+                    "error_type": type(e).__name__,
+                },
+            )
             return None
 
     def update_user_areas(self, user_id: str, areas: List[str]):
@@ -220,7 +240,15 @@ class DataManager:
                 writer.writerows(rows)
 
             return {"status": "success"}
-        except Exception as e:
+        except (OSError, csv.Error) as e:
+            logger.error(
+                f"사용자 관심 영역 업데이트 실패: {type(e).__name__}: {format_error_msg(e)}",
+                extra={
+                    "action": "update_user_areas_error",
+                    "user_id": user_id,
+                    "error_type": type(e).__name__,
+                },
+            )
             return {"status": "error", "message": str(e)}
 
     # =====================
@@ -252,7 +280,15 @@ class DataManager:
                 json.dump(context_data, f, ensure_ascii=False, indent=2)
 
             return {"status": "success"}
-        except Exception as e:
+        except (OSError, json.JSONDecodeError) as e:
+            logger.error(
+                f"사용자 컨텍스트 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
+                extra={
+                    "action": "save_user_context_error",
+                    "user_id": user_id,
+                    "error_type": type(e).__name__,
+                },
+            )
             return {"status": "error", "message": str(e)}
 
     def get_user_context(self, user_id: str) -> Optional[Dict]:
@@ -271,8 +307,15 @@ class DataManager:
                 context_data = json.load(f)
 
             return context_data.get(user_id, None)
-        except Exception as e:
-            print(f"컨텍스트 조회 실패: {str(e)}")
+        except (OSError, json.JSONDecodeError) as e:
+            logger.warning(
+                f"컨텍스트 조회 실패: {type(e).__name__}: {format_error_msg(e)}",
+                extra={
+                    "action": "get_user_context_error",
+                    "user_id": user_id,
+                    "error_type": type(e).__name__,
+                },
+            )
             return None
 
     def get_user_areas(self, user_id: str) -> List[str]:
@@ -333,10 +376,20 @@ class DataManager:
                     ]
                 )
 
-            print(f"✅ [CSV LOG] classification_log.csv 기록 완료: {file_name}")
+            logger.info(
+                "분류 로그 기록 완료",
+                extra={"action": "log_classification", "file_name": file_name},
+            )
             return {"status": "success"}
-        except Exception as e:
-            print(f"❌ [CSV LOG] 기록 실패: {e}")
+        except (OSError, csv.Error) as e:
+            logger.error(
+                f"분류 로그 기록 실패: {type(e).__name__}: {format_error_msg(e)}",
+                extra={
+                    "action": "log_classification_error",
+                    "file_name": file_name,
+                    "error_type": type(e).__name__,
+                },
+            )
             return {"status": "error", "message": str(e)}
 
     def save_classification_json(self, result: Dict, filename: str) -> str:
@@ -360,11 +413,24 @@ class DataManager:
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(result, f, ensure_ascii=False, indent=2)
 
-            print(f"✅ [JSON LOG] data/log/ 저장 완료: {json_filename}")
+            logger.info(
+                "JSON 분류 로그 저장 완료",
+                extra={
+                    "action": "save_classification_json",
+                    "json_filename": json_filename,
+                },
+            )
             return str(json_path)
 
-        except Exception as e:
-            print(f"❌ [JSON LOG] 저장 실패: {e}")
+        except (OSError, TypeError) as e:
+            logger.error(
+                f"JSON 분류 로그 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
+                extra={
+                    "action": "save_classification_json_error",
+                    "filename": filename,
+                    "error_type": type(e).__name__,
+                },
+            )
             return ""
 
     def get_user_classifications(self, user_id: str) -> List[Dict]:
@@ -386,8 +452,15 @@ class DataManager:
                     dict(row) for row in reader if row["user_id"] == user_id
                 ]
             return classifications
-        except Exception as e:
-            print(f"분류 히스토리 조회 실패: {str(e)}")
+        except (OSError, csv.Error) as e:
+            logger.warning(
+                f"분류 히스토리 조회 실패: {type(e).__name__}: {format_error_msg(e)}",
+                extra={
+                    "action": "get_user_classifications_error",
+                    "user_id": user_id,
+                    "error_type": type(e).__name__,
+                },
+            )
             return []
 
 
@@ -461,9 +534,25 @@ def save_json_log(
         "context_injected": context_injected,
     }
 
-    # JSON 파일 저장
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(log_data, f, ensure_ascii=False, indent=2)
+    try:
+        # JSON 파일 저장
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(log_data, f, ensure_ascii=False, indent=2)
 
-    print(f"✅ [JSON LOG] {json_filename} 저장 완료!")
-    return str(json_path)
+        logger_instance = logging.getLogger(__name__)
+        logger_instance.info(
+            "글로벌 JSON 로그 저장 완료",
+            extra={"action": "save_json_log", "json_filename": json_filename},
+        )
+        return str(json_path)
+    except (OSError, TypeError) as e:
+        logger_instance = logging.getLogger(__name__)
+        logger_instance.error(
+            f"글로벌 JSON 로그 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
+            extra={
+                "action": "save_json_log_error",
+                "file_name": file_name,
+                "error_type": type(e).__name__,
+            },
+        )
+        return ""
