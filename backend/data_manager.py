@@ -41,9 +41,9 @@ def _log_error(
     if level == "error":
         logger.error(formatted_msg, extra=log_extra, exc_info=exc_info)
     elif level == "warning":
-        logger.warning(formatted_msg, extra=log_extra)
+        logger.warning(formatted_msg, extra=log_extra, exc_info=exc_info)
     else:
-        logger.info(formatted_msg, extra=log_extra)
+        logger.info(formatted_msg, extra=log_extra, exc_info=exc_info)
 
 
 class DataManager:
@@ -292,7 +292,14 @@ class DataManager:
         try:
             with open(self.context_json, "r", encoding="utf-8") as f:
                 context_data = json.load(f)
-        except (OSError, json.JSONDecodeError):
+        except (OSError, json.JSONDecodeError) as e:
+            _log_error(
+                "read_user_context_warning",
+                "컨텍스트 파일 읽기 실패. 빈 상태로 초기화",
+                e,
+                level="warning",
+                user_id=user_id,
+            )
             # [KO] 파일이 없거나 손상된 경우 빈 딕셔너리로 초기화
             # [EN] Initialize as empty dict if file is missing or corrupted
             context_data = {}
