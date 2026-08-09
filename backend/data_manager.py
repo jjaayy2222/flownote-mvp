@@ -22,6 +22,30 @@ from backend.utils.common import format_error_msg
 logger = logging.getLogger(__name__)
 
 
+def _log_error(
+    action: str,
+    message: str,
+    e: Exception,
+    *,
+    level: str = "error",
+    exc_info: bool = False,
+    **extra: object,
+) -> None:
+    log_extra = {
+        "action": action,
+        "error_type": type(e).__name__,
+        **extra,
+    }
+    formatted_msg = f"{message}: {type(e).__name__}: {format_error_msg(e)}"
+
+    if level == "error":
+        logger.error(formatted_msg, extra=log_extra, exc_info=exc_info)
+    elif level == "warning":
+        logger.warning(formatted_msg, extra=log_extra)
+    else:
+        logger.info(formatted_msg, extra=log_extra)
+
+
 class DataManager:
     """
     [KO] 데이터 저장 및 조회를 전담하는 매니저 클래스.
@@ -158,14 +182,13 @@ class DataManager:
             return {"status": "success", "user_id": user_id}
 
         except (OSError, csv.Error) as e:
-            logger.error(
-                f"사용자 프로필 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
-                extra={
-                    "action": "save_user_profile_error",
-                    "user_id": user_id,
-                    "error_type": type(e).__name__,
-                },
+            _log_error(
+                "save_user_profile_error",
+                "사용자 프로필 저장 실패",
+                e,
+                level="error",
                 exc_info=True,
+                user_id=user_id,
             )
             return {"status": "error", "message": str(e)}
 
@@ -189,13 +212,12 @@ class DataManager:
                         return dict(row)
             return None
         except (OSError, csv.Error) as e:
-            logger.warning(
-                f"프로필 조회 실패: {type(e).__name__}: {format_error_msg(e)}",
-                extra={
-                    "action": "get_user_profile_error",
-                    "user_id": user_id,
-                    "error_type": type(e).__name__,
-                },
+            _log_error(
+                "get_user_profile_error",
+                "프로필 조회 실패",
+                e,
+                level="warning",
+                user_id=user_id,
             )
             return None
 
@@ -241,13 +263,13 @@ class DataManager:
 
             return {"status": "success"}
         except (OSError, csv.Error) as e:
-            logger.error(
-                f"사용자 관심 영역 업데이트 실패: {type(e).__name__}: {format_error_msg(e)}",
-                extra={
-                    "action": "update_user_areas_error",
-                    "user_id": user_id,
-                    "error_type": type(e).__name__,
-                },
+            _log_error(
+                "update_user_areas_error",
+                "사용자 관심 영역 업데이트 실패",
+                e,
+                level="error",
+                exc_info=True,
+                user_id=user_id,
             )
             return {"status": "error", "message": str(e)}
 
@@ -270,7 +292,12 @@ class DataManager:
         try:
             with open(self.context_json, "r", encoding="utf-8") as f:
                 context_data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            # [KO] 파일이 없거나 손상된 경우 빈 딕셔너리로 초기화
+            # [EN] Initialize as empty dict if file is missing or corrupted
+            context_data = {}
 
+        try:
             context_data[user_id] = {
                 "areas": areas,
                 "created_at": datetime.now().isoformat(),
@@ -280,14 +307,14 @@ class DataManager:
                 json.dump(context_data, f, ensure_ascii=False, indent=2)
 
             return {"status": "success"}
-        except (OSError, json.JSONDecodeError) as e:
-            logger.error(
-                f"사용자 컨텍스트 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
-                extra={
-                    "action": "save_user_context_error",
-                    "user_id": user_id,
-                    "error_type": type(e).__name__,
-                },
+        except (OSError, TypeError) as e:
+            _log_error(
+                "save_user_context_error",
+                "사용자 컨텍스트 저장 실패",
+                e,
+                level="error",
+                exc_info=True,
+                user_id=user_id,
             )
             return {"status": "error", "message": str(e)}
 
@@ -308,13 +335,12 @@ class DataManager:
 
             return context_data.get(user_id, None)
         except (OSError, json.JSONDecodeError) as e:
-            logger.warning(
-                f"컨텍스트 조회 실패: {type(e).__name__}: {format_error_msg(e)}",
-                extra={
-                    "action": "get_user_context_error",
-                    "user_id": user_id,
-                    "error_type": type(e).__name__,
-                },
+            _log_error(
+                "get_user_context_error",
+                "컨텍스트 조회 실패",
+                e,
+                level="warning",
+                user_id=user_id,
             )
             return None
 
@@ -382,13 +408,13 @@ class DataManager:
             )
             return {"status": "success"}
         except (OSError, csv.Error) as e:
-            logger.error(
-                f"분류 로그 기록 실패: {type(e).__name__}: {format_error_msg(e)}",
-                extra={
-                    "action": "log_classification_error",
-                    "file_name": file_name,
-                    "error_type": type(e).__name__,
-                },
+            _log_error(
+                "log_classification_error",
+                "분류 로그 기록 실패",
+                e,
+                level="error",
+                exc_info=True,
+                file_name=file_name,
             )
             return {"status": "error", "message": str(e)}
 
@@ -423,13 +449,13 @@ class DataManager:
             return str(json_path)
 
         except (OSError, TypeError) as e:
-            logger.error(
-                f"JSON 분류 로그 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
-                extra={
-                    "action": "save_classification_json_error",
-                    "filename": filename,
-                    "error_type": type(e).__name__,
-                },
+            _log_error(
+                "save_classification_json_error",
+                "JSON 분류 로그 저장 실패",
+                e,
+                level="error",
+                exc_info=True,
+                filename=filename,
             )
             return ""
 
@@ -453,13 +479,12 @@ class DataManager:
                 ]
             return classifications
         except (OSError, csv.Error) as e:
-            logger.warning(
-                f"분류 히스토리 조회 실패: {type(e).__name__}: {format_error_msg(e)}",
-                extra={
-                    "action": "get_user_classifications_error",
-                    "user_id": user_id,
-                    "error_type": type(e).__name__,
-                },
+            _log_error(
+                "get_user_classifications_error",
+                "분류 히스토리 조회 실패",
+                e,
+                level="warning",
+                user_id=user_id,
             )
             return []
 
@@ -539,20 +564,18 @@ def save_json_log(
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(log_data, f, ensure_ascii=False, indent=2)
 
-        logger_instance = logging.getLogger(__name__)
-        logger_instance.info(
+        logger.info(
             "글로벌 JSON 로그 저장 완료",
             extra={"action": "save_json_log", "json_filename": json_filename},
         )
         return str(json_path)
     except (OSError, TypeError) as e:
-        logger_instance = logging.getLogger(__name__)
-        logger_instance.error(
-            f"글로벌 JSON 로그 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
-            extra={
-                "action": "save_json_log_error",
-                "file_name": file_name,
-                "error_type": type(e).__name__,
-            },
+        _log_error(
+            "save_json_log_error",
+            "글로벌 JSON 로그 저장 실패",
+            e,
+            level="error",
+            exc_info=True,
+            file_name=file_name,
         )
         return ""
