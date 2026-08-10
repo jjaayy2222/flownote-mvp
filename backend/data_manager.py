@@ -298,6 +298,7 @@ class DataManager:
                 "컨텍스트 파일 읽기 실패. 빈 상태로 초기화",
                 e,
                 level="warning",
+                exc_info=True,
                 user_id=user_id,
             )
             # [KO] 파일이 없거나 손상된 경우 빈 딕셔너리로 초기화
