@@ -174,12 +174,16 @@ def _extract_seed_node_ids(
             try:
                 node_id_str = str(node_id)
                 coerced_count += 1
-            except Exception:
+            except (ValueError, TypeError) as e:
                 logger.error(
                     "[GRAPH_ROUTER] Failed to coerce seed node id from %s at index %d to str; skipping.",
                     source_field or "<unknown>",
                     idx,
                     exc_info=True,
+                    extra={
+                        "action": "coerce_seed_node",
+                        "error_type": type(e).__name__,
+                    },
                 )
                 continue
         else:
@@ -252,7 +256,7 @@ def _serialize_neighbor_node(
 
 class GraphHybridRouter:
     """
-    기존 벡터 검색(Vector RAG) 결과와 지식 그래프 탐색 결과를 결합하는 하이브리드 쿼리 라우터.
+    [KO] 기존 벡터 검색(Vector RAG) 결과와 지식 그래프 탐색 결과를 결합하는 하이브리드 쿼리 라우터.
 
     DI(의존성 주입) 계약:
         - health_registry: 명시적 None 체크로 주입 여부를 판단한다. falsy한 유사
@@ -262,6 +266,9 @@ class GraphHybridRouter:
 
     테스트 격리:
         생성자 주입을 통해 Mock HealthRegistry / Mock Repository를 손쉽게 주입할 수 있다.
+
+    [EN] Hybrid Query Router combining Vector RAG results with Knowledge Graph traversal.
+    Ensures safe Dependency Injection and test isolation.
     """
 
     def __init__(
@@ -285,7 +292,7 @@ class GraphHybridRouter:
         hashed_user_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
-        벡터 검색 결과(vector_results)를 입력받아 그래프 탐색과 결합하여 하이브리드 결과를 반환한다.
+        [KO] 벡터 검색 결과(vector_results)를 입력받아 그래프 탐색과 결합하여 하이브리드 결과를 반환한다.
 
         동작 순서:
             1. HealthRegistry.is_ok(GRAPH_ENGINE) 체크 → False면 즉시 Silent Fallback.
@@ -293,6 +300,9 @@ class GraphHybridRouter:
             3. vector_results에서 Seed Node ID 추출.
             4. GRAPH_MAX_TRAVERSAL_DEPTH Clamping 후 BFS 이웃 탐색.
             5. 이웃 노드를 RAG 포맷으로 직렬화하여 vector_results에 결합 반환.
+
+        [EN] Routes query and combines vector results with graph traversal logic.
+        Validates health registry and graceful degradation to vector results on error.
 
         Args:
             query           : 사용자 쿼리 (로깅 목적, 현재 탐색 로직에는 미사용)
@@ -375,10 +385,11 @@ class GraphHybridRouter:
                         graph_enriched.append(
                             _serialize_neighbor_node(neighbor_id, attrs)
                         )
-        except Exception:
+        except (ValueError, KeyError, OSError, RuntimeError) as e:
             logger.exception(
                 "[GRAPH_ROUTER] Unexpected error during graph traversal. "
-                "Returning partially enriched results (or original vector_results)."
+                "Returning partially enriched results (or original vector_results).",
+                extra={"action": "graph_traversal", "error_type": type(e).__name__},
             )
             return graph_enriched
 
