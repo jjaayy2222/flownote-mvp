@@ -13,19 +13,19 @@ from langchain_core.messages import (  # type: ignore[import, import-untyped, re
     SystemMessage,
 )
 
-from backend.agent.chat.state import (
+from backend.agent.chat.state import (  # type: ignore[import, import-untyped, reportMissingImports]
     AgentState,
-)  # type: ignore[import, import-untyped, reportMissingImports]
+)
 from backend.agent.chat.tools import (  # type: ignore[import, import-untyped, reportMissingImports]
     deep_web_search_tool,
     search_documents_tool,
 )
-from backend.api.models.shared import (
+from backend.api.models.shared import (  # type: ignore[import, import-untyped, reportMissingImports]
     RATING_DOWN,
-)  # type: ignore[import, import-untyped, reportMissingImports]
-from backend.services.chat_service import (
+)
+from backend.services.chat_service import (  # type: ignore[import, import-untyped, reportMissingImports]
     get_chat_service,
-)  # type: ignore[import, import-untyped, reportMissingImports]
+)
 
 logger = logging.getLogger(__name__)
 
@@ -359,19 +359,30 @@ async def _run_search_agent(
                 )
         else:
             logger.info("[Planner] LLM이 도구 없이 자체 판단 가능으로 결론내렸습니다.")
-    except Exception as e:
-        # 디버깅을 위해 예외 메시지는 안전하게(truncate) 로그에 남긴다.
+    except (TimeoutError, ConnectionError) as e:
         logger.error(
-            "[Planner] LLM 추론 중 에러 발생",
+            "[Planner] LLM 네트워크/타임아웃 에러 발생",
             extra={
                 "error_type": type(e).__name__,
-                # PII 노출 방지를 위해 정제 및 잘라냄 (Pyre2 우회)
                 "error_msg": _safe_truncate_error_msg(e),
                 "security": "Traceback omitted for PII protection; error_msg sanitized and truncated",
             },
         )
         planner_failed = True
-        planner_error_message = "Planner 실행 중 오류가 발생했습니다. 검색 결과 없이 직접 응답을 시도합니다."
+        planner_error_message = "네트워크/통신 오류로 인해 Planner 실행에 실패했습니다. 기본 응답을 시도합니다."
+    except (ValueError, TypeError) as e:
+        logger.error(
+            "[Planner] LLM 응답 파싱/검증 에러 발생",
+            extra={
+                "error_type": type(e).__name__,
+                "error_msg": _safe_truncate_error_msg(e),
+                "security": "Traceback omitted for PII protection; error_msg sanitized and truncated",
+            },
+        )
+        planner_failed = True
+        planner_error_message = (
+            "파싱 오류로 인해 Planner 실행에 실패했습니다. 기본 응답을 시도합니다."
+        )
 
     raw_context = _truncate_context("".join(ctx_parts).strip())
     return {
@@ -395,7 +406,7 @@ def _build_responder_system_message(
 
 Answer the user's question clearly and accurately, summarizing the information logically.
 If you are provided with context below, use ONLY the provided context to answer.
-When utilizing the context, pay special attention to the graph connections and the 'relationships between notes'. 
+When utilizing the context, pay special attention to the graph connections and the 'relationships between notes'.
 Ensure your response synthesizes these relationships to provide a comprehensive explanation rather than just listing fragmented information.
 If the given context does not contain the answer, politely state that you cannot find the answer in the provided internal documents, and then answer cautiously based on your general knowledge.
 Do not mention the words "context" or "provided text" explicitly to the user.
@@ -411,9 +422,13 @@ If you used any document from the context, YOU MUST use inline citations in the 
 
 def should_fallback(state: AgentState) -> FallbackRoute:
     """
-    피드백 기반 Fallback 분기 라우터:
+    [KO] 피드백 기반 Fallback 분기 라우터:
     엄격한 시간적 윈도우(최근 FALLBACK_WINDOW_SIZE 회 세션) 내에서
     'down'이 기준치(FALLBACK_THRESHOLD) 이상이면 fallback_search, 아니면 standard_rag 반환.
+
+    [EN] Feedback-based Fallback Branch Router:
+    Within a strict temporal window (recent FALLBACK_WINDOW_SIZE sessions),
+    if 'down' feedback exceeds the FALLBACK_THRESHOLD, returns fallback_search; otherwise standard_rag.
     """
     feedback_history = state.get("feedback_history", [])
 
@@ -448,10 +463,15 @@ def router_edge(
     state: AgentState,
 ) -> Literal["standard_rag", "fallback_search", "responder"]:
     """
-    조건부 엣지(Conditional Edge):
+    [KO] 조건부 엣지(Conditional Edge):
     가장 마지막 Human 메시지의 의도를 파악하여
     단순 인사말인 경우 responder로 직행하고, 그렇지 않은 경우
     과거 피드백 기록에 따라 standard_rag 또는 fallback_search를 결정합니다.
+
+    [EN] Conditional Edge:
+    Analyzes the intent of the latest Human message.
+    If it's a simple greeting, routes directly to responder. Otherwise,
+    determines whether to route to standard_rag or fallback_search based on past feedback.
     """
     messages = state.get("messages", [])
     if not messages:
@@ -561,8 +581,11 @@ def _orchestrate_search_flow(
 
 async def standard_rag_node(state: AgentState) -> PlannerResult:
     """
-    기존 RAG (Standard RAG) 노드 — Thin Orchestrator:
+    [KO] 기존 RAG (Standard RAG) 노드 — Thin Orchestrator:
     - 상태를 수집하고 헬퍼를 호출하여 도구 실행 및 컨텍스트를 구성한 후 반환합니다.
+
+    [EN] Standard RAG Node — Thin Orchestrator:
+    - Collects state, invokes helpers to execute tools, constructs the context, and returns it.
     """
     logger.info("[Standard RAG Node] 실행 중... (도구 호출 및 검색 활용 계획)")
 
@@ -598,8 +621,11 @@ async def standard_rag_node(state: AgentState) -> PlannerResult:
 
 async def fallback_search_node(state: AgentState) -> PlannerResult:
     """
-    딥웹 검출(Fallback Search) 노드 — Thin Orchestrator:
+    [KO] 딥웹 검출(Fallback Search) 노드 — Thin Orchestrator:
     지속적인 부정적 피드백으로 감지되었을 때 호출되는 타빌리 검색 기반의 보완 노드입니다.
+
+    [EN] Fallback Search Node — Thin Orchestrator:
+    A supplementary node powered by Tavily search, invoked when persistent negative feedback is detected.
     """
     logger.info("[Fallback Search Node] 실행 중... (Tavily 연동 웹 검색 진행)")
 
@@ -635,12 +661,15 @@ async def fallback_search_node(state: AgentState) -> PlannerResult:
 
 async def responder_node(state: AgentState) -> Dict[str, Any]:
     """
-    응답 생성자(Responder) 노드 — Thin Orchestrator:
+    [KO] 응답 생성자(Responder) 노드 — Thin Orchestrator:
     - Planner가 수집한 context와 대화 이력을 융합하여 최종 응답을 생성합니다.
 
     [Engineering Decision - Coupling]
     현재 ChatService._get_user_context_prompt_text를 통해 사용자 맥락을 획득합니다.
     Phase 3 Integration 단계에서 퍼블릭 메서드 노출 또는 DI로 분리할 예정입니다.
+
+    [EN] Responder Node — Thin Orchestrator:
+    - Synthesizes the final response by merging the conversation history with the context collected by Planner.
     """
     logger.info("[Responder Node] 실행 중... (최종 응답 조립 및 생성)")
 
@@ -677,19 +706,30 @@ async def responder_node(state: AgentState) -> Dict[str, Any]:
             if hasattr(response, "content")
             else str(response)
         )
-    except Exception as e:
-        # 디버깅을 위해 예외 메시지는 안전하게(truncate) 로그에 남긴다.
+    except (TimeoutError, ConnectionError) as e:
         logger.error(
-            "[Responder Node] LLM 응답 생성 실패",
+            "[Responder Node] LLM 네트워크/타임아웃 에러 발생",
             extra={
                 "error_type": type(e).__name__,
-                # PII 노출 방지를 위해 정제 및 잘라냄 (Pyre2 우회)
                 "error_msg": _safe_truncate_error_msg(e),
                 "security": "Traceback omitted for PII protection; error_msg sanitized and truncated",
             },
         )
         final_answer = (
-            "죄송합니다, 현재 트래픽이 많거나 응답 생성 중에 내부적인 통신 오류가 발생했습니다. "
+            "죄송합니다, 현재 트래픽이 많거나 서버와의 통신 중 지연이 발생했습니다. "
+            "잠시 후 다시 시도해 주시기 바랍니다."
+        )
+    except (ValueError, TypeError) as e:
+        logger.error(
+            "[Responder Node] LLM 응답 파싱/검증 에러 발생",
+            extra={
+                "error_type": type(e).__name__,
+                "error_msg": _safe_truncate_error_msg(e),
+                "security": "Traceback omitted for PII protection; error_msg sanitized and truncated",
+            },
+        )
+        final_answer = (
+            "죄송합니다, AI 모델의 응답을 처리하는 중 오류가 발생했습니다. "
             "잠시 후 다시 시도해 주시기 바랍니다."
         )
 

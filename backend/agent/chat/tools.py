@@ -9,14 +9,14 @@ import os
 from collections.abc import Sized
 from typing import Any, Dict, Optional, TypedDict, cast
 
-from langchain_core.tools import (
+from langchain_core.tools import (  # type: ignore[import, import-untyped, reportMissingImports]
     tool,
-)  # type: ignore[import, import-untyped, reportMissingImports]
+)
 from tavily import TavilyClient
 
-from backend.services.hybrid_search_service import (
+from backend.services.hybrid_search_service import (  # type: ignore[import, import-untyped, reportMissingImports]
     get_hybrid_search_service,
-)  # type: ignore[import, import-untyped, reportMissingImports]
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,13 +72,12 @@ def _build_k_logging_extra(tool_name: str, k: Any) -> Dict[str, Any]:
         # 숫자형(int, float, Decimal, numpy 스칼라 등)은
         # 극한의 수치에 의한 로그 부하 방지 및 지수 표기법 유지를 위해 헬퍼로 포맷팅
         extra["raw_k_value"] = _format_numeric_safe(k)
-    else:
+    elif isinstance(k, Sized):
         # 그 외 문자열이나 구조화된 데이터는 PII 유출 우려가 있으므로 값 대신 길이만 보존
         # Sized 구현체인지 명시적으로 검사하여 제너레이터 등에서 예외 발생 오버헤드 방지
-        if isinstance(k, Sized):
-            extra["raw_k_length"] = len(k)
-        else:
-            extra["raw_k_length"] = "unknown"
+        extra["raw_k_length"] = len(k)
+    else:
+        extra["raw_k_length"] = "unknown"
     return extra
 
 
@@ -268,9 +267,13 @@ def _normalize_doc(doc: Any) -> SerializedDoc:
 @tool
 async def search_documents_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> dict:
     """
-    RAG 기반 사내 문서 검색 도구입니다.
+    [KO] RAG 기반 사내 문서 검색 도구입니다.
     사용자의 질문이나 분석 의도와 관련된 지식 베이스 문서를 검색합니다.
     분석에 필요한 시스템, 정책, 특정 문서 정보가 필요할 때 이 도구를 호출하세요.
+
+    [EN] RAG-based internal document search tool.
+    Searches the knowledge base for documents related to the user's query or analysis intent.
+    Call this tool when you need specific document information, policies, or system details.
 
     Args:
         query (str): 검색할 핵심 질의어, 키워드 또는 전체 문장.
@@ -301,11 +304,9 @@ async def search_documents_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> d
             serialized_docs.append(safe_doc)
 
             # 단일 문서 최대 길이 적용
-            content = safe_doc["content"]
-            content_str = str(content)
+            content_str = safe_doc["content"]
             if len(content_str) > _MAX_DOC_CONTENT_CHARS:
-                # [Optimization] Pyre2 slice False Positive 방지를 위한 명시적 str 변환 후 조작
-                content_str = str(content_str[:_MAX_DOC_CONTENT_CHARS]) + "...(truncated)"  # type: ignore[index]
+                content_str = f"{content_str[:_MAX_DOC_CONTENT_CHARS]}...(truncated)"  # type: ignore[index]
 
             # `_normalize_doc` Contract: metadata는 항상 dict (SerializedDoc 타입 보장)
             metadata = safe_doc["metadata"]
@@ -321,7 +322,7 @@ async def search_documents_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> d
         )
         return {"context": final_context, "docs": serialized_docs}
 
-    except Exception as e:
+    except (ValueError, RuntimeError, OSError) as e:
         # [Overall Comment 3 / Comment 2 반영]
         # 상세 예외 내용(str(e))은 로그에만 기록하고, 사용자/LLM에게는 고정 메시지만 반환
         # → 경로·서비스명·인프라 정보 누출 방지
@@ -338,9 +339,13 @@ async def search_documents_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> d
 @tool
 async def deep_web_search_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> dict:
     """
-    Tavily API 기반 Deep Web Search 도구입니다.
+    [KO] Tavily API 기반 Deep Web Search 도구입니다.
     기존 내부 문서 검색(RAG)으로 원하는 정보를 찾지 못했거나 부정적인 피드백이 누적되었을 때,
     최신 외부 지식이나 광범위한 웹 문서를 검색하기 위해 이 도구를 호출하세요.
+
+    [EN] Deep Web Search tool powered by the Tavily API.
+    Call this tool to search for the latest external knowledge or extensive web documents
+    when internal search (RAG) fails or accumulates negative feedback.
 
     Args:
         query (str): 검색할 핵심 질의어, 키워드 또는 전체 문장.
@@ -379,9 +384,7 @@ async def deep_web_search_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> di
         for i, item in enumerate(results, 1):
             content_str = str(item.get("content", ""))
             if len(content_str) > _MAX_DOC_CONTENT_CHARS:
-                content_str = (
-                    str(content_str[:_MAX_DOC_CONTENT_CHARS]) + "...(truncated)"
-                )
+                content_str = f"{content_str[:_MAX_DOC_CONTENT_CHARS]}...(truncated)"
 
             source = str(item.get("url", "unknown"))
             formatted_results.append(
@@ -407,7 +410,7 @@ async def deep_web_search_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> di
         )
         return {"context": final_context, "docs": serialized_docs}
 
-    except Exception as e:
+    except (TimeoutError, ConnectionError, RuntimeError) as e:
         logger.error(
             "[Tool] 웹 검색 중 오류 발생",
             extra=_build_log_extra(None, error_type=type(e).__name__),
