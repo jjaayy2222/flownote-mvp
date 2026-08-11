@@ -19,6 +19,9 @@ Phase 4-2: GraphRAG 하이브리드 라우터
 import logging
 from typing import Any, Dict, List, Optional, Union
 
+from backend.agent.error_utils import (  # type: ignore[import, import-untyped, reportMissingImports]
+    log_agent_error,
+)
 from backend.core.config.graph import (
     DEFAULT_MAX_TRAVERSAL_DEPTH,
     ENV_MAX_TRAVERSAL_DEPTH,
@@ -175,15 +178,12 @@ def _extract_seed_node_ids(
                 node_id_str = str(node_id)
                 coerced_count += 1
             except (ValueError, TypeError) as e:
-                logger.error(
-                    "[GRAPH_ROUTER] Failed to coerce seed node id from %s at index %d to str; skipping.",
-                    source_field or "<unknown>",
-                    idx,
-                    exc_info=True,
-                    extra={
-                        "action": "coerce_seed_node",
-                        "error_type": type(e).__name__,
-                    },
+                log_agent_error(
+                    logger,
+                    "[GRAPH_ROUTER] Failed to coerce seed node id from %s at index %d to str; skipping."
+                    % (source_field or "<unknown>", idx),
+                    e,
+                    extra_metadata={"action": "coerce_seed_node"},
                 )
                 continue
         else:
@@ -386,10 +386,22 @@ class GraphHybridRouter:
                             _serialize_neighbor_node(neighbor_id, attrs)
                         )
         except (ValueError, KeyError, OSError, RuntimeError) as e:
-            logger.exception(
+            log_agent_error(
+                logger,
                 "[GRAPH_ROUTER] Unexpected error during graph traversal. "
                 "Returning partially enriched results (or original vector_results).",
-                extra={"action": "graph_traversal", "error_type": type(e).__name__},
+                e,
+                extra_metadata={"action": "graph_traversal"},
+            )
+            return graph_enriched
+        except BaseException as e:
+            # [Last-Resort] 그래프 라이브러리 내부에서 발생하는 예상치 못한 시스템 예외 방어름
+            log_agent_error(
+                logger,
+                "[GRAPH_ROUTER] 예상치 못한 런타임 오류 (Last-Resort Handler). "
+                "Returning partially enriched results.",
+                e,
+                extra_metadata={"action": "graph_traversal"},
             )
             return graph_enriched
 

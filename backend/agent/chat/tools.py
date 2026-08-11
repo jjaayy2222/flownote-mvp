@@ -14,6 +14,9 @@ from langchain_core.tools import (  # type: ignore[import, import-untyped, repor
 )
 from tavily import TavilyClient
 
+from backend.agent.error_utils import (  # type: ignore[import, import-untyped, reportMissingImports]
+    log_agent_error,
+)
 from backend.services.hybrid_search_service import (  # type: ignore[import, import-untyped, reportMissingImports]
     get_hybrid_search_service,
 )
@@ -323,15 +326,29 @@ async def search_documents_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> d
         return {"context": final_context, "docs": serialized_docs}
 
     except (ValueError, RuntimeError, OSError) as e:
-        # [Overall Comment 3 / Comment 2 반영]
         # 상세 예외 내용(str(e))은 로그에만 기록하고, 사용자/LLM에게는 고정 메시지만 반환
         # → 경로·서비스명·인프라 정보 누출 방지
-        logger.error(
-            "[Tool] 검색 중 오류 발생",
-            extra=_build_log_extra(None, error_type=type(e).__name__),
+        log_agent_error(
+            logger,
+            "[Tool] 도큐 검색 중 오류 발생",
+            e,
+            extra_metadata={"action": "search_documents"},
         )
         return {
             "context": "문서 검색 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+            "docs": [],
+        }
+    except BaseException as e:
+        # [Last-Resort] 위에서 명시하지 않은 예상치 못한 런타임 오류 방어름
+        # (HybridSearchService 내부에서 발생하는 서드파티 예외 등)
+        log_agent_error(
+            logger,
+            "[Tool] 예상치 못한 런타임 오류 발생 (Last-Resort Handler)",
+            e,
+            extra_metadata={"action": "search_documents"},
+        )
+        return {
+            "context": "문서 검색 중 예상치 못한 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
             "docs": [],
         }
 
@@ -411,11 +428,25 @@ async def deep_web_search_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> di
         return {"context": final_context, "docs": serialized_docs}
 
     except (TimeoutError, ConnectionError, RuntimeError) as e:
-        logger.error(
+        log_agent_error(
+            logger,
             "[Tool] 웹 검색 중 오류 발생",
-            extra=_build_log_extra(None, error_type=type(e).__name__),
+            e,
+            extra_metadata={"action": "deep_web_search"},
         )
         return {
             "context": "웹 검색 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+            "docs": [],
+        }
+    except BaseException as e:
+        # [Last-Resort] Tavily 라이브러리 내부에서 발생하는 예상치 못한 예외 방어름
+        log_agent_error(
+            logger,
+            "[Tool] 예상치 못한 런타임 오류 발생 (Last-Resort Handler)",
+            e,
+            extra_metadata={"action": "deep_web_search"},
+        )
+        return {
+            "context": "웹 검색 중 예상치 못한 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
             "docs": [],
         }
