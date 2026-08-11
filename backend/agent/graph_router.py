@@ -394,7 +394,7 @@ class GraphHybridRouter:
                 extra_metadata={"action": "graph_traversal"},
             )
             return graph_enriched
-        except BaseException as e:
+        except Exception as e:
             # [Last-Resort] 그래프 라이브러리 내부에서 발생하는 예상치 못한 시스템 예외 방어름
             log_agent_error(
                 logger,

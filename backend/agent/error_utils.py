@@ -56,7 +56,11 @@ _SECURITY_NOTICE: str = (
 )
 
 # log_agent_error()에서 허용하는 로그 레벨 집합
-_SUPPORTED_LOG_LEVELS: frozenset = frozenset({"error", "warning", "critical"})
+_SUPPORTED_LOG_LEVELS: frozenset = frozenset(
+    {"error", "warning", "critical", "info", "debug"}
+)
+_DEFAULT_LOG_LEVEL: str = "error"
+_RESERVED_EXTRA_KEYS: frozenset = frozenset({"error_type", "error_msg", "security"})
 
 
 def _sanitize_pii(text: str) -> str:
@@ -70,9 +74,7 @@ def _sanitize_pii(text: str) -> str:
     return sanitized
 
 
-def sanitize_error_msg(
-    exc: BaseException, max_chars: int = _MAX_ERROR_MSG_CHARS
-) -> str:
+def sanitize_error_msg(exc: Exception, max_chars: int = _MAX_ERROR_MSG_CHARS) -> str:
     """
     [KO] 예외 객체의 문자열 표현을 PII 마스킹 처리 후 최대 길이로 잘라 반환합니다.
 
@@ -92,13 +94,24 @@ def sanitize_error_msg(
     return "".join(islice(sanitized, max_chars))
 
 
+def get_safe_error_summary(exc: Exception) -> str:
+    """
+    [KO] 예외의 PII 정제 및 자르기 로직을 래핑하는 헬퍼 함수입니다.
+    이 함수를 통해 log_agent_error가 로깅에만 집중하도록 유지합니다.
+
+    [EN] Helper function wrapping PII sanitization and truncation logic.
+    Keeps log_agent_error focused solely on logging.
+    """
+    return sanitize_error_msg(exc)
+
+
 def log_agent_error(
     logger_instance: logging.Logger,
     context_label: str,
-    exc: BaseException,
+    exc: Exception,
     extra_metadata: Optional[Dict[str, Any]] = None,
     *,
-    level: str = "error",
+    level: str = _DEFAULT_LOG_LEVEL,
 ) -> None:
     """
     [KO] 에이전트 경계 레이어에서 발생한 예외를 PII-안전하게 구조화된 포맷으로 로깅합니다.
@@ -121,26 +134,33 @@ def log_agent_error(
         extra_metadata: 추가적인 비민감 메타데이터 딕셔너리.
                         (예: {"action": "graph_traversal", "tool": "search_documents_tool"})
                         / Additional non-sensitive metadata dict to include in the log.
-        level:          로그 레벨 문자열. "error" | "warning" | "critical" (기본값: "error").
-                        / Log level string. Must be one of the supported levels.
-
-    Raises:
-        ValueError: level 파라미터가 지원되지 않는 값인 경우.
-                    / If `level` is not in the set of supported log levels.
+        level:          로그 레벨 문자열. "error" | "warning" | "critical" 등 (기본값: "error").
+                        지원되지 않는 경우 기본값("error")으로 롤백됩니다.
+                        / Log level string. Falls back to default if unsupported.
     """
     if level not in _SUPPORTED_LOG_LEVELS:
-        raise ValueError(
-            f"Unsupported log level '{level}'. Must be one of: {sorted(_SUPPORTED_LOG_LEVELS)}"
+        logger_instance.warning(
+            f"Unsupported log level '{level}' for log_agent_error. Falling back to '{_DEFAULT_LOG_LEVEL}'."
         )
+        level = _DEFAULT_LOG_LEVEL
 
-    # 보안 키를 기본으로 구성하고, 호출부의 extra_metadata는 앞에 붙여 보안 키가 덮어써지지 않게 함
     extra: Dict[str, Any] = {
         "error_type": type(exc).__name__,
-        "error_msg": sanitize_error_msg(exc),
+        "error_msg": get_safe_error_summary(exc),
         "security": _SECURITY_NOTICE,
     }
+
     if extra_metadata:
-        extra = {**extra_metadata, **extra}
+        if overlap := _RESERVED_EXTRA_KEYS & extra_metadata.keys():
+            logger_instance.warning(
+                f"[log_agent_error] extra_metadata contains reserved keys which will be ignored: {overlap}"
+            )
+            safe_extra = {
+                k: v for k, v in extra_metadata.items() if k not in _RESERVED_EXTRA_KEYS
+            }
+            extra |= safe_extra
+        else:
+            extra |= extra_metadata
 
     log_fn = getattr(logger_instance, level)
     log_fn(context_label, extra=extra)
