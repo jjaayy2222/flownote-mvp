@@ -15,6 +15,7 @@ from langchain_core.tools import (  # type: ignore[import, import-untyped, repor
 from tavily import TavilyClient
 
 from backend.agent.error_utils import (  # type: ignore[import, import-untyped, reportMissingImports]
+    is_system_error,
     log_agent_error,
 )
 from backend.services.hybrid_search_service import (  # type: ignore[import, import-untyped, reportMissingImports]
@@ -427,7 +428,9 @@ async def deep_web_search_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> di
         )
         return {"context": final_context, "docs": serialized_docs}
 
-    except (TimeoutError, ConnectionError, RuntimeError) as e:
+    except Exception as e:
+        if is_system_error(e):
+            raise
         log_agent_error(
             logger,
             "[Tool] 웹 검색 중 오류 발생",

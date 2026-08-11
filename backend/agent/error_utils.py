@@ -105,6 +105,19 @@ def get_safe_error_summary(exc: Exception) -> str:
     return sanitize_error_msg(exc)
 
 
+def is_system_error(exc: BaseException) -> bool:
+    """
+    [KO] 시스템 레벨의 예외(비동기 취소, 키보드 인터럽트, 프로그램 종료 등)인지 확인합니다.
+    이러한 예외는 포괄적(catch-all) 에러 핸들러에서 삼키지 않고 즉시 재발생(raise)시켜야 합니다.
+
+    [EN] Checks whether the exception is a system-level error that must be propagated
+    and not swallowed by catch-all exception handlers.
+    """
+    import asyncio
+
+    return isinstance(exc, (KeyboardInterrupt, SystemExit, asyncio.CancelledError))
+
+
 def log_agent_error(
     logger_instance: logging.Logger,
     context_label: str,
