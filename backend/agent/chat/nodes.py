@@ -20,6 +20,9 @@ from backend.agent.chat.tools import (  # type: ignore[import, import-untyped, r
     deep_web_search_tool,
     search_documents_tool,
 )
+from backend.agent.error_utils import (  # type: ignore[import, import-untyped, reportMissingImports]
+    log_agent_error,
+)
 from backend.api.models.shared import (  # type: ignore[import, import-untyped, reportMissingImports]
     RATING_DOWN,
 )
@@ -248,11 +251,15 @@ def _safe_truncate_error_msg(
     e: Exception, max_chars: int = _MAX_ERROR_MSG_CHARS
 ) -> str:
     """
-    Exception 객체의 PII 유출을 방지하기 위해 마스킹 처리 후 앞부분만 안전하게 잘라 반환합니다.
+    [KO] 하위 호환성을 위해 유지되는 내부 래퍼.
+    신규 코드는 backend.agent.error_utils.sanitize_error_msg 를 직접 사용하세요.
+
+    [EN] Internal wrapper kept for backward compatibility.
+    New code should use backend.agent.error_utils.sanitize_error_msg directly.
     """
-    sanitized = _sanitize_pii_in_text(str(e))
-    # Pyre2 String Slicing TypeError 우회를 위해 islice 사용
-    return "".join(islice(sanitized, max_chars))
+    from backend.agent.error_utils import sanitize_error_msg
+
+    return sanitize_error_msg(e, max_chars)
 
 
 async def _process_single_tool_call(
@@ -360,29 +367,27 @@ async def _run_search_agent(
         else:
             logger.info("[Planner] LLM이 도구 없이 자체 판단 가능으로 결론내렸습니다.")
     except (TimeoutError, ConnectionError) as e:
-        logger.error(
-            "[Planner] LLM 네트워크/타임아웃 에러 발생",
-            extra={
-                "error_type": type(e).__name__,
-                "error_msg": _safe_truncate_error_msg(e),
-                "security": "Traceback omitted for PII protection; error_msg sanitized and truncated",
-            },
-        )
+        log_agent_error(logger, "[Planner] LLM 네트워크/타임아웃 에러 발생", e)
         planner_failed = True
         planner_error_message = "네트워크/통신 오류로 인해 Planner 실행에 실패했습니다. 기본 응답을 시도합니다."
     except (ValueError, TypeError) as e:
-        logger.error(
-            "[Planner] LLM 응답 파싱/검증 에러 발생",
-            extra={
-                "error_type": type(e).__name__,
-                "error_msg": _safe_truncate_error_msg(e),
-                "security": "Traceback omitted for PII protection; error_msg sanitized and truncated",
-            },
-        )
+        log_agent_error(logger, "[Planner] LLM 응답 파싱/검증 에러 발생", e)
         planner_failed = True
         planner_error_message = (
             "파싱 오류로 인해 Planner 실행에 실패했습니다. 기본 응답을 시도합니다."
         )
+    except BaseException as e:
+        # [Last-Resort] 위에서 명시적으로 설정한 예외 이외의 예상치 못한 런타임 오류 방어름
+        # (LangChain 프로바이더 전용 예외 등)
+        # 에이전트가 크래시되지 않고 우아하게 성능 저하(Graceful Degradation)하도록 보장
+        log_agent_error(
+            logger,
+            "[Planner] 예상치 못한 런타임 오류 발생 (Last-Resort Handler)",
+            e,
+            extra_metadata={"action": "planner_llm_invoke"},
+        )
+        planner_failed = True
+        planner_error_message = "예상치 못한 오류로 인해 Planner 실행에 실패했습니다. 기본 응답을 시도합니다."
 
     raw_context = _truncate_context("".join(ctx_parts).strip())
     return {
@@ -707,29 +712,27 @@ async def responder_node(state: AgentState) -> Dict[str, Any]:
             else str(response)
         )
     except (TimeoutError, ConnectionError) as e:
-        logger.error(
-            "[Responder Node] LLM 네트워크/타임아웃 에러 발생",
-            extra={
-                "error_type": type(e).__name__,
-                "error_msg": _safe_truncate_error_msg(e),
-                "security": "Traceback omitted for PII protection; error_msg sanitized and truncated",
-            },
-        )
+        log_agent_error(logger, "[Responder Node] LLM 네트워크/타임아웃 에러 발생", e)
         final_answer = (
             "죄송합니다, 현재 트래픽이 많거나 서버와의 통신 중 지연이 발생했습니다. "
             "잠시 후 다시 시도해 주시기 바랍니다."
         )
     except (ValueError, TypeError) as e:
-        logger.error(
-            "[Responder Node] LLM 응답 파싱/검증 에러 발생",
-            extra={
-                "error_type": type(e).__name__,
-                "error_msg": _safe_truncate_error_msg(e),
-                "security": "Traceback omitted for PII protection; error_msg sanitized and truncated",
-            },
-        )
+        log_agent_error(logger, "[Responder Node] LLM 응답 파싱/검증 에러 발생", e)
         final_answer = (
             "죄송합니다, AI 모델의 응답을 처리하는 중 오류가 발생했습니다. "
+            "잠시 후 다시 시도해 주시기 바랍니다."
+        )
+    except BaseException as e:
+        # [Last-Resort] 에이전트가 완전히 크래시되는 대신 폴백 메시지를 반환하여 Graceful Degradation 보장
+        log_agent_error(
+            logger,
+            "[Responder Node] 예상치 못한 런타임 오류 발생 (Last-Resort Handler)",
+            e,
+            extra_metadata={"action": "responder_llm_invoke"},
+        )
+        final_answer = (
+            "죄송합니다, 예상치 못한 내부 오류가 발생했습니다. "
             "잠시 후 다시 시도해 주시기 바랍니다."
         )
 
