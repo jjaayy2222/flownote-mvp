@@ -338,7 +338,7 @@ async def search_documents_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> d
             "context": "문서 검색 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
             "docs": [],
         }
-    except BaseException as e:
+    except Exception as e:
         # [Last-Resort] 위에서 명시하지 않은 예상치 못한 런타임 오류 방어름
         # (HybridSearchService 내부에서 발생하는 서드파티 예외 등)
         log_agent_error(
@@ -438,7 +438,7 @@ async def deep_web_search_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> di
             "context": "웹 검색 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
             "docs": [],
         }
-    except BaseException as e:
+    except Exception as e:
         # [Last-Resort] Tavily 라이브러리 내부에서 발생하는 예상치 못한 예외 방어름
         log_agent_error(
             logger,
