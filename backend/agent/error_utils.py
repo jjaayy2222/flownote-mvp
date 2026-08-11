@@ -56,11 +56,12 @@ _SECURITY_NOTICE: str = (
 )
 
 # log_agent_error()에서 허용하는 로그 레벨 집합
-_SUPPORTED_LOG_LEVELS: frozenset = frozenset(
-    {"error", "warning", "critical", "info", "debug"}
-)
-_DEFAULT_LOG_LEVEL: str = "error"
-_RESERVED_EXTRA_KEYS: frozenset = frozenset({"error_type", "error_msg", "security"})
+_SUPPORTED_LOG_LEVELS = frozenset({"error", "warning", "critical", "info", "debug"})
+_DEFAULT_LOG_LEVEL = "error"
+_RESERVED_EXTRA_KEYS = frozenset({"error_type", "error_msg", "security"})
+
+# 캐싱된 asyncio.CancelledError (반복 import 방지용)
+_CANCELLED_ERROR = None
 
 
 def _sanitize_pii(text: str) -> str:
@@ -113,9 +114,16 @@ def is_system_error(exc: BaseException) -> bool:
     [EN] Checks whether the exception is a system-level error that must be propagated
     and not swallowed by catch-all exception handlers.
     """
-    import asyncio
+    if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+        return True
 
-    return isinstance(exc, (KeyboardInterrupt, SystemExit, asyncio.CancelledError))
+    global _CANCELLED_ERROR
+    if _CANCELLED_ERROR is None:
+        import asyncio
+
+        _CANCELLED_ERROR = asyncio.CancelledError
+
+    return isinstance(exc, _CANCELLED_ERROR)
 
 
 def log_agent_error(
