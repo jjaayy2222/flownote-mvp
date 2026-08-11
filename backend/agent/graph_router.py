@@ -16,6 +16,7 @@ Phase 4-2: GraphRAG 하이브리드 라우터
   - stateless_load 컨텍스트 매니저를 사용하여 조회 후 인메모리 데이터를 즉시 정리.
 """
 
+import asyncio
 import logging
 from typing import Any, Dict, List, Optional, Union
 
@@ -394,6 +395,8 @@ class GraphHybridRouter:
                 extra_metadata={"action": "graph_traversal"},
             )
             return graph_enriched
+        except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+            raise
         except Exception as e:
             # [Last-Resort] 그래프 라이브러리 내부에서 발생하는 예상치 못한 시스템 예외 방어름
             log_agent_error(

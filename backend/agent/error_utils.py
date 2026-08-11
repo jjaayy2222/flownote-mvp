@@ -134,7 +134,7 @@ def log_agent_error(
         extra_metadata: 추가적인 비민감 메타데이터 딕셔너리.
                         (예: {"action": "graph_traversal", "tool": "search_documents_tool"})
                         / Additional non-sensitive metadata dict to include in the log.
-        level:          로그 레벨 문자열. "error" | "warning" | "critical" 등 (기본값: "error").
+        level:          로그 레벨 문자열. "error" | "warning" | "critical" | "info" | "debug" 등 (기본값: "error").
                         지원되지 않는 경우 기본값("error")으로 롤백됩니다.
                         / Log level string. Falls back to default if unsupported.
     """
