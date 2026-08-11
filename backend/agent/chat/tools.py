@@ -428,9 +428,7 @@ async def deep_web_search_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> di
         )
         return {"context": final_context, "docs": serialized_docs}
 
-    except Exception as e:
-        if is_system_error(e):
-            raise
+    except (TimeoutError, ConnectionError, RuntimeError) as e:
         log_agent_error(
             logger,
             "[Tool] 웹 검색 중 오류 발생",
@@ -442,6 +440,8 @@ async def deep_web_search_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> di
             "docs": [],
         }
     except Exception as e:
+        if is_system_error(e):
+            raise
         # [Last-Resort] Tavily 라이브러리 내부에서 발생하는 예상치 못한 예외 방어름
         log_agent_error(
             logger,
