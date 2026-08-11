@@ -1,5 +1,6 @@
 # backend/agent/chat/nodes.py
 
+import asyncio
 import logging
 import numbers
 import re
@@ -376,6 +377,8 @@ async def _run_search_agent(
         planner_error_message = (
             "파싱 오류로 인해 Planner 실행에 실패했습니다. 기본 응답을 시도합니다."
         )
+    except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+        raise
     except Exception as e:
         # [Last-Resort] 위에서 명시적으로 설정한 예외 이외의 예상치 못한 런타임 오류 방어름
         # (LangChain 프로바이더 전용 예외 등)
@@ -723,6 +726,8 @@ async def responder_node(state: AgentState) -> Dict[str, Any]:
             "죄송합니다, AI 모델의 응답을 처리하는 중 오류가 발생했습니다. "
             "잠시 후 다시 시도해 주시기 바랍니다."
         )
+    except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+        raise
     except Exception as e:
         # [Last-Resort] 에이전트가 완전히 크래시되는 대신 폴백 메시지를 반환하여 Graceful Degradation 보장
         log_agent_error(
