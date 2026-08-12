@@ -7,13 +7,14 @@
 """
 
 import asyncio
+import hashlib
 import logging
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from backend.agent.error_utils import is_system_error, log_agent_error
+from backend.agent.error_utils import get_safe_file_id, is_system_error, log_agent_error
 
 logger = logging.getLogger(__name__)
 
@@ -82,13 +83,10 @@ class FlowNoteCLI:
             [KO] 분류 결과 객체(ClassifyResponse), 실패 시 None / [EN] Classification result object (ClassifyResponse), or None on failure
         """
         try:
-            import hashlib
-
             path_obj = Path(file_path)
 
             # 절대 경로 노출을 막으면서도 추적 가능하도록 경로 기반의 해시 식별자 생성
-            path_hash = hashlib.sha256(file_path.encode("utf-8")).hexdigest()[:12]
-            log_file_id = f"{path_obj.name}_{path_hash}"
+            log_file_id = get_safe_file_id(file_path)
 
             if not path_obj.exists():
                 logger.warning(f"File not found: {log_file_id}")
