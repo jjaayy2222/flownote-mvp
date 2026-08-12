@@ -21,10 +21,12 @@ Design Principles:
   - Truncation strategy and security metadata are centrally managed here.
 """
 
+import hashlib
 import logging
 import re
 from itertools import islice
-from typing import TYPE_CHECKING, Any, Dict, Optional, Type
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, Optional, Type, Union
 
 if TYPE_CHECKING:
     import asyncio
@@ -78,6 +80,20 @@ def _get_cancelled_error_type() -> "Type[asyncio.CancelledError]":
 
         _CANCELLED_ERROR = asyncio.CancelledError
     return _CANCELLED_ERROR
+
+
+def get_safe_file_id(file_path: Union[str, Path]) -> str:
+    """
+    [KO] 파일의 경로를 기반으로 안전한 해시 식별자를 생성합니다.
+    경로를 정규화(resolve)하여 동일 파일에 대해 항상 같은 식별자를 반환합니다.
+    절대 경로 노출(PII)을 방지하면서도 로그 추적성을 유지할 때 사용합니다.
+
+    [EN] Generates a safe hashed identifier based on the file's resolved path.
+    Used to maintain log traceability without exposing absolute paths (PII).
+    """
+    path_obj = Path(file_path).resolve()
+    path_hash = hashlib.sha256(str(path_obj).encode("utf-8")).hexdigest()[:12]
+    return f"{path_obj.name}_{path_hash}"
 
 
 def _sanitize_pii(text: str) -> str:
