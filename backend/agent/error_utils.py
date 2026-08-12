@@ -24,7 +24,10 @@ Design Principles:
 import logging
 import re
 from itertools import islice
-from typing import Any, Dict, Optional, Type
+from typing import TYPE_CHECKING, Any, Dict, Optional, Type, cast
+
+if TYPE_CHECKING:
+    import asyncio
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 모듈 상수 (하드코딩 완전 배제)
@@ -61,7 +64,7 @@ _DEFAULT_LOG_LEVEL = "error"
 _RESERVED_EXTRA_KEYS = frozenset({"error_type", "error_msg", "security"})
 
 # 캐싱된 asyncio.CancelledError (반복 import 방지용)
-_CANCELLED_ERROR: Optional[Type[BaseException]] = None
+_CANCELLED_ERROR: "Optional[Type[asyncio.CancelledError]]" = None
 
 
 def _get_cancelled_error_type() -> Type[BaseException]:
@@ -73,7 +76,7 @@ def _get_cancelled_error_type() -> Type[BaseException]:
     if _CANCELLED_ERROR is None:
         import asyncio
 
-        _CANCELLED_ERROR = asyncio.CancelledError
+        _CANCELLED_ERROR = cast("Type[asyncio.CancelledError]", asyncio.CancelledError)
     return _CANCELLED_ERROR
 
 
