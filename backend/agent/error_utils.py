@@ -24,7 +24,7 @@ Design Principles:
 import logging
 import re
 from itertools import islice
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Type
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 모듈 상수 (하드코딩 완전 배제)
@@ -61,7 +61,20 @@ _DEFAULT_LOG_LEVEL = "error"
 _RESERVED_EXTRA_KEYS = frozenset({"error_type", "error_msg", "security"})
 
 # 캐싱된 asyncio.CancelledError (반복 import 방지용)
-_CANCELLED_ERROR = None
+_CANCELLED_ERROR: Optional[Type[BaseException]] = None
+
+
+def _get_cancelled_error_type() -> Type[BaseException]:
+    """
+    [KO] asyncio.CancelledError 타입을 지연(lazy) 로드하여 캐싱합니다.
+    동기 모듈에서 불필요한 asyncio 의존성을 피하기 위해 사용됩니다.
+    """
+    global _CANCELLED_ERROR
+    if _CANCELLED_ERROR is None:
+        import asyncio
+
+        _CANCELLED_ERROR = asyncio.CancelledError
+    return _CANCELLED_ERROR
 
 
 def _sanitize_pii(text: str) -> str:
@@ -117,13 +130,7 @@ def is_system_error(exc: BaseException) -> bool:
     if isinstance(exc, (KeyboardInterrupt, SystemExit)):
         return True
 
-    global _CANCELLED_ERROR
-    if _CANCELLED_ERROR is None:
-        import asyncio
-
-        _CANCELLED_ERROR = asyncio.CancelledError
-
-    return isinstance(exc, _CANCELLED_ERROR)
+    return isinstance(exc, _get_cancelled_error_type())
 
 
 def log_agent_error(
