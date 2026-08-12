@@ -428,7 +428,7 @@ async def deep_web_search_tool(query: str, k: int = _DEFAULT_SEARCH_LIMIT) -> di
         )
         return {"context": final_context, "docs": serialized_docs}
 
-    except (TimeoutError, ConnectionError, RuntimeError) as e:
+    except (TimeoutError, ConnectionError) as e:
         log_agent_error(
             logger,
             "[Tool] 웹 검색 중 오류 발생",
