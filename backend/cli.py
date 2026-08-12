@@ -84,12 +84,12 @@ class FlowNoteCLI:
         try:
             path_obj = Path(file_path)
             if not path_obj.exists():
-                logger.warning(f"File not found: {file_path}")
+                logger.warning(f"File not found: {path_obj.name}")
                 print(f"❌ 파일을 찾을 수 없습니다: {path_obj.name}")
                 return None
 
             if not path_obj.is_file():
-                logger.warning(f"Not a file: {file_path}")
+                logger.warning(f"Not a file: {path_obj.name}")
                 print(f"❌ 유효한 파일이 아닙니다: {path_obj.name}")
                 return None
 
@@ -98,13 +98,17 @@ class FlowNoteCLI:
                 with open(file_path, "r", encoding="utf-8") as f:
                     text = f.read()
             except UnicodeDecodeError as e:
-                logger.error(f"Encoding error for {file_path}: {e}")
+                log_agent_error(
+                    logger, "파일 인코딩 오류", e, {"file_name": path_obj.name}
+                )
                 print(
                     f"❌ 지원하지 않는 인코딩이거나 텍스트 파일이 아닙니다: {path_obj.name}"
                 )
                 return None
             except OSError as e:
-                logger.error(f"File IO error for {file_path}: {e}")
+                log_agent_error(
+                    logger, "파일 읽기 시스템 오류", e, {"file_name": path_obj.name}
+                )
                 print(f"❌ 파일을 읽는 중 시스템 오류가 발생했습니다: {path_obj.name}")
                 return None
 
