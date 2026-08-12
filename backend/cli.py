@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from backend.agent.error_utils import is_system_error, log_agent_error
+
 logger = logging.getLogger(__name__)
 
 # Service imports
@@ -55,8 +57,15 @@ class FlowNoteCLI:
 
                 if isinstance(raw_occ := status.get("occupation"), str):
                     valid_occ = raw_occ
-        except Exception:
-            logger.exception("⚠️ 사용자 정보 조회 실패 (무시)")
+        except Exception as e:
+            if is_system_error(e):
+                raise
+            log_agent_error(
+                logger,
+                "사용자 정보 조회 실패 (무시)",
+                e,
+                extra_metadata={"action": "get_user_context"},
+            )
 
         return UserContextData(occupation=valid_occ, areas=valid_areas)
 
@@ -75,24 +84,28 @@ class FlowNoteCLI:
         try:
             path_obj = Path(file_path)
             if not path_obj.exists():
-                print(f"❌ 파일을 찾을 수 없습니다: {file_path}")
+                logger.warning(f"File not found: {file_path}")
+                print(f"❌ 파일을 찾을 수 없습니다: {path_obj.name}")
                 return None
 
             if not path_obj.is_file():
-                print(f"❌ 파일이 아닙니다: {file_path}")
+                logger.warning(f"Not a file: {file_path}")
+                print(f"❌ 유효한 파일이 아닙니다: {path_obj.name}")
                 return None
 
             # 파일 읽기 (인코딩 에러 처리)
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
                     text = f.read()
-            except UnicodeDecodeError:
+            except UnicodeDecodeError as e:
+                logger.error(f"Encoding error for {file_path}: {e}")
                 print(
-                    f"❌ 텍스트 파일이 아니거나 인코딩을 지원하지 않습니다: {file_path}"
+                    f"❌ 지원하지 않는 인코딩이거나 텍스트 파일이 아닙니다: {path_obj.name}"
                 )
                 return None
-            except Exception as e:
-                print(f"❌ 파일 읽기 오류: {e}")
+            except OSError as e:
+                logger.error(f"File IO error for {file_path}: {e}")
+                print(f"❌ 파일을 읽는 중 시스템 오류가 발생했습니다: {path_obj.name}")
                 return None
 
             # 보안: 절대 경로 노출 방지를 위해 해시값 사용 (SHA256)
@@ -128,7 +141,15 @@ class FlowNoteCLI:
             return result
 
         except Exception as e:
-            print(f"❌ 분류 실패: {e}")
+            if is_system_error(e):
+                raise
+            log_agent_error(
+                logger,
+                "분류 로직 실행 중 예상치 못한 오류 발생",
+                e,
+                extra_metadata={"action": "classify_file"},
+            )
+            print("❌ 내부 서버 오류로 인해 분류를 완료하지 못했습니다.")
             return None
 
     async def batch_classify(self, directory: str, user_id: Optional[str] = None):
@@ -146,7 +167,10 @@ class FlowNoteCLI:
         dir_path = Path(directory)
 
         if not dir_path.is_dir():
-            print(f"❌ 디렉토리가 아닙니다: {directory}")
+            logger.warning(
+                f"Invalid directory path provided for batch_classify: {directory}"
+            )
+            print(f"❌ 유효한 디렉토리 경로가 아닙니다: {directory}")
             return
 
         files = list(dir_path.glob("*.txt")) + list(dir_path.glob("*.md"))
@@ -201,7 +225,8 @@ async def main():
         await cli.batch_classify(directory, user_id)
 
     else:
-        print("❌ 잘못된 명령어")
+        logger.warning(f"Invalid CLI command invoked: {command}")
+        print("❌ 지원하지 않는 명령어입니다.")
 
 
 if __name__ == "__main__":
