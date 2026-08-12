@@ -82,14 +82,21 @@ class FlowNoteCLI:
             [KO] 분류 결과 객체(ClassifyResponse), 실패 시 None / [EN] Classification result object (ClassifyResponse), or None on failure
         """
         try:
+            import hashlib
+
             path_obj = Path(file_path)
+
+            # 절대 경로 노출을 막으면서도 추적 가능하도록 경로 기반의 해시 식별자 생성
+            path_hash = hashlib.sha256(file_path.encode("utf-8")).hexdigest()[:12]
+            log_file_id = f"{path_obj.name}_{path_hash}"
+
             if not path_obj.exists():
-                logger.warning(f"File not found: {path_obj.name}")
+                logger.warning(f"File not found: {log_file_id}")
                 print(f"❌ 파일을 찾을 수 없습니다: {path_obj.name}")
                 return None
 
             if not path_obj.is_file():
-                logger.warning(f"Not a file: {path_obj.name}")
+                logger.warning(f"Not a file: {log_file_id}")
                 print(f"❌ 유효한 파일이 아닙니다: {path_obj.name}")
                 return None
 
@@ -98,22 +105,19 @@ class FlowNoteCLI:
                 with open(file_path, "r", encoding="utf-8") as f:
                     text = f.read()
             except UnicodeDecodeError as e:
-                log_agent_error(
-                    logger, "파일 인코딩 오류", e, {"file_name": path_obj.name}
-                )
+                log_agent_error(logger, "파일 인코딩 오류", e, {"file_id": log_file_id})
                 print(
                     f"❌ 지원하지 않는 인코딩이거나 텍스트 파일이 아닙니다: {path_obj.name}"
                 )
                 return None
             except OSError as e:
                 log_agent_error(
-                    logger, "파일 읽기 시스템 오류", e, {"file_name": path_obj.name}
+                    logger, "파일 읽기 시스템 오류", e, {"file_id": log_file_id}
                 )
                 print(f"❌ 파일을 읽는 중 시스템 오류가 발생했습니다: {path_obj.name}")
                 return None
 
-            # 보안: 절대 경로 노출 방지를 위해 해시값 사용 (SHA256)
-            import hashlib
+            # 보안: 내용 기반 해시값 사용 (분류 서비스용 고유 식별자)
 
             # 파일 내용 + 파일명 조합으로 고유성 확보
             content_preview = text[:100]  # 처음 100자만 해시에 사용
