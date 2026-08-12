@@ -85,10 +85,14 @@ def _get_cancelled_error_type() -> "Type[asyncio.CancelledError]":
 def get_safe_file_id(file_path: Union[str, Path]) -> str:
     """
     [KO] 파일의 경로를 기반으로 안전한 해시 식별자를 생성합니다.
-    경로를 정규화(resolve)하여 동일 파일에 대해 항상 같은 식별자를 반환합니다.
+    내부적으로 `Path.resolve()`를 사용하여 심볼릭 링크를 따라가고 상대 경로를
+    절대 경로로 정규화하므로, 동일한 파일에 대해 서로 다른 경로 입력이 주어지더라도
+    항상 단일하고 안정적인 식별자를 반환합니다.
     절대 경로 노출(PII)을 방지하면서도 로그 추적성을 유지할 때 사용합니다.
 
-    [EN] Generates a safe hashed identifier based on the file's resolved path.
+    [EN] Generates a safe hashed identifier based on the file's path.
+    Uses `Path.resolve()` to follow symlinks and normalize relative paths,
+    ensuring a single, stable identifier regardless of the input path format.
     Used to maintain log traceability without exposing absolute paths (PII).
     """
     path_obj = Path(file_path).resolve()

@@ -7,7 +7,6 @@
 """
 
 import asyncio
-import hashlib
 import logging
 import sys
 from dataclasses import dataclass
@@ -118,6 +117,8 @@ class FlowNoteCLI:
             # 보안: 내용 기반 해시값 사용 (분류 서비스용 고유 식별자)
 
             # 파일 내용 + 파일명 조합으로 고유성 확보
+            import hashlib
+
             content_preview = text[:100]  # 처음 100자만 해시에 사용
             hash_input = f"{path_obj.name}_{content_preview}".encode("utf-8")
             file_hash = hashlib.sha256(hash_input).hexdigest()[
