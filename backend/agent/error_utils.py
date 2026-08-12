@@ -64,7 +64,7 @@ _DEFAULT_LOG_LEVEL = "error"
 _RESERVED_EXTRA_KEYS = frozenset({"error_type", "error_msg", "security"})
 
 # 캐싱된 asyncio.CancelledError (반복 import 방지용)
-_CANCELLED_ERROR: "Optional[Type[asyncio.CancelledError]]" = None
+_CANCELLED_ERROR: Optional[Type["asyncio.CancelledError"]] = None
 
 
 def _get_cancelled_error_type() -> Type[BaseException]:
@@ -76,7 +76,7 @@ def _get_cancelled_error_type() -> Type[BaseException]:
     if _CANCELLED_ERROR is None:
         import asyncio
 
-        _CANCELLED_ERROR = cast("Type[asyncio.CancelledError]", asyncio.CancelledError)
+        _CANCELLED_ERROR = cast(Type[asyncio.CancelledError], asyncio.CancelledError)
     return _CANCELLED_ERROR
 
 
