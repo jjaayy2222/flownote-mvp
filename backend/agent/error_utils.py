@@ -24,7 +24,7 @@ Design Principles:
 import logging
 import re
 from itertools import islice
-from typing import TYPE_CHECKING, Any, Dict, Optional, Type, cast
+from typing import TYPE_CHECKING, Any, Dict, Optional, Type
 
 if TYPE_CHECKING:
     import asyncio
@@ -67,7 +67,7 @@ _RESERVED_EXTRA_KEYS = frozenset({"error_type", "error_msg", "security"})
 _CANCELLED_ERROR: Optional[Type["asyncio.CancelledError"]] = None
 
 
-def _get_cancelled_error_type() -> Type[BaseException]:
+def _get_cancelled_error_type() -> "Type[asyncio.CancelledError]":
     """
     [KO] asyncio.CancelledError 타입을 지연(lazy) 로드하여 캐싱합니다.
     동기 모듈에서 불필요한 asyncio 의존성을 피하기 위해 사용됩니다.
@@ -76,7 +76,7 @@ def _get_cancelled_error_type() -> Type[BaseException]:
     if _CANCELLED_ERROR is None:
         import asyncio
 
-        _CANCELLED_ERROR = cast(Type[asyncio.CancelledError], asyncio.CancelledError)
+        _CANCELLED_ERROR = asyncio.CancelledError
     return _CANCELLED_ERROR
 
 
