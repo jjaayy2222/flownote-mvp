@@ -7,6 +7,7 @@
   - 에러 메시지에 PII(경로, 파일명 원문 등)를 로그에 직접 남기지 않습니다.
   - 순환 의존성 방지를 위해 agent 계층을 import하지 않으며,
     표준 logging을 통해 구조화된 포맷으로 에러를 기록합니다.
+  - _execute_query 내부 헬퍼로 반복되는 try/except 패턴을 단일 지점에서 관리합니다.
 
 [EN] FlowNote metadata SQLite database connection and query helper module.
 
@@ -15,15 +16,19 @@ Design Principles:
   - PII (raw paths, filenames, etc.) is never written directly to logs.
   - Does NOT import agent-layer modules to prevent circular dependencies.
     Errors are recorded via standard logging in structured format.
+  - _execute_query helper centralizes repeated try/except patterns in one place.
 """
 
 import logging
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+# fetch 옵션 타입 — 정적 분석 및 자동완성 지원
+_FetchMode = Literal["all", "one", "none"]
 
 
 class DatabaseConnection:
@@ -36,6 +41,12 @@ class DatabaseConnection:
         """
         [KO] 데이터베이스 초기화. 디렉터리가 없으면 자동 생성합니다.
         [EN] Initializes the database. Creates parent directories if missing.
+
+        Note:
+            row_factory를 sqlite3.Row로 설정하여 fetchall() 결과에서
+            dict(row) 변환이 안전하게 작동하도록 합니다.
+            / Sets row_factory to sqlite3.Row so dict(row) conversion
+            works correctly on fetchall() results.
         """
         self.db_path = db_path
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -43,6 +54,90 @@ class DatabaseConnection:
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
         self._init_schema()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 내부 헬퍼 (Internal Helpers)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _execute_query(
+        self,
+        query: str,
+        params: Tuple[Any, ...] = (),
+        *,
+        action: str,
+        table: Optional[str] = None,
+        fetch: _FetchMode = "all",
+        default: Any,
+    ) -> Any:
+        """
+        [KO] 쿼리 실행과 에러 처리를 중앙집중화하는 내부 헬퍼입니다.
+        반복되는 sqlite3 예외 처리 및 구조화 로깅 패턴을 단일 지점으로 통합합니다.
+        쿼리 파라미터(params)는 PII 보호를 위해 로그에 절대 기록하지 않습니다.
+
+        [EN] Internal helper that centralizes query execution and error handling.
+        Consolidates repeated sqlite3 exception handling and structured logging.
+        Query params are never logged to protect PII.
+
+        Args:
+            query:   실행할 SQL 쿼리 / SQL query to execute.
+            params:  쿼리 파라미터 (로그 미포함) / Query parameters (never logged).
+            action:  로그 컨텍스트용 메서드명 / Method name for log context.
+            table:   관련 테이블명 (선택) / Related table name (optional).
+            fetch:   결과 fetch 방식: "all" | "one" | "none"
+            default: 예외 발생 시 반환할 기본값 / Fallback value on exception.
+        """
+        extra: Dict[str, Any] = {"action": action}
+        if table:
+            extra["table"] = table
+
+        try:
+            self.cursor.execute(query, params)
+            if fetch == "all":
+                return self.cursor.fetchall()
+            if fetch == "one":
+                return self.cursor.fetchone()
+            return None
+        except sqlite3.OperationalError:
+            logger.error(
+                "[DB] %s: 쿼리 실행 실패 / Query execution failed",
+                action,
+                exc_info=True,
+                extra=extra,
+            )
+            return default
+        except sqlite3.DatabaseError:
+            logger.error(
+                "[DB] %s: DB 오류 / Database error",
+                action,
+                exc_info=True,
+                extra=extra,
+            )
+            return default
+
+    def _is_valid_date(self, date_str: str, action: str) -> bool:
+        """
+        [KO] 날짜 문자열이 'YYYY-MM-DD' 형식인지 검증합니다.
+        유효하지 않으면 경고 로그를 남기고 False를 반환합니다.
+        (PII 보호: 원본 날짜 문자열은 로그에 포함하지 않습니다.)
+
+        [EN] Validates whether a date string matches the 'YYYY-MM-DD' format.
+        Logs a warning and returns False if invalid.
+        (PII safety: raw date string is never included in the log.)
+        """
+        try:
+            datetime.strptime(date_str, "%Y-%m-%d")
+            return True
+        except ValueError:
+            logger.warning(
+                "[DB] %s: 날짜 파싱 실패, 해당 행 건너뜀 / Invalid date format, skipping row",
+                action,
+                extra={"action": action},
+            )
+            return False
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 스키마 초기화 (Schema)
+    # ─────────────────────────────────────────────────────────────────────────
 
     def _init_schema(self) -> None:
         """
@@ -95,125 +190,88 @@ class DatabaseConnection:
 
         self.conn.commit()
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # 공개 쿼리 메서드 (Public Query Methods)
+    # ─────────────────────────────────────────────────────────────────────────
+
     def get_all_files(self) -> List[Dict[str, Any]]:
         """
         [KO] 모든 파일 레코드를 반환합니다.
         [EN] Returns all file records.
         """
-        try:
-            self.cursor.execute("SELECT * FROM files")
-            return [dict(row) for row in self.cursor.fetchall()]
-        except sqlite3.OperationalError:
-            logger.error(
-                "[DB] get_all_files: 쿼리 실행 실패 / Query execution failed",
-                exc_info=True,
-                extra={"action": "get_all_files", "table": "files"},
-            )
-            return []
-        except sqlite3.DatabaseError:
-            logger.error(
-                "[DB] get_all_files: DB 오류 / Database error",
-                exc_info=True,
-                extra={"action": "get_all_files", "table": "files"},
-            )
-            return []
+        rows = self._execute_query(
+            "SELECT * FROM files",
+            action="get_all_files",
+            table="files",
+            fetch="all",
+            default=[],
+        )
+        return [dict(row) for row in rows] if rows else []
 
     def get_statistics(self) -> Dict[str, Any]:
         """
         [KO] 파일 통계를 수집하여 반환합니다.
         [EN] Collects and returns file statistics.
         """
-        try:
-            total_files = self.cursor.execute("SELECT COUNT(*) FROM files").fetchone()[
-                0
-            ]
-            total_searches = (
-                self.cursor.execute(
-                    "SELECT SUM(search_count) FROM search_analytics"
-                ).fetchone()[0]
-                or 0
-            )
+        total_files_row = self._execute_query(
+            "SELECT COUNT(*) FROM files",
+            action="get_statistics.total_files",
+            table="files",
+            fetch="one",
+            default=(0,),
+        )
+        total_searches_row = self._execute_query(
+            "SELECT SUM(search_count) FROM search_analytics",
+            action="get_statistics.total_searches",
+            table="search_analytics",
+            fetch="one",
+            default=(0,),
+        )
 
-            return {
-                "total_files": total_files,
-                "total_searches": total_searches,
-                "by_type": self._group_by_extension(),
-                "by_category": self._group_by_para(),
-                "top_keywords": self.get_top_keywords(10),
-            }
-        except sqlite3.OperationalError:
-            logger.error(
-                "[DB] get_statistics: 통계 쿼리 실패 / Statistics query failed",
-                exc_info=True,
-                extra={"action": "get_statistics"},
-            )
-            return {}
-        except sqlite3.DatabaseError:
-            logger.error(
-                "[DB] get_statistics: DB 오류 / Database error",
-                exc_info=True,
-                extra={"action": "get_statistics"},
-            )
-            return {}
+        return {
+            "total_files": total_files_row[0] if total_files_row else 0,
+            "total_searches": (total_searches_row[0] or 0) if total_searches_row else 0,
+            "by_type": self._group_by_extension(),
+            "by_category": self._group_by_para(),
+            "top_keywords": self.get_top_keywords(10),
+        }
 
     def _group_by_extension(self) -> Dict[str, int]:
         """
         [KO] 파일 타입별로 그룹화하여 반환합니다.
         [EN] Groups and returns file counts by file type.
         """
-        try:
-            self.cursor.execute(
-                """
-                SELECT file_type, COUNT(*) as count
-                FROM files
-                GROUP BY file_type
+        rows = self._execute_query(
             """
-            )
-            return {row[0]: row[1] for row in self.cursor.fetchall()}
-        except sqlite3.OperationalError:
-            logger.error(
-                "[DB] _group_by_extension: 그룹화 쿼리 실패 / Group-by-extension query failed",
-                exc_info=True,
-                extra={"action": "_group_by_extension", "table": "files"},
-            )
-            return {}
-        except sqlite3.DatabaseError:
-            logger.error(
-                "[DB] _group_by_extension: DB 오류 / Database error",
-                exc_info=True,
-                extra={"action": "_group_by_extension"},
-            )
-            return {}
+            SELECT file_type, COUNT(*) as count
+            FROM files
+            GROUP BY file_type
+            """,
+            action="_group_by_extension",
+            table="files",
+            fetch="all",
+            default=[],
+        )
+        return {row[0]: row[1] for row in rows} if rows else {}
 
     def _group_by_para(self) -> Dict[str, int]:
         """
         [KO] PARA 카테고리별로 그룹화하여 반환합니다.
         [EN] Groups and returns file counts by PARA category.
         """
-        try:
-            self.cursor.execute(
-                """
-                SELECT para_category, COUNT(*) as count
-                FROM metadata
-                WHERE para_category IS NOT NULL
-                GROUP BY para_category
+        rows = self._execute_query(
             """
-            )
-            return {row[0]: row[1] for row in self.cursor.fetchall()}
-        except sqlite3.OperationalError:
-            logger.error(
-                "[DB] _group_by_para: PARA 그룹화 쿼리 실패 / Group-by-PARA query failed",
-                exc_info=True,
-                extra={"action": "_group_by_para", "table": "metadata"},
-            )
-            return {}
-        except sqlite3.DatabaseError:
-            logger.error(
-                "[DB] _group_by_para: DB 오류 / Database error",
-                exc_info=True,
-                extra={"action": "_group_by_para"},
-            )
-            return {}
+            SELECT para_category, COUNT(*) as count
+            FROM metadata
+            WHERE para_category IS NOT NULL
+            GROUP BY para_category
+            """,
+            action="_group_by_para",
+            table="metadata",
+            fetch="all",
+            default=[],
+        )
+        return {row[0]: row[1] for row in rows} if rows else {}
 
     def get_para_breakdown(self) -> Dict[str, int]:
         """
@@ -228,24 +286,15 @@ class DatabaseConnection:
         [KO] 특정 PARA 카테고리의 파일 수를 반환합니다.
         [EN] Returns file count for a specific PARA category.
         """
-        try:
-            return self.cursor.execute(
-                "SELECT COUNT(*) FROM metadata WHERE para_category = ?", (category,)
-            ).fetchone()[0]
-        except sqlite3.OperationalError:
-            logger.error(
-                "[DB] count_by_para: 카테고리 카운트 쿼리 실패 / Count-by-PARA query failed",
-                exc_info=True,
-                extra={"action": "count_by_para", "table": "metadata"},
-            )
-            return 0
-        except sqlite3.DatabaseError:
-            logger.error(
-                "[DB] count_by_para: DB 오류 / Database error",
-                exc_info=True,
-                extra={"action": "count_by_para"},
-            )
-            return 0
+        row = self._execute_query(
+            "SELECT COUNT(*) FROM metadata WHERE para_category = ?",
+            (category,),
+            action="count_by_para",
+            table="metadata",
+            fetch="one",
+            default=(0,),
+        )
+        return row[0] if row else 0
 
     def get_keyword_categories(self) -> Dict[str, int]:
         """
@@ -262,25 +311,15 @@ class DatabaseConnection:
         [KO] 특정 키워드 태그를 포함하는 파일 수를 반환합니다.
         [EN] Returns count of files containing the specified keyword tag.
         """
-        try:
-            return self.cursor.execute(
-                "SELECT COUNT(*) FROM metadata WHERE keyword_tags LIKE ?",
-                (f"%{tag}%",),
-            ).fetchone()[0]
-        except sqlite3.OperationalError:
-            logger.error(
-                "[DB] count_by_keyword_tag: 키워드 카운트 쿼리 실패 / Count-by-keyword query failed",
-                exc_info=True,
-                extra={"action": "count_by_keyword_tag", "table": "metadata"},
-            )
-            return 0
-        except sqlite3.DatabaseError:
-            logger.error(
-                "[DB] count_by_keyword_tag: DB 오류 / Database error",
-                exc_info=True,
-                extra={"action": "count_by_keyword_tag"},
-            )
-            return 0
+        row = self._execute_query(
+            "SELECT COUNT(*) FROM metadata WHERE keyword_tags LIKE ?",
+            (f"%{tag}%",),
+            action="count_by_keyword_tag",
+            table="metadata",
+            fetch="one",
+            default=(0,),
+        )
+        return row[0] if row else 0
 
     def get_top_keywords(self, top_n: int = 10) -> List[str]:
         """
@@ -296,56 +335,32 @@ class DatabaseConnection:
         [KO] PARA 카테고리를 포함한 파일 목록을 반환합니다 (Graph View용).
         [EN] Returns file list with PARA categories (for Graph View).
         """
-        try:
-            self.cursor.execute(
-                """
-                SELECT f.id, f.filename, m.para_category
-                FROM files f
-                LEFT JOIN metadata m ON f.id = m.file_id
+        rows = self._execute_query(
             """
-            )
-            return [dict(row) for row in self.cursor.fetchall()]
-        except sqlite3.OperationalError:
-            logger.error(
-                "[DB] get_files_with_para: JOIN 쿼리 실패 / Files-with-PARA query failed",
-                exc_info=True,
-                extra={"action": "get_files_with_para", "tables": "files,metadata"},
-            )
-            return []
-        except sqlite3.DatabaseError:
-            logger.error(
-                "[DB] get_files_with_para: DB 오류 / Database error",
-                exc_info=True,
-                extra={"action": "get_files_with_para"},
-            )
-            return []
+            SELECT f.id, f.filename, m.para_category
+            FROM files f
+            LEFT JOIN metadata m ON f.id = m.file_id
+            """,
+            action="get_files_with_para",
+            table="files,metadata",
+            fetch="all",
+            default=[],
+        )
+        return [dict(row) for row in rows] if rows else []
 
     def get_total_searches(self) -> int:
         """
         [KO] 총 검색 횟수를 반환합니다.
         [EN] Returns total search count.
         """
-        try:
-            return (
-                self.cursor.execute(
-                    "SELECT SUM(search_count) FROM search_analytics"
-                ).fetchone()[0]
-                or 0
-            )
-        except sqlite3.OperationalError:
-            logger.error(
-                "[DB] get_total_searches: 검색 합계 쿼리 실패 / Total-searches query failed",
-                exc_info=True,
-                extra={"action": "get_total_searches", "table": "search_analytics"},
-            )
-            return 0
-        except sqlite3.DatabaseError:
-            logger.error(
-                "[DB] get_total_searches: DB 오류 / Database error",
-                exc_info=True,
-                extra={"action": "get_total_searches"},
-            )
-            return 0
+        row = self._execute_query(
+            "SELECT SUM(search_count) FROM search_analytics",
+            action="get_total_searches",
+            table="search_analytics",
+            fetch="one",
+            default=(0,),
+        )
+        return (row[0] or 0) if row else 0
 
     def get_activity_heatmap(self) -> List[Dict[str, Any]]:
         """
@@ -365,38 +380,19 @@ class DatabaseConnection:
             GROUP BY date(ts)
             ORDER BY date(ts) ASC
         """
-        try:
-            self.cursor.execute(query)
-            rows = self.cursor.fetchall()
-        except sqlite3.OperationalError:
-            logger.error(
-                "[DB] get_activity_heatmap: 히트맵 쿼리 실패 / Activity-heatmap query failed",
-                exc_info=True,
-                extra={"action": "get_activity_heatmap"},
-            )
-            return []
-        except sqlite3.DatabaseError:
-            logger.error(
-                "[DB] get_activity_heatmap: DB 오류 / Database error",
-                exc_info=True,
-                extra={"action": "get_activity_heatmap"},
-            )
-            return []
+        rows = self._execute_query(
+            query,
+            action="get_activity_heatmap",
+            fetch="all",
+            default=[],
+        )
 
         result = []
         for row in rows:
-            date_str = row[0]
-            count = row[1]
-            if not date_str:
-                continue
-            try:
-                datetime.strptime(date_str, "%Y-%m-%d")
-            except ValueError:
-                # 날짜 형식이 잘못된 행은 조용히 건너뜁니다 (PII 노출 없이)
-                logger.warning(
-                    "[DB] get_activity_heatmap: 날짜 파싱 실패, 해당 행 건너뜀 / Invalid date format, skipping row",
-                    extra={"action": "get_activity_heatmap"},
-                )
+            date_str, count = row[0], row[1]
+            if not date_str or not self._is_valid_date(
+                date_str, "get_activity_heatmap"
+            ):
                 continue
             result.append({"date": date_str, "count": count})
         return result
@@ -414,25 +410,19 @@ class DatabaseConnection:
             ORDER BY week DESC
             LIMIT 12
         """
-        try:
-            self.cursor.execute(query)
-            rows = self.cursor.fetchall()
-            data = [{"name": r[0], "value": r[1]} for r in rows]
-            return data[::-1]  # 과거 → 현재 순으로 정렬
-        except sqlite3.OperationalError:
-            logger.error(
-                "[DB] get_weekly_trend: 주간 트렌드 쿼리 실패 / Weekly-trend query failed",
-                exc_info=True,
-                extra={"action": "get_weekly_trend", "table": "files"},
-            )
-            return []
-        except sqlite3.DatabaseError:
-            logger.error(
-                "[DB] get_weekly_trend: DB 오류 / Database error",
-                exc_info=True,
-                extra={"action": "get_weekly_trend"},
-            )
-            return []
+        rows = self._execute_query(
+            query,
+            action="get_weekly_trend",
+            table="files",
+            fetch="all",
+            default=[],
+        )
+        data = [{"name": r[0], "value": r[1]} for r in rows] if rows else []
+        return data[::-1]  # 과거 → 현재 순으로 정렬
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 연결 관리 (Connection Lifecycle)
+    # ─────────────────────────────────────────────────────────────────────────
 
     def close(self) -> None:
         """
