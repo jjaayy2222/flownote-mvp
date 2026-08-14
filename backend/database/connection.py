@@ -1,16 +1,42 @@
-# backend/dashboard/connection.py (수정)
+# backend/database/connection.py
+"""
+[KO] FlowNote 메타데이터 SQLite 데이터베이스 연결 및 쿼리 헬퍼 모듈.
 
+설계 원칙:
+  - 모든 DB 예외는 sqlite3 전용 구체 타입(OperationalError, DatabaseError 등)으로 처리합니다.
+  - 에러 메시지에 PII(경로, 파일명 원문 등)를 로그에 직접 남기지 않습니다.
+  - 순환 의존성 방지를 위해 agent 계층을 import하지 않으며,
+    표준 logging을 통해 구조화된 포맷으로 에러를 기록합니다.
+
+[EN] FlowNote metadata SQLite database connection and query helper module.
+
+Design Principles:
+  - All DB exceptions are handled with sqlite3-specific concrete types.
+  - PII (raw paths, filenames, etc.) is never written directly to logs.
+  - Does NOT import agent-layer modules to prevent circular dependencies.
+    Errors are recorded via standard logging in structured format.
+"""
+
+import logging
 import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
+logger = logging.getLogger(__name__)
+
 
 class DatabaseConnection:
-    """FlowNote 메타데이터 데이터베이스 연결"""
+    """
+    [KO] FlowNote 메타데이터 데이터베이스 연결 클래스.
+    [EN] FlowNote metadata database connection class.
+    """
 
     def __init__(self, db_path: str = "data/flownote.db"):
-        """데이터베이스 초기화"""
+        """
+        [KO] 데이터베이스 초기화. 디렉터리가 없으면 자동 생성합니다.
+        [EN] Initializes the database. Creates parent directories if missing.
+        """
         self.db_path = db_path
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(self.db_path)
@@ -18,10 +44,14 @@ class DatabaseConnection:
         self.cursor = self.conn.cursor()
         self._init_schema()
 
-    def _init_schema(self):
-        """테이블 스키마 초기화"""
+    def _init_schema(self) -> None:
+        """
+        [KO] 테이블 스키마 초기화. 이미 존재하는 테이블은 건드리지 않습니다.
+        [EN] Initializes table schema. Skips creation if tables already exist.
+        """
         # 파일 테이블
-        self.cursor.execute("""
+        self.cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS files (
                 id INTEGER PRIMARY KEY,
                 filename TEXT UNIQUE NOT NULL,
@@ -31,10 +61,12 @@ class DatabaseConnection:
                 updated_date TIMESTAMP,
                 path TEXT
             )
-        """)
+        """
+        )
 
         # 메타데이터 테이블
-        self.cursor.execute("""
+        self.cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS metadata (
                 id INTEGER PRIMARY KEY,
                 file_id INTEGER UNIQUE,
@@ -44,10 +76,12 @@ class DatabaseConnection:
                 manual_override BOOLEAN,
                 FOREIGN KEY(file_id) REFERENCES files(id)
             )
-        """)
+        """
+        )
 
         # 검색 통계 테이블
-        self.cursor.execute("""
+        self.cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS search_analytics (
                 id INTEGER PRIMARY KEY,
                 file_id INTEGER,
@@ -56,21 +90,39 @@ class DatabaseConnection:
                 top_keywords TEXT,
                 FOREIGN KEY(file_id) REFERENCES files(id)
             )
-        """)
+        """
+        )
 
         self.conn.commit()
 
     def get_all_files(self) -> List[Dict[str, Any]]:
-        """모든 파일 반환"""
+        """
+        [KO] 모든 파일 레코드를 반환합니다.
+        [EN] Returns all file records.
+        """
         try:
             self.cursor.execute("SELECT * FROM files")
             return [dict(row) for row in self.cursor.fetchall()]
-        except Exception as e:
-            print(f"Error fetching files: {e}")
+        except sqlite3.OperationalError:
+            logger.error(
+                "[DB] get_all_files: 쿼리 실행 실패 / Query execution failed",
+                exc_info=True,
+                extra={"action": "get_all_files", "table": "files"},
+            )
+            return []
+        except sqlite3.DatabaseError:
+            logger.error(
+                "[DB] get_all_files: DB 오류 / Database error",
+                exc_info=True,
+                extra={"action": "get_all_files", "table": "files"},
+            )
             return []
 
     def get_statistics(self) -> Dict[str, Any]:
-        """파일 통계 수집"""
+        """
+        [KO] 파일 통계를 수집하여 반환합니다.
+        [EN] Collects and returns file statistics.
+        """
         try:
             total_files = self.cursor.execute("SELECT COUNT(*) FROM files").fetchone()[
                 0
@@ -89,181 +141,311 @@ class DatabaseConnection:
                 "by_category": self._group_by_para(),
                 "top_keywords": self.get_top_keywords(10),
             }
-        except Exception as e:
-            print(f"Error getting statistics: {e}")
+        except sqlite3.OperationalError:
+            logger.error(
+                "[DB] get_statistics: 통계 쿼리 실패 / Statistics query failed",
+                exc_info=True,
+                extra={"action": "get_statistics"},
+            )
+            return {}
+        except sqlite3.DatabaseError:
+            logger.error(
+                "[DB] get_statistics: DB 오류 / Database error",
+                exc_info=True,
+                extra={"action": "get_statistics"},
+            )
             return {}
 
     def _group_by_extension(self) -> Dict[str, int]:
-        """파일 타입별 그룹화"""
+        """
+        [KO] 파일 타입별로 그룹화하여 반환합니다.
+        [EN] Groups and returns file counts by file type.
+        """
         try:
-            self.cursor.execute("""
-                SELECT file_type, COUNT(*) as count 
-                FROM files 
+            self.cursor.execute(
+                """
+                SELECT file_type, COUNT(*) as count
+                FROM files
                 GROUP BY file_type
-            """)
+            """
+            )
             return {row[0]: row[1] for row in self.cursor.fetchall()}
-        except Exception as e:
-            print(f"Error grouping by extension: {e}")
+        except sqlite3.OperationalError:
+            logger.error(
+                "[DB] _group_by_extension: 그룹화 쿼리 실패 / Group-by-extension query failed",
+                exc_info=True,
+                extra={"action": "_group_by_extension", "table": "files"},
+            )
+            return {}
+        except sqlite3.DatabaseError:
+            logger.error(
+                "[DB] _group_by_extension: DB 오류 / Database error",
+                exc_info=True,
+                extra={"action": "_group_by_extension"},
+            )
             return {}
 
     def _group_by_para(self) -> Dict[str, int]:
-        """PARA별 그룹화"""
+        """
+        [KO] PARA 카테고리별로 그룹화하여 반환합니다.
+        [EN] Groups and returns file counts by PARA category.
+        """
         try:
-            self.cursor.execute("""
-                SELECT para_category, COUNT(*) as count 
-                FROM metadata 
+            self.cursor.execute(
+                """
+                SELECT para_category, COUNT(*) as count
+                FROM metadata
                 WHERE para_category IS NOT NULL
                 GROUP BY para_category
-            """)
+            """
+            )
             return {row[0]: row[1] for row in self.cursor.fetchall()}
-        except Exception as e:
-            print(f"Error grouping by PARA: {e}")
+        except sqlite3.OperationalError:
+            logger.error(
+                "[DB] _group_by_para: PARA 그룹화 쿼리 실패 / Group-by-PARA query failed",
+                exc_info=True,
+                extra={"action": "_group_by_para", "table": "metadata"},
+            )
+            return {}
+        except sqlite3.DatabaseError:
+            logger.error(
+                "[DB] _group_by_para: DB 오류 / Database error",
+                exc_info=True,
+                extra={"action": "_group_by_para"},
+            )
             return {}
 
     def get_para_breakdown(self) -> Dict[str, int]:
-        """PARA별 파일 수"""
+        """
+        [KO] PARA 카테고리별 파일 수를 반환합니다.
+        [EN] Returns file counts per PARA category.
+        """
         categories = ["Projects", "Areas", "Resources", "Archive"]
-        result = {}
-        for category in categories:
-            count = self.count_by_para(category)
-            result[category] = count
-        return result
+        return {category: self.count_by_para(category) for category in categories}
 
     def count_by_para(self, category: str) -> int:
-        """특정 PARA 카테고리 개수"""
+        """
+        [KO] 특정 PARA 카테고리의 파일 수를 반환합니다.
+        [EN] Returns file count for a specific PARA category.
+        """
         try:
-            count = self.cursor.execute(
+            return self.cursor.execute(
                 "SELECT COUNT(*) FROM metadata WHERE para_category = ?", (category,)
             ).fetchone()[0]
-            return count
-        except Exception as e:
-            print(f"Error counting by PARA: {e}")
+        except sqlite3.OperationalError:
+            logger.error(
+                "[DB] count_by_para: 카테고리 카운트 쿼리 실패 / Count-by-PARA query failed",
+                exc_info=True,
+                extra={"action": "count_by_para", "table": "metadata"},
+            )
+            return 0
+        except sqlite3.DatabaseError:
+            logger.error(
+                "[DB] count_by_para: DB 오류 / Database error",
+                exc_info=True,
+                extra={"action": "count_by_para"},
+            )
             return 0
 
     def get_keyword_categories(self) -> Dict[str, int]:
-        """키워드 기반 카테고리화"""
+        """
+        [KO] 키워드 태그 기반 카테고리별 파일 수를 반환합니다.
+        [EN] Returns file counts per keyword-tag-based category.
+        """
         categories = ["업무", "개인", "학습", "참고자료"]
-        result = {}
-        for category in categories:
-            count = self.count_by_keyword_tag(category)
-            result[category] = count
-        return result
+        return {
+            category: self.count_by_keyword_tag(category) for category in categories
+        }
 
     def count_by_keyword_tag(self, tag: str) -> int:
-        """특정 키워드 태그 개수"""
+        """
+        [KO] 특정 키워드 태그를 포함하는 파일 수를 반환합니다.
+        [EN] Returns count of files containing the specified keyword tag.
+        """
         try:
-            count = self.cursor.execute(
-                "SELECT COUNT(*) FROM metadata WHERE keyword_tags LIKE ?", (f"%{tag}%",)
+            return self.cursor.execute(
+                "SELECT COUNT(*) FROM metadata WHERE keyword_tags LIKE ?",
+                (f"%{tag}%",),
             ).fetchone()[0]
-            return count
-        except Exception as e:
-            print(f"Error counting by keyword: {e}")
+        except sqlite3.OperationalError:
+            logger.error(
+                "[DB] count_by_keyword_tag: 키워드 카운트 쿼리 실패 / Count-by-keyword query failed",
+                exc_info=True,
+                extra={"action": "count_by_keyword_tag", "table": "metadata"},
+            )
+            return 0
+        except sqlite3.DatabaseError:
+            logger.error(
+                "[DB] count_by_keyword_tag: DB 오류 / Database error",
+                exc_info=True,
+                extra={"action": "count_by_keyword_tag"},
+            )
             return 0
 
     def get_top_keywords(self, top_n: int = 10) -> List[str]:
-        """상위 키워드 반환"""
-        try:
-            # Mock 데이터 (실제로는 keyword_tags 분석)
-            return ["PARA", "Dashboard", "분류", "LangChain", "메타데이터"][:top_n]
-        except Exception as e:
-            print(f"Error getting top keywords: {e}")
-            return []
+        """
+        [KO] 상위 키워드 목록을 반환합니다 (현재 Mock 데이터).
+        [EN] Returns top keyword list (currently mock data).
+        """
+        # Mock 데이터 — 실제 keyword_tags 분석 로직으로 대체 예정
+        mock_keywords = ["PARA", "Dashboard", "분류", "LangChain", "메타데이터"]
+        return mock_keywords[:top_n]
 
     def get_files_with_para(self) -> List[Dict[str, Any]]:
-        """PARA 카테고리를 포함한 파일 목록 반환 (Graph View용)"""
+        """
+        [KO] PARA 카테고리를 포함한 파일 목록을 반환합니다 (Graph View용).
+        [EN] Returns file list with PARA categories (for Graph View).
+        """
         try:
-            self.cursor.execute("""
-                SELECT f.id, f.filename, m.para_category 
+            self.cursor.execute(
+                """
+                SELECT f.id, f.filename, m.para_category
                 FROM files f
                 LEFT JOIN metadata m ON f.id = m.file_id
-            """)
+            """
+            )
             return [dict(row) for row in self.cursor.fetchall()]
-        except Exception as e:
-            print(f"Error fetching files with PARA: {e}")
+        except sqlite3.OperationalError:
+            logger.error(
+                "[DB] get_files_with_para: JOIN 쿼리 실패 / Files-with-PARA query failed",
+                exc_info=True,
+                extra={"action": "get_files_with_para", "tables": "files,metadata"},
+            )
+            return []
+        except sqlite3.DatabaseError:
+            logger.error(
+                "[DB] get_files_with_para: DB 오류 / Database error",
+                exc_info=True,
+                extra={"action": "get_files_with_para"},
+            )
             return []
 
     def get_total_searches(self) -> int:
-        """총 검색 횟수"""
+        """
+        [KO] 총 검색 횟수를 반환합니다.
+        [EN] Returns total search count.
+        """
         try:
-            total = (
+            return (
                 self.cursor.execute(
                     "SELECT SUM(search_count) FROM search_analytics"
                 ).fetchone()[0]
                 or 0
             )
-            return total
-        except Exception as e:
-            print(f"Error getting total searches: {e}")
+        except sqlite3.OperationalError:
+            logger.error(
+                "[DB] get_total_searches: 검색 합계 쿼리 실패 / Total-searches query failed",
+                exc_info=True,
+                extra={"action": "get_total_searches", "table": "search_analytics"},
+            )
+            return 0
+        except sqlite3.DatabaseError:
+            logger.error(
+                "[DB] get_total_searches: DB 오류 / Database error",
+                exc_info=True,
+                extra={"action": "get_total_searches"},
+            )
             return 0
 
     def get_activity_heatmap(self) -> List[Dict[str, Any]]:
         """
-        일별 활동(파일 생성/수정) 히트맵 데이터
-        Recharts ScatterChart용: { 'x': week_index, 'y': day_index, 'value': count, 'date': string }
+        [KO] 일별 활동(파일 생성/수정) 히트맵 데이터를 반환합니다.
+        Recharts ScatterChart용 포맷: { 'date': str, 'count': int }
+
+        [EN] Returns daily activity (file create/update) heatmap data.
+        Format for Recharts ScatterChart: { 'date': str, 'count': int }
+        """
+        query = """
+            SELECT date(ts), COUNT(*) as count
+            FROM (
+                SELECT created_date as ts FROM files WHERE created_date IS NOT NULL
+                UNION ALL
+                SELECT updated_date as ts FROM files WHERE updated_date IS NOT NULL
+            )
+            GROUP BY date(ts)
+            ORDER BY date(ts) ASC
         """
         try:
-            # SQLite에서 strftime으로 날짜별 집계
-            # created_date와 updated_date를 모두 고려 (UNION ALL)
-            query = """
-                SELECT date(ts), COUNT(*) as count
-                FROM (
-                    SELECT created_date as ts FROM files WHERE created_date IS NOT NULL
-                    UNION ALL
-                    SELECT updated_date as ts FROM files WHERE updated_date IS NOT NULL
-                )
-                GROUP BY date(ts)
-                ORDER BY date(ts) ASC
-            """
             self.cursor.execute(query)
             rows = self.cursor.fetchall()
-
-            # 데이터 가공은 Python에서 처리 (주차/요일 계산 등)
-            result = []
-            for row in rows:
-                date_str = row[0]
-                count = row[1]
-                if not date_str:
-                    continue
-
-                dt = datetime.strptime(date_str, "%Y-%m-%d")
-                # 간단하게 ISO Year/Week 사용 or 단순 날짜 반환
-                result.append({"date": date_str, "count": count})
-            return result
-        except Exception as e:
-            print(f"Error getting activity heatmap: {e}")
+        except sqlite3.OperationalError:
+            logger.error(
+                "[DB] get_activity_heatmap: 히트맵 쿼리 실패 / Activity-heatmap query failed",
+                exc_info=True,
+                extra={"action": "get_activity_heatmap"},
+            )
             return []
+        except sqlite3.DatabaseError:
+            logger.error(
+                "[DB] get_activity_heatmap: DB 오류 / Database error",
+                exc_info=True,
+                extra={"action": "get_activity_heatmap"},
+            )
+            return []
+
+        result = []
+        for row in rows:
+            date_str = row[0]
+            count = row[1]
+            if not date_str:
+                continue
+            try:
+                datetime.strptime(date_str, "%Y-%m-%d")
+            except ValueError:
+                # 날짜 형식이 잘못된 행은 조용히 건너뜁니다 (PII 노출 없이)
+                logger.warning(
+                    "[DB] get_activity_heatmap: 날짜 파싱 실패, 해당 행 건너뜀 / Invalid date format, skipping row",
+                    extra={"action": "get_activity_heatmap"},
+                )
+                continue
+            result.append({"date": date_str, "count": count})
+        return result
 
     def get_weekly_trend(self) -> List[Dict[str, Any]]:
-        """주간 파일 처리(생성) 트렌드"""
+        """
+        [KO] 최근 12주간 파일 처리(생성) 트렌드를 반환합니다.
+        [EN] Returns file creation trend for the past 12 weeks.
+        """
+        query = """
+            SELECT strftime('%Y-%W', created_date) as week, COUNT(*) as count
+            FROM files
+            WHERE created_date IS NOT NULL
+            GROUP BY week
+            ORDER BY week DESC
+            LIMIT 12
+        """
         try:
-            # 최근 12주 데이터
-            query = """
-                SELECT strftime('%Y-%W', created_date) as week, COUNT(*) as count
-                FROM files
-                WHERE created_date IS NOT NULL
-                GROUP BY week
-                ORDER BY week DESC
-                LIMIT 12
-            """
             self.cursor.execute(query)
             rows = self.cursor.fetchall()
-
-            # 정렬을 다시 평범하게 (과거 -> 현재)
             data = [{"name": r[0], "value": r[1]} for r in rows]
-            return data[::-1]
-        except Exception as e:
-            print(f"Error getting weekly trend: {e}")
+            return data[::-1]  # 과거 → 현재 순으로 정렬
+        except sqlite3.OperationalError:
+            logger.error(
+                "[DB] get_weekly_trend: 주간 트렌드 쿼리 실패 / Weekly-trend query failed",
+                exc_info=True,
+                extra={"action": "get_weekly_trend", "table": "files"},
+            )
+            return []
+        except sqlite3.DatabaseError:
+            logger.error(
+                "[DB] get_weekly_trend: DB 오류 / Database error",
+                exc_info=True,
+                extra={"action": "get_weekly_trend"},
+            )
             return []
 
-    def close(self):
-        """데이터베이스 연결 종료"""
+    def close(self) -> None:
+        """
+        [KO] 데이터베이스 연결을 종료합니다.
+        [EN] Closes the database connection.
+        """
         if self.conn:
             self.conn.close()
 
-    def __enter__(self):
+    def __enter__(self) -> "DatabaseConnection":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         self.close()
 
 
