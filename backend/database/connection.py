@@ -162,14 +162,14 @@ class DatabaseConnection:
         *,
         action: str,
         table: Optional[str] = None,
-        default: int = 0,
-    ) -> int:
+        default: Any = 0,
+    ) -> Any:
         """
-        [KO] COUNT·SUM처럼 단일 정수 값을 반환하는 쿼리의 전용 헬퍼입니다.
+        [KO] 단일 스칼라 값(예: COUNT, SUM, 단일 필드 조회)을 반환하는 쿼리의 전용 헬퍼입니다.
         _execute_query(fetch="one")를 래핑하여 튜플 인덱싱 없이 스칼라 값을 직접 반환합니다.
         SQL NULL(행 없을 때 SUM이 반환하는 값) 처리도 내부에서 일괄 처리합니다.
 
-        [EN] Dedicated helper for queries returning a single integer scalar (COUNT, SUM, etc.).
+        [EN] Dedicated helper for queries returning a single scalar value (COUNT, SUM, etc.).
         Wraps _execute_query(fetch="one") to return the value directly without tuple indexing.
         Also handles SQL NULL (returned by SUM when no rows exist) internally.
 
@@ -178,8 +178,8 @@ class DatabaseConnection:
             params:  쿼리 파라미터 (로그 미포함) / Query parameters (never logged).
             action:  로그 컨텍스트용 메서드명 / Method name for log context.
             table:   관련 테이블명 (선택) / Related table name (optional).
-            default: 예외 또는 NULL 결과 시 반환할 정수 기본값 (기본값: 0)
-                     / Integer fallback for exceptions or SQL NULL results (default: 0).
+            default: 예외 또는 NULL 결과 시 반환할 기본값 (기본값: 0)
+                     / Fallback value for exceptions or SQL NULL results (default: 0).
         """
         row = self._execute_query(
             query,
@@ -189,11 +189,11 @@ class DatabaseConnection:
             fetch="one",
             default=(default,),
         )
-        # row는 항상 튜플 — 실제 결과이거나 default 튜플
-        # row[0]이 None인 경우는 SUM()이 행 없을 때 NULL을 반환하는 경우
-        # / row is always a tuple — real result or default tuple.
-        # row[0] is None only when SUM() returns SQL NULL (no matching rows).
-        return row[0] if row[0] is not None else default
+        # 방어적 코드: 반환된 결과가 시퀀스(튜플/리스트 등)이고 요소가 존재하는지 확인
+        # / Defensive check: ensure the returned result is a sequence and has at least one element.
+        if row and len(row) > 0:
+            return row[0] if row[0] is not None else default
+        return default
 
     # ─────────────────────────────────────────────────────────────────────────
     # 스키마 초기화 (Schema)
