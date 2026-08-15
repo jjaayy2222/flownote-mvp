@@ -30,6 +30,10 @@ logger = logging.getLogger(__name__)
 # fetch 옵션 타입 — 정적 분석 및 자동완성 지원
 _FetchMode = Literal["all", "one", "none"]
 
+# default 파라미터의 '미지정' 여부를 구분하는 센티넬
+# (None을 유효한 기본값으로 허용하기 위해 별도 객체 사용)
+_MISSING: object = object()
+
 
 class DatabaseConnection:
     """
@@ -67,7 +71,7 @@ class DatabaseConnection:
         action: str,
         table: Optional[str] = None,
         fetch: _FetchMode = "all",
-        default: Any,
+        default: Any = _MISSING,
     ) -> Any:
         """
         [KO] 쿼리 실행과 에러 처리를 중앙집중화하는 내부 헬퍼입니다.
@@ -84,8 +88,21 @@ class DatabaseConnection:
             action:  로그 컨텍스트용 메서드명 / Method name for log context.
             table:   관련 테이블명 (선택) / Related table name (optional).
             fetch:   결과 fetch 방식: "all" | "one" | "none"
-            default: 예외 발생 시 반환할 기본값 / Fallback value on exception.
+            default: 예외 또는 빈 결과 시 반환할 기본값.
+                     미지정 시 fetch 모드별로 자동 추론:
+                       "all"  → [] (빈 리스트)
+                       "one"  → None
+                       "none" → None
+                     / Fallback value on exception or empty result.
+                     If omitted, inferred per fetch mode:
+                       "all"  → [] (empty list)
+                       "one"  → None
+                       "none" → None
         """
+        # fetch 모드별 합리적인 기본값 자동 추론
+        if default is _MISSING:
+            default = [] if fetch == "all" else None
+
         extra: Dict[str, Any] = {"action": action}
         if table:
             extra["table"] = table
@@ -95,7 +112,10 @@ class DatabaseConnection:
             if fetch == "all":
                 return self.cursor.fetchall()
             if fetch == "one":
-                return self.cursor.fetchone()
+                result = self.cursor.fetchone()
+                # fetchone()이 None을 반환할 때(빈 결과)도 default 반환
+                # / Also return default when fetchone() returns None (no rows)
+                return result if result is not None else default
             return None
         except sqlite3.OperationalError:
             logger.error(
@@ -204,9 +224,8 @@ class DatabaseConnection:
             action="get_all_files",
             table="files",
             fetch="all",
-            default=[],
         )
-        return [dict(row) for row in rows] if rows else []
+        return [dict(row) for row in rows]
 
     def get_statistics(self) -> Dict[str, Any]:
         """
@@ -229,8 +248,8 @@ class DatabaseConnection:
         )
 
         return {
-            "total_files": total_files_row[0] if total_files_row else 0,
-            "total_searches": (total_searches_row[0] or 0) if total_searches_row else 0,
+            "total_files": total_files_row[0],
+            "total_searches": total_searches_row[0] or 0,
             "by_type": self._group_by_extension(),
             "by_category": self._group_by_para(),
             "top_keywords": self.get_top_keywords(10),
@@ -250,9 +269,8 @@ class DatabaseConnection:
             action="_group_by_extension",
             table="files",
             fetch="all",
-            default=[],
         )
-        return {row[0]: row[1] for row in rows} if rows else {}
+        return {row[0]: row[1] for row in rows}
 
     def _group_by_para(self) -> Dict[str, int]:
         """
@@ -269,9 +287,8 @@ class DatabaseConnection:
             action="_group_by_para",
             table="metadata",
             fetch="all",
-            default=[],
         )
-        return {row[0]: row[1] for row in rows} if rows else {}
+        return {row[0]: row[1] for row in rows}
 
     def get_para_breakdown(self) -> Dict[str, int]:
         """
@@ -294,7 +311,7 @@ class DatabaseConnection:
             fetch="one",
             default=(0,),
         )
-        return row[0] if row else 0
+        return row[0]
 
     def get_keyword_categories(self) -> Dict[str, int]:
         """
@@ -319,7 +336,7 @@ class DatabaseConnection:
             fetch="one",
             default=(0,),
         )
-        return row[0] if row else 0
+        return row[0]
 
     def get_top_keywords(self, top_n: int = 10) -> List[str]:
         """
@@ -344,9 +361,8 @@ class DatabaseConnection:
             action="get_files_with_para",
             table="files,metadata",
             fetch="all",
-            default=[],
         )
-        return [dict(row) for row in rows] if rows else []
+        return [dict(row) for row in rows]
 
     def get_total_searches(self) -> int:
         """
@@ -360,7 +376,7 @@ class DatabaseConnection:
             fetch="one",
             default=(0,),
         )
-        return (row[0] or 0) if row else 0
+        return row[0] or 0
 
     def get_activity_heatmap(self) -> List[Dict[str, Any]]:
         """
@@ -384,7 +400,6 @@ class DatabaseConnection:
             query,
             action="get_activity_heatmap",
             fetch="all",
-            default=[],
         )
 
         result = []
@@ -415,10 +430,10 @@ class DatabaseConnection:
             action="get_weekly_trend",
             table="files",
             fetch="all",
-            default=[],
         )
-        data = [{"name": r[0], "value": r[1]} for r in rows] if rows else []
-        return data[::-1]  # 과거 → 현재 순으로 정렬
+        return [{"name": r[0], "value": r[1]} for r in rows][
+            ::-1
+        ]  # 과거 → 현재 순으로 정렬
 
     # ─────────────────────────────────────────────────────────────────────────
     # 연결 관리 (Connection Lifecycle)
