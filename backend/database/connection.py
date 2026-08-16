@@ -21,6 +21,7 @@ Design Principles:
 
 import logging
 import sqlite3
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, TypeVar
@@ -193,14 +194,16 @@ class DatabaseConnection:
         )
 
         fallback_value = default if default is not _MISSING else 0
-        # 방어적 코드: collections.abc.Sequence 등록 여부와 무관하게 인덱싱이 가능한지(__getitem__) 덕 타이핑(Duck Typing) 검사
-        # / Defensive check: Duck typing check for indexability (__getitem__) regardless of collections.abc.Sequence registration.
-        if (
-            hasattr(row, "__getitem__")
-            and not isinstance(row, (str, bytes))
-            and len(row) > 0
-        ):
-            return row[0] if row[0] is not None else fallback_value
+
+        # 방어적 코드: EAFP (허락보다 용서 구하기) 패턴 적용
+        # 명시적인 타입 검사나 불완전한 속성 검사(hasattr) 대신, 직접 접근을 시도하고 예외를 잡는 파이썬 표준 관례를 따름
+        # / Defensive check: EAFP (Easier to Ask for Forgiveness than Permission) pattern.
+        # Safely attempts to access index 0, catching any type/index/key mismatches (e.g. dicts, non-iterables, empty tuples).
+        if row is not None and not isinstance(row, (str, bytes)):
+            with suppress(IndexError, KeyError, TypeError):
+                val = row[0]
+                return val if val is not None else fallback_value
+
         return fallback_value
 
     # ─────────────────────────────────────────────────────────────────────────
