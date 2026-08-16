@@ -21,9 +21,10 @@ Design Principles:
 
 import logging
 import sqlite3
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple, TypeVar, cast
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,8 @@ _FetchMode = Literal["all", "one", "none"]
 # default 파라미터의 '미지정' 여부를 구분하는 센티넬
 # (None을 유효한 기본값으로 허용하기 위해 별도 객체 사용)
 _MISSING: object = object()
+
+T = TypeVar("T")
 
 
 class DatabaseConnection:
@@ -162,8 +165,8 @@ class DatabaseConnection:
         *,
         action: str,
         table: Optional[str] = None,
-        default: Any = 0,
-    ) -> Any:
+        default: T = cast(T, 0),
+    ) -> T:
         """
         [KO] 단일 스칼라 값(예: COUNT, SUM, 단일 필드 조회)을 반환하는 쿼리의 전용 헬퍼입니다.
         _execute_query(fetch="one")를 래핑하여 튜플 인덱싱 없이 스칼라 값을 직접 반환합니다.
@@ -189,9 +192,13 @@ class DatabaseConnection:
             fetch="one",
             default=(default,),
         )
-        # 방어적 코드: 반환된 결과가 시퀀스(튜플/리스트 등)이고 요소가 존재하는지 확인
-        # / Defensive check: ensure the returned result is a sequence and has at least one element.
-        if row and len(row) > 0:
+        # 방어적 코드: 반환된 결과가 Sequence 타입인지 명시적으로 확인 (문자열 제외)
+        # / Defensive check: explicitly verify the result is a Sequence (excluding string) before indexing.
+        if (
+            isinstance(row, Sequence)
+            and not isinstance(row, (str, bytes))
+            and len(row) > 0
+        ):
             return row[0] if row[0] is not None else default
         return default
 
@@ -277,11 +284,13 @@ class DatabaseConnection:
                 "SELECT COUNT(*) FROM files",
                 action="get_statistics.total_files",
                 table="files",
+                default=0,
             ),
             "total_searches": self._execute_scalar(
                 "SELECT SUM(search_count) FROM search_analytics",
                 action="get_statistics.total_searches",
                 table="search_analytics",
+                default=0,
             ),
             "by_type": self._group_by_extension(),
             "by_category": self._group_by_para(),
@@ -341,6 +350,7 @@ class DatabaseConnection:
             (category,),
             action="count_by_para",
             table="metadata",
+            default=0,
         )
 
     def get_keyword_categories(self) -> Dict[str, int]:
@@ -363,6 +373,7 @@ class DatabaseConnection:
             (f"%{tag}%",),
             action="count_by_keyword_tag",
             table="metadata",
+            default=0,
         )
 
     def get_top_keywords(self, top_n: int = 10) -> List[str]:
@@ -400,6 +411,7 @@ class DatabaseConnection:
             "SELECT SUM(search_count) FROM search_analytics",
             action="get_total_searches",
             table="search_analytics",
+            default=0,
         )
 
     def get_activity_heatmap(self) -> List[Dict[str, Any]]:
