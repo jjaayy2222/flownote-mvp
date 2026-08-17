@@ -9,6 +9,7 @@
 실제 로직은 Step 3에서 구현됩니다.
 """
 
+import asyncio
 import csv
 import json
 import logging
@@ -16,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, List, Optional
 
+from backend.agent.error_utils import is_system_error, log_agent_error
 from backend.classifier.hybrid_classifier import HybridClassifier
 from backend.classifier.keyword import KeywordClassifier
 from backend.data_manager import DataManager
@@ -114,7 +116,25 @@ class ClassificationService:
                     snapshot_id=para_result.get("snapshot_id", ""),
                 )
             except Exception as e:
-                logger.warning(f"⚠️ 로그 저장 실패 (무시됨): {e}")
+                if is_system_error(e):
+                    raise
+                meta = {"action": "save_log", "file_id": file_id or "unknown"}
+                if isinstance(e, OSError):
+                    log_agent_error(
+                        logger,
+                        "⚠️ 로그 저장 실패 (I/O 에러, 무시됨)",
+                        e,
+                        meta,
+                        level="warning",
+                    )
+                else:
+                    log_agent_error(
+                        logger,
+                        "⚠️ 로그 저장 실패 (기타, 무시됨)",
+                        e,
+                        meta,
+                        level="warning",
+                    )
                 log_info = {"error": str(e)}
 
             # Step 7: 응답 생성
@@ -137,7 +157,20 @@ class ClassificationService:
             return response
 
         except Exception as e:
-            logger.error(f"❌ 분류 실패: {e}", exc_info=True)
+            if is_system_error(e):
+                raise
+
+            meta = {
+                "action": "classify",
+                "file_id": file_id or "unknown",
+                "user_id": user_id or "anonymous",
+            }
+            if isinstance(e, (TimeoutError, asyncio.TimeoutError)):
+                log_agent_error(logger, "❌ 분류 실패 (타임아웃)", e, meta)
+            elif isinstance(e, json.JSONDecodeError):
+                log_agent_error(logger, "❌ 분류 실패 (파싱 에러)", e, meta)
+            else:
+                log_agent_error(logger, "❌ 분류 실패 (기타)", e, meta)
             raise
 
     # Private 메서드 구현
@@ -168,7 +201,19 @@ class ClassificationService:
             )
             return result
         except Exception as e:
-            logger.error(f"❌ PARA 실패: {e}", exc_info=True)
+            if is_system_error(e):
+                raise
+
+            meta = {"action": "para_classify", "error_type": "unknown"}
+            if isinstance(e, (TimeoutError, asyncio.TimeoutError)):
+                meta["error_type"] = "timeout"
+                log_agent_error(logger, "❌ PARA 실패 (타임아웃)", e, meta)
+            elif isinstance(e, json.JSONDecodeError):
+                meta["error_type"] = "parsing"
+                log_agent_error(logger, "❌ PARA 실패 (파싱 에러)", e, meta)
+            else:
+                log_agent_error(logger, "❌ PARA 실패 (기타)", e, meta)
+
             return {
                 "category": "Resources",
                 "confidence": 0.0,
@@ -289,5 +334,16 @@ class ClassificationService:
             }
 
         except Exception as e:
-            logger.warning(f"⚠️ 로그 저장 실패 (무시 가능): {e}")
+            if is_system_error(e):
+                raise
+
+            meta = {"action": "save_results", "file_id": file_id}
+            if isinstance(e, OSError):
+                log_agent_error(
+                    logger, "⚠️ 로그 파일 I/O 에러 (무시 가능)", e, meta, level="warning"
+                )
+            else:
+                log_agent_error(
+                    logger, "⚠️ 로그 저장 기타 에러", e, meta, level="warning"
+                )
             return {"error": str(e)}
