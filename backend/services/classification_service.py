@@ -122,7 +122,7 @@ class ClassificationService:
                     "action": "save_log",
                     "file_id": file_id or "unknown",
                     "user_id": user_id or "anonymous",
-                    "snapshot_id": para_result.get("snapshot_id", ""),
+                    "snapshot_id": para_result.get("snapshot_id") or "unknown_snapshot",
                 }
                 if isinstance(e, OSError):
                     log_agent_error(
@@ -141,7 +141,6 @@ class ClassificationService:
                         level="warning",
                     )
                 log_info = {"error": str(e), "logged": True}
-                log_info = {"error": str(e)}
 
             # Step 7: 응답 생성
             response = ClassifyResponse(
