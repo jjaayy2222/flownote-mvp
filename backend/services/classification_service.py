@@ -118,7 +118,12 @@ class ClassificationService:
             except Exception as e:
                 if is_system_error(e):
                     raise
-                meta = {"action": "save_log", "file_id": file_id or "unknown"}
+                meta = {
+                    "action": "save_log",
+                    "file_id": file_id or "unknown",
+                    "user_id": user_id or "anonymous",
+                    "snapshot_id": para_result.get("snapshot_id", ""),
+                }
                 if isinstance(e, OSError):
                     log_agent_error(
                         logger,
@@ -135,6 +140,7 @@ class ClassificationService:
                         meta,
                         level="warning",
                     )
+                log_info = {"error": str(e), "logged": True}
                 log_info = {"error": str(e)}
 
             # Step 7: 응답 생성
@@ -337,7 +343,11 @@ class ClassificationService:
             if is_system_error(e):
                 raise
 
-            meta = {"action": "save_results", "file_id": file_id}
+            meta = {
+                "action": "save_results",
+                "file_id": file_id or "unknown",
+                "user_id": user_id or "anonymous",
+            }
             if isinstance(e, OSError):
                 log_agent_error(
                     logger, "⚠️ 로그 파일 I/O 에러 (무시 가능)", e, meta, level="warning"
