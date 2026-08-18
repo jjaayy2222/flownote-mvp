@@ -16,6 +16,13 @@ EMPTY_RETRIEVED_CONTEXT: Final[str] = ""
 # 공용 센티넬 상수 (메타데이터 로깅 및 데이터 정합성 유지)
 # 백엔드 전반에서 추적용 메타데이터(meta payload)를 생성할 때, 식별자가 누락되었음을
 # 일관되게 표현하기 위해 사용됩니다.
+#
+# [중요 규칙]: 다운스트림 서비스(예: 로그 수집기, 분석 파이프라인)는 리터럴 값("anonymous" 등)에
+# 강하게 결합(Tight Coupling)되지 않도록, 반드시 이 상수를 임포트하여 사용해야 합니다.
 UNKNOWN_USER_ID: Final[str] = "anonymous"
 UNKNOWN_FILE_ID: Final[str] = "unknown"
+
+# [주의]: UNKNOWN_SNAPSHOT_ID는 스냅샷 데이터 자체가 "누락"되었음을 나타내는 센티넬입니다.
+# 업스트림 로직에서 의도적으로 전달한 "빈 문자열('')"과는 엄격히 구분되어 처리되어야 합니다.
+# (예: dict.get()을 사용하여 빈 문자열이 센티넬 값으로 덮어씌워지지 않도록 유의)
 UNKNOWN_SNAPSHOT_ID: Final[str] = "unknown_snapshot"
