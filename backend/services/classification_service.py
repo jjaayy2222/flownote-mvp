@@ -32,6 +32,11 @@ from backend.services.conflict_service import ConflictService
 
 logger = logging.getLogger(__name__)
 
+# 공용 센티넬 상수 (메타데이터 로깅 및 데이터 정합성 유지)
+UNKNOWN_USER_ID = "anonymous"
+UNKNOWN_FILE_ID = "unknown"
+UNKNOWN_SNAPSHOT_ID = "unknown_snapshot"
+
 
 class ClassificationService:
     """
@@ -108,8 +113,8 @@ class ClassificationService:
             # Step 6: 결과 저장 (CSV + JSON)
             try:
                 log_info = self._save_results(
-                    user_id=user_id or "anonymous",
-                    file_id=file_id or "unknown",
+                    user_id=user_id or UNKNOWN_USER_ID,
+                    file_id=file_id or UNKNOWN_FILE_ID,
                     final_category=final_category,
                     keyword_tags=keyword_result.get("tags", []),
                     confidence=inner_conflict_result.get("confidence", 0.0),
@@ -120,9 +125,9 @@ class ClassificationService:
                     raise
                 meta = {
                     "action": "save_log",
-                    "file_id": file_id or "unknown",
-                    "user_id": user_id or "anonymous",
-                    "snapshot_id": para_result.get("snapshot_id") or "unknown_snapshot",
+                    "file_id": file_id or UNKNOWN_FILE_ID,
+                    "user_id": user_id or UNKNOWN_USER_ID,
+                    "snapshot_id": para_result.get("snapshot_id", UNKNOWN_SNAPSHOT_ID),
                 }
                 if isinstance(e, OSError):
                     log_agent_error(
@@ -167,8 +172,8 @@ class ClassificationService:
 
             meta = {
                 "action": "classify",
-                "file_id": file_id or "unknown",
-                "user_id": user_id or "anonymous",
+                "file_id": file_id or UNKNOWN_FILE_ID,
+                "user_id": user_id or UNKNOWN_USER_ID,
             }
             if isinstance(e, (TimeoutError, asyncio.TimeoutError)):
                 log_agent_error(logger, "❌ 분류 실패 (타임아웃)", e, meta)
@@ -182,7 +187,7 @@ class ClassificationService:
     def _build_user_context(self, user_id, occupation, areas, interests) -> dict:
         """사용자 컨텍스트 구성"""
         return {
-            "user_id": user_id or "anonymous",
+            "user_id": user_id or UNKNOWN_USER_ID,
             "occupation": occupation or "일반 사용자",
             "areas": areas or [],
             "interests": interests or [],
@@ -344,8 +349,8 @@ class ClassificationService:
 
             meta = {
                 "action": "save_results",
-                "file_id": file_id or "unknown",
-                "user_id": user_id or "anonymous",
+                "file_id": file_id or UNKNOWN_FILE_ID,
+                "user_id": user_id or UNKNOWN_USER_ID,
             }
             if isinstance(e, OSError):
                 log_agent_error(
