@@ -17,6 +17,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, List, Optional
 
+from backend.agent.constants import (
+    UNKNOWN_FILE_ID,
+    UNKNOWN_SNAPSHOT_ID,
+    UNKNOWN_USER_ID,
+)
 from backend.agent.error_utils import is_system_error, log_agent_error
 from backend.classifier.hybrid_classifier import HybridClassifier
 from backend.classifier.keyword import KeywordClassifier
@@ -31,11 +36,6 @@ from backend.services.conflict_service import ConflictService
 # from backend.classifier.keyword_classifier import KeywordClassifier
 
 logger = logging.getLogger(__name__)
-
-# 공용 센티넬 상수 (메타데이터 로깅 및 데이터 정합성 유지)
-UNKNOWN_USER_ID = "anonymous"
-UNKNOWN_FILE_ID = "unknown"
-UNKNOWN_SNAPSHOT_ID = "unknown_snapshot"
 
 
 class ClassificationService:
@@ -127,6 +127,8 @@ class ClassificationService:
                     "action": "save_log",
                     "file_id": file_id or UNKNOWN_FILE_ID,
                     "user_id": user_id or UNKNOWN_USER_ID,
+                    # [설명]: 이전 방식(or 연산자)은 빈 문자열("")을 "unknown_snapshot"으로 덮어씌웠지만,
+                    # 이제 dict.get(key, default)를 사용하여 업스트림에서 의도적으로 전달한 빈 문자열("") 데이터를 그대로 보존합니다.
                     "snapshot_id": para_result.get("snapshot_id", UNKNOWN_SNAPSHOT_ID),
                 }
                 if isinstance(e, OSError):

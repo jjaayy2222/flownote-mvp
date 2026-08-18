@@ -12,3 +12,10 @@ from typing import Final
 # 2. backend.agent.utils.search_similar_docs: 빈 키워드 폴백 로직 내 반환
 # ※ 향후 "검색 결과 없음"의 표현 형식이 바뀔 경우, 파편화 방지를 위해 반드시 이 상수만을 수정해야 합니다.
 EMPTY_RETRIEVED_CONTEXT: Final[str] = ""
+
+# 공용 센티넬 상수 (메타데이터 로깅 및 데이터 정합성 유지)
+# 백엔드 전반에서 추적용 메타데이터(meta payload)를 생성할 때, 식별자가 누락되었음을
+# 일관되게 표현하기 위해 사용됩니다.
+UNKNOWN_USER_ID: Final[str] = "anonymous"
+UNKNOWN_FILE_ID: Final[str] = "unknown"
+UNKNOWN_SNAPSHOT_ID: Final[str] = "unknown_snapshot"
