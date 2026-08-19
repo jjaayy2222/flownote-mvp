@@ -24,5 +24,10 @@ UNKNOWN_FILE_ID: Final[str] = "unknown"
 
 # [주의]: UNKNOWN_SNAPSHOT_ID는 스냅샷 데이터 자체가 "누락"되었음을 나타내는 센티넬입니다.
 # 업스트림 로직에서 의도적으로 전달한 "빈 문자열('')"과는 엄격히 구분되어 처리되어야 합니다.
-# (예: dict.get()을 사용하여 빈 문자열이 센티넬 값으로 덮어씌워지지 않도록 유의)
+#
+# [올바른 사용법]: dict.get() 으로 키 자체가 없을 때만 폴백 (빈 문자열은 그대로 보존)
+#   snapshot_id = data.get("snapshot_id", UNKNOWN_SNAPSHOT_ID)
+#
+# [잘못된 사용법]: or 연산자 사용 시 빈 문자열('')도 센티넬로 덮어씌워짐
+#   snapshot_id = data.get("snapshot_id") or UNKNOWN_SNAPSHOT_ID  # <- 회귀 위험
 UNKNOWN_SNAPSHOT_ID: Final[str] = "unknown_snapshot"
