@@ -48,9 +48,9 @@ class ArchivingStats:
     errors: int = 0
 
 
-def _build_meta(action: str, **kwargs) -> dict:
+def _build_meta(base: Optional[dict] = None, **kwargs) -> dict:
     """로그 메타데이터 일관성 유지를 위한 헬퍼 함수"""
-    return {"action": action} | {k: v for k, v in kwargs.items() if v is not None}
+    return (base or {}) | kwargs
 
 
 def _save_automation_log(log: AutomationLog):
@@ -60,7 +60,7 @@ def _save_automation_log(log: AutomationLog):
             f.write(log.model_dump_json() + "\n")
     except OSError as e:
         meta = _build_meta(
-            "save_automation_log",
+            {"action": "save_automation_log"},
             auto_log_file=str(AUTO_LOG_FILE),
             log_id=getattr(log, "id", getattr(log, "log_id", None)),
         )
@@ -75,7 +75,7 @@ def _save_automation_log(log: AutomationLog):
         if is_system_error(e):
             raise
         meta = _build_meta(
-            "save_automation_log",
+            {"action": "save_automation_log"},
             auto_log_file=str(AUTO_LOG_FILE),
             log_id=getattr(log, "id", getattr(log, "log_id", None)),
         )
@@ -96,7 +96,7 @@ def _save_archiving_records(records: List[ArchivingRecord]):
                 f.write(record.model_dump_json() + "\n")
     except OSError as e:
         meta = _build_meta(
-            "save_archiving_records",
+            {"action": "save_archiving_records"},
             count=len(records),
             archive_log_file=str(ARCHIVE_LOG_FILE),
         )
@@ -111,7 +111,7 @@ def _save_archiving_records(records: List[ArchivingRecord]):
         if is_system_error(e):
             raise
         meta = _build_meta(
-            "save_archiving_records",
+            {"action": "save_archiving_records"},
             count=len(records),
             archive_log_file=str(ARCHIVE_LOG_FILE),
         )
@@ -278,7 +278,7 @@ def _archive_single_file(path_obj: Path, log_id: str) -> ArchivingResult:
 
     except OSError as e:
         meta = _build_meta(
-            "archive_single_file", source_path=str(path_obj), log_id=log_id
+            {"action": "archive_single_file"}, source_path=str(path_obj), log_id=log_id
         )
         log_agent_error(
             logger,
@@ -289,7 +289,7 @@ def _archive_single_file(path_obj: Path, log_id: str) -> ArchivingResult:
         return ArchivingResult(is_error=True)
     except Exception as e:
         meta = _build_meta(
-            "archive_single_file", source_path=str(path_obj), log_id=log_id
+            {"action": "archive_single_file"}, source_path=str(path_obj), log_id=log_id
         )
         if is_system_error(e):
             log_agent_error(

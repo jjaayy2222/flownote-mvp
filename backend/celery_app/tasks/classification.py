@@ -44,16 +44,9 @@ _executor: Optional[ThreadPoolExecutor] = None
 _executor_lock = threading.Lock()  # Lock for thread-safe initialization
 
 
-def _build_meta(
-    action: str, file_id: Optional[str], category: Optional[str] = None
-) -> dict:
-    meta = {
-        "action": action,
-        "file_id": file_id if file_id is not None else UNKNOWN_FILE_ID,
-    }
-    if category is not None:
-        meta["category"] = category
-    return meta
+def _build_meta(base: Optional[dict] = None, **kwargs) -> dict:
+    """로그 메타데이터 구성을 위한 헬퍼 함수"""
+    return (base or {}) | kwargs
 
 
 def _safe_path(path_str: str) -> str:
@@ -148,7 +141,11 @@ def _safe_obsidian_move(
             logger.info(f"Moved file to: {new_path}")
         return new_path
     except OSError as e:
-        meta = _build_meta("obsidian_move", file_id, category)
+        meta = _build_meta(
+            {"action": "obsidian_move"},
+            file_id=file_id if file_id is not None else UNKNOWN_FILE_ID,
+            category=category,
+        )
         log_agent_error(
             logger,
             "Obsidian 파일 이동 실패 (분류 결과는 유지됨)",
@@ -158,7 +155,11 @@ def _safe_obsidian_move(
         )
         return None
     except Exception as e:
-        meta = _build_meta("obsidian_move", file_id, category)
+        meta = _build_meta(
+            {"action": "obsidian_move"},
+            file_id=file_id if file_id is not None else UNKNOWN_FILE_ID,
+            category=category,
+        )
         if is_system_error(e):
             log_agent_error(logger, "Obsidian 파일 이동 중 시스템 오류", e, meta)
             raise
@@ -174,7 +175,10 @@ def _safe_obsidian_move(
 
 def _handle_classify_error(task_self, e: Exception, file_path: str) -> None:
     file_id = str(Path(file_path).absolute())
-    meta = _build_meta("classify_file", file_id)
+    meta = _build_meta(
+        {"action": "classify_file"},
+        file_id=file_id if file_id is not None else UNKNOWN_FILE_ID,
+    )
 
     if isinstance(e, OSError):
         log_agent_error(logger, "파일 I/O 오류로 분류 실패", e, meta)
