@@ -1,5 +1,6 @@
 # backend/celery_app/tasks/archiving.py
 
+import contextlib
 import logging
 import os
 import shutil
@@ -9,6 +10,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional, Set
 
+from backend.agent.error_utils import is_system_error, log_agent_error
 from backend.celery_app.celery import app
 from backend.config import AppConfig, PathConfig
 from backend.models.automation import (
@@ -51,8 +53,24 @@ def _save_automation_log(log: AutomationLog):
     try:
         with open(AUTO_LOG_FILE, "a", encoding="utf-8") as f:
             f.write(log.model_dump_json() + "\n")
+    except OSError as e:
+        log_agent_error(
+            logger,
+            "⚠️ 자동화 로그 저장 실패 (I/O 오류)",
+            e,
+            {"action": "save_automation_log"},
+            level="error",
+        )
     except Exception as e:
-        logger.error(f"Failed to save automation log: {e}")
+        if is_system_error(e):
+            raise
+        log_agent_error(
+            logger,
+            "⚠️ 자동화 로그 저장 실패 (기타)",
+            e,
+            {"action": "save_automation_log"},
+            level="error",
+        )
 
 
 def _save_archiving_records(records: List[ArchivingRecord]):
@@ -61,17 +79,37 @@ def _save_archiving_records(records: List[ArchivingRecord]):
         with open(ARCHIVE_LOG_FILE, "a", encoding="utf-8") as f:
             for record in records:
                 f.write(record.model_dump_json() + "\n")
+    except OSError as e:
+        log_agent_error(
+            logger,
+            "⚠️ 아카이빙 레코드 저장 실패 (I/O 오류)",
+            e,
+            {"action": "save_archiving_records", "count": len(records)},
+            level="error",
+        )
     except Exception as e:
-        logger.error(f"Failed to save archiving records: {e}")
+        if is_system_error(e):
+            raise
+        log_agent_error(
+            logger,
+            "⚠️ 아카이빙 레코드 저장 실패 (기타)",
+            e,
+            {"action": "save_archiving_records", "count": len(records)},
+            level="error",
+        )
 
 
 def _infer_para_category(path_obj: Path) -> str:
     """파일 경로에서 현재 PARA 카테고리 추론"""
     parts = path_obj.parts
-    for para in ["Projects", "Areas", "Resources", "Archives", "Inbox"]:
-        if para in parts:
-            return para
-    return "Unknown"
+    return next(
+        (
+            para
+            for para in ["Projects", "Areas", "Resources", "Archives", "Inbox"]
+            if para in parts
+        ),
+        "Unknown",
+    )
 
 
 def _get_active_files(root_dir: Path) -> List[Path]:
@@ -123,16 +161,12 @@ def _is_file_inactive(path_obj: Path, recent_files_set: Set[str], days: int) -> 
     candidates.add(str(path_obj))
 
     # c. DATA_DIR 기준 상대 경로
-    try:
+    with contextlib.suppress(ValueError):
         candidates.add(str(path_obj.relative_to(PathConfig.DATA_DIR)))
-    except ValueError:
-        pass
 
     # d. BASE_DIR 기준 상대 경로
-    try:
+    with contextlib.suppress(ValueError):
         candidates.add(str(path_obj.relative_to(PathConfig.BASE_DIR)))
-    except ValueError:
-        pass
 
     # 교집합이 하나라도 있으면 최근 접근된 것임
     if not candidates.isdisjoint(recent_files_set):
@@ -171,6 +205,42 @@ def _resolve_archive_destination(destination: Path) -> Path:
     return new_destination
 
 
+def _build_archive_destination(path_obj: Path) -> Path:
+    """
+    아카이빙 대상 파일의 목적지 경로를 결정합니다.
+
+    DATA_DIR 기준 상대 경로를 유지하여 Archives 하위로 이동합니다.
+    DATA_DIR 외부 파일은 Archives/External/ 로 이동합니다.
+    """
+    try:
+        rel_path = path_obj.relative_to(PathConfig.DATA_DIR)
+        # 예: Projects/MyProj/note.md -> Archives/Projects/MyProj/note.md
+        return PathConfig.DATA_DIR / "Archives" / rel_path
+    except ValueError:
+        # DATA_DIR 외부에 있는 경우 (예외적)
+        return PathConfig.DATA_DIR / "Archives" / "External" / path_obj.name
+
+
+def _execute_archive_move(path_obj: Path, log_id: str) -> ArchivingRecord:
+    """
+    아카이빙 목적지 경로를 결정하고 파일을 이동한 뒤 ArchivingRecord를 반환합니다.
+    충돌 시 고유한 이름으로 해결하며, 필요한 디렉토리를 자동 생성합니다.
+    """
+    destination = _build_archive_destination(path_obj)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination = _resolve_archive_destination(destination)
+    shutil.move(str(path_obj), str(destination))
+    logger.info(f"Archived: {path_obj} -> {destination}")
+    return ArchivingRecord(
+        record_id=str(uuid.uuid4()),
+        automation_log_id=log_id,
+        file_path=str(path_obj),
+        archive_path=str(destination),
+        reason="inactive_for_30_days",
+        archived_at=datetime.now(),
+    )
+
+
 def _archive_single_file(path_obj: Path, log_id: str) -> ArchivingResult:
     """
     단일 파일 아카이빙 실행
@@ -178,57 +248,32 @@ def _archive_single_file(path_obj: Path, log_id: str) -> ArchivingResult:
     """
 
     try:
-        # 목적지 경로 설정: Archives / 기존카테고리 / 파일명
-        # (계층 구조 유지를 위해 relative_to 등을 사용할 수도 있으나, 단순화를 위해 1단계 하위로 이동)
-        # 만약 원본이 Projects/ProjectA/note.md 라면 -> Archives/Projects/ProjectA/note.md 가 이상적
-
-        # 여기서는 단순하게 Archives/{Category}/{FileName} 로 이동하거나
-        # Archives/{Year}/{FileName} 등 전략이 필요함.
-        # 요구사항: "파일 카테고리 -> Archives 변경"
-
-        # 전략: Archives/YYYY_MM_DD_Archived/파일명 (날짜별 분류) 또는
-        # Archives/{OriginalCategory}/... (구조 보존)
-
-        # 가장 안전한 구조 보존 방식:
-        # DATA_DIR로부터의 상대 경로를 유지하여 Archives 아래로 이동
-
-        try:
-            rel_path = path_obj.relative_to(PathConfig.DATA_DIR)
-            # 예: Projects/MyProj/note.md
-
-            # 목적지: Archives / (rel_path)
-            # 주의: rel_path가 이미 Category로 시작하므로, Archives 밑에 또 Projects가 생김.
-            # 예: Archives/Projects/MyProj/note.md -> OK.
-
-            destination = PathConfig.DATA_DIR / "Archives" / rel_path
-
-        except ValueError:
-            # DATA_DIR 외부에 있는 경우 (예외적)
-            destination = PathConfig.DATA_DIR / "Archives" / "External" / path_obj.name
-
-        # 폴더 생성
-        destination.parent.mkdir(parents=True, exist_ok=True)
-
-        # 파일 이름 충돌 해결 (Helper 사용)
-        destination = _resolve_archive_destination(destination)
-
-        # 파일 이동
-        shutil.move(str(path_obj), str(destination))
-        logger.info(f"Archived: {path_obj} -> {destination}")
-
-        record = ArchivingRecord(
-            record_id=str(uuid.uuid4()),
-            automation_log_id=log_id,
-            file_path=str(path_obj),
-            archive_path=str(destination),
-            reason="inactive_for_30_days",
-            archived_at=datetime.now(),
-        )
-
+        record = _execute_archive_move(path_obj, log_id)
         return ArchivingResult(record=record, is_archived=True)
 
-    except Exception:
-        logger.exception("Error archiving file %s", path_obj)
+    except OSError as e:
+        log_agent_error(
+            logger,
+            "❌ 파일 아카이빙 실패 (I/O 오류)",
+            e,
+            {"action": "archive_single_file"},
+        )
+        return ArchivingResult(is_error=True)
+    except Exception as e:
+        if is_system_error(e):
+            log_agent_error(
+                logger,
+                "❌ 파일 아카이빙 중 시스템 오류",
+                e,
+                {"action": "archive_single_file"},
+            )
+            raise
+        log_agent_error(
+            logger,
+            "❌ 파일 아카이빙 실패 (기타)",
+            e,
+            {"action": "archive_single_file"},
+        )
         return ArchivingResult(is_error=True)
 
 

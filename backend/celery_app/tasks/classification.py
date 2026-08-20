@@ -9,6 +9,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
+from backend.agent.constants import UNKNOWN_FILE_ID
+from backend.agent.error_utils import is_system_error, log_agent_error
 from backend.celery_app.celery import app
 
 # Sync & Config Imports
@@ -26,6 +28,14 @@ logger = logging.getLogger(__name__)
 # Constants
 INVALID_PATH_SENTINEL = "Invalid Path"
 VALID_PARA_CATEGORIES = {"Projects", "Areas", "Resources", "Archive"}
+
+# Celery 태스크 재시도 설정 상수 (하드코딩 제거)
+TASK_MAX_RETRIES: int = 3
+TASK_RETRY_COUNTDOWN: int = 60  # seconds
+
+# 로컬 Obsidian 자동화 실행 시 사용되는 논리적 사용자 식별자
+# PII가 아닌 시스템 역할(role)을 나타내며, 실제 사용자 데이터와 무관합니다.
+LOCAL_OBSIDIAN_USER: str = "obsidian_local_agent"
 
 # Module-level executor to avoid expensive thread creation on every call
 # Used only when run_async falls back to thread offloading
@@ -58,7 +68,7 @@ def _safe_path(path_str: str) -> str:
         path = Path(path_str)
         # Note: path.suffix starts with '.', e.g. '.pdf'.
         # If no suffix, we return 'unknown' explicitly.
-        suffix = path.suffix if path.suffix else "unknown"
+        suffix = path.suffix or "unknown"
         path_hash = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:8]
         return f"ext:{suffix} (hash:{path_hash})"
     except Exception:
@@ -103,15 +113,15 @@ def run_async(coro):
     except RuntimeError:
         has_running_loop = False
 
-    if has_running_loop:
-        # Active loop detected. running .result() here would block the loop -> deadlock.
-        # Solution: Run standard asyncio.run in a separate thread.
-        # This isolates the new async task from the existing loop.
-        logger.debug("Active event loop detected. Offloading to shared executor.")
-        return _get_executor().submit(asyncio.run, coro).result()
-    else:
+    if not has_running_loop:
         # No running loop, safe to use standard asyncio.run
         return asyncio.run(coro)
+
+    # Active loop detected. running .result() here would block the loop -> deadlock.
+    # Solution: Run standard asyncio.run in a separate thread.
+    # This isolates the new async task from the existing loop.
+    logger.debug("Active event loop detected. Offloading to shared executor.")
+    return _get_executor().submit(asyncio.run, coro).result()
 
 
 @app.task(bind=True)
@@ -148,9 +158,7 @@ def classify_new_file_task(self, file_path: str):
         file_id = str(path_obj.absolute())
 
         result = run_async(
-            service.classify(
-                text=content, file_id=file_id, user_id="obsidian_user"  # 로컬 유저 가정
-            )
+            service.classify(text=content, file_id=file_id, user_id=LOCAL_OBSIDIAN_USER)
         )
 
         logger.info(f"✅ Classification completed for {safe_path}: {result.category}")
@@ -183,8 +191,37 @@ def classify_new_file_task(self, file_path: str):
                     )
                     if new_path:
                         logger.info(f"🚚 Moved file to: {new_path}")
+                except OSError as e:
+                    meta = {
+                        "action": "obsidian_move",
+                        "file_id": file_id or UNKNOWN_FILE_ID,
+                        "category": result.category,
+                    }
+                    log_agent_error(
+                        logger,
+                        "⚠️ Obsidian 파일 이동 실패 (분류 결과는 유지됨)",
+                        e,
+                        meta,
+                        level="error",
+                    )
                 except Exception as e:
-                    logger.error(f"Failed to move file after classification: {e}")
+                    meta = {
+                        "action": "obsidian_move",
+                        "file_id": file_id or UNKNOWN_FILE_ID,
+                        "category": result.category,
+                    }
+                    if is_system_error(e):
+                        log_agent_error(
+                            logger, "❌ Obsidian 파일 이동 중 시스템 오류", e, meta
+                        )
+                        raise
+                    log_agent_error(
+                        logger,
+                        "⚠️ Obsidian 파일 이동 실패 (기타, 무시됨)",
+                        e,
+                        meta,
+                        level="warning",
+                    )
 
         return {
             "status": "success",
@@ -193,9 +230,27 @@ def classify_new_file_task(self, file_path: str):
             "new_path": new_path,
         }
 
+    except OSError as e:
+        meta = {
+            "action": "classify_file",
+            "file_id": str(Path(file_path).absolute()) or UNKNOWN_FILE_ID,
+        }
+        log_agent_error(logger, "❌ 파일 I/O 오류로 분류 실패", e, meta)
+        raise self.retry(
+            exc=e, max_retries=TASK_MAX_RETRIES, countdown=TASK_RETRY_COUNTDOWN
+        ) from e
     except Exception as e:
-        logger.exception(f"Error classifying file {safe_path}")
-        return {"status": "error", "message": "Internal error during classification"}
+        meta = {
+            "action": "classify_file",
+            "file_id": str(Path(file_path).absolute()) or UNKNOWN_FILE_ID,
+        }
+        if is_system_error(e):
+            log_agent_error(logger, "❌ 분류 태스크 시스템 오류", e, meta)
+            raise
+        log_agent_error(logger, "❌ 분류 태스크 실패", e, meta)
+        raise self.retry(
+            exc=e, max_retries=TASK_MAX_RETRIES, countdown=TASK_RETRY_COUNTDOWN
+        ) from e
 
 
 @app.task(bind=True)
