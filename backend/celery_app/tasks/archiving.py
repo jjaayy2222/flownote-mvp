@@ -48,35 +48,42 @@ class ArchivingStats:
     errors: int = 0
 
 
+def _build_meta(action: str, **kwargs) -> dict:
+    """로그 메타데이터 일관성 유지를 위한 헬퍼 함수"""
+    return {"action": action} | {k: v for k, v in kwargs.items() if v is not None}
+
+
 def _save_automation_log(log: AutomationLog):
     """AutomationLog를 JSONL 파일에 저장"""
     try:
         with open(AUTO_LOG_FILE, "a", encoding="utf-8") as f:
             f.write(log.model_dump_json() + "\n")
     except OSError as e:
+        meta = _build_meta(
+            "save_automation_log",
+            auto_log_file=str(AUTO_LOG_FILE),
+            log_id=getattr(log, "id", getattr(log, "log_id", None)),
+        )
         log_agent_error(
             logger,
             "자동화 로그 저장 실패 (I/O 오류)",
             e,
-            {
-                "action": "save_automation_log",
-                "auto_log_file": str(AUTO_LOG_FILE),
-                "log_id": getattr(log, "id", getattr(log, "log_id", None)),
-            },
+            meta,
             level="error",
         )
     except Exception as e:
         if is_system_error(e):
             raise
+        meta = _build_meta(
+            "save_automation_log",
+            auto_log_file=str(AUTO_LOG_FILE),
+            log_id=getattr(log, "id", getattr(log, "log_id", None)),
+        )
         log_agent_error(
             logger,
             "자동화 로그 저장 실패 (기타)",
             e,
-            {
-                "action": "save_automation_log",
-                "auto_log_file": str(AUTO_LOG_FILE),
-                "log_id": getattr(log, "id", getattr(log, "log_id", None)),
-            },
+            meta,
             level="error",
         )
 
@@ -88,29 +95,31 @@ def _save_archiving_records(records: List[ArchivingRecord]):
             for record in records:
                 f.write(record.model_dump_json() + "\n")
     except OSError as e:
+        meta = _build_meta(
+            "save_archiving_records",
+            count=len(records),
+            archive_log_file=str(ARCHIVE_LOG_FILE),
+        )
         log_agent_error(
             logger,
             "아카이빙 레코드 저장 실패 (I/O 오류)",
             e,
-            {
-                "action": "save_archiving_records",
-                "count": len(records),
-                "archive_log_file": str(ARCHIVE_LOG_FILE),
-            },
+            meta,
             level="error",
         )
     except Exception as e:
         if is_system_error(e):
             raise
+        meta = _build_meta(
+            "save_archiving_records",
+            count=len(records),
+            archive_log_file=str(ARCHIVE_LOG_FILE),
+        )
         log_agent_error(
             logger,
             "아카이빙 레코드 저장 실패 (기타)",
             e,
-            {
-                "action": "save_archiving_records",
-                "count": len(records),
-                "archive_log_file": str(ARCHIVE_LOG_FILE),
-            },
+            meta,
             level="error",
         )
 
@@ -268,39 +277,33 @@ def _archive_single_file(path_obj: Path, log_id: str) -> ArchivingResult:
         return ArchivingResult(record=record, is_archived=True)
 
     except OSError as e:
+        meta = _build_meta(
+            "archive_single_file", source_path=str(path_obj), log_id=log_id
+        )
         log_agent_error(
             logger,
             "파일 아카이빙 실패 (I/O 오류)",
             e,
-            {
-                "action": "archive_single_file",
-                "source_path": str(path_obj),
-                "log_id": log_id,
-            },
+            meta,
         )
         return ArchivingResult(is_error=True)
     except Exception as e:
+        meta = _build_meta(
+            "archive_single_file", source_path=str(path_obj), log_id=log_id
+        )
         if is_system_error(e):
             log_agent_error(
                 logger,
                 "파일 아카이빙 중 시스템 오류",
                 e,
-                {
-                    "action": "archive_single_file",
-                    "source_path": str(path_obj),
-                    "log_id": log_id,
-                },
+                meta,
             )
             raise
         log_agent_error(
             logger,
             "파일 아카이빙 실패 (기타)",
             e,
-            {
-                "action": "archive_single_file",
-                "source_path": str(path_obj),
-                "log_id": log_id,
-            },
+            meta,
         )
         return ArchivingResult(is_error=True)
 

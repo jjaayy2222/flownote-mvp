@@ -145,7 +145,7 @@ def _safe_obsidian_move(
     try:
         new_path = run_async(sync_service.move_file_to_para(file_path, category))
         if new_path:
-            logger.info(f"🚚 Moved file to: {new_path}")
+            logger.info(f"Moved file to: {new_path}")
         return new_path
     except OSError as e:
         meta = _build_meta("obsidian_move", file_id, category)
@@ -199,7 +199,7 @@ def classify_new_file_task(self, file_path: str):
     ClassificationService를 사용하여 즉시 분류 수행
     """
     safe_path = _safe_path(file_path)
-    logger.info(f"🚀 Started classification for new file: {safe_path}")
+    logger.info(f"Started classification for new file: {safe_path}")
 
     # Check if safe_path indicates an invalid path before proceeding
     if safe_path == INVALID_PATH_SENTINEL:
@@ -229,7 +229,7 @@ def classify_new_file_task(self, file_path: str):
             service.classify(text=content, file_id=file_id, user_id=LOCAL_OBSIDIAN_USER)
         )
 
-        logger.info(f"✅ Classification completed for {safe_path}: {result.category}")
+        logger.info(f"Classification completed for {safe_path}: {result.category}")
 
         # Post-Processing: Move file to PARA folder if Obsidian Sync is enabled
         new_path = None
@@ -238,7 +238,7 @@ def classify_new_file_task(self, file_path: str):
             if result.category not in VALID_PARA_CATEGORIES:
                 valid_categories_display = ", ".join(sorted(VALID_PARA_CATEGORIES))
                 logger.warning(
-                    "⚠️ Skipping move: '%s' is not a valid PARA category. Valid categories: %s",
+                    "Skipping move: '%s' is not a valid PARA category. Valid categories: %s",
                     result.category,
                     valid_categories_display,
                 )
@@ -271,5 +271,5 @@ def update_embedding_task(self, file_path: str):
     """
     파일 수정 시 호출되는 Task (임베딩 업데이트)
     """
-    logger.info(f"🔄 Updating embedding for: {_safe_path(file_path)}")
+    logger.info(f"Updating embedding for: {_safe_path(file_path)}")
     return {"status": "pending_implementation", "file_path": file_path}
