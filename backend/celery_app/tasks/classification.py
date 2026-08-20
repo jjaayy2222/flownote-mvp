@@ -44,6 +44,18 @@ _executor: Optional[ThreadPoolExecutor] = None
 _executor_lock = threading.Lock()  # Lock for thread-safe initialization
 
 
+def _build_meta(
+    action: str, file_id: Optional[str], category: Optional[str] = None
+) -> dict:
+    meta = {
+        "action": action,
+        "file_id": file_id if file_id is not None else UNKNOWN_FILE_ID,
+    }
+    if category is not None:
+        meta["category"] = category
+    return meta
+
+
 def _safe_path(path_str: str) -> str:
     """
     Generate a privacy-safe representation of a file path for logging.
@@ -124,6 +136,62 @@ def run_async(coro):
     return _get_executor().submit(asyncio.run, coro).result()
 
 
+def _safe_obsidian_move(
+    file_path: str,
+    category: str,
+    file_id: Optional[str],
+    sync_service: ObsidianSyncService,
+) -> Optional[str]:
+    try:
+        new_path = run_async(sync_service.move_file_to_para(file_path, category))
+        if new_path:
+            logger.info(f"🚚 Moved file to: {new_path}")
+        return new_path
+    except OSError as e:
+        meta = _build_meta("obsidian_move", file_id, category)
+        log_agent_error(
+            logger,
+            "Obsidian 파일 이동 실패 (분류 결과는 유지됨)",
+            e,
+            meta,
+            level="error",
+        )
+        return None
+    except Exception as e:
+        meta = _build_meta("obsidian_move", file_id, category)
+        if is_system_error(e):
+            log_agent_error(logger, "Obsidian 파일 이동 중 시스템 오류", e, meta)
+            raise
+        log_agent_error(
+            logger,
+            "Obsidian 파일 이동 실패 (기타, 무시됨)",
+            e,
+            meta,
+            level="warning",
+        )
+        return None
+
+
+def _handle_classify_error(task_self, e: Exception, file_path: str) -> None:
+    file_id = str(Path(file_path).absolute())
+    meta = _build_meta("classify_file", file_id)
+
+    if isinstance(e, OSError):
+        log_agent_error(logger, "파일 I/O 오류로 분류 실패", e, meta)
+        raise task_self.retry(
+            exc=e, max_retries=TASK_MAX_RETRIES, countdown=TASK_RETRY_COUNTDOWN
+        ) from e
+
+    if is_system_error(e):
+        log_agent_error(logger, "분류 태스크 시스템 오류", e, meta)
+        raise
+
+    log_agent_error(logger, "분류 태스크 실패", e, meta)
+    raise task_self.retry(
+        exc=e, max_retries=TASK_MAX_RETRIES, countdown=TASK_RETRY_COUNTDOWN
+    ) from e
+
+
 @app.task(bind=True)
 def classify_new_file_task(self, file_path: str):
     """
@@ -175,53 +243,17 @@ def classify_new_file_task(self, file_path: str):
                     valid_categories_display,
                 )
             else:
-                try:
-                    # Construct Connection (Stateless connection for this task)
-                    conn = ExternalToolConnection(
-                        tool_type=ExternalToolType.OBSIDIAN,
-                        config=ConnectionConfig(
-                            base_path=mcp_config.obsidian.vault_path, enabled=True
-                        ),
-                    )
-                    sync_service = ObsidianSyncService(conn)
-
-                    # Move file (Async wrapped in run_async)
-                    new_path = run_async(
-                        sync_service.move_file_to_para(file_path, result.category)
-                    )
-                    if new_path:
-                        logger.info(f"🚚 Moved file to: {new_path}")
-                except OSError as e:
-                    meta = {
-                        "action": "obsidian_move",
-                        "file_id": file_id or UNKNOWN_FILE_ID,
-                        "category": result.category,
-                    }
-                    log_agent_error(
-                        logger,
-                        "⚠️ Obsidian 파일 이동 실패 (분류 결과는 유지됨)",
-                        e,
-                        meta,
-                        level="error",
-                    )
-                except Exception as e:
-                    meta = {
-                        "action": "obsidian_move",
-                        "file_id": file_id or UNKNOWN_FILE_ID,
-                        "category": result.category,
-                    }
-                    if is_system_error(e):
-                        log_agent_error(
-                            logger, "❌ Obsidian 파일 이동 중 시스템 오류", e, meta
-                        )
-                        raise
-                    log_agent_error(
-                        logger,
-                        "⚠️ Obsidian 파일 이동 실패 (기타, 무시됨)",
-                        e,
-                        meta,
-                        level="warning",
-                    )
+                # Construct Connection (Stateless connection for this task)
+                conn = ExternalToolConnection(
+                    tool_type=ExternalToolType.OBSIDIAN,
+                    config=ConnectionConfig(
+                        base_path=mcp_config.obsidian.vault_path, enabled=True
+                    ),
+                )
+                sync_service = ObsidianSyncService(conn)
+                new_path = _safe_obsidian_move(
+                    file_path, result.category, file_id, sync_service
+                )
 
         return {
             "status": "success",
@@ -230,27 +262,8 @@ def classify_new_file_task(self, file_path: str):
             "new_path": new_path,
         }
 
-    except OSError as e:
-        meta = {
-            "action": "classify_file",
-            "file_id": str(Path(file_path).absolute()) or UNKNOWN_FILE_ID,
-        }
-        log_agent_error(logger, "❌ 파일 I/O 오류로 분류 실패", e, meta)
-        raise self.retry(
-            exc=e, max_retries=TASK_MAX_RETRIES, countdown=TASK_RETRY_COUNTDOWN
-        ) from e
     except Exception as e:
-        meta = {
-            "action": "classify_file",
-            "file_id": str(Path(file_path).absolute()) or UNKNOWN_FILE_ID,
-        }
-        if is_system_error(e):
-            log_agent_error(logger, "❌ 분류 태스크 시스템 오류", e, meta)
-            raise
-        log_agent_error(logger, "❌ 분류 태스크 실패", e, meta)
-        raise self.retry(
-            exc=e, max_retries=TASK_MAX_RETRIES, countdown=TASK_RETRY_COUNTDOWN
-        ) from e
+        _handle_classify_error(self, e, file_path)
 
 
 @app.task(bind=True)
