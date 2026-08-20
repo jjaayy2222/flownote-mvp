@@ -56,9 +56,13 @@ def _save_automation_log(log: AutomationLog):
     except OSError as e:
         log_agent_error(
             logger,
-            "⚠️ 자동화 로그 저장 실패 (I/O 오류)",
+            "자동화 로그 저장 실패 (I/O 오류)",
             e,
-            {"action": "save_automation_log"},
+            {
+                "action": "save_automation_log",
+                "auto_log_file": str(AUTO_LOG_FILE),
+                "log_id": getattr(log, "id", getattr(log, "log_id", None)),
+            },
             level="error",
         )
     except Exception as e:
@@ -66,9 +70,13 @@ def _save_automation_log(log: AutomationLog):
             raise
         log_agent_error(
             logger,
-            "⚠️ 자동화 로그 저장 실패 (기타)",
+            "자동화 로그 저장 실패 (기타)",
             e,
-            {"action": "save_automation_log"},
+            {
+                "action": "save_automation_log",
+                "auto_log_file": str(AUTO_LOG_FILE),
+                "log_id": getattr(log, "id", getattr(log, "log_id", None)),
+            },
             level="error",
         )
 
@@ -82,9 +90,13 @@ def _save_archiving_records(records: List[ArchivingRecord]):
     except OSError as e:
         log_agent_error(
             logger,
-            "⚠️ 아카이빙 레코드 저장 실패 (I/O 오류)",
+            "아카이빙 레코드 저장 실패 (I/O 오류)",
             e,
-            {"action": "save_archiving_records", "count": len(records)},
+            {
+                "action": "save_archiving_records",
+                "count": len(records),
+                "archive_log_file": str(ARCHIVE_LOG_FILE),
+            },
             level="error",
         )
     except Exception as e:
@@ -92,9 +104,13 @@ def _save_archiving_records(records: List[ArchivingRecord]):
             raise
         log_agent_error(
             logger,
-            "⚠️ 아카이빙 레코드 저장 실패 (기타)",
+            "아카이빙 레코드 저장 실패 (기타)",
             e,
-            {"action": "save_archiving_records", "count": len(records)},
+            {
+                "action": "save_archiving_records",
+                "count": len(records),
+                "archive_log_file": str(ARCHIVE_LOG_FILE),
+            },
             level="error",
         )
 
@@ -254,25 +270,37 @@ def _archive_single_file(path_obj: Path, log_id: str) -> ArchivingResult:
     except OSError as e:
         log_agent_error(
             logger,
-            "❌ 파일 아카이빙 실패 (I/O 오류)",
+            "파일 아카이빙 실패 (I/O 오류)",
             e,
-            {"action": "archive_single_file"},
+            {
+                "action": "archive_single_file",
+                "source_path": str(path_obj),
+                "log_id": log_id,
+            },
         )
         return ArchivingResult(is_error=True)
     except Exception as e:
         if is_system_error(e):
             log_agent_error(
                 logger,
-                "❌ 파일 아카이빙 중 시스템 오류",
+                "파일 아카이빙 중 시스템 오류",
                 e,
-                {"action": "archive_single_file"},
+                {
+                    "action": "archive_single_file",
+                    "source_path": str(path_obj),
+                    "log_id": log_id,
+                },
             )
             raise
         log_agent_error(
             logger,
-            "❌ 파일 아카이빙 실패 (기타)",
+            "파일 아카이빙 실패 (기타)",
             e,
-            {"action": "archive_single_file"},
+            {
+                "action": "archive_single_file",
+                "source_path": str(path_obj),
+                "log_id": log_id,
+            },
         )
         return ArchivingResult(is_error=True)
 
