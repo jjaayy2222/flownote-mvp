@@ -23,6 +23,8 @@ from backend.models.external_sync import (
 from backend.services.classification_service import ClassificationService
 from backend.services.obsidian_sync import ObsidianSyncService
 
+from .utils import build_meta
+
 logger = logging.getLogger(__name__)
 
 # Constants
@@ -42,11 +44,6 @@ LOCAL_OBSIDIAN_USER: str = "obsidian_local_agent"
 # Initialized lazily to avoid resource creation if not needed
 _executor: Optional[ThreadPoolExecutor] = None
 _executor_lock = threading.Lock()  # Lock for thread-safe initialization
-
-
-def _build_meta(base: Optional[dict] = None, **kwargs) -> dict:
-    """로그 메타데이터 구성을 위한 헬퍼 함수"""
-    return (base or {}) | kwargs
 
 
 def _safe_path(path_str: str) -> str:
@@ -141,7 +138,7 @@ def _safe_obsidian_move(
             logger.info(f"Moved file to: {new_path}")
         return new_path
     except OSError as e:
-        meta = _build_meta(
+        meta = build_meta(
             {"action": "obsidian_move"},
             file_id=file_id if file_id is not None else UNKNOWN_FILE_ID,
             category=category,
@@ -155,7 +152,7 @@ def _safe_obsidian_move(
         )
         return None
     except Exception as e:
-        meta = _build_meta(
+        meta = build_meta(
             {"action": "obsidian_move"},
             file_id=file_id if file_id is not None else UNKNOWN_FILE_ID,
             category=category,
@@ -175,7 +172,7 @@ def _safe_obsidian_move(
 
 def _handle_classify_error(task_self, e: Exception, file_path: str) -> None:
     file_id = str(Path(file_path).absolute())
-    meta = _build_meta(
+    meta = build_meta(
         {"action": "classify_file"},
         file_id=file_id if file_id is not None else UNKNOWN_FILE_ID,
     )
