@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional, Set
 
-from backend.agent.error_utils import is_system_error, log_agent_error
+from backend.agent.error_utils import build_meta, is_system_error, log_agent_error
 from backend.celery_app.celery import app
 from backend.config import AppConfig, PathConfig
 from backend.models.automation import (
@@ -20,8 +20,6 @@ from backend.models.automation import (
     AutomationTaskType,
 )
 from backend.services.file_access_logger import FileAccessLogger
-
-from .utils import build_meta
 
 logger = logging.getLogger(__name__)
 

@@ -26,7 +26,7 @@ import logging
 import re
 from itertools import islice
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional, Type, Union
+from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Type, Union
 
 if TYPE_CHECKING:
     import asyncio
@@ -154,6 +154,16 @@ def is_system_error(exc: BaseException) -> bool:
         return True
 
     return isinstance(exc, _get_cancelled_error_type())
+
+
+def build_meta(
+    base: Optional[Mapping[str, Any]] = None, **kwargs: Any
+) -> Dict[str, Any]:
+    """
+    [KO] 로그 메타데이터 일관성 유지를 위한 공통 헬퍼 함수
+    [EN] Common helper function for consistent log metadata construction
+    """
+    return dict(base or {}) | kwargs
 
 
 def log_agent_error(
