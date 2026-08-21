@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from backend.agent.constants import UNKNOWN_FILE_ID
-from backend.agent.error_utils import is_system_error, log_agent_error
+from backend.agent.error_utils import build_meta, is_system_error, log_agent_error
 from backend.celery_app.celery import app
 
 # Sync & Config Imports
@@ -22,8 +22,6 @@ from backend.models.external_sync import (
 )
 from backend.services.classification_service import ClassificationService
 from backend.services.obsidian_sync import ObsidianSyncService
-
-from .utils import build_meta
 
 logger = logging.getLogger(__name__)
 
