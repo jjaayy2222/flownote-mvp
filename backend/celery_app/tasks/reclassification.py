@@ -88,7 +88,7 @@ def _read_file_content(path_obj: Path) -> Tuple[Optional[str], bool]:
     try:
         content = path_obj.read_text(encoding="utf-8", errors="ignore")
     except OSError as exc:
-        meta = build_meta({"action": "read_file_content"}, file_path=str(path_obj))
+        meta = build_meta({"action": "read_file_content"}, file_path=path_obj.name)
         log_agent_error(logger, f"Failed to read file {path_obj.name}", exc, meta)
         return None, True
 
@@ -147,7 +147,7 @@ async def _reclassify_file(
             old_category=old_category,
             new_category=new_category,
             confidence_score=result.get("confidence", 0.0),
-            reason=result.get("reason", ""),
+            reason=result.get("reasoning", ""),
             processed_at=datetime.now(),
         )
 
@@ -157,7 +157,7 @@ async def _reclassify_file(
         if is_system_error(exc):
             raise
         meta = build_meta(
-            {"action": "reclassify_file"}, file_path=file_path, log_id=log_id
+            {"action": "reclassify_file"}, file_path=Path(file_path).name, log_id=log_id
         )
         log_agent_error(
             logger, f"Error classifying file {Path(file_path).name}", exc, meta
@@ -206,6 +206,21 @@ async def _classify_files_async(
     return records, stats
 
 
+def _finalize_log(
+    log: AutomationLog,
+    start_time: datetime,
+    status: AutomationStatus,
+    details: Optional[dict] = None,
+) -> None:
+    """AutomationLog의 완료/스킵 상태를 일관성 있게 설정하고 저장하는 헬퍼"""
+    log.status = status
+    if details is not None:
+        log.details = details
+    log.completed_at = datetime.now()
+    log.duration_seconds = (log.completed_at - start_time).total_seconds()
+    _save_automation_log(log)
+
+
 def _execute_reclassification(task_id: str, task_name: str, days: int):
     """재분류 로직 공통 실행 함수"""
     start_time = datetime.now()
@@ -229,11 +244,12 @@ def _execute_reclassification(task_id: str, task_name: str, days: int):
         )
 
         if not target_files:
-            log.status = AutomationStatus.SKIPPED
-            log.details = {"message": "No files found to reclassify."}
-            log.completed_at = datetime.now()
-            log.duration_seconds = (log.completed_at - start_time).total_seconds()
-            _save_automation_log(log)
+            _finalize_log(
+                log,
+                start_time,
+                AutomationStatus.SKIPPED,
+                {"message": "No files found to reclassify."},
+            )
             return "Skipped (No files)"
 
         records, stats = asyncio.run(_classify_files_async(target_files, log_id))
@@ -242,12 +258,8 @@ def _execute_reclassification(task_id: str, task_name: str, days: int):
         log.files_updated = stats.updated
         log.errors_count = stats.errors
 
-        log.status = AutomationStatus.COMPLETED
-        log.completed_at = datetime.now()
-        log.duration_seconds = (log.completed_at - start_time).total_seconds()
-
         _save_reclassification_records(records)
-        _save_automation_log(log)
+        _finalize_log(log, start_time, AutomationStatus.COMPLETED)
 
         return f"Success: {stats.processed} processed, {stats.updated} updated."
 
