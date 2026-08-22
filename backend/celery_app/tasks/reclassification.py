@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from backend.agent.error_utils import build_meta, is_system_error, log_agent_error
 from backend.celery_app.celery import app
 from backend.classifier.hybrid_classifier import HybridClassifier
 from backend.config import PathConfig
@@ -50,8 +51,11 @@ def _save_automation_log(log: AutomationLog):
     try:
         with open(AUTO_LOG_FILE, "a", encoding="utf-8") as f:
             f.write(log.model_dump_json() + "\n")
-    except Exception as e:
-        logger.error(f"Failed to save automation log: {e}")
+    except OSError as exc:
+        meta = build_meta(
+            {"action": "save_automation_log"}, log_id=getattr(log, "log_id", None)
+        )
+        log_agent_error(logger, "Failed to save automation log", exc, meta)
 
 
 def _save_reclassification_records(records: List[ReclassificationRecord]):
@@ -60,8 +64,11 @@ def _save_reclassification_records(records: List[ReclassificationRecord]):
         with open(RECORD_LOG_FILE, "a", encoding="utf-8") as f:
             for record in records:
                 f.write(record.model_dump_json() + "\n")
-    except Exception as e:
-        logger.error(f"Failed to save reclassification records: {e}")
+    except OSError as exc:
+        meta = build_meta(
+            {"action": "save_reclassification_records"}, count=len(records)
+        )
+        log_agent_error(logger, "Failed to save reclassification records", exc, meta)
 
 
 def _read_file_content(path_obj: Path) -> Tuple[Optional[str], bool]:
@@ -80,8 +87,9 @@ def _read_file_content(path_obj: Path) -> Tuple[Optional[str], bool]:
 
     try:
         content = path_obj.read_text(encoding="utf-8", errors="ignore")
-    except Exception as e:
-        logger.error(f"Failed to read file {path_obj}: {e}")
+    except OSError as exc:
+        meta = build_meta({"action": "read_file_content"}, file_path=str(path_obj))
+        log_agent_error(logger, f"Failed to read file {path_obj.name}", exc, meta)
         return None, True
 
     if not content.strip():
@@ -93,10 +101,14 @@ def _read_file_content(path_obj: Path) -> Tuple[Optional[str], bool]:
 def _infer_para_category(path_obj: Path) -> str:
     """Helper to infer current PARA category from path"""
     parts = path_obj.parts
-    for para in ["Projects", "Areas", "Resources", "Archives", "Inbox"]:
-        if para in parts:
-            return para
-    return "Unknown"
+    return next(
+        (
+            para
+            for para in ["Projects", "Areas", "Resources", "Archives", "Inbox"]
+            if para in parts
+        ),
+        "Unknown",
+    )
 
 
 async def _reclassify_file(
@@ -123,24 +135,33 @@ async def _reclassify_file(
 
         # 카테고리 변경 감지
         old_category = _infer_para_category(path_obj)
-        is_updated = old_category.lower() != result.category.lower()
+
+        # HybridClassifier returns a Dict, so we must access it with dictionary syntax
+        new_category = result.get("category", "Unknown")
+        is_updated = old_category.lower() != new_category.lower()
 
         record = ReclassificationRecord(
             record_id=str(uuid.uuid4()),
             automation_log_id=log_id,
             file_path=file_path,
             old_category=old_category,
-            new_category=result.category,
-            confidence_score=result.confidence,
-            reason=result.reason,
+            new_category=new_category,
+            confidence_score=result.get("confidence", 0.0),
+            reason=result.get("reason", ""),
             processed_at=datetime.now(),
         )
 
         return ReclassificationResult(record=record, is_updated=is_updated)
 
-    except Exception:
-        # 전체 traceback 로깅
-        logger.exception("Error classifying file %s", file_path)
+    except Exception as exc:
+        if is_system_error(exc):
+            raise
+        meta = build_meta(
+            {"action": "reclassify_file"}, file_path=file_path, log_id=log_id
+        )
+        log_agent_error(
+            logger, f"Error classifying file {Path(file_path).name}", exc, meta
+        )
         return ReclassificationResult(is_error=True)
 
 
@@ -159,8 +180,11 @@ async def _classify_files_async(
     """
     try:
         classifier = HybridClassifier()
-    except Exception as e:
-        logger.error(f"Failed to initialize classifier: {e}")
+    except Exception as exc:
+        if is_system_error(exc):
+            raise
+        meta = build_meta({"action": "init_classifier"}, log_id=log_id)
+        log_agent_error(logger, "Failed to initialize classifier", exc, meta)
         return [], ClassificationStats(errors=len(files))
 
     records = []
@@ -227,16 +251,19 @@ def _execute_reclassification(task_id: str, task_name: str, days: int):
 
         return f"Success: {stats.processed} processed, {stats.updated} updated."
 
-    except Exception as e:
-        logger.error(f"[{task_name}] Failed: {e}")
+    except Exception as exc:
+        if is_system_error(exc):
+            raise
+        meta = build_meta({"action": "execute_reclassification"}, task_name=task_name)
+        log_agent_error(logger, f"[{task_name}] Failed", exc, meta)
         log.status = AutomationStatus.FAILED
-        log.details = {"error": str(e)}
+        log.details = {"error": str(exc), "error_type": type(exc).__name__}
         log.completed_at = datetime.now()
         log.duration_seconds = (log.completed_at - start_time).total_seconds()
         log.errors_count += 1
 
         _save_automation_log(log)
-        raise e
+        raise exc
 
 
 @app.task(bind=True)
