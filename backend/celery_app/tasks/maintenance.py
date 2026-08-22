@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
+from backend.agent.error_utils import build_meta, log_agent_error
 from backend.celery_app.celery import app
 from backend.config import PathConfig
 from backend.models.automation import (
@@ -42,12 +43,11 @@ def _save_automation_log(log: AutomationLog):
     try:
         with open(AUTO_LOG_FILE, "a", encoding="utf-8") as f:
             f.write(log.model_dump_json() + "\n")
-    except Exception as exc:
-        logger.error(
-            "Failed to save maintenance log",
-            exc_info=False,
-            extra={"error_type": type(exc).__name__},
+    except OSError as exc:
+        meta = build_meta(
+            {"action": "save_maintenance_log"}, log_id=getattr(log, "log_id", None)
         )
+        log_agent_error(logger, "Failed to save maintenance log", exc, meta)
 
 
 def _create_maintenance_log(
@@ -156,17 +156,14 @@ def _cleanup_jsonl_file(
         # 원본 파일 교체
         shutil.move(temp_path, str(file_path))
 
-    except Exception as exc:
-        logger.error(
-            f"Failed to cleanup {file_path.name}",
-            exc_info=False,
-            extra={"error_type": type(exc).__name__},
-        )
+    except OSError as exc:
+        meta = build_meta({"action": "cleanup_jsonl_file"}, file_path=str(file_path))
+        log_agent_error(logger, f"Failed to cleanup {file_path.name}", exc, meta)
         # 임시 파일 정리
-        try:
-            Path(temp_path).unlink()
-        except Exception:
-            pass
+        from contextlib import suppress
+
+        with suppress(OSError):
+            Path(temp_path).unlink(missing_ok=True)
         raise
 
     return {"total": total_count, "deleted": deleted_count, "kept": kept_count}
@@ -233,13 +230,10 @@ def cleanup_old_logs(self):
 
         return f"Cleanup completed: {total_deleted} logs deleted"
 
-    except Exception as exc:
+    except OSError as exc:
         error_type = type(exc).__name__
-        logger.error(
-            f"{task_name} failed",
-            exc_info=False,
-            extra={"task_name": task_name, "error_type": error_type, "unhandled": True},
-        )
+        meta = build_meta({"action": task_name}, error_type=error_type, unhandled=True)
+        log_agent_error(logger, f"{task_name} failed", exc, meta)
 
         details["error_type"] = error_type
         log = _create_maintenance_log(
@@ -295,11 +289,13 @@ def backup_automation_data(self):
                 backup_files.append(str(backup_path))
                 logger.info(f"Backed up {source_file.name} to {backup_filename}")
 
-            except Exception as exc:
-                logger.error(
-                    f"Failed to backup {source_file.name}",
-                    exc_info=False,
-                    extra={"error_type": type(exc).__name__},
+            except OSError as exc:
+                meta = build_meta(
+                    {"action": "backup_automation_data_file"},
+                    source_file=source_file.name,
+                )
+                log_agent_error(
+                    logger, f"Failed to backup {source_file.name}", exc, meta
                 )
                 errors_count += 1
 
@@ -308,7 +304,7 @@ def backup_automation_data(self):
         details["timestamp"] = timestamp
 
         # 부분 성공 지원: 일부라도 성공하면 COMPLETED, 모두 실패면 FAILED
-        if len(backup_files) > 0:
+        if backup_files:
             status = AutomationStatus.COMPLETED
         else:
             status = AutomationStatus.FAILED
@@ -326,13 +322,10 @@ def backup_automation_data(self):
 
         return f"Backup completed: {len(backup_files)} files backed up"
 
-    except Exception as exc:
+    except OSError as exc:
         error_type = type(exc).__name__
-        logger.error(
-            f"{task_name} failed",
-            exc_info=False,
-            extra={"task_name": task_name, "error_type": error_type, "unhandled": True},
-        )
+        meta = build_meta({"action": task_name}, error_type=error_type, unhandled=True)
+        log_agent_error(logger, f"{task_name} failed", exc, meta)
 
         details["error_type"] = error_type
         log = _create_maintenance_log(
