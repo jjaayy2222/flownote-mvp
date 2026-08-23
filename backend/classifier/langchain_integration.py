@@ -121,8 +121,13 @@ def get_para_classification_prompt() -> str:
 
     prompt_path = CLASSIFIER_DIR / "prompts" / "para_classification_prompt.txt"
 
-    with open(prompt_path, "r", encoding="utf-8") as f:
-        content = f.read()
+    try:
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except FileNotFoundError:
+        # Raise a sanitized OSError without the absolute path to protect PII
+        # The caller (classify_with_*) will catch this and log it via log_agent_error
+        raise OSError(f"Prompt file not found: {prompt_path.name}") from None
 
     # Escape all curly braces so PromptTemplate doesn't misinterpret them
     lines = []
@@ -252,6 +257,32 @@ def _merge_confidence_weighted(
     )
 
 
+def _execute_langchain_classification(
+    text: str, metadata: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """Core execution logic for LangChain classification."""
+    include_metadata = metadata is not None
+    chain = create_para_chain(include_metadata=include_metadata)
+    input_data = _build_langchain_input(text, metadata)
+    result = chain.invoke(input_data)
+
+    logger.info(
+        "Classification complete: %s (confidence: %.2f%%, with_metadata: %s)",
+        result["category"],
+        result["confidence"] * 100,
+        include_metadata,
+    )
+
+    return {
+        "category": result["category"],
+        "confidence": result["confidence"],
+        "reasoning": result["reasoning"],
+        "detected_cues": result.get("detected_cues", []),
+        "source": "langchain",
+        "has_metadata": include_metadata,
+    }
+
+
 def classify_with_langchain(
     text: str, metadata: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
@@ -281,33 +312,7 @@ def classify_with_langchain(
     """
 
     try:
-        # Determine whether to include optional metadata in the prompt
-        include_metadata = metadata is not None
-
-        # Build the LangChain chain for this request
-        chain = create_para_chain(include_metadata=include_metadata)
-
-        # Assemble input dict via helper (handles metadata merging)
-        input_data = _build_langchain_input(text, metadata)
-
-        # Invoke the chain (Prompt -> LLM -> JsonOutputParser)
-        result = chain.invoke(input_data)
-
-        logger.info(
-            "Classification complete: %s (confidence: %.2f%%, with_metadata: %s)",
-            result["category"],
-            result["confidence"] * 100,
-            include_metadata,
-        )
-
-        return {
-            "category": result["category"],
-            "confidence": result["confidence"],
-            "reasoning": result["reasoning"],
-            "detected_cues": result.get("detected_cues", []),
-            "source": "langchain",
-            "has_metadata": include_metadata,
-        }
+        return _execute_langchain_classification(text, metadata)
 
     except (
         OutputParserException,
@@ -348,9 +353,9 @@ def get_metadata_classification_prompt() -> str:
 
         return "\n".join(lines)
     except FileNotFoundError:
-        # Log only the filename to avoid exposing absolute paths (PII protection)
-        logger.error("Metadata prompt file not found: %s", prompt_path.name)
-        raise
+        # Raise a sanitized OSError without the absolute path to protect PII
+        # The caller (classify_with_*) will catch this and log it via log_agent_error
+        raise OSError(f"Prompt file not found: {prompt_path.name}") from None
 
 
 def create_metadata_classification_chain():
