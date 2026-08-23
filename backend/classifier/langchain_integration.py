@@ -1,11 +1,11 @@
 # backend/classifier/langchain_integration.py
 
 """
-LangChain을 사용한 PARA 분류 통합 모듈 (메타데이터 대비)
-GPT-4o-mini를 사용한 AI 기반 분류
-- 상대경로 + 동적 버전
-- 정규표현식 사용
-- metadata_classification_prompt 읽기 추가
+LangChain-based PARA classification integration module.
+Uses GPT-4o-mini for AI-powered document classification.
+- Dynamic path resolution (no hardcoded paths)
+- Regex-based brace escaping for PromptTemplate compatibility
+- Supports text-only, metadata-only, and hybrid classification modes
 """
 
 import json
@@ -16,19 +16,23 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import openai
 from dotenv import load_dotenv
+from langchain_core.exceptions import OutputParserException
 
-# 상대경로 + 동적 계산
+from backend.agent.error_utils import build_meta, log_agent_error
+
+# Resolve paths dynamically to avoid hardcoding
 CURRENT_FILE = Path(__file__)
 CLASSIFIER_DIR = CURRENT_FILE.parent
 BACKEND_DIR = CLASSIFIER_DIR.parent
 PROJECT_ROOT = BACKEND_DIR.parent
 
-# 1. .env 파일 로드
+# Load environment variables from project root .env
 ENV_FILE = PROJECT_ROOT / ".env"
 load_dotenv(str(ENV_FILE))
 
-# 2. sys.path에 경로 추가
+# Ensure backend and project root are importable
 sys.path.insert(0, str(BACKEND_DIR))
 sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -36,24 +40,24 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 
-# 통합 모델 마이그레이션 임포트
+# Unified model migration import
 from backend.models import PARAClassificationOutput
 
-# 3. config import (3단계 fallback)
+# 3-level fallback for ModelConfig to support both package and standalone execution
 try:
-    # 1번째 시도: 절대 import
+    # Attempt 1: absolute import (standard app context)
     from backend.config import ModelConfig
 
-    print("✅ ModelConfig loaded from backend.config")
+    print("ModelConfig loaded from backend.config")
 except ImportError:
     try:
-        # 2번째 시도: 상대 import
+        # Attempt 2: relative import (when run from within backend/)
         from config import ModelConfig
 
-        print("✅ ModelConfig loaded from config")
+        print("ModelConfig loaded from config")
     except ImportError:
-        # 3번째 시도: 직접 환경변수
-        print("⚠️ Using os.getenv fallback")
+        # Attempt 3: fallback to raw environment variables
+        print("[WARN] Using os.getenv fallback for ModelConfig")
 
         class ModelConfig:
             GPT4O_MINI_API_KEY = os.getenv("GPT4O_MINI_API_KEY")
@@ -113,25 +117,23 @@ def escape_json_braces_complete(content: str) -> str:
 
 
 def get_para_classification_prompt() -> str:
-    """프롬프트 파일 읽기 + 간단한 이스케이프"""
+    """Read the PARA classification prompt file and escape braces for PromptTemplate."""
 
     prompt_path = CLASSIFIER_DIR / "prompts" / "para_classification_prompt.txt"
 
     with open(prompt_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # ✅ 간단한 이스케이프
+    # Escape all curly braces so PromptTemplate doesn't misinterpret them
     lines = []
     for line in content.split("\n"):
-        # {text}는 건드리지 말고
-        if "{text}" in line:
-            lines.append(line)
-        else:
-            # 나머지 { } 는 이스케이프
+        if "{text}" not in line:
+            # Escape all other braces for PromptTemplate compatibility
             line = line.replace("{", "{{").replace("}", "}}")
-            # {text}는 원상복구
+            # Restore {text} after the blanket escape
             line = line.replace("{{text}}", "{text}")
-            lines.append(line)
+        # Leave lines that contain the template variable {text} untouched
+        lines.append(line)
 
     return "\n".join(lines)
 
@@ -146,11 +148,11 @@ def create_para_prompt(include_metadata: bool = False) -> PromptTemplate:
         PromptTemplate: LangChain 프롬프트
     """
 
-    # 기본 프롬프트 로드
+    # Load the base PARA classification prompt from disk
     base_prompt = get_para_classification_prompt()
 
     if include_metadata:
-        # 메타데이터 섹션 추가
+        # Append metadata section when additional file context is available
         metadata_instruction = """
 ## 📋 추가 파일 정보
 - 파일명: {filename}
@@ -165,10 +167,8 @@ def create_para_prompt(include_metadata: bool = False) -> PromptTemplate:
         full_prompt = base_prompt
         input_variables = ["text"]
 
-    # 프롬프트 생성
-    prompt = PromptTemplate(input_variables=input_variables, template=full_prompt)
-
-    return prompt
+    # Build and return the LangChain PromptTemplate
+    return PromptTemplate(input_variables=input_variables, template=full_prompt)
 
 
 def create_para_chain(include_metadata: bool = False):
@@ -182,7 +182,7 @@ def create_para_chain(include_metadata: bool = False):
         Runnable: LangChain 실행 가능 객체
     """
 
-    # ✅ config의 설정으로 LLM 초기화
+    # Initialize LLM using config-driven settings (no hardcoded keys or URLs)
     llm = ChatOpenAI(
         api_key=ModelConfig.GPT4O_MINI_API_KEY,
         base_url=ModelConfig.GPT4O_MINI_BASE_URL,
@@ -191,16 +191,65 @@ def create_para_chain(include_metadata: bool = False):
         max_tokens=500,
     )
 
-    # 프롬프트 생성
+    # Build the prompt template with or without metadata fields
     prompt = create_para_prompt(include_metadata=include_metadata)
 
-    # JSON 출력 파서
+    # JSON output parser bound to the PARAClassificationOutput Pydantic schema
     parser = JsonOutputParser(pydantic_object=PARAClassificationOutput)
 
-    # Chain 구성: Prompt → LLM → Parser
-    chain = prompt | llm | parser
+    # Compose the LCEL chain: Prompt -> LLM -> Parser
+    return prompt | llm | parser
 
-    return chain
+
+def _build_langchain_input(
+    text: str, metadata: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """Assemble the chain input dict, merging metadata fields when present."""
+    if metadata is not None:
+        return {
+            "text": text,
+            "filename": metadata.get("filename", "N/A"),
+            "created_date": metadata.get("created_date", "N/A"),
+            "tags": ", ".join(metadata.get("tags", [])) or "None",
+        }
+    return {"text": text}
+
+
+def _merge_confidence_weighted(
+    text_result: Dict[str, Any], metadata_result: Dict[str, Any]
+) -> tuple[str, float, str]:
+    """Apply confidence-weighted merge strategy and return (category, confidence, strategy)."""
+    text_conf = text_result["confidence"]
+    meta_conf = metadata_result["confidence"]
+
+    if text_conf >= 0.7:
+        # Text-dominant when confidence >= 70% (weight: text 70% + metadata 30%)
+        return (
+            text_result["category"],
+            min(text_conf * 0.7 + meta_conf * 0.3, 1.0),
+            "text_dominant (0.7:0.3)",
+        )
+    if text_conf >= 0.5:
+        # Balanced merge when text confidence falls between 50-70%
+        if text_result["category"] == metadata_result["category"]:
+            # Agreement boosts confidence
+            return (
+                text_result["category"],
+                max(text_conf, meta_conf),
+                "balanced (0.5:0.5)",
+            )
+        # On conflict, prefer metadata as it carries more explicit signals
+        return (
+            metadata_result["category"],
+            min(text_conf * 0.5 + meta_conf * 0.5, 1.0),
+            "balanced (0.5:0.5)",
+        )
+    # Metadata-dominant when text confidence < 50% (weight: text 30% + metadata 70%)
+    return (
+        metadata_result["category"],
+        min(text_conf * 0.3 + meta_conf * 0.7, 1.0),
+        "metadata_dominant (0.3:0.7)",
+    )
 
 
 def classify_with_langchain(
@@ -232,31 +281,23 @@ def classify_with_langchain(
     """
 
     try:
-        # 메타데이터 포함 여부 결정
+        # Determine whether to include optional metadata in the prompt
         include_metadata = metadata is not None
 
-        # Chain 생성
+        # Build the LangChain chain for this request
         chain = create_para_chain(include_metadata=include_metadata)
 
-        # 입력 데이터 구성
-        input_data = {"text": text}
+        # Assemble input dict via helper (handles metadata merging)
+        input_data = _build_langchain_input(text, metadata)
 
-        if include_metadata:
-            input_data.update(
-                {
-                    "filename": metadata.get("filename", "N/A"),
-                    "created_date": metadata.get("created_date", "N/A"),
-                    "tags": ", ".join(metadata.get("tags", [])) or "None",
-                }
-            )
-
-        # 분류 실행
+        # Invoke the chain (Prompt -> LLM -> JsonOutputParser)
         result = chain.invoke(input_data)
 
         logger.info(
-            f"분류 완료: {result['category']} "
-            f"(confidence: {result['confidence']:.2%}, "
-            f"metadata: {include_metadata})"
+            "Classification complete: %s (confidence: %.2f%%, with_metadata: %s)",
+            result["category"],
+            result["confidence"] * 100,
+            include_metadata,
         )
 
         return {
@@ -268,8 +309,17 @@ def classify_with_langchain(
             "has_metadata": include_metadata,
         }
 
-    except Exception as e:
-        logger.error(f"LangChain 분류 중 오류: {str(e)}")
+    except (
+        OutputParserException,
+        openai.APITimeoutError,
+        openai.RateLimitError,
+        openai.APIConnectionError,
+        openai.APIStatusError,
+        OSError,
+    ) as exc:
+        # Catch specific LLM API and I/O failures; re-raise after structured logging
+        meta = build_meta({"action": "classify_with_langchain"})
+        log_agent_error(logger, "LangChain classification failed", exc, meta)
         raise
 
 
@@ -285,19 +335,21 @@ def get_metadata_classification_prompt() -> str:
         with open(prompt_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        # 간단한 이스케이프 처리
+        # Escape all braces except the {metadata} template variable
         lines = []
         for line in content.split("\n"):
-            if "{metadata}" in line:
-                lines.append(line)
-            else:
+            if "{metadata}" not in line:
+                # Escape all other braces for PromptTemplate compatibility
                 line = line.replace("{", "{{").replace("}", "}}")
+                # Restore {metadata} after the blanket escape
                 line = line.replace("{{metadata}}", "{metadata}")
-                lines.append(line)
+            # Leave lines containing the template variable {metadata} untouched
+            lines.append(line)
 
         return "\n".join(lines)
     except FileNotFoundError:
-        logger.error(f"메타데이터 프롬프트 파일을 찾을 수 없습니다: {prompt_path}")
+        # Log only the filename to avoid exposing absolute paths (PII protection)
+        logger.error("Metadata prompt file not found: %s", prompt_path.name)
         raise
 
 
@@ -343,18 +395,19 @@ def classify_with_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
         }
     """
     try:
-        # Chain 생성
+        # Build the metadata-only classification chain
         chain = create_metadata_classification_chain()
 
-        # 메타데이터를 JSON 문자열로 변환
+        # Serialize metadata dict to a JSON string for the prompt template
         metadata_json = json.dumps(metadata, ensure_ascii=False, indent=2)
 
-        # 분류 실행
+        # Invoke the chain
         result = chain.invoke({"metadata": metadata_json})
 
         logger.info(
-            f"메타데이터 분류 완료: {result['category']} "
-            f"(confidence: {result['confidence']:.2%})"
+            "Metadata classification complete: %s (confidence: %.2f%%)",
+            result["category"],
+            result["confidence"] * 100,
         )
 
         return {
@@ -366,8 +419,17 @@ def classify_with_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
             "metadata_used": True,
         }
 
-    except Exception as e:
-        logger.error(f"메타데이터 분류 중 오류: {str(e)}")
+    except (
+        OutputParserException,
+        openai.APITimeoutError,
+        openai.RateLimitError,
+        openai.APIConnectionError,
+        openai.APIStatusError,
+        OSError,
+    ) as exc:
+        # Catch specific LLM API and I/O failures; re-raise after structured logging
+        meta = build_meta({"action": "classify_with_metadata"})
+        log_agent_error(logger, "Metadata classification failed", exc, meta)
         raise
 
 
@@ -392,56 +454,45 @@ def hybrid_classify(text: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
         }
     """
     try:
-        # 1. 텍스트 분류
+        # Step 1: text-based classification
         text_result = classify_with_langchain(text)
 
-        # 2. 메타데이터 분류
+        # Step 2: metadata-based classification
         metadata_result = classify_with_metadata(metadata)
 
-        # 3. 신뢰도 기반 병합
-        text_conf = text_result["confidence"]
-        meta_conf = metadata_result["confidence"]
-
-        if text_conf >= 0.7:
-            # 텍스트 70% + 메타 30%
-            merge_strategy = "text_dominant (0.7:0.3)"
-            # 텍스트 결과를 주로 사용하되 신뢰도 조정
-            final_category = text_result["category"]
-            final_confidence = min(text_conf * 0.7 + meta_conf * 0.3, 1.0)
-        elif text_conf >= 0.5:
-            # 텍스트 50% + 메타 50%
-            merge_strategy = "balanced (0.5:0.5)"
-            # 동의하면 높은 신뢰도, 불일치하면 낮은 신뢰도
-            if text_result["category"] == metadata_result["category"]:
-                final_category = text_result["category"]
-                final_confidence = max(text_conf, meta_conf)
-            else:
-                # 불일치 시 메타데이터 우선 (메타가 더 명시적)
-                final_category = metadata_result["category"]
-                final_confidence = min(text_conf * 0.5 + meta_conf * 0.5, 1.0)
-        else:
-            # 메타데이터 우선 (70% 이상)
-            merge_strategy = "metadata_dominant (0.3:0.7)"
-            final_category = metadata_result["category"]
-            final_confidence = min(text_conf * 0.3 + meta_conf * 0.7, 1.0)
+        # Step 3: merge results using a confidence-weighted strategy
+        final_category, final_confidence, merge_strategy = _merge_confidence_weighted(
+            text_result, metadata_result
+        )
 
         logger.info(
-            f"하이브리드 분류: {final_category} "
-            f"(strategy: {merge_strategy}, confidence: {final_confidence:.2%})"
+            "Hybrid classification: %s (strategy: %s, confidence: %.2f%%)",
+            final_category,
+            merge_strategy,
+            final_confidence * 100,
         )
 
         return {
             "category": final_category,
             "confidence": final_confidence,
-            "reasoning": f"텍스트: {text_result['reasoning']} | 메타: {metadata_result['reasoning']}",
+            "reasoning": f"Text: {text_result['reasoning']} | Meta: {metadata_result['reasoning']}",
             "text_result": text_result,
             "metadata_result": metadata_result,
             "merge_strategy": merge_strategy,
             "source": "hybrid",
         }
 
-    except Exception as e:
-        logger.error(f"하이브리드 분류 중 오류: {str(e)}")
+    except (
+        OutputParserException,
+        openai.APITimeoutError,
+        openai.RateLimitError,
+        openai.APIConnectionError,
+        openai.APIStatusError,
+        OSError,
+    ) as exc:
+        # Propagate specific LLM / IO failures with structured logging
+        meta = build_meta({"action": "hybrid_classify"})
+        log_agent_error(logger, "Hybrid classification failed", exc, meta)
         raise
 
 
@@ -595,7 +646,7 @@ if __name__ == "__main__":
 """test_result_2(metadata_prompt용)
 
     ✅ ModelConfig loaded from backend.config
-    
+
     ============================================================
     Config 기반 LangChain 테스트
     ============================================================
