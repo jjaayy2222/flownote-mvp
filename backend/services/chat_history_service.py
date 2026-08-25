@@ -1,21 +1,24 @@
 # backend/services/chat_history_service.py
 
+import contextlib
 import json
 import logging
 from datetime import datetime, timezone
 from json import JSONDecodeError
 from typing import Any, Dict, List, NoReturn, Optional, Tuple
 
-from backend.agent.chat.state import (
+import redis.exceptions
+
+from backend.agent.chat.state import (  # type: ignore[import, import-untyped]
     FeedbackEntry,
-)  # type: ignore[import, import-untyped]
-from backend.api.models import ChatMessage  # type: ignore[import]
-from backend.api.models.shared import (
-    RATING_DOWN,  # type: ignore[import]
-    RATING_NONE,
-    RATING_UP,
-    FeedbackRating,
 )
+from backend.agent.error_utils import (  # type: ignore[import]
+    build_meta,
+    log_agent_error,
+)
+from backend.api.models import ChatMessage  # type: ignore[import]
+from backend.api.models.shared import RATING_DOWN  # type: ignore[import]
+from backend.api.models.shared import RATING_NONE, RATING_UP, FeedbackRating
 from backend.services.redis_pubsub import redis_client  # type: ignore[import]
 from backend.utils import mask_pii_id  # type: ignore[import]
 
@@ -63,14 +66,17 @@ def _log_and_reraise_generic(
     """예외 종류에 따라 선별적으로 로깅하고 재전파한다.
 
     - RedisUnavailableError: _ensure_connected에서 이미 로깅됨. 중복 없이 재전파.
-    - 그 외 예외: message와 extra로 logger.exception을 기록한 후 재전파.
+    - 그 외 예외: message와 extra를 build_meta로 포장하여 log_agent_error로 기록 후 재전파.
 
     반환하지 않음(NoReturn): 항상 예외를 raise하므로 호출 이후 코드는 도달 불가.
     이를 통해 각 public 메서드의 더미 return 문이 불필요해진다.
     """
     if isinstance(exc, RedisUnavailableError):
         raise exc  # 중복 로깅 방지
-    logger.exception(f"[OBS] {message}", extra=extra)
+
+    # 구조화된 로깅 (PII 안전 보장)
+    meta = build_meta({"action": message, **extra})
+    log_agent_error(logger, message, exc, meta)
     raise exc
 
 
@@ -141,6 +147,12 @@ class ChatHistoryService:
     def __init__(self, ttl: int = 86400 * 7):  # 기본 7일 유지
         self.ttl = ttl
 
+    @property
+    def _redis(self) -> Any:
+        if redis_client.redis is None:
+            raise RedisUnavailableError("Redis is not connected.")
+        return redis_client.redis
+
     # ── 키 팩토리 ───────────────────────────────────────────────
     def _history_key(self, session_id: str) -> str:
         return f"{_HISTORY_PREFIX}{session_id}"
@@ -164,7 +176,7 @@ class ChatHistoryService:
         if not redis_client.is_connected():
             try:
                 await redis_client.connect()
-            except Exception as e:
+            except (redis.exceptions.RedisError, OSError) as e:
                 logger.exception(
                     "Redis connection failed in ChatHistoryService [%s]",
                     context,
@@ -185,7 +197,7 @@ class ChatHistoryService:
 
         파싱 실패 또는 키 없을 때 None 반환. 예외·로그 정책을 단일화한다.
         """
-        raw = await redis_client.redis.get(key)
+        raw = await self._redis.get(key)
         if not raw:
             return None
         try:
@@ -260,8 +272,8 @@ class ChatHistoryService:
     async def _save_session_meta(self, session_id: str, meta: Dict[str, Any]) -> None:
         """메타데이터 dict를 Redis에 저장하고 TTL을 갱신한다."""
         key = self._session_meta_key(session_id)
-        await redis_client.redis.set(key, json.dumps(meta, ensure_ascii=False))
-        await redis_client.redis.expire(key, self.ttl)
+        await self._redis.set(key, json.dumps(meta, ensure_ascii=False))
+        await self._redis.expire(key, self.ttl)
 
     async def _build_session_meta(
         self,
@@ -305,8 +317,8 @@ class ChatHistoryService:
         if not user_id:
             return
         user_sessions_key = self._user_sessions_key(user_id)
-        await redis_client.redis.zadd(user_sessions_key, {session_id: now.timestamp()})
-        await redis_client.redis.expire(user_sessions_key, self.ttl)
+        await self._redis.zadd(user_sessions_key, {session_id: now.timestamp()})
+        await self._redis.expire(user_sessions_key, self.ttl)
 
     async def _touch_session(
         self,
@@ -402,7 +414,7 @@ class ChatHistoryService:
 
             user_sessions_key = self._user_sessions_key(user_id)
             # str() 캐스팅: decode_responses 설정 변경에 방어적으로 str 보장
-            raw_ids = await redis_client.redis.zrevrange(user_sessions_key, 0, -1)
+            raw_ids = await self._redis.zrevrange(user_sessions_key, 0, -1)
             if not raw_ids:
                 return []
 
@@ -410,7 +422,7 @@ class ChatHistoryService:
             meta_keys = [self._session_meta_key(sid) for sid in sids]
 
             # mget으로 N+1 → 2 Redis 라운드트립으로 최적화
-            raws = await redis_client.redis.mget(*meta_keys)
+            raws = await self._redis.mget(*meta_keys)
 
             # _parse_session_meta_for_list가 파싱+보안 필터를 담당 (루프 평탄화)
             results: List[Dict[str, Any]] = []
@@ -489,8 +501,8 @@ class ChatHistoryService:
             if message_id and message_id.strip():
                 message["message_id"] = message_id
 
-            await redis_client.redis.rpush(key, json.dumps(message))
-            await redis_client.redis.expire(key, self.ttl)
+            await self._redis.rpush(key, json.dumps(message))
+            await self._redis.expire(key, self.ttl)
 
             # 메타 preview + last_active_at + ZSET score를 단일 헬퍼로 갱신
             # user_id=None → _build_session_meta가 메타에서 복원하여 ZSET도 업데이트
@@ -519,7 +531,7 @@ class ChatHistoryService:
             await self._ensure_connected("get_history")
 
             key = self._history_key(session_id)
-            data = await redis_client.redis.lrange(key, -limit, -1)
+            data = await self._redis.lrange(key, -limit, -1)
             messages: List[ChatMessage] = []
             parse_errors: int = 0
             for item in data:
@@ -572,12 +584,12 @@ class ChatHistoryService:
                 if meta:
                     effective_user_id = meta.get("user_id")
 
-            await redis_client.redis.delete(self._history_key(session_id))
-            await redis_client.redis.delete(self._session_meta_key(session_id))
+            await self._redis.delete(self._history_key(session_id))
+            await self._redis.delete(self._session_meta_key(session_id))
 
             if effective_user_id:
                 user_sessions_key = self._user_sessions_key(effective_user_id)
-                await redis_client.redis.zrem(user_sessions_key, session_id)
+                await self._redis.zrem(user_sessions_key, session_id)
 
         except Exception as e:
             _log_and_reraise_generic(
@@ -612,10 +624,10 @@ class ChatHistoryService:
                 "text": feedback_text,
                 "timestamp": _now_utc().isoformat(),
             }
-            await redis_client.redis.hset(
+            await self._redis.hset(
                 key, message_id, json.dumps(meta, ensure_ascii=False)
             )
-            await redis_client.redis.expire(key, self.ttl)
+            await self._redis.expire(key, self.ttl)
         except Exception as e:
             _log_and_reraise_generic(
                 "Failed to save feedback",
@@ -649,7 +661,7 @@ class ChatHistoryService:
 
             # 1. 키 목록 수집 & 배치 단위 실시간 처리 (Streaming Aggregation 차용)
             while True:
-                cursor, partial_keys = await redis_client.redis.scan(
+                cursor, partial_keys = await self._redis.scan(
                     cursor, match=f"{_FEEDBACK_PREFIX}*", count=100
                 )
 
@@ -658,7 +670,7 @@ class ChatHistoryService:
                     key_str = _decode_str(raw_key)
                     session_id = key_str.replace(_FEEDBACK_PREFIX, "")
 
-                    feedback_hash = await redis_client.redis.hgetall(key_str)
+                    feedback_hash = await self._redis.hgetall(key_str)
                     for msg_id_raw, meta_raw in feedback_hash.items():
                         up_delta, down_delta, item = _process_feedback_entry(
                             session_id, msg_id_raw, meta_raw, trends
@@ -721,7 +733,7 @@ class ChatHistoryService:
         try:
             await self._ensure_connected("get_session_feedback")
             key = self._feedback_key(session_id)
-            feedback_hash = await redis_client.redis.hgetall(key)
+            feedback_hash = await self._redis.hgetall(key)
 
             def _parse_timestamp(ts: Any) -> float:
                 if isinstance(ts, (int, float)) and not isinstance(ts, bool):
@@ -734,11 +746,9 @@ class ChatHistoryService:
                             ts_str.replace("Z", "+00:00")
                         ).timestamp()
                     except ValueError:
-                        try:
+                        with contextlib.suppress(ValueError):
                             # Numeric string fallback
                             return float(ts_str)
-                        except ValueError:
-                            pass
                 return 0.0
 
             feedbacks_with_keys: List[Tuple[float, FeedbackEntry]] = []
