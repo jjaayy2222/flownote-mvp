@@ -11,6 +11,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
+from backend.agent.error_utils import (  # type: ignore[import]
+    build_meta,
+    log_agent_error,
+)
+from backend.utils import mask_pii_id  # type: ignore[import]
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,7 +41,7 @@ class FileAccessLogger:
         # 로그 파일 초기화
         self._ensure_log_file()
 
-    def _ensure_log_file(self):
+    def _ensure_log_file(self) -> None:
         """로그 파일이 없으면 생성하고 헤더를 작성"""
         if not self.log_path.exists():
             try:
@@ -43,9 +49,15 @@ class FileAccessLogger:
                 with open(self.log_path, "w", newline="", encoding="utf-8") as f:
                     writer = csv.DictWriter(f, fieldnames=self.fieldnames)
                     writer.writeheader()
-                logger.info(f"Created new access log file: {self.log_path}")
-            except Exception as e:
-                logger.error(f"Failed to create access log file: {e}")
+                logger.info("Created new access log file: %s", self.log_path.name)
+            except OSError as e:
+                meta = build_meta(
+                    {
+                        "action": "ensure_log_file",
+                        "log_file": self.log_path.name,
+                    }
+                )
+                log_agent_error(logger, "Failed to create access log file", e, meta)
 
     def log_access(self, file_path: str, access_type: str = "read") -> bool:
         """
@@ -66,13 +78,22 @@ class FileAccessLogger:
                 writer.writerow(
                     {
                         "timestamp": timestamp,
-                        "file_path": str(file_path),
+                        "file_path": file_path,
                         "access_type": access_type,
                     }
                 )
             return True
-        except Exception as e:
-            logger.error(f"Failed to log file access for {file_path}: {e}")
+        except (OSError, csv.Error) as e:
+            file_name = Path(file_path).name if file_path else ""
+            meta = build_meta(
+                {
+                    "action": "log_access",
+                    "file_name": file_name,
+                    "access_type": access_type,
+                    "path_hash": mask_pii_id(file_path),
+                }
+            )
+            log_agent_error(logger, "Failed to log file access", e, meta)
             return False
 
     def get_file_stats(self, file_path: str) -> Dict[str, Any]:
@@ -85,33 +106,46 @@ class FileAccessLogger:
         Returns:
             Dict: {
                 "access_count": int,
-                "last_accessed": str (ISO format),
+                "last_accessed": Optional[str] (ISO format),
                 "access_types": Dict[str, int] (Type별 횟수)
             }
         """
-        stats = {"access_count": 0, "last_accessed": None, "access_types": Counter()}
+        stats: Dict[str, Any] = {
+            "access_count": 0,
+            "last_accessed": None,
+            "access_types": Counter(),
+        }
 
         if not self.log_path.exists():
             return stats
 
         try:
-            target_path = str(file_path)
+            target_path = file_path
             with open(self.log_path, "r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    if row["file_path"] == target_path:
+                    if row.get("file_path") == target_path:
                         stats["access_count"] += 1
-                        stats["last_accessed"] = row[
+                        stats["last_accessed"] = row.get(
                             "timestamp"
-                        ]  # 순차적으로 읽으므로 마지막 값이 최신
-                        stats["access_types"][row["access_type"]] += 1
+                        )  # 순차적으로 읽으므로 마지막 값이 최신
+                        if acc_type := row.get("access_type"):
+                            stats["access_types"][acc_type] += 1
 
             # Counter를 dict로 변환
             stats["access_types"] = dict(stats["access_types"])
             return stats
 
-        except Exception as e:
-            logger.error(f"Failed to get stats for {file_path}: {e}")
+        except (OSError, csv.Error, KeyError) as e:
+            file_name = Path(file_path).name if file_path else ""
+            meta = build_meta(
+                {
+                    "action": "get_file_stats",
+                    "file_name": file_name,
+                    "path_hash": mask_pii_id(file_path),
+                }
+            )
+            log_agent_error(logger, "Failed to get file stats", e, meta)
             return stats
 
     def get_top_accessed_files(self, limit: int = 10) -> List[Dict[str, Any]]:
@@ -128,21 +162,28 @@ class FileAccessLogger:
             return []
 
         try:
-            counter = Counter()
+            counter: Counter[str] = Counter()
             with open(self.log_path, "r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    counter[row["file_path"]] += 1
+                    if f_path := row.get("file_path"):
+                        counter[f_path] += 1
 
             # 상위 limit개 추출
-            top_files = [
+            return [
                 {"file_path": path, "count": count}
                 for path, count in counter.most_common(limit)
             ]
-            return top_files
 
-        except Exception as e:
-            logger.error(f"Failed to get top accessed files: {e}")
+        except (OSError, csv.Error) as e:
+            meta = build_meta(
+                {
+                    "action": "get_top_accessed_files",
+                    "limit": limit,
+                    "log_file": self.log_path.name,
+                }
+            )
+            log_agent_error(logger, "Failed to get top accessed files", e, meta)
             return []
 
     def get_recent_files(self, days: int = 7) -> List[str]:
@@ -158,22 +199,33 @@ class FileAccessLogger:
         if not self.log_path.exists():
             return []
 
-        recent_files = set()
+        recent_files: set[str] = set()
         cutoff_date = datetime.now().timestamp() - (days * 24 * 60 * 60)
 
         try:
             with open(self.log_path, "r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
+                    ts_str = row.get("timestamp")
+                    f_path = row.get("file_path")
+                    if not ts_str or not f_path:
+                        continue
                     try:
                         # ISO format string to timestamp
-                        log_time = datetime.fromisoformat(row["timestamp"]).timestamp()
+                        log_time = datetime.fromisoformat(ts_str).timestamp()
                         if log_time >= cutoff_date:
-                            recent_files.add(row["file_path"])
+                            recent_files.add(f_path)
                     except ValueError:
                         continue
 
             return list(recent_files)
-        except Exception as e:
-            logger.error(f"Failed to get recent files: {e}")
+        except (OSError, csv.Error) as e:
+            meta = build_meta(
+                {
+                    "action": "get_recent_files",
+                    "days": days,
+                    "log_file": self.log_path.name,
+                }
+            )
+            log_agent_error(logger, "Failed to get recent files", e, meta)
             return []
