@@ -9,7 +9,7 @@ import logging
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 
 from backend.agent.error_utils import (  # type: ignore[import]
     build_meta,
@@ -59,17 +59,20 @@ class FileAccessLogger:
                 )
                 log_agent_error(logger, "Failed to create access log file", e, meta)
 
-    def log_access(self, file_path: str, access_type: str = "read") -> bool:
+    def log_access(
+        self, file_path: Union[str, Path], access_type: str = "read"
+    ) -> bool:
         """
         파일 접근 이력 기록
 
         Args:
-            file_path: 접근한 파일 경로
+            file_path: 접근한 파일 경로 (str 또는 Path)
             access_type: 접근 유형 ("read", "write", "create", "delete", "classify")
 
         Returns:
             bool: 성공 여부
         """
+        path_str = str(file_path)
         try:
             timestamp = datetime.now().isoformat()
 
@@ -78,30 +81,30 @@ class FileAccessLogger:
                 writer.writerow(
                     {
                         "timestamp": timestamp,
-                        "file_path": file_path,
+                        "file_path": path_str,
                         "access_type": access_type,
                     }
                 )
             return True
         except (OSError, csv.Error) as e:
-            file_name = Path(file_path).name if file_path else ""
+            file_name = Path(path_str).name if path_str else ""
             meta = build_meta(
                 {
                     "action": "log_access",
                     "file_name": file_name,
                     "access_type": access_type,
-                    "path_hash": mask_pii_id(file_path),
+                    "path_hash": mask_pii_id(path_str),
                 }
             )
             log_agent_error(logger, "Failed to log file access", e, meta)
             return False
 
-    def get_file_stats(self, file_path: str) -> Dict[str, Any]:
+    def get_file_stats(self, file_path: Union[str, Path]) -> Dict[str, Any]:
         """
         특정 파일의 접근 통계 반환
 
         Args:
-            file_path: 분석할 파일 경로
+            file_path: 분석할 파일 경로 (str 또는 Path)
 
         Returns:
             Dict: {
@@ -119,12 +122,12 @@ class FileAccessLogger:
         if not self.log_path.exists():
             return stats
 
+        path_str = str(file_path)
         try:
-            target_path = file_path
             with open(self.log_path, "r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    if row.get("file_path") == target_path:
+                    if row.get("file_path") == path_str:
                         stats["access_count"] += 1
                         stats["last_accessed"] = row.get(
                             "timestamp"
@@ -137,12 +140,12 @@ class FileAccessLogger:
             return stats
 
         except (OSError, csv.Error, KeyError) as e:
-            file_name = Path(file_path).name if file_path else ""
+            file_name = Path(path_str).name if path_str else ""
             meta = build_meta(
                 {
                     "action": "get_file_stats",
                     "file_name": file_name,
-                    "path_hash": mask_pii_id(file_path),
+                    "path_hash": mask_pii_id(path_str),
                 }
             )
             log_agent_error(logger, "Failed to get file stats", e, meta)
