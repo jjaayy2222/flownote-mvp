@@ -19,22 +19,28 @@ from dotenv import load_dotenv
 # 로컬 .env 로드
 load_dotenv()
 
-# Streamlit Secrets (배포용)
-try:
+import contextlib
+
+# Streamlit Secrets (배포용) — ImportError 시 무시 (로컬/API 서버 환경)
+with contextlib.suppress(ImportError):
     import streamlit as st
 
     if hasattr(st, "secrets") and len(st.secrets) > 0:
         for key in ["GPT4O_API_KEY", "GPT4O_BASE_URL", ...]:
             if key in st.secrets:
                 os.environ[key] = st.secrets[key]
-except:
-    pass
 
 import json
 import logging
 import re
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
+import openai
+
+from backend.agent.error_utils import (  # type: ignore[import]
+    build_meta,
+    log_agent_error,
+)
 from backend.config import ModelConfig
 
 logger = logging.getLogger(__name__)
@@ -55,14 +61,15 @@ class GPT4oHelper:
         try:
             self.client = ModelConfig.get_openai_client("gpt-4o")
             self.model = ModelConfig.GPT4O_MODEL
-            logger.info("✅ GPT-4o 클라이언트 초기화 성공")
-        except Exception as e:
-            logger.error(f"❌ GPT-4o 초기화 실패: {e}")
+            logger.info("GPT-4o client initialized successfully")
+        except (openai.OpenAIError, OSError, ValueError) as e:
+            meta = build_meta({"action": "GPT4oHelper.__init__"})
+            log_agent_error(logger, "GPT-4o client initialization failed", e, meta)
             self.client = None
             self.model = None
 
     def _call(
-        self, prompt: str, system_prompt: str = None, max_tokens: int = 500
+        self, prompt: str, system_prompt: Optional[str] = None, max_tokens: int = 500
     ) -> str:
         """
         GPT-4o 호출 (내부 메서드)
@@ -76,7 +83,7 @@ class GPT4oHelper:
             GPT-4o 응답 텍스트
         """
         if not self.client:
-            raise Exception("GPT-4o 클라이언트가 초기화되지 않았습니다")
+            raise RuntimeError("GPT-4o client is not initialized")
 
         messages = []
 
@@ -85,11 +92,12 @@ class GPT4oHelper:
 
         messages.append({"role": "user", "content": prompt})
 
+        assert self.model is not None, "Model must be set"
         response = self.client.chat.completions.create(
             model=self.model, messages=messages, max_tokens=max_tokens, temperature=0.7
         )
 
-        raw_response = response.choices[0].message.content.strip()
+        raw_response = (response.choices[0].message.content or "").strip()
 
         # ✨ 정규표현식으로 한방에 제거!
         # 1. 시작 부분의 마크다운 코드 블록 마커 제거 (```json 또는 ```)
@@ -98,8 +106,9 @@ class GPT4oHelper:
         # 마지막에 ```가 있는 경우에만 제거하도록 $ 앵커를 추가하는 것이 안전
         raw_response = re.sub(r"\n```$", "", raw_response)
 
-        logger.info(f"🔍 CLEANED RESPONSE: {raw_response[:200]}")  # ← 처음 200자 출력!
-        logger.info(f"📏 RESPONSE LENGTH: {len(raw_response)}")  # ← 길이 확인!
+        logger.debug(
+            "GPT-4o response preview: %.200s (len=%d)", raw_response, len(raw_response)
+        )
 
         return raw_response
 
@@ -134,7 +143,7 @@ class GPT4oHelper:
             return f.read()
 
     # count 파라미터 기본값을 10으로 변경 (5~10개를 추천함)
-    def suggest_areas(self, occupation: str, count: int = 10) -> Dict[str, any]:
+    def suggest_areas(self, occupation: str, count: int = 10) -> Dict[str, Any]:
         """
         직업에 맞는 책임 영역 추천
 
@@ -189,20 +198,27 @@ class GPT4oHelper:
             }
 
         except json.JSONDecodeError as e:
-            logger.error(f"❌ JSON 파싱 실패: {e}")
-            # Fallback
+            meta = build_meta({"action": "suggest_areas"})
+            log_agent_error(logger, "JSON parsing failed in suggest_areas", e, meta)
+            # Fallback: return default areas without exposing error detail
             return {
                 "status": "success",
                 "areas": self._get_fallback_areas(occupation, count),
                 "message": "기본 추천값 (GPT 파싱 실패)",
             }
 
-        except Exception as e:
-            logger.error(f"❌ GPT-4o 호출 실패: {e}")
+        except (
+            openai.OpenAIError,
+            openai.APIConnectionError,
+            openai.RateLimitError,
+            RuntimeError,
+        ) as e:
+            meta = build_meta({"action": "suggest_areas"})
+            log_agent_error(logger, "GPT-4o API call failed in suggest_areas", e, meta)
             return {
                 "status": "error",
                 "areas": self._get_fallback_areas(occupation, count),
-                "message": f"오류: {str(e)}",
+                "message": "GPT 호출 중 오류가 발생했습니다.",
             }
 
     # 수정: Fallback에서도 count 파라미터 기본값 10으로 변경
@@ -269,6 +285,7 @@ class GPT4oHelper:
     # 🎯 핵심 기능 2: 영역별 키워드 생성
     # ============================================
 
+    # sourcery skip: extract-method
     def generate_keywords(
         self, occupation: str, areas: List[str]
     ) -> Dict[str, List[str]]:
@@ -313,16 +330,23 @@ class GPT4oHelper:
             logger.info(f"✅ 키워드 생성 성공: {len(result)}개 영역")
             return result
 
-        except Exception as e:
-            logger.error(f"❌ 키워드 생성 실패: {e}")
-            # Fallback
-            return {area: [f"{area}_키워드{i+1}" for i in range(3)] for area in areas}
+        except (
+            openai.OpenAIError,
+            openai.APIConnectionError,
+            openai.RateLimitError,
+            json.JSONDecodeError,
+            RuntimeError,
+        ) as e:
+            meta = build_meta({"action": "generate_keywords"})
+            log_agent_error(logger, "Keyword generation failed", e, meta)
+            # Fallback: placeholder keywords without exposing error details
+            return {area: [f"{area}_키워드{i + 1}" for i in range(3)] for area in areas}
 
     # ============================================
     # 🎯 핵심 기능 3: 간단한 텍스트 분류
     # ============================================
 
-    def classify_text(self, text: str, categories: List[str]) -> Dict[str, any]:
+    def classify_text(self, text: str, categories: List[str]) -> Dict[str, Any]:
         """
         텍스트를 주어진 카테고리로 분류
 
@@ -364,13 +388,20 @@ class GPT4oHelper:
 
             return {"status": "success", **result}
 
-        except Exception as e:
-            logger.error(f"❌ 텍스트 분류 실패: {e}")
+        except (
+            openai.OpenAIError,
+            openai.APIConnectionError,
+            openai.RateLimitError,
+            json.JSONDecodeError,
+            RuntimeError,
+        ) as e:
+            meta = build_meta({"action": "classify_text"})
+            log_agent_error(logger, "Text classification failed", e, meta)
             return {
                 "status": "error",
                 "category": categories[0] if categories else "Unknown",
                 "confidence": 0.5,
-                "reasoning": f"오류: {str(e)}",
+                "reasoning": "분류 중 오류가 발생했습니다.",
             }
 
 
@@ -473,7 +504,7 @@ if __name__ == "__main__":
 
     → JSON 파싱 실패: 응답이 그냥 텍스트 (JSON 아님) ← 이게 가장 가능성 높음!
     → 프록시 문제 → JSON 대신 다른 형식 반환하는 것일수도 있음
-    → 디버깅 코드 추가하기 
+    → 디버깅 코드 추가하기
 
 """
 
@@ -482,17 +513,17 @@ if __name__ == "__main__":
 
     ```python
     # def _call(self, prompt: str, system_prompt: str = None, max_tokens: int = 500) -> str:
-    
+
         # ✨ 마크다운 코드 블록 제거!
         if raw_response.startswith("```json"):
             raw_response = raw_response.replace("``````", "")
         elif raw_response.startswith("```"):
             raw_response = raw_response.replace("```\n", "").replace("\n```", "")
-        
+
         logger.info(f"🔍 CLEANED RESPONSE: {raw_response[:200]}")           # ← 처음 200자 출력!
         logger.info(f"📏 RESPONSE LENGTH: {len(raw_response)}")             # ← 길이 확인!
     ```
-    
+
     python -m backend.services.gpt_helper
 
     ============================================================
@@ -534,19 +565,19 @@ if __name__ == "__main__":
 
     ```python
     # def _call(self, prompt: str, system_prompt: str = None, max_tokens: int = 500) -> str:
-    
+
         # ✨ 정규표현식으로 한방에 제거!
         # 1. 시작 부분의 마크다운 코드 블록 마커 제거 (```json 또는 ```)
         raw_response = re.sub(r'^```(?:json)?\n', '', raw_response)
         # 2. 끝 부분의 마크다운 코드 블록 마커 제거 (```)
         # 마지막에 ```가 있는 경우에만 제거하도록 $ 앵커를 추가하는 것이 안전
         raw_response = re.sub(r'\n```$', '', raw_response)
-        
+
         logger.info(f"🔍 CLEANED RESPONSE: {raw_response[:200]}")           # ← 처음 200자 출력!
         logger.info(f"📏 RESPONSE LENGTH: {len(raw_response)}")             # ← 길이 확인!
-        
+
         return raw_response
-    
+
     ```
 
 
@@ -601,7 +632,7 @@ if __name__ == "__main__":
 """test_result_4 → ⭕️
     ```python
     # def _call(self, prompt: str, system_prompt: str = None, max_tokens: int = 500) -> str:
-    
+
         raw_response = response.choices[0].message.content.strip()      # ← [0] 추가
         # ✨ 정규표현식으로 한방에 제거!
     ```
@@ -656,7 +687,7 @@ if __name__ == "__main__":
 """
 
 
-"""test_result_5 → 서버 테스트 ⭕️ 
+"""test_result_5 → 서버 테스트 ⭕️
 
     curl "http://localhost:8000/api/onboarding/suggest-areas?user_id=test&occupation=teacher"
 
@@ -756,7 +787,7 @@ if __name__ == "__main__":
 """test_result_7 → ⭕️ 서버 테스트
 
     ➀ - `python -m backend.main`
-    
+
     ✅ ModelConfig loaded from backend.config
     INFO:__main__:✅ api_router 등록 완료
     INFO:__main__:✅ classifier_router 등록 완료
@@ -788,11 +819,11 @@ if __name__ == "__main__":
     INFO:backend.services.gpt_helper:✅ GPT-4o 영역 추천 성공: teacher → 10개
     INFO:backend.routes.onboarding_routes:[SuggestAreas] GPT-4o suggested areas: ['학생 성적 관리', '수업 계획 및 준비', '교실 환경 유지', '학부모 소통', '학생 상담 및 지도', '교과 과정 개발', '평가 및 피드백 제공', '교사 협업 및 회의', '전문성 개발', '교육 자료 관리']
     INFO:     127.0.0.1:64613 - "GET /api/onboarding/suggest-areas?user_id=test&occupation=teacher HTTP/1.1" 200 OK
-    
-    
-    
+
+
+
     ➁ - `curl "http://localhost:8000/api/onboarding/suggest-areas?user_id=test&occupation=teacher"`
-    
+
     {
         "status":"success",
         "user_id":"test",
