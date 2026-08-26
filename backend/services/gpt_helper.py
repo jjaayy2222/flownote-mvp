@@ -106,9 +106,7 @@ class GPT4oHelper:
         # 마지막에 ```가 있는 경우에만 제거하도록 $ 앵커를 추가하는 것이 안전
         raw_response = re.sub(r"\n```$", "", raw_response)
 
-        logger.debug(
-            "GPT-4o response preview: %.200s (len=%d)", raw_response, len(raw_response)
-        )
+        logger.debug("GPT-4o response received (len=%d)", len(raw_response))
 
         return raw_response
 
@@ -304,6 +302,7 @@ class GPT4oHelper:
             }
         """
         try:
+            # sourcery skip: extract-method
             system_prompt = """
 당신은 영역별 핵심 키워드를 추출하는 전문가입니다.
 각 영역마다 3-5개의 키워드를 제시하세요.
