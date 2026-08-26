@@ -283,7 +283,31 @@ class GPT4oHelper:
     # 🎯 핵심 기능 2: 영역별 키워드 생성
     # ============================================
 
-    # sourcery skip: extract-method
+    def _build_keyword_prompts(
+        self, occupation: str, areas: List[str]
+    ) -> tuple[str, str]:
+        """키워드 생성을 위한 시스템/유저 프롬프트 빌드"""
+        system_prompt = """
+당신은 영역별 핵심 키워드를 추출하는 전문가입니다.
+각 영역마다 3-5개의 키워드를 제시하세요.
+반드시 JSON 형식으로만 응답하세요.
+        """.strip()
+
+        user_prompt = f"""
+직업: {occupation}
+영역: {', '.join(areas)}
+
+각 영역별로 핵심 키워드 3-5개를 추출하세요.
+
+출력 형식 (JSON만):
+{{
+  "영역1": ["키워드1", "키워드2", "키워드3"],
+  "영역2": ["키워드4", "키워드5", "키워드6"],
+  ...
+}}
+        """.strip()
+        return system_prompt, user_prompt
+
     def generate_keywords(
         self, occupation: str, areas: List[str]
     ) -> Dict[str, List[str]]:
@@ -302,26 +326,7 @@ class GPT4oHelper:
             }
         """
         try:
-            # sourcery skip: extract-method
-            system_prompt = """
-당신은 영역별 핵심 키워드를 추출하는 전문가입니다.
-각 영역마다 3-5개의 키워드를 제시하세요.
-반드시 JSON 형식으로만 응답하세요.
-            """.strip()
-
-            user_prompt = f"""
-직업: {occupation}
-영역: {', '.join(areas)}
-
-각 영역별로 핵심 키워드 3-5개를 추출하세요.
-
-출력 형식 (JSON만):
-{{
-  "영역1": ["키워드1", "키워드2", "키워드3"],
-  "영역2": ["키워드4", "키워드5", "키워드6"],
-  ...
-}}
-            """.strip()
+            system_prompt, user_prompt = self._build_keyword_prompts(occupation, areas)
 
             response = self._call(user_prompt, system_prompt, max_tokens=800)
             result = json.loads(response)
