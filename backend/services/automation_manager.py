@@ -207,7 +207,7 @@ class AutomationManager:
                 meta = build_meta(
                     {
                         "action": "get_reclassification_history",
-                        "record_id": data.get("id"),
+                        "record_id": data.get("record_id"),
                     }
                 )
                 log_agent_error(logger, "Invalid reclassification record", exc, meta)
@@ -233,7 +233,10 @@ class AutomationManager:
                 records.append(ArchivingRecord(**data))
             except (ValueError, TypeError, ValidationError) as exc:
                 meta = build_meta(
-                    {"action": "get_archiving_history", "record_id": data.get("id")}
+                    {
+                        "action": "get_archiving_history",
+                        "record_id": data.get("record_id"),
+                    }
                 )
                 log_agent_error(logger, "Invalid archiving record", exc, meta)
                 continue
