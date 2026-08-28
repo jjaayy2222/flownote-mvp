@@ -11,6 +11,12 @@ from itertools import islice
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from pydantic import ValidationError
+
+from backend.agent.error_utils import (  # type: ignore[import]
+    build_meta,
+    log_agent_error,
+)
 from backend.config import PathConfig
 from backend.models.automation import (
     ArchivingRecord,
@@ -71,12 +77,11 @@ class AutomationManager:
         for data in logs_data:
             try:
                 logs.append(AutomationLog(**data))
-            except Exception as exc:
-                logger.warning(
-                    "Invalid log data",
-                    exc_info=False,
-                    extra={"error_type": type(exc).__name__},
+            except (ValueError, TypeError, ValidationError) as exc:
+                meta = build_meta(
+                    {"action": "get_automation_logs", "log_id": data.get("log_id")}
                 )
+                log_agent_error(logger, "Invalid log data", exc, meta)
                 continue
 
         return logs
@@ -98,12 +103,11 @@ class AutomationManager:
             if data.get("log_id") == log_id:
                 try:
                     return AutomationLog(**data)
-                except Exception as exc:
-                    logger.error(
-                        "Failed to parse log",
-                        exc_info=False,
-                        extra={"log_id": log_id, "error_type": type(exc).__name__},
+                except (ValueError, TypeError, ValidationError) as exc:
+                    meta = build_meta(
+                        {"action": "get_automation_log_by_id", "log_id": log_id}
                     )
+                    log_agent_error(logger, "Failed to parse log", exc, meta)
                     return None
 
         return None
@@ -199,12 +203,14 @@ class AutomationManager:
         for data in records_data:
             try:
                 records.append(ReclassificationRecord(**data))
-            except Exception as exc:
-                logger.warning(
-                    "Invalid reclassification record",
-                    exc_info=False,
-                    extra={"error_type": type(exc).__name__},
+            except (ValueError, TypeError, ValidationError) as exc:
+                meta = build_meta(
+                    {
+                        "action": "get_reclassification_history",
+                        "record_id": data.get("id"),
+                    }
                 )
+                log_agent_error(logger, "Invalid reclassification record", exc, meta)
                 continue
 
         return records
@@ -225,12 +231,11 @@ class AutomationManager:
         for data in records_data:
             try:
                 records.append(ArchivingRecord(**data))
-            except Exception as exc:
-                logger.warning(
-                    "Invalid archiving record",
-                    exc_info=False,
-                    extra={"error_type": type(exc).__name__},
+            except (ValueError, TypeError, ValidationError) as exc:
+                meta = build_meta(
+                    {"action": "get_archiving_history", "record_id": data.get("id")}
                 )
+                log_agent_error(logger, "Invalid archiving record", exc, meta)
                 continue
 
         return records
@@ -284,11 +289,12 @@ class AutomationManager:
                         logger.warning(f"Malformed JSON line in {file_path}")
                         continue
 
-        except Exception as exc:
-            logger.error(
-                f"Failed to read log file: {file_path}",
-                exc_info=False,
-                extra={"error_type": type(exc).__name__},
+        except OSError as exc:
+            meta = build_meta(
+                {"action": "_read_jsonl_logs", "file_name": file_path.name}
+            )
+            log_agent_error(
+                logger, f"Failed to read log file: {file_path.name}", exc, meta
             )
 
         # limit 검증: None 또는 0 이상의 정수만 허용 (bool 제외)
