@@ -7,6 +7,10 @@ import shutil
 from pathlib import Path
 from typing import List, Optional
 
+from backend.agent.error_utils import (  # type: ignore[import]
+    build_meta,
+    log_agent_error,
+)
 from backend.models.conflict import SyncConflict
 from backend.models.external_sync import ExternalToolConnection
 from backend.services.ignore_manager import ignore_manager
@@ -54,8 +58,9 @@ class ObsidianSyncService(SyncServiceBase):
             if not path.exists():
                 return None
             return await asyncio.to_thread(path.read_text, encoding="utf-8")
-        except Exception as e:
-            logger.error(f"Error reading file {external_id}: {e}")
+        except OSError as e:
+            meta = build_meta({"action": "pull_file", "file_name": path.name})
+            log_agent_error(logger, "Error reading file", e, meta)
             return None
 
     async def push_file(self, internal_id: str, content: str) -> bool:
@@ -72,8 +77,9 @@ class ObsidianSyncService(SyncServiceBase):
             await asyncio.to_thread(path.write_text, content, encoding="utf-8")
             logger.info(f"Successfully wrote to {path}")
             return True
-        except Exception as e:
-            logger.error(f"Error writing file {internal_id}: {e}")
+        except OSError as e:
+            meta = build_meta({"action": "push_file", "file_name": path.name})
+            log_agent_error(logger, "Error writing file", e, meta)
             return False
 
     async def move_file_to_para(self, file_path: str, category: str) -> Optional[str]:
@@ -129,6 +135,17 @@ class ObsidianSyncService(SyncServiceBase):
 
             return str(dest_path)
 
-        except Exception as e:
-            logger.exception(f"Failed to move file {file_path} to {category}")
+        except OSError as e:
+            meta = build_meta(
+                {
+                    "action": "move_file_to_para",
+                    "file_name": (
+                        src_path.name
+                        if "src_path" in locals()
+                        else Path(file_path).name
+                    ),
+                    "target_category": category,
+                }
+            )
+            log_agent_error(logger, "Failed to move file", e, meta)
             return None
