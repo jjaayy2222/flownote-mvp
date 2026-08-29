@@ -5,11 +5,15 @@ import logging
 import time
 from collections import Counter, deque
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
+from backend.agent.error_utils import (  # type: ignore[import]
+    build_meta,
+    log_agent_error,
+)
 from backend.config import WebSocketConfig
 from backend.services.compression_service import compress_payload
 from backend.services.redis_pubsub import redis_broadcaster
@@ -68,8 +72,7 @@ class ConnectionManager:
         await redis_broadcaster.stop()
 
         # Parallel shutdown for performance: avoid serial teardown latency
-        active_sockets = list(self.active_connections.keys())
-        if active_sockets:
+        if active_sockets := list(self.active_connections.keys()):
             # Run disconnects concurrently
             await asyncio.gather(
                 *(self.disconnect(ws) for ws in active_sockets), return_exceptions=True
@@ -126,9 +129,20 @@ class ConnectionManager:
             # WebSocketState.DISCONNECTED(2) 상수를 사용하여 상태 체크 (brittle-fix)
             if websocket.client_state != WebSocketState.DISCONNECTED:
                 await websocket.close(code=code, reason=reason)
-        except Exception as exc:
-            # Minimal log mostly for debug since connection might be already closed
-            logger.debug("WebSocket close skipped/failed", exc_info=exc)
+        except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError) as exc:
+            meta = build_meta(
+                {
+                    "action": "disconnect",
+                    "user_id": context.user_id if context else "unknown",
+                }
+            )
+            log_agent_error(
+                logger,
+                "WebSocket close skipped/failed",
+                cast(Exception, exc),
+                meta,
+                level="debug",
+            )
             if propagate_errors:
                 raise
 
@@ -139,10 +153,13 @@ class ConnectionManager:
         except WebSocketDisconnect:
             # Expected network-level issue; keep log minimal
             logger.debug("WebSocket already disconnected during pruning.")
-        except Exception:
-            # Unexpected programmer errors: Log full traceback
-            logger.error(
-                "Error while pruning dead connection (unexpected bug)", exc_info=True
+        except (RuntimeError, asyncio.CancelledError) as exc:
+            meta = build_meta({"action": "_prune_connection"})
+            log_agent_error(
+                logger,
+                "Error while pruning dead connection",
+                cast(Exception, exc),
+                meta,
             )
 
     async def broadcast(self, message: str):
@@ -193,17 +210,17 @@ class ConnectionManager:
         active_sockets = list(self.active_connections.keys())
 
         # [Optimization] 메시지 사이즈 계산을 위한 인코딩을 루프 외부에서 1회만 수행
-        if not is_compressed:
+        if not is_compressed and isinstance(processed_data, str):
             data_size = len(processed_data.encode("utf-8"))
         else:
             data_size = len(processed_data)
 
         async def _send_to_connection(connection: WebSocket) -> None:
             try:
-                if is_compressed:
+                if is_compressed and isinstance(processed_data, bytes):
                     # 압축된 경우 Binary 데이터로 전송 (클라이언트에서 해제 필요)
                     await connection.send_bytes(processed_data)
-                else:
+                elif isinstance(processed_data, str):
                     # 압축되지 않은 경우 일반 Text로 전송
                     await connection.send_text(processed_data)
 
@@ -212,11 +229,17 @@ class ConnectionManager:
                 self._total_bytes_sent += data_size
                 self._message_timestamps.append(time.time())
 
-            except Exception as e:
-                # Log context for better observability
+            except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError) as e:
                 context = self.active_connections.get(connection)
-                user_str = f"User({context.user_id})" if context else "Unknown"
-                logger.error(f"Failed to broadcast to {user_str}: {e}")
+                meta = build_meta(
+                    {
+                        "action": "_local_broadcast",
+                        "user_id": context.user_id if context else "unknown",
+                    }
+                )
+                log_agent_error(
+                    logger, "Failed to broadcast to client", cast(Exception, e), meta
+                )
                 failed_connections.append(connection)
 
         # 각 연결에 대한 전송을 동시에 수행하여 느린 클라이언트가 전체 브로드캐스트를 지연시키지 않도록 함
