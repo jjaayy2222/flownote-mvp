@@ -44,6 +44,7 @@ import functools
 import hashlib
 import logging
 import os
+import re
 import secrets
 from collections.abc import Awaitable, Callable, Iterator, Mapping
 from dataclasses import dataclass
@@ -51,6 +52,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from backend.agent.error_utils import (  # type: ignore[import]
+    build_meta,
+    log_agent_error,
+)
 from backend.core.audit_logger import AuditEventType, mask_uid, write_audit_log
 from backend.core.aws_client_wrapper import fetch_global_pepper
 from backend.services.personalized_index_service import (
@@ -693,13 +698,9 @@ async def anonymize_log_entry(
             success=True,
         )
 
-    except Exception as e:
-        logger.exception(
-            "[OBS][PRIVACY] Anonymization failed for masked_uid=%s: error_type=%s, error_msg=%s",
-            masked,
-            type(e).__name__,
-            str(e),
-        )
+    except (re.error, ValueError, TypeError, RuntimeError, OSError) as e:
+        meta = build_meta({"action": "anonymize_log_entry", "masked_uid": masked})
+        log_agent_error(logger, "Anonymization failed", e, meta)
         write_audit_log(
             event_type=AuditEventType.DATA_ANONYMIZE_FAILURE,
             masked_uid=masked,
@@ -852,27 +853,22 @@ async def delete_user_data(
     )
 
     try:
-        rows_deleted: int = await db_delete_fn(hashed_user_id)
-        db_rows_deleted = rows_deleted
-        if rows_deleted == 0:
+        db_rows_deleted: int = await db_delete_fn(hashed_user_id)
+        if db_rows_deleted == 0:
             logger.info(
                 "[OBS][PRIVACY] DB records already deleted (idempotent): rows=%d, masked_uid=%s",
-                rows_deleted,
+                db_rows_deleted,
                 masked,
             )
         else:
             logger.info(
                 "[OBS][PRIVACY] DB records deleted: rows=%d, masked_uid=%s",
-                rows_deleted,
+                db_rows_deleted,
                 masked,
             )
-    except Exception as e:
-        logger.error(
-            "[OBS][PRIVACY] DB deletion failed for masked_uid=%s: %s",
-            masked,
-            type(e).__name__,
-            exc_info=True,
-        )
+    except (re.error, ValueError, TypeError, RuntimeError, OSError) as e:
+        meta = build_meta({"action": "db_delete_fn", "masked_uid": masked})
+        log_agent_error(logger, "DB deletion failed", e, meta)
         write_audit_log(
             event_type=AuditEventType.DATA_DELETE_FAILURE,
             masked_uid=masked,
@@ -924,22 +920,16 @@ async def delete_user_data(
             "[OBS][PRIVACY] Redis index metadata deleted for masked_uid=%s.",
             masked,
         )
-    except Exception as e:
-        logger.error(
-            "[OBS][PRIVACY] Redis metadata deletion failed for masked_uid=%s: %s",
-            masked,
-            type(e).__name__,
-            exc_info=True,
-        )
+    except (re.error, ValueError, TypeError, RuntimeError, OSError) as e:
+        meta = build_meta({"action": "delete_index_metadata", "masked_uid": masked})
+        log_agent_error(logger, "Redis metadata deletion failed", e, meta)
 
     # ── 5. 최종 결과 판단 및 감사 로그 기록 ─────────────────────────
     # FAISS 파일 + Redis 메타 삭제가 모두 성공이면 `success=True`.
     # rows_deleted == 0인 경우에도 예외가 없다면(애초에 삭제할 데이터가 없었던 경우)
     # 멱등적 성공으로 처리합니다. DB 예외는 위에서 조기 리턴하므로 여기 도달 시 DB 단계는 무결합니다.
     # 모든 조건을 AND로 연결하여 조용한 실패를 구조적으로 탐지합니다.
-    overall_success = faiss_removed and redis_meta_deleted
-
-    if overall_success:
+    if overall_success := faiss_removed and redis_meta_deleted:
         is_idempotent = db_rows_deleted == 0
         write_audit_log(
             event_type=AuditEventType.DATA_DELETE_SUCCESS,
