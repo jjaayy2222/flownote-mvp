@@ -1,5 +1,6 @@
 # backend/services/scheduler_service.py
 
+import asyncio
 import logging
 import os
 from datetime import datetime, timezone
@@ -10,6 +11,10 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from backend.agent.error_utils import (  # type: ignore[import]
+    build_meta,
+    log_agent_error,
+)
 from backend.services.golden_dataset_service import filter_positive_feedbacks
 from backend.utils.finetune_parser import format_finetune_message, serialize_to_jsonl
 
@@ -27,6 +32,9 @@ async def extract_and_serialize_golden_dataset():
     """
     logger.info("[OBS] Starting daily golden dataset extraction job...")
 
+    # date_str을 try 블록 외부에서 초기화하여 except 절에서도 참조 가능하도록 보장
+    date_str: str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
     try:
         # 1. 긍정 피드백 데이터 수집
         feedbacks = await filter_positive_feedbacks()
@@ -39,6 +47,10 @@ async def extract_and_serialize_golden_dataset():
 
         # 2. OpenAI Chat Fine-tuning 포맷으로 구조화
         dataset = []
+        # system_prompt는 루프 내 반복 생성을 피하기 위해 루프 외부에서 상수로 정의
+        system_prompt_text = "You are a highly helpful and accurate AI assistant. This is an automatically extracted golden dataset."
+        # a_text도 고정값이므로 루프 외부에서 한 번만 정의
+        a_text = "Positive AI response"
         for fb in feedbacks:
             # TODO: 차후에 session_id와 message_id를 통해 실제 ChatHistory와 조인하여
             # 정확한 Question(Q)과 Answer(A) 컨텍스트를 구성해야 합니다.
@@ -47,23 +59,20 @@ async def extract_and_serialize_golden_dataset():
             # PII 마스킹 시스템이 정상 작동하도록 민감한 식별자들을 자유 형식 텍스트(q_text, a_text)에
             # 하드코딩하지 않고, 별도의 구조화된 필드로 분리합니다.
             q_text = f"Feedback: {fb.feedback_text or 'No text'}"
-            a_text = "Positive AI response"
 
-            message_format = format_finetune_message(
+            messages = format_finetune_message(
                 question=q_text,
                 answer=a_text,
-                system_prompt="You are a highly helpful and accurate AI assistant. This is an automatically extracted golden dataset.",
+                system_prompt=system_prompt_text,
             )
-
-            # 메타데이터 분리 추가 (pii_fields 필터링 대상)
-            message_format["session_id"] = fb.session_id
-            message_format["message_id"] = fb.message_id
-
-            dataset.append(message_format)
-
-        # 3. YYYY-MM-DD 를 이용한 저장 경로 생성
-        now_dt = datetime.now(timezone.utc)
-        date_str = now_dt.strftime("%Y-%m-%d")
+            # 메타데이터 분리 추가: format_finetune_message 반환 타입이 Dict[str, List[...]] 이므로
+            # pii_fields 필터링 대상 필드는 별도 Dict[str, Any]로 래핑하여 타입 충돌 방지
+            entry: dict = {
+                **messages,
+                "session_id": fb.session_id,
+                "message_id": fb.message_id,
+            }
+            dataset.append(entry)
 
         # 프로젝트 최상단 디렉토리 구조 파악 (pathlib 활용)
         project_root = Path(__file__).resolve().parent.parent.parent
@@ -86,18 +95,20 @@ async def extract_and_serialize_golden_dataset():
         logger.info(
             "[OBS] Daily golden dataset extraction completed successfully.",
             extra={
-                "filepath": saved_path,
+                "filename": Path(saved_path).name,
                 "dataset_size": len(dataset),
                 "date": date_str,
             },
         )
 
-    except Exception as e:
-        logger.error(
-            "[OBS] Failed to execute daily golden dataset extraction job.",
-            extra={"error": str(e)},
-            exc_info=True,
+    except asyncio.CancelledError:
+        # 비동기 취소 신호는 반드시 재발생시켜 스케줄러 루프가 올바르게 종료될 수 있도록 함
+        raise
+    except (RuntimeError, ValueError, TypeError, OSError) as e:
+        meta = build_meta(
+            {"action": "extract_and_serialize_golden_dataset", "date": date_str}
         )
+        log_agent_error(logger, "Daily golden dataset extraction job failed", e, meta)
 
 
 SENSITIVE_ENV_KEYWORDS = ("SECRET", "PASSWORD", "KEY", "TOKEN")
@@ -107,10 +118,12 @@ def _log_env_fallback(
     key: str, reason: str, default_val: Any, raw_val: Optional[str] = None
 ):
     """환경 변수 검증 실패 시 호출되는 로깅 헬퍼. 민감 정보는 마스킹 처리하여 안전하게 로깅합니다."""
-    safe_val = raw_val
-    if raw_val is not None:
-        if any(sec in key.upper() for sec in SENSITIVE_ENV_KEYWORDS):
-            safe_val = "***REDACTED***"
+    safe_val = (
+        "***REDACTED***"
+        if raw_val is not None
+        and any(sec in key.upper() for sec in SENSITIVE_ENV_KEYWORDS)
+        else raw_val
+    )
 
     val_msg = f" (provided: '{safe_val}')" if safe_val is not None else ""
     logger.warning(
