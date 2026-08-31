@@ -10,6 +10,7 @@ FlowNote MVP - Fine-tuning Dataset Parser Module (파인튜닝 데이터셋 파�
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 from backend.utils import mask_pii_id
@@ -136,7 +137,7 @@ def serialize_to_jsonl(
             # 운영자 디버깅 향상을 위한 추가 컨텍스트(filepath, total_items 등) 포함
             extra_payload = {
                 "fallback_counts": fallback_counts,
-                "filepath": absolute_path,
+                "filename": Path(absolute_path).name,
                 "total_items": len(dataset),
             }
 
@@ -154,7 +155,7 @@ def serialize_to_jsonl(
         logger.info(
             "Successfully serialized dataset to JSONL",
             extra={
-                "filepath": absolute_path,
+                "filename": Path(absolute_path).name,
                 "total_items": len(dataset),
                 "masked_fields": list(pii_fields_set) or None,
                 "fallback_occurrences": fallback_counts or None,
@@ -166,8 +167,8 @@ def serialize_to_jsonl(
         logger.error(
             "Failed to serialize dataset to JSONL",
             extra={
-                "filepath": absolute_path,
-                "error": str(e),
+                "filename": Path(absolute_path).name,
+                "error_type": type(e).__name__,
             },
         )
         raise
