@@ -1,6 +1,7 @@
 # backend/services/redis_pubsub.py
 
 import asyncio
+import contextlib
 import logging
 from typing import Awaitable, Callable, Optional
 
@@ -9,6 +10,10 @@ from redis.exceptions import BusyLoadingError
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
+from backend.agent.error_utils import (  # type: ignore[import]
+    build_meta,
+    log_agent_error,
+)
 from backend.config import RedisConfig
 
 logger = logging.getLogger(__name__)
@@ -47,9 +52,11 @@ class RedisPubSub:
                 )
                 # 연결 테스트 ping
                 await self.redis.ping()
-                logger.info(f"Connected to Redis at {RedisConfig.REDIS_URL}")
-            except Exception as e:
-                logger.error(f"Failed to connect to Redis: {e}")
+                # URL에 비밀번호가 포함될 수 있으므로 호스트명만 안전하게 로깅
+                logger.info("[OBS] Connected to Redis.")
+            except REDIS_FALLBACK_ERRORS as e:
+                meta = build_meta({"action": "redis_connect"})
+                log_agent_error(logger, "Failed to connect to Redis", e, meta)
                 self.redis = None  # 연결 실패 시 None 유지
                 raise
 
@@ -93,10 +100,10 @@ class RedisPubSub:
             await self.publish(channel, message)
             return
         except REDIS_FALLBACK_ERRORS as e:
-            # Catch network/state related errors defined in REDIS_FALLBACK_ERRORS
-            logger.error(
-                f"Redis publish failed (Network/State: {type(e).__name__}): {e}. Falling back to local broadcast.",
-                exc_info=True,
+            # 네트워크/상태 관련 에러는 Fallback으로 처리
+            meta = build_meta({"action": "redis_publish", "channel": channel})
+            log_agent_error(
+                logger, "Redis publish failed, falling back to local broadcast", e, meta
             )
 
         # Fallback to local broadcast
@@ -120,10 +127,13 @@ class RedisPubSub:
                     if message["type"] == "message":
                         await callback(message["data"])
             except asyncio.CancelledError:
-                logger.info("Redis listener task cancelled.")
+                logger.info("[OBS] Redis listener task cancelled.")
                 raise
-            except Exception as e:
-                logger.error(f"Error in Redis listener loop: {e}", exc_info=True)
+            except (ValueError, RuntimeError, OSError) as e:
+                meta = build_meta(
+                    {"action": "redis_subscribe_loop", "channel": channel}
+                )
+                log_agent_error(logger, "Error in Redis listener loop", e, meta)
 
 
 class RedisBroadcaster:
@@ -149,19 +159,21 @@ class RedisBroadcaster:
             await self._client.connect()
             self._task = asyncio.create_task(self._client.subscribe(channel, handler))
             logger.info(f"RedisBroadcaster listening on channel: {channel}")
-        except Exception as e:
-            logger.warning(
-                f"Redis initialization failed ({e}). System will run in LOCAL-ONLY mode."
+        except REDIS_FALLBACK_ERRORS as e:
+            meta = build_meta({"action": "redis_broadcaster_start", "channel": channel})
+            log_agent_error(
+                logger,
+                "Redis initialization failed. System will run in LOCAL-ONLY mode",
+                e,
+                meta,
             )
 
     async def stop(self):
         """Task 취소 및 리소스 정리 (Idempotent)"""
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
             self._task = None
 
         await self._client.disconnect()
@@ -170,11 +182,14 @@ class RedisBroadcaster:
         """Redis 연결 상태 확인 (Safe wrapper)"""
         try:
             return self._client.is_connected()
-        except Exception as exc:
+        except (AttributeError, RuntimeError) as exc:
             # 예상치 못한 오류(설정/프로그래밍)를 로그로 남겨 관측성을 유지합니다.
-            logger.warning(
+            meta = build_meta({"action": "redis_is_connected_check"})
+            log_agent_error(
+                logger,
                 "Redis is_connected() check failed; treating as disconnected",
-                exc_info=exc,
+                exc,
+                meta,
             )
             return False
 
