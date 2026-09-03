@@ -14,6 +14,10 @@ import aiofiles
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
+from backend.agent.error_utils import (  # type: ignore[import]
+    build_meta,
+    log_agent_error,
+)
 from backend.config.mcp_config import ObsidianConfig
 from backend.models.conflict import SyncConflict
 from backend.models.external_sync import ExternalToolConnection, ExternalToolType
@@ -164,8 +168,9 @@ class ObsidianSyncService(SyncServiceBase):
         try:
             async with aiofiles.open(path, mode="r", encoding="utf-8") as f:
                 return await f.read()
-        except Exception as e:
-            logger.error(f"Failed to pull file {external_id}: {e}")
+        except (OSError, UnicodeDecodeError) as e:
+            meta = build_meta({"action": "pull_file", "filename": path.name})
+            log_agent_error(logger, "Failed to pull file", e, meta)
             return None
 
     async def push_file(self, internal_id: str, content: str) -> bool:
@@ -179,6 +184,7 @@ class ObsidianSyncService(SyncServiceBase):
                 await f.write(content)
             logger.info(f"Saved file to Obsidian: {target_path}")
             return True
-        except Exception as e:
-            logger.error(f"Failed to push file {target_path}: {e}")
+        except (OSError, UnicodeEncodeError) as e:
+            meta = build_meta({"action": "push_file", "filename": target_path.name})
+            log_agent_error(logger, "Failed to push file", e, meta)
             return False

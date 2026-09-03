@@ -11,6 +11,10 @@ import threading
 from datetime import datetime
 from typing import Dict, List, Optional
 
+from backend.agent.error_utils import (  # type: ignore[import]
+    build_meta,
+    log_agent_error,
+)
 from backend.config import PathConfig
 from backend.models.external_sync import ExternalFileMapping, ExternalToolType
 
@@ -59,14 +63,16 @@ class SyncMapManager:
                             mapping.internal_file_id
                         )
                         count += 1
-                    except Exception as e:
-                        logger.warning(f"⚠️ Failed to parse mapping item: {e}")
+                    except (ValueError, TypeError) as e:
+                        meta = build_meta({"action": "parse_mapping_item"})
+                        log_agent_error(logger, "Failed to parse mapping item", e, meta)
 
                 logger.info(
                     f"✅ Loaded {count} file mappings from {self.storage_path.name}"
                 )
-        except Exception as e:
-            logger.error(f"❌ Failed to load mappings: {e}")
+        except (OSError, json.JSONDecodeError) as e:
+            meta = build_meta({"action": "load_mappings"})
+            log_agent_error(logger, "Failed to load mappings", e, meta)
 
     def _save_mappings(self, snapshot: List[ExternalFileMapping]):
         """메모리 상의 매핑 데이터를 JSON 파일로 저장 (Lock 밖에서 호출)"""
@@ -76,8 +82,9 @@ class SyncMapManager:
             with open(self.storage_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
             logger.debug(f"Saved {len(data)} mappings to disk.")
-        except Exception as e:
-            logger.error(f"❌ Failed to save mappings: {e}")
+        except (OSError, TypeError) as e:
+            meta = build_meta({"action": "save_mappings"})
+            log_agent_error(logger, "Failed to save mappings", e, meta)
 
     def get_mapping_by_internal_id(
         self, internal_id: str
