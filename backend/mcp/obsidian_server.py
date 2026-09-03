@@ -90,13 +90,13 @@ class ObsidianSyncService(SyncServiceBase):
                 logger.warning("⚠️ No running event loop found during connect().")
 
         if not self.vault_path.exists():
-            logger.error(f"❌ Obsidian Vault Path not found: {self.vault_path}")
+            logger.error(f"❌ Obsidian Vault Path not found: {self.vault_path.name}")
             return False
         if not self.vault_path.is_dir():
-            logger.error(f"❌ Path is not a directory: {self.vault_path}")
+            logger.error(f"❌ Path is not a directory: {self.vault_path.name}")
             return False
 
-        logger.info(f"✅ Connected to Obsidian Vault at {self.vault_path}")
+        logger.info(f"✅ Connected to Obsidian Vault at {self.vault_path.name}")
         return True
 
     def start_watching(self):
@@ -107,7 +107,7 @@ class ObsidianSyncService(SyncServiceBase):
             or not self.vault_path.is_dir()
         ):
             logger.warning(
-                f"❌ Cannot start watching: Invalid vault path {self.vault_path}"
+                f"❌ Cannot start watching: Invalid vault path {self.vault_path.name}"
             )
             return
 
@@ -117,7 +117,7 @@ class ObsidianSyncService(SyncServiceBase):
         self.observer.schedule(self.watcher, str(self.vault_path), recursive=True)
         self.observer.start()
         self.is_watching = True
-        logger.info(f"👀 Started watching Obsidian Vault: {self.vault_path}")
+        logger.info(f"👀 Started watching Obsidian Vault: {self.vault_path.name}")
 
     def stop_watching(self):
         """파일 감시 중단"""
@@ -132,7 +132,7 @@ class ObsidianSyncService(SyncServiceBase):
         Watchdog 콜백 (별도 스레드에서 실행됨)
         Event Loop에 비동기 작업 스케줄링
         """
-        logger.info(f"🔄 File {event_type}: {file_path}")
+        logger.info(f"🔄 File {event_type}: {Path(file_path).name}")
 
         # Schedule async sync task if loop is available
         if self.loop and self.loop.is_running():
@@ -145,7 +145,7 @@ class ObsidianSyncService(SyncServiceBase):
     async def _process_file_change(self, file_path: str, event_type: str):
         """파일 변경 이벤트 처리 (비동기)"""
         # TODO: Implement actual sync logic
-        logger.debug(f"Processing {event_type} for {file_path}")
+        logger.debug(f"Processing {event_type} for {Path(file_path).name}")
 
     async def sync_all(self) -> List[SyncConflict]:
         """전체 파일 스캔 및 동기화 (MVP: 단순 스캔)"""
@@ -182,7 +182,7 @@ class ObsidianSyncService(SyncServiceBase):
             target_path.parent.mkdir(parents=True, exist_ok=True)
             async with aiofiles.open(target_path, mode="w", encoding="utf-8") as f:
                 await f.write(content)
-            logger.info(f"Saved file to Obsidian: {target_path}")
+            logger.info(f"Saved file to Obsidian: {target_path.name}")
             return True
         except (OSError, UnicodeEncodeError) as e:
             meta = build_meta({"action": "push_file", "filename": target_path.name})
