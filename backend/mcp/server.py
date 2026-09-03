@@ -14,6 +14,10 @@ from typing import Any, Dict, Optional
 from mcp.server.fastmcp import FastMCP
 
 # FlowNote Internal Services
+from backend.agent.error_utils import (  # type: ignore[import]
+    build_meta,
+    log_agent_error,
+)
 from backend.classifier.hybrid_classifier import HybridClassifier
 from backend.dashboard.dashboard_core import MetadataAggregator
 from backend.faiss_search import FAISSRetriever
@@ -66,11 +70,11 @@ async def _run_blocking(fn, *args, **kwargs):
     """Helper to run blocking functions in a separate thread"""
     try:
         return await asyncio.to_thread(fn, *args, **kwargs)
-    except Exception as e:
-        logger.exception(
-            f"Error in blocking call {fn.__name__ if hasattr(fn, '__name__') else str(fn)}"
-        )
-        raise e
+    except (RuntimeError, OSError, ValueError) as e:
+        fn_name = fn.__name__ if hasattr(fn, "__name__") else "unknown_fn"
+        meta = build_meta({"action": "run_blocking", "fn": fn_name})
+        log_agent_error(logger, "Error in blocking call", e, meta)
+        raise
 
 
 # 1. Tools (기능 노출)
@@ -97,8 +101,9 @@ async def classify_content(text: str) -> Dict[str, Any]:
         classifier = get_classifier()
         # classify method is already async in HybridClassifier
         return await classifier.classify(text)
-    except Exception:
-        logger.exception("Error during classification")
+    except (RuntimeError, ValueError) as e:
+        meta = build_meta({"action": "classify_content"})
+        log_agent_error(logger, "Error during classification", e, meta)
         return {
             "category": "Unclassified",
             "confidence": 0.0,
@@ -133,8 +138,9 @@ async def search_notes(query: str) -> Dict[str, Any]:
             "error": None,
             "metadata": {"reason": "ok"},
         }
-    except Exception:
-        logger.exception("Error during search")
+    except (RuntimeError, ValueError, OSError) as e:
+        meta = build_meta({"action": "search_notes"})
+        log_agent_error(logger, "Error during search", e, meta)
         return {
             "results": [],
             "error": "search_failed",
@@ -150,8 +156,9 @@ async def get_automation_stats() -> Dict[str, Any]:
     try:
         aggregator = get_aggregator()
         return await _run_blocking(aggregator.get_file_statistics)
-    except Exception:
-        logger.exception("Error during stats retrieval")
+    except (RuntimeError, OSError) as e:
+        meta = build_meta({"action": "get_automation_stats"})
+        log_agent_error(logger, "Error during stats retrieval", e, meta)
         return {"error": "stats_retrieval_failed"}
 
 
@@ -165,8 +172,9 @@ async def get_projects() -> str:
         aggregator = get_aggregator()
         result = await _run_blocking(aggregator.get_para_breakdown)
         return json.dumps(result, ensure_ascii=False, indent=2)
-    except Exception:
-        logger.exception("Error retrieval projects resource")
+    except (RuntimeError, OSError) as e:
+        meta = build_meta({"action": "get_projects"})
+        log_agent_error(logger, "Error retrieval projects resource", e, meta)
         return json.dumps({"error": "resource_retrieval_failed"})
 
 
@@ -177,8 +185,9 @@ async def get_dashboard_summary() -> str:
         aggregator = get_aggregator()
         result = await _run_blocking(aggregator.get_file_statistics)
         return json.dumps(result, ensure_ascii=False, indent=2)
-    except Exception:
-        logger.exception("Error retrieval dashboard summary resource")
+    except (RuntimeError, OSError) as e:
+        meta = build_meta({"action": "get_dashboard_summary"})
+        log_agent_error(logger, "Error retrieval dashboard summary resource", e, meta)
         return json.dumps({"error": "resource_retrieval_failed"})
 
 
