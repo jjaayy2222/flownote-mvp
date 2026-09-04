@@ -177,10 +177,12 @@ class ChatHistoryService:
             try:
                 await redis_client.connect()
             except (redis.exceptions.RedisError, OSError) as e:
-                logger.exception(
-                    "Redis connection failed in ChatHistoryService [%s]",
-                    context,
-                    extra={"error": str(e)},
+                log_agent_error(
+                    logger,
+                    f"Redis connection failed in ChatHistoryService [{context}]",
+                    e,
+                    level="error",
+                    include_traceback=True,
                 )
                 raise RedisUnavailableError(
                     f"Redis unavailable (context={context})"
@@ -206,10 +208,12 @@ class ChatHistoryService:
                 raise ValueError("JSON value is not an object (dict)")
             return data
         except (JSONDecodeError, ValueError) as e:
-            logger.error(
-                "Malformed JSON at key during %s, ignoring.",
-                log_context,
-                extra={"key": key, "id_hash": id_hash, "error": str(e)},
+            log_agent_error(
+                logger,
+                f"Malformed JSON at key during {log_context}, ignoring.",
+                e,
+                extra_metadata=build_meta({"id_hash": id_hash}),
+                level="error",
             )
             return None
 
@@ -239,12 +243,12 @@ class ChatHistoryService:
             if not isinstance(meta, dict):
                 raise ValueError("JSON is not a dict")
         except (JSONDecodeError, ValueError) as parse_err:
-            logger.error(
+            log_agent_error(
+                logger,
                 "Malformed session meta during list_sessions, skipping.",
-                extra={
-                    "session_id_hash": mask_pii_id(session_id),
-                    "error": str(parse_err),
-                },
+                parse_err,
+                extra_metadata=build_meta({"session_id_hash": mask_pii_id(session_id)}),
+                level="error",
             )
             return None
 
@@ -389,10 +393,18 @@ class ChatHistoryService:
                 session_id, user_id, now=now, force_meta=force_meta
             )
 
-        except Exception as e:
+        except (
+            redis.exceptions.RedisError,
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            AttributeError,
+            RuntimeError,
+        ) as e:
             _log_and_reraise_generic(
                 "Failed to register session",
-                {"session_id_hash": mask_pii_id(session_id), "error": str(e)},
+                {"session_id_hash": mask_pii_id(session_id)},
                 e,
             )
 
@@ -432,10 +444,18 @@ class ChatHistoryService:
                     results.append(meta)
             return results
 
-        except Exception as e:
+        except (
+            redis.exceptions.RedisError,
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            AttributeError,
+            RuntimeError,
+        ) as e:
             _log_and_reraise_generic(
                 "Failed to list sessions",
-                {"user_id_hash": mask_pii_id(user_id), "error": str(e)},
+                {"user_id_hash": mask_pii_id(user_id)},
                 e,
             )
 
@@ -459,10 +479,18 @@ class ChatHistoryService:
             await self._save_session_meta(session_id, meta)
             return True
 
-        except Exception as e:
+        except (
+            redis.exceptions.RedisError,
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            AttributeError,
+            RuntimeError,
+        ) as e:
             _log_and_reraise_generic(
                 "Failed to rename session",
-                {"session_id_hash": mask_pii_id(session_id), "error": str(e)},
+                {"session_id_hash": mask_pii_id(session_id)},
                 e,
             )
 
@@ -510,10 +538,18 @@ class ChatHistoryService:
                 session_id, user_id=None, new_preview=content, now=now
             )
 
-        except Exception as e:
+        except (
+            redis.exceptions.RedisError,
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            AttributeError,
+            RuntimeError,
+        ) as e:
             _log_and_reraise_generic(
                 "Failed to add message to history",
-                {"session_id_hash": mask_pii_id(session_id), "error": str(e)},
+                {"session_id_hash": mask_pii_id(session_id)},
                 e,
             )
 
@@ -553,10 +589,18 @@ class ChatHistoryService:
                 )
             return messages
 
-        except Exception as e:
+        except (
+            redis.exceptions.RedisError,
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            AttributeError,
+            RuntimeError,
+        ) as e:
             _log_and_reraise_generic(
                 "Failed to get history",
-                {"session_id_hash": mask_pii_id(session_id), "error": str(e)},
+                {"session_id_hash": mask_pii_id(session_id)},
                 e,
             )
 
@@ -591,10 +635,18 @@ class ChatHistoryService:
                 user_sessions_key = self._user_sessions_key(effective_user_id)
                 await self._redis.zrem(user_sessions_key, session_id)
 
-        except Exception as e:
+        except (
+            redis.exceptions.RedisError,
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            AttributeError,
+            RuntimeError,
+        ) as e:
             _log_and_reraise_generic(
                 "Failed to clear history",
-                {"session_id_hash": mask_pii_id(session_id), "error": str(e)},
+                {"session_id_hash": mask_pii_id(session_id)},
                 e,
             )
 
@@ -628,13 +680,20 @@ class ChatHistoryService:
                 key, message_id, json.dumps(meta, ensure_ascii=False)
             )
             await self._redis.expire(key, self.ttl)
-        except Exception as e:
+        except (
+            redis.exceptions.RedisError,
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            AttributeError,
+            RuntimeError,
+        ) as e:
             _log_and_reraise_generic(
                 "Failed to save feedback",
                 {
                     "session_id_hash": mask_pii_id(session_id),
                     "message_id_hash": mask_pii_id(message_id),
-                    "error": str(e),
                 },
                 e,
             )
@@ -711,10 +770,18 @@ class ChatHistoryService:
                 "recent_feedbacks": recent_feedbacks,
             }
 
-        except Exception as e:
+        except (
+            redis.exceptions.RedisError,
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            AttributeError,
+            RuntimeError,
+        ) as e:
             _log_and_reraise_generic(
                 "Failed to get feedback stats",
-                {"error": str(e)},
+                {},
                 e,
             )
 
@@ -789,10 +856,18 @@ class ChatHistoryService:
             feedbacks_with_keys.sort(key=lambda x: x[0], reverse=True)
             return [entry for _, entry in feedbacks_with_keys[:limit]]
 
-        except Exception as e:
+        except (
+            redis.exceptions.RedisError,
+            OSError,
+            ValueError,
+            TypeError,
+            KeyError,
+            AttributeError,
+            RuntimeError,
+        ) as e:
             _log_and_reraise_generic(
                 "Failed to get session feedback",
-                {"session_id_hash": mask_pii_id(session_id), "error": str(e)},
+                {"session_id_hash": mask_pii_id(session_id)},
                 e,
             )
 
