@@ -24,6 +24,7 @@ Design Principles:
 import hashlib
 import logging
 import re
+import traceback
 from itertools import islice
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Type, Union
@@ -63,7 +64,7 @@ _SECURITY_NOTICE: str = (
 # log_agent_error()에서 허용하는 로그 레벨 집합
 _SUPPORTED_LOG_LEVELS = frozenset({"error", "warning", "critical", "info", "debug"})
 _DEFAULT_LOG_LEVEL = "error"
-_RESERVED_EXTRA_KEYS = frozenset({"error_type", "error_msg", "security"})
+_RESERVED_EXTRA_KEYS = frozenset({"error_type", "error_msg", "security", "traceback"})
 
 # 캐싱된 asyncio.CancelledError (반복 import 방지용)
 _CANCELLED_ERROR: Optional[Type["asyncio.CancelledError"]] = None
@@ -173,6 +174,7 @@ def log_agent_error(
     extra_metadata: Optional[Dict[str, Any]] = None,
     *,
     level: str = _DEFAULT_LOG_LEVEL,
+    include_traceback: bool = False,
 ) -> None:
     """
     [KO] 에이전트 경계 레이어에서 발생한 예외를 PII-안전하게 구조화된 포맷으로 로깅합니다.
@@ -210,6 +212,13 @@ def log_agent_error(
         "error_msg": get_safe_error_summary(exc),
         "security": _SECURITY_NOTICE,
     }
+
+    if include_traceback:
+        tb_str = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        extra["traceback"] = _sanitize_pii(tb_str)
+        extra["security"] = (
+            "Traceback sanitized for PII protection; error_msg sanitized and truncated"
+        )
 
     if extra_metadata:
         if overlap := _RESERVED_EXTRA_KEYS & extra_metadata.keys():
