@@ -214,7 +214,10 @@ def log_agent_error(
     }
 
     if include_traceback:
-        tb_str = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        tb_str = "\n".join(
+            f"{get_safe_file_id(frame.filename)}:{frame.lineno} in {frame.name}"
+            for frame in traceback.extract_tb(exc.__traceback__)
+        )
         extra["traceback"] = _sanitize_pii(tb_str)
         extra["security"] = (
             "Traceback sanitized for PII protection; error_msg sanitized and truncated"
