@@ -7,6 +7,10 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Dict, List
 
+from backend.agent.error_utils import (  # type: ignore[import]
+    build_meta,
+    log_agent_error,
+)
 from backend.celery_app.celery import app
 from backend.config import PathConfig
 from backend.models.automation import (
@@ -32,8 +36,9 @@ def _save_automation_log(log: AutomationLog):
     try:
         with open(AUTO_LOG_FILE, "a", encoding="utf-8") as f:
             f.write(log.model_dump_json() + "\n")
-    except Exception as e:
-        logger.error(f"Failed to save automation log: {e}")
+    except OSError as e:
+        meta = build_meta({"action": "save_automation_log"})
+        log_agent_error(logger, "Failed to save automation log", e, meta)
 
 
 def _save_report(report: Report):
@@ -56,6 +61,7 @@ def _save_report(report: Report):
 
 
 def _collect_metrics(days: int) -> Dict[str, ReportMetric]:
+    # sourcery skip: low-code-quality
     """
     지정된 기간(일) 동안의 메트릭 수집
     - 파일 접근 통계
@@ -116,10 +122,10 @@ def _collect_metrics(days: int) -> Dict[str, ReportMetric]:
                         # 날짜 포맷 에러 또는 타입 에러
                         malformed_log_lines += 1
                         continue
-                    except Exception as e:
-                        # 기타 예상치 못한 에러는 스택 트레이스 포함하여 로깅
+                    except (KeyError, AttributeError, RuntimeError) as e:
+                        # 기타 에러는 스택 트레이스 포함하여 로깅
                         # 방어적 코딩: safe_line이 None이거나 문자열이 아닐 경우 대비
-                        safe_content = str(safe_line) if safe_line is not None else ""
+                        safe_content = safe_line if safe_line is not None else ""
 
                         # 민감 정보 마스킹을 위한 해시 생성
                         content_sha256 = hashlib.sha256(
@@ -127,15 +133,17 @@ def _collect_metrics(days: int) -> Dict[str, ReportMetric]:
                         ).hexdigest()
 
                         # 디버깅을 위한 비민감 메타데이터 수집
-                        meta_info = {
-                            "content_sha256": content_sha256,
-                            "content_length": len(safe_content),
-                            "is_empty": not bool(safe_content),
-                        }
+                        meta_info = build_meta(
+                            {
+                                "action": "parse_log_line",
+                                "content_sha256": content_sha256,
+                                "content_length": len(safe_content),
+                                "is_empty": not bool(safe_content),
+                            }
+                        )
 
-                        logger.exception(
-                            "Unexpected error processing log line",
-                            extra=meta_info,
+                        log_agent_error(
+                            logger, "Unexpected error processing log line", e, meta_info
                         )
                         continue
 
@@ -168,8 +176,9 @@ def _collect_metrics(days: int) -> Dict[str, ReportMetric]:
             description="Total errors in period",
         )
 
-    except Exception as e:
-        logger.error(f"Error collecting metrics: {e}")
+    except (OSError, RuntimeError) as e:
+        meta = build_meta({"action": "collect_metrics"})
+        log_agent_error(logger, "Error collecting metrics", e, meta)
 
     return metrics
 
@@ -216,6 +225,14 @@ REPORT_PERIOD_DAYS = {
 }
 
 
+def _get_report_days(report_type: ReportType) -> int:
+    """리포트 타입에 따른 기간(일) 반환"""
+    days = REPORT_PERIOD_DAYS.get(report_type)
+    if days is None:
+        raise ValueError(f"Unsupported report_type: {report_type}")
+    return days
+
+
 def _format_report_title(
     report_type: ReportType, start: datetime, end: datetime
 ) -> str:
@@ -229,6 +246,7 @@ def _execute_report_task(
     task_name: str,
     report_type: ReportType,
 ):
+    # sourcery skip: extract-method
     """
     리포트 생성 공통 로직 실행
     - 로그 기록, 메트릭 수집, 리포트 생성 및 저장, 에러 처리
@@ -247,10 +265,7 @@ def _execute_report_task(
 
     try:
         # 1. 메트릭 수집
-        try:
-            days = REPORT_PERIOD_DAYS[report_type]
-        except KeyError:
-            raise ValueError(f"Unsupported report_type: {report_type}")
+        days = _get_report_days(report_type)
 
         period_start = start_time - timedelta(days=days)
 
@@ -285,25 +300,21 @@ def _execute_report_task(
 
         return f"{report_type.value.title()} Report generated: {report.report_id}"
 
-    except Exception as exc:
+    except (ValueError, TypeError, OSError, RuntimeError) as exc:
         # 방어적 코딩 및 보안 로깅
         # 민감 정보 유출 방지를 위해 구체적인 에러 메시지 대신 에러 타입만 기록
         error_type = type(exc).__name__
 
-        # 상세 에러 정보는 민감 정보가 포함될 수 있으므로 해싱하여 저장 (선택 사항)
-        # 여기서는 운영 편의를 위해 Error Type만 남기고 상세 내용은 제외
-        # 주의: logger.exception은 트레이스백(민감정보 포함)을 남기므로 logger.error(exc_info=False) 사용
-
-        logger.error(
-            f"{task_name} failed",
-            exc_info=False,
-            extra={
+        meta = build_meta(
+            {
+                "action": "execute_report_task",
                 "task_name": task_name,
                 "log_id": log_id,
                 "error_type": error_type,
                 "unhandled": True,
-            },
+            }
         )
+        log_agent_error(logger, f"{task_name} failed", exc, meta)
 
         log.status = AutomationStatus.FAILED
         log.details = {"error_type": error_type}  # 민감한 str(exc) 대신 타입 기록
