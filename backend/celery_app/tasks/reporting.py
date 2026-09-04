@@ -143,7 +143,11 @@ def _collect_metrics(days: int) -> Dict[str, ReportMetric]:
                         )
 
                         log_agent_error(
-                            logger, "Unexpected error processing log line", e, meta_info
+                            logger,
+                            "Unexpected error processing log line",
+                            e,
+                            meta_info,
+                            include_traceback=True,
                         )
                         continue
 
