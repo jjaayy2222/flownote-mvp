@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
+from backend.agent.error_utils import build_meta, log_agent_error
 from backend.mcp.sync_map_manager import SyncMapManager
 from backend.models.conflict import (
     ConflictResolution,
@@ -96,9 +97,16 @@ class ConflictResolutionService:
                 resolved_at=datetime.now(),
                 notes=f"Not implemented: {str(e)}",
             )
-        except Exception as e:
-            logger.error(
-                f"Error resolving conflict {conflict.conflict_id}: {e}", exc_info=True
+        except (OSError, ValueError, TypeError, RuntimeError) as e:
+            meta_info = build_meta(
+                conflict_id=conflict.conflict_id, strategy=strategy.method
+            )
+            log_agent_error(
+                logger,
+                f"Error resolving conflict {conflict.conflict_id}",
+                e,
+                meta_info,
+                include_traceback=True,
             )
             return ConflictResolution(
                 conflict_id=conflict.conflict_id,
@@ -106,7 +114,7 @@ class ConflictResolutionService:
                 strategy=strategy.model_dump(),
                 resolved_by="system",
                 resolved_at=datetime.now(),
-                notes=str(e),
+                notes="Resolution failed due to internal error",
             )
 
     async def _resolve_manual(
@@ -198,13 +206,23 @@ class ConflictResolutionService:
 
             return True
 
-        except Exception as e:
-            logger.exception(f"Error in rename resolution: {e}")
+        except (OSError, ValueError, TypeError, RuntimeError) as e:
+            meta_info = build_meta(
+                conflict_id=conflict.conflict_id,
+                external_path=conflict.external_path,
+            )
+            log_agent_error(
+                logger,
+                "Error in rename resolution",
+                e,
+                meta_info,
+                include_traceback=True,
+            )
             self._log_conflict_resolution(
                 conflict=conflict,
                 action="rename_backup",
                 status=SyncStatus.FAILED,
-                message=str(e),
+                message="Resolution failed due to internal error",
             )
             return False
 

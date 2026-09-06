@@ -12,6 +12,8 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+from backend.agent.error_utils import build_meta, log_agent_error
+
 logger = logging.getLogger(__name__)
 
 # 필요한 분류기 import
@@ -89,22 +91,19 @@ class ConflictService:
             if para_result is None:
                 logger.info("1. PARA 분류 실행...")
                 para_result = await run_para_agent(text)
-                logger.info(f"  ✅ PARA: {para_result.get('category')}")
+
+            para_result = para_result or {}
+            logger.info(f"  ✅ PARA: {para_result.get('category')}")
 
             # 2. Keyword 분류
             if keyword_result is None:
                 logger.info("2. Keyword 분류 실행...")
-                # KeywordClassifier가 async 지원하면 classify 사용
-                if hasattr(self.keyword_classifier, "classify"):
-                    keyword_result = await self.keyword_classifier.classify(
-                        text, user_context
-                    )
-                else:
-                    # sync 버전 사용
-                    keyword_result = await asyncio.to_thread(
-                        self.keyword_classifier.classify, text, user_context
-                    )
-                logger.info(f"   ✅ 키워드: {keyword_result.get('tags', [])}")
+                keyword_result = await self.keyword_classifier.classify(
+                    text, user_context
+                )
+
+            keyword_result = keyword_result or {}
+            logger.info(f"   ✅ 키워드: {keyword_result.get('tags', [])}")
 
             # 3. Conflict Resolution
             logger.info("3. Conflict Resolution 실행...")
@@ -112,7 +111,6 @@ class ConflictService:
             conflict_result = await self._resolve_conflict_async(
                 para_result=para_result, keyword_result=keyword_result, text=text
             )
-            # conflict_result = await self._resolve_conflict_async(para_result, keyword_result, text)
 
             # 4. Snapshot 저장
             logger.info("4. Snapshot 저장...")
@@ -138,14 +136,23 @@ class ConflictService:
             logger.info(f"✅ 통합 분류 완료! Snapshot: {snapshot.id}")
             return result
 
-        except Exception as e:
-            logger.error(f"❌ 분류 오류: {e}", exc_info=True)
+        except (OSError, ValueError, TypeError, RuntimeError) as e:
+            meta_info = build_meta(
+                snapshot_id=f"error_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            )
+            log_agent_error(
+                logger,
+                "분류 오류 발생",
+                e,
+                meta_info,
+                include_traceback=True,
+            )
 
             return {
-                "snapshot_id": f"error_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                "snapshot_id": meta_info["session_id"],
                 "timestamp": datetime.now().isoformat(),
                 "text": text[:100],
-                "error": str(e),
+                "error": "Classification failed due to internal error",
                 "status": "error",
             }
 
@@ -192,13 +199,20 @@ class ConflictService:
 
             return conflict_result
 
-        except Exception as e:
-            logger.error(f"❌ 충돌 해결 실패: {e}")
+        except (OSError, ValueError, TypeError, RuntimeError) as e:
+            meta_info = build_meta()
+            log_agent_error(
+                logger,
+                "충돌 해결 실패",
+                e,
+                meta_info,
+                include_traceback=True,
+            )
             # Fallback
             return {
-                "final_category": await para_result.get("category", "Projects"),
-                "keyword_tags": await keyword_result.get("tags", ["기타"]),
-                "confidence": await para_result.get("confidence", 0.8),
+                "final_category": para_result.get("category", "Projects"),
+                "keyword_tags": keyword_result.get("tags", ["기타"]),
+                "confidence": para_result.get("confidence", 0.8),
                 "conflict_detected": False,
                 "resolution_method": "simple_merge",
                 "requires_review": False,
