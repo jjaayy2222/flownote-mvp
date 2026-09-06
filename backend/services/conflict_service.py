@@ -149,7 +149,7 @@ class ConflictService:
             )
 
             return {
-                "snapshot_id": meta_info["session_id"],
+                "snapshot_id": meta_info["snapshot_id"],
                 "timestamp": datetime.now().isoformat(),
                 "text": text[:100],
                 "error": "Classification failed due to internal error",
