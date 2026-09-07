@@ -9,6 +9,7 @@ import redis
 from dotenv import load_dotenv
 
 from backend.agent.constants import EMPTY_RETRIEVED_CONTEXT
+from backend.agent.error_utils import build_meta, log_agent_error
 from backend.services.finetune_service import get_active_finetune_model
 
 # 로컬 환경 변수 로드 (.env 파일이 없으면 무시됨)
@@ -36,6 +37,17 @@ logger = logging.getLogger(__name__)
 # 패턴: 영어(대문자 시작/긴 단어) 또는 한글(2글자 이상)
 KEYWORD_PATTERN = r"\b[A-Za-z][a-z]{4,}\b|\b[A-Z][a-zA-Z]+\b|[가-힣]{2,}"
 KEYWORD_REGEX = re.compile(KEYWORD_PATTERN)
+
+_KEYWORD_EXTRACTION_TEMPLATE = """
+Analyze the following text and extract 5 to 10 key topics or keywords that best describe its content.
+The keywords should be relevant for categorizing the document into PARA (Projects, Areas, Resources, Archives).
+Return purely a comma-separated list of keywords, nothing else.
+
+Text:
+{text}
+
+Keywords:
+"""
 
 # 타입 힌팅용 임포트 (런타임 영향 최소화)
 if TYPE_CHECKING:
@@ -100,12 +112,18 @@ async def resolve_active_model() -> str:
         redis.exceptions.RedisError,
         asyncio.TimeoutError,
         ValueError,
-        UnicodeDecodeError,
     ) as e:
-        logger.exception(
-            "Hot-swap model lookup failed. Defaulting to %s.",
-            DEFAULT_MODEL_NAME,
-            extra={"error_type": type(e).__name__},
+        meta = build_meta(
+            {"action": "resolve_active_model"},
+            default_model=DEFAULT_MODEL_NAME,
+        )
+        log_agent_error(
+            logger,
+            "Hot-swap model lookup failed",
+            e,
+            meta,
+            level="error",
+            include_traceback=True,
         )
         return DEFAULT_MODEL_NAME
 
@@ -129,9 +147,31 @@ def get_llm(model_name: str = DEFAULT_MODEL_NAME) -> Optional["BaseChatModel"]:
         # 분류 및 추출 작업에는 결정적인 출력을 위해 temperature=0 사용
         logger.debug(f"Initializing LLM with model: {model_name}")
         return ChatOpenAI(model=model_name, temperature=0)
-    except Exception:
-        logger.exception("Error initializing LLM: %s", model_name)
+    except (ValueError, ImportError, RuntimeError) as e:
+        meta = build_meta(
+            {"action": "initialize_llm"},
+        )
+        log_agent_error(
+            logger,
+            "Error initializing LLM",
+            e,
+            meta,
+            level="error",
+            include_traceback=True,
+        )
         return None
+
+
+def _extract_keywords_llm(text: str, llm: "BaseChatModel") -> List[str]:
+    """LLM을 사용하여 텍스트에서 키워드를 추출합니다."""
+    assert ChatPromptTemplate is not None
+    assert CommaSeparatedListOutputParser is not None
+
+    prompt = ChatPromptTemplate.from_template(_KEYWORD_EXTRACTION_TEMPLATE)
+    chain = prompt | llm | CommaSeparatedListOutputParser()
+
+    keywords = chain.invoke({"text": text[:3000]})
+    return [k.strip() for k in keywords if k.strip()]
 
 
 def extract_keywords(text: str) -> List[str]:
@@ -146,28 +186,20 @@ def extract_keywords(text: str) -> List[str]:
         return _extract_keywords_regex(text)
 
     try:
-        # Prompt Template 정의
-        template = """
-        Analyze the following text and extract 5 to 10 key topics or keywords that best describe its content.
-        The keywords should be relevant for categorizing the document into PARA (Projects, Areas, Resources, Archives).
-        Return purely a comma-separated list of keywords, nothing else.
-        
-        Text:
-        {text}
-        
-        Keywords:
-        """
+        return _extract_keywords_llm(text, llm)
 
-        prompt = ChatPromptTemplate.from_template(template)
-        # CommaSeparatedListOutputParser는 문자열 리스트를 반환합니다.
-        chain = prompt | llm | CommaSeparatedListOutputParser()
-
-        # 텍스트 길이 제한 (토큰 비용 절감 및 컨텍스트 윈도우 보호)
-        keywords = chain.invoke({"text": text[:3000]})
-        return [k.strip() for k in keywords if k.strip()]
-
-    except Exception as e:
-        logger.error("Error extracting keywords with LLM", exc_info=True)
+    except (ValueError, TypeError, RuntimeError) as e:
+        meta = build_meta(
+            {"action": "extract_keywords"},
+        )
+        log_agent_error(
+            logger,
+            "Error extracting keywords with LLM",
+            e,
+            meta,
+            level="error",
+            include_traceback=True,
+        )
         return _extract_keywords_regex(text)
 
 
@@ -201,8 +233,5 @@ def search_similar_docs(keywords: List[str]) -> str:
         f"- Document related to '{k}' explicitly mentioning project deadlines."
         for k in keywords[:3]
     ]
-
-    if not docs:
-        return "No relevant documents found."
 
     return "Retrieved Context:\n" + "\n".join(docs)

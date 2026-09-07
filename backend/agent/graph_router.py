@@ -20,7 +20,6 @@ import logging
 from typing import Any, Dict, List, Optional, Union
 
 from backend.agent.error_utils import (  # type: ignore[import, import-untyped, reportMissingImports]
-    is_system_error,
     log_agent_error,
 )
 from backend.core.config.graph import (
@@ -386,25 +385,14 @@ class GraphHybridRouter:
                         graph_enriched.append(
                             _serialize_neighbor_node(neighbor_id, attrs)
                         )
-        except (ValueError, KeyError, OSError, RuntimeError) as e:
+        except (ValueError, KeyError, OSError, RuntimeError, ImportError) as e:
             log_agent_error(
                 logger,
                 "[GRAPH_ROUTER] Unexpected error during graph traversal. "
                 "Returning partially enriched results (or original vector_results).",
                 e,
                 extra_metadata={"action": "graph_traversal"},
-            )
-            return graph_enriched
-        except Exception as e:
-            if is_system_error(e):
-                raise
-            # [Last-Resort] 그래프 라이브러리 내부에서 발생하는 예상치 못한 시스템 예외 방어름
-            log_agent_error(
-                logger,
-                "[GRAPH_ROUTER] 예상치 못한 런타임 오류 (Last-Resort Handler). "
-                "Returning partially enriched results.",
-                e,
-                extra_metadata={"action": "graph_traversal"},
+                include_traceback=True,
             )
             return graph_enriched
 
