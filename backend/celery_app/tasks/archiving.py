@@ -10,7 +10,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional, Set
 
-from backend.agent.error_utils import build_meta, is_system_error, log_agent_error
+from backend.agent.error_utils import (
+    build_meta,
+    get_safe_file_id,
+    is_system_error,
+    log_agent_error,
+    sanitize_error_msg,
+)
 from backend.celery_app.celery import app
 from backend.config import AppConfig, PathConfig
 from backend.models.automation import (
@@ -200,8 +206,18 @@ def _is_file_inactive(path_obj: Path, recent_files_set: Set[str], days: int) -> 
         if mtime > inactive_threshold:
             return False  # 최근에 수정됨
 
-    except Exception as e:
-        logger.warning(f"Failed to check mtime for {path_obj}: {e}")
+    except OSError as e:
+        meta = build_meta(
+            {"action": "check_mtime"},
+            file_id=get_safe_file_id(path_obj),
+        )
+        log_agent_error(
+            logger,
+            "파일 수정 시간 확인 실패 (I/O 오류) — 안전을 위해 아카이브 건너뜀",
+            e,
+            meta,
+            level="warning",
+        )
         return False  # 안전하게 아카이브 하지 않음
 
     return True
@@ -273,7 +289,9 @@ def _archive_single_file(path_obj: Path, log_id: str) -> ArchivingResult:
 
     except OSError as e:
         meta = build_meta(
-            {"action": "archive_single_file"}, source_path=str(path_obj), log_id=log_id
+            {"action": "archive_single_file"},
+            file_id=get_safe_file_id(path_obj),
+            log_id=log_id,
         )
         log_agent_error(
             logger,
@@ -282,23 +300,18 @@ def _archive_single_file(path_obj: Path, log_id: str) -> ArchivingResult:
             meta,
         )
         return ArchivingResult(is_error=True)
-    except Exception as e:
+    except (ValueError, RuntimeError) as e:
         meta = build_meta(
-            {"action": "archive_single_file"}, source_path=str(path_obj), log_id=log_id
+            {"action": "archive_single_file"},
+            file_id=get_safe_file_id(path_obj),
+            log_id=log_id,
         )
-        if is_system_error(e):
-            log_agent_error(
-                logger,
-                "파일 아카이빙 중 시스템 오류",
-                e,
-                meta,
-            )
-            raise
         log_agent_error(
             logger,
             "파일 아카이빙 실패 (기타)",
             e,
             meta,
+            include_traceback=True,
         )
         return ArchivingResult(is_error=True)
 
@@ -369,14 +382,25 @@ def archive_inactive_files(self):
 
         return f"Success: {stats.scanned} scanned, {stats.archived} archived."
 
-    except Exception as e:
-        logger.exception(f"[{task_name}] Failed")
+    except (OSError, ValueError, RuntimeError) as e:
+        meta = build_meta(
+            {"action": "archive_inactive_files"},
+            task_name=task_name,
+            log_id=log_id,
+        )
+        log_agent_error(
+            logger,
+            "[archive_inactive_files] 태스크 실패",
+            e,
+            meta,
+            include_traceback=True,
+        )
         log.status = AutomationStatus.FAILED
-        log.details = {"error": str(e)}
+        # PII 보호: 에러 원문 대신 sanitize된 메시지만 저장
+        log.details = {"error": sanitize_error_msg(e)}
         log.completed_at = datetime.now()
         log.duration_seconds = (log.completed_at - start_time).total_seconds()
-        # Ensure errors_count is int
         log.errors_count = (0 if log.errors_count is None else log.errors_count) + 1
 
         _save_automation_log(log)
-        raise e
+        raise
