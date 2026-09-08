@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
-from backend.agent.error_utils import build_meta, log_agent_error
+from backend.agent.error_utils import build_meta, get_safe_file_id, log_agent_error
 from backend.mcp.sync_map_manager import SyncMapManager
 from backend.models.conflict import (
     ConflictResolution,
@@ -52,7 +52,9 @@ class ConflictResolutionService:
             ConflictResolution: 해결 결과
         """
         logger.info(
-            f"Resolving conflict {conflict.conflict_id} with strategy {strategy.method}"
+            "Resolving conflict %s with strategy %s",
+            conflict.conflict_id,
+            strategy.method,
         )
 
         try:
@@ -95,7 +97,7 @@ class ConflictResolutionService:
                 strategy=strategy.model_dump(),
                 resolved_by="system",
                 resolved_at=datetime.now(),
-                notes=f"Not implemented: {str(e)}",
+                notes="Not implemented",
             )
         except (OSError, ValueError, TypeError, RuntimeError) as e:
             meta_info = build_meta(
@@ -142,7 +144,11 @@ class ConflictResolutionService:
             # 1. 로컬 파일 경로 확인
             local_path = Path(conflict.file_id)  # file_id = absolute path
             if not local_path.exists():
-                logger.error(f"Local file not found: {local_path}")
+                logger.error(
+                    "Local file not found for conflict %s (file_id hashed).",
+                    conflict.conflict_id,
+                    extra={"file_id_hash": get_safe_file_id(local_path)},
+                )
                 return False
 
             # 2. 백업 파일명 생성
@@ -169,27 +175,43 @@ class ConflictResolutionService:
                         exc_info=True,
                     )
 
-                logger.exception(
-                    "⚠️ Failed to create conflict backup '%s'. Partial file cleanup attempted.",
-                    backup_path,
+                meta_backup = build_meta(
+                    {"action": "backup_conflict_file"},
+                    file_id=get_safe_file_id(backup_path),
+                    conflict_id=conflict.conflict_id,
+                )
+                log_agent_error(
+                    logger,
+                    "Failed to create conflict backup. Partial file cleanup attempted.",
+                    e,
+                    meta_backup,
+                    level="error",
+                    include_traceback=True,
                 )
                 return False
             else:
                 # 백업 성공 시에만 ignore 등록
                 ignore_manager.add(str(backup_path))
-                logger.info(f"✅ Created conflict backup: {backup_path.name}")
+                logger.info(
+                    "Created conflict backup (file_id hashed).",
+                    extra={"backup_file_id_hash": get_safe_file_id(backup_path)},
+                )
 
             # 4. 원격 파일 Pull
             remote_content = await self.sync_service.pull_file(conflict.external_path)
             if remote_content is None:
-                logger.error(f"Failed to pull remote file: {conflict.external_path}")
+                logger.error(
+                    "Failed to pull remote file for conflict %s.",
+                    conflict.conflict_id,
+                )
                 return False
 
             # 5. 원격 내용으로 로컬 파일 덮어쓰기 (Loop Prevention)
             ignore_manager.add(str(local_path))
             local_path.write_text(remote_content, encoding="utf-8")
             logger.info(
-                f"✅ Overwrote local file with remote content: {local_path.name}"
+                "Overwrote local file with remote content for conflict %s.",
+                conflict.conflict_id,
             )
 
             # 6. 해시 업데이트
