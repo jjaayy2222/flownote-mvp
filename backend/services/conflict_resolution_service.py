@@ -172,7 +172,6 @@ class ConflictResolutionService:
                     logger.debug(
                         "Cleanup failed for partial backup (file_id hashed, non-critical)",
                         extra={"backup_file_id_hash": get_safe_file_id(backup_path)},
-                        exc_info=True,
                     )
 
                 meta_backup = build_meta(
