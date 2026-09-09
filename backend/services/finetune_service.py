@@ -129,7 +129,7 @@ def _preview_id(value: str, length: int = 20) -> str:
     Returns:
         length보다 짧으면 원본, 길면 앞 length자 + '...'
     """
-    return value[:length] + "..." if len(value) > length else value
+    return f"{value[:length]}..." if len(value) > length else value
 
 
 def _elapsed_secs(start: float) -> float:
@@ -169,8 +169,7 @@ def _get_openai_client() -> OpenAI:
     Raises:
         ValueError: GPT4O_MINI_API_KEY가 설정되지 않은 경우.
     """
-    api_key = ModelConfig.GPT4O_MINI_API_KEY
-    if not api_key:
+    if not (api_key := ModelConfig.GPT4O_MINI_API_KEY):
         raise ValueError(
             "[OBS] GPT4O_MINI_API_KEY is not set. "
             "Fine-tuning API requires a valid OpenAI API key."
@@ -213,8 +212,7 @@ async def _save_job_status_to_redis(
             k: v for k, v in extra_fields.items() if k not in _RESERVED_REDIS_KEYS
         }
         # 집합 교집(∩)으로 충돌한 예약 키를 직접 하이라이팅하여 의도를 명확히 표현합니다.
-        skipped = set(extra_fields) & _RESERVED_REDIS_KEYS
-        if skipped:
+        if skipped := set(extra_fields) & _RESERVED_REDIS_KEYS:
             # [INTENTIONAL WARNING] 이 경고는 호출자가 예약 키를 extra_fields에 잘못 전달한
             # 프로그래밍 버그 감지용입니다. 정상 운영 중에는 절대 발생해서는 안 됩니다.
             # 빈번한 노이즈가 우려되어 레벨을 낮추는 것은 부적합합니다 — WARNING을 유지합니다.
@@ -231,10 +229,11 @@ async def _save_job_status_to_redis(
                 },
             )
         if safe_extra:
-            mapping.update(safe_extra)
+            mapping |= safe_extra
 
-    await redis_client.redis.hset(redis_key, mapping=mapping)
-    await redis_client.redis.expire(redis_key, _FINETUNE_REDIS_TTL_SECS)
+    if redis_client.redis:
+        await redis_client.redis.hset(redis_key, mapping=mapping)  # type: ignore
+        await redis_client.redis.expire(redis_key, _FINETUNE_REDIS_TTL_SECS)  # type: ignore
 
     logger.info(
         "[OBS] Fine-tuning job status saved to Redis.",
@@ -307,6 +306,15 @@ async def set_active_finetune_model(fine_tuned_model_id: str) -> None:
 # ─────────────────────────────────────────────────────────────
 
 
+import typing
+
+
+def _upload_jsonl_file(client: OpenAI, path: Path) -> typing.Any:
+    with open(path, "rb") as f:
+        return client.files.create(file=f, purpose="fine-tune")
+
+
+# sourcery skip: extract-method
 def _upload_jsonl_and_create_finetune_job_sync(
     jsonl_filename: str,
     base_model: str,
@@ -329,8 +337,7 @@ def _upload_jsonl_and_create_finetune_job_sync(
         client = _get_openai_client()
 
         # 1. JSONL 파일 업로드 (blocking file I/O — 스레드 풀에서 안전)
-        with open(jsonl_path, "rb") as f:
-            upload_response = client.files.create(file=f, purpose="fine-tune")
+        upload_response = _upload_jsonl_file(client, jsonl_path)
 
         file_id = upload_response.id
         logger.info(
@@ -359,17 +366,26 @@ def _upload_jsonl_and_create_finetune_job_sync(
         return job_response.id
 
     except APIConnectionError as e:
-        logger.error(
+        from backend.agent.error_utils import log_agent_error
+
+        log_agent_error(
+            logger,
             "[OBS] OpenAI API connection error during fine-tuning job creation.",
-            extra={"error": str(e)},
-            exc_info=True,
+            e,
+            level="error",
+            include_traceback=True,
         )
         return None
     except APIError as e:
-        logger.error(
+        from backend.agent.error_utils import log_agent_error
+
+        log_agent_error(
+            logger,
             "[OBS] OpenAI API error during fine-tuning job creation.",
-            extra={"error_code": getattr(e, "code", "unknown"), "error": str(e)},
-            exc_info=True,
+            e,
+            extra_metadata={"error_code": getattr(e, "code", "unknown")},
+            level="error",
+            include_traceback=True,
         )
         return None
 
@@ -543,14 +559,18 @@ async def poll_finetune_job_until_done(job_id: str) -> FinetuneJobStatus:
             status_code: int = getattr(e, "status_code", 0) or 0
             if status_code < 500:
                 # 4xx: 잘못된 Job ID, 권한 오류 등 영구적 실패 — 즉시 중단
-                logger.error(
+                from backend.agent.error_utils import log_agent_error
+
+                log_agent_error(
+                    logger,
                     "[OBS] Permanent API error during fine-tuning job polling. Aborting poll.",
-                    extra={
+                    e,
+                    extra_metadata={
                         "job_id_hash": mask_pii_id(job_id),
                         "status_code": status_code,
-                        "error": str(e),
                     },
-                    exc_info=True,
+                    level="error",
+                    include_traceback=True,
                 )
                 await _save_job_status_to_redis(
                     job_id=job_id, status=FinetuneJobStatus.FAILED
@@ -600,12 +620,15 @@ async def get_active_finetune_model() -> Optional[str]:
     if not redis_client.is_connected():
         await redis_client.connect()
 
+    if not redis_client.redis:
+        return None
+
     raw = await redis_client.redis.get(_FINETUNE_ACTIVE_MODEL_KEY)
     if raw is None:
         return None
 
     model_id: str = raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
-    return model_id if model_id else None
+    return model_id or None
 
 
 async def get_model_performance_comparison() -> dict:
