@@ -167,11 +167,11 @@ class ConflictResolutionService:
                 # NOTE: 정리 실패는 원본 에러를 가리지 않도록 무시 (best-effort cleanup)
                 try:
                     backup_path.unlink(missing_ok=True)
-                except OSError as cleanup_error:
-                    # 정리 실패는 무시하되, 디버깅을 위해 debug 레벨로 로깅
+                except OSError:
+                    # 정리 실패는 무시하되, 디버깅을 위해 debug 레벨로 로깅 (경로 해시 처리)
                     logger.debug(
-                        "Cleanup failed for partial backup '%s' (non-critical)",
-                        backup_path,
+                        "Cleanup failed for partial backup (file_id hashed, non-critical)",
+                        extra={"backup_file_id_hash": get_safe_file_id(backup_path)},
                         exc_info=True,
                     )
 
@@ -231,7 +231,7 @@ class ConflictResolutionService:
         except (OSError, ValueError, TypeError, RuntimeError) as e:
             meta_info = build_meta(
                 conflict_id=conflict.conflict_id,
-                external_path=conflict.external_path,
+                external_file_id=get_safe_file_id(conflict.external_path),
             )
             log_agent_error(
                 logger,
