@@ -29,6 +29,9 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
+import numbers
+import os
 import re
 from dataclasses import dataclass
 from functools import lru_cache
@@ -42,10 +45,8 @@ from backend.faiss_search import FAISSRetriever
 from backend.hybrid_search import HybridSearcher, Retriever
 from backend.services import topic_clustering_service  # type: ignore[import]
 from backend.services.search_cache_service import search_cache_service
-from backend.utils.common import (
-    mask_pii_id,  # type: ignore[import]
-    safe_parse_env_float,
-)
+from backend.utils.common import mask_pii_id  # type: ignore[import]
+from backend.utils.common import safe_parse_env_float
 
 logger = logging.getLogger(__name__)
 
@@ -527,14 +528,19 @@ async def _log_search_history_bg(hashed_user_id: str, query: str) -> None:
             topic_clustering_service.log_search_query(hashed_user_id, query),
             timeout=3.0,
         )
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         # 히스토리 로깅 실패는 검색 응답에 영향을 주지 않는다 (best-effort).
         # 쿼리 원문은 PII 노출 위험이 있으므로 로그에 포함하지 않는다.
         # [리뷰반영] PII 정책: 비-PII 식별자인 hashed_user_id를 로그에 포함하여 장애 연관성 추적 강화
-        logger.warning(
-            "[HYBRID_SEARCH] 검색 히스토리 로깅 실패 (검색 응답에는 영향 없음, hashed_user_id=%s).",
-            hashed_user_id,
-            exc_info=True,
+        from backend.agent.error_utils import log_agent_error
+
+        log_agent_error(
+            logger,
+            "[HYBRID_SEARCH] 검색 히스토리 로깅 실패 (검색 응답에는 영향 없음)",
+            e,
+            extra_metadata={"hashed_user_id": hashed_user_id},
+            level="warning",
+            include_traceback=True,
         )
 
 
@@ -635,8 +641,8 @@ class HybridSearchService:
         kwargs: Dict[str, Any],
         rrf_k: int,
         faiss_dim: int,
-        faiss_ret: Optional[Retriever],
-        bm25_ret: Optional[Retriever],
+        faiss_ret: Optional[FAISSRetriever],
+        bm25_ret: Optional[BM25Retriever],
     ) -> Dict[str, Any]:
         """위치 인수와 키워드 인수를 병합하고 우선순위를 결정하는 헬퍼."""
         # 1. 시그니처에 의해 자동으로 바인딩된 값들로 시작
@@ -661,13 +667,10 @@ class HybridSearchService:
                     f"HybridSearchService() takes up to {max_pos} positional arguments but {len(args)} were given"
                 )
 
-            target_key = None
-            for expected_type, key in rules:
-                if isinstance(arg, expected_type):
-                    target_key = key
-                    break
-
-            if target_key:
+            if target_key := next(
+                (key for expected_type, key in rules if isinstance(arg, expected_type)),
+                None,
+            ):
                 current_val = res[target_key]
                 logger.debug(
                     "Arg %d: %s -> %s (current: %s)", i, arg, target_key, current_val
@@ -691,10 +694,15 @@ class HybridSearchService:
                 )
 
         # 4. 최종 할당 및 None 체크
+        faiss_dim_val = res.get("faiss_dim")
+        try:
+            dim_val = int(faiss_dim_val)  # type: ignore
+        except (TypeError, ValueError):
+            dim_val = 1536
         final_faiss = (
             res["faiss_ret"]
             if res["faiss_ret"] is not None
-            else FAISSRetriever(dimension=res["faiss_dim"])
+            else FAISSRetriever(dimension=dim_val)
         )
         final_bm25 = res["bm25_ret"] if res["bm25_ret"] is not None else BM25Retriever()
 
@@ -715,18 +723,18 @@ class HybridSearchService:
             is_explicit = current_val != self.DEFAULT_RRF_K
         elif key == "faiss_dim":
             is_explicit = current_val != self.DEFAULT_FAISS_DIMENSION
-        elif key in ("faiss_ret", "bm25_ret"):
+        elif key in {"faiss_ret", "bm25_ret"}:
             # 리트리버는 None이 아니면 명시적 주입으로 간주
             is_explicit = current_val is not None
         else:
             # 알 수 없는 키가 들어온 경우, 내부 로직 오류이므로 개발 환경에서 검지할 수 있도록 assert 사용.
             # 런타임 환경(-O)에서는 무시되며 기본적으로 '명시적이지 않음'으로 간주하여 호환성 유지.
-            assert key in (
+            assert key in {
                 "rrf_k",
                 "faiss_dim",
                 "faiss_ret",
                 "bm25_ret",
-            ), f"Missing mapping for parameter key: {key}"
+            }, f"Missing mapping for parameter key: {key}"
             return False
 
         return is_explicit and current_val != new_val
@@ -954,12 +962,16 @@ class HybridSearchService:
                     _PERSONALIZED_SEARCH_TIMEOUT,
                 )
                 return []
-            except Exception:  # noqa: BLE001
-                logger.warning(
-                    "[HYBRID_SEARCH][ROUTER] 개인화 인덱스 조회 실패 (masked_uid=%s) "
-                    "→ 빈 결과로 폴백. 전역 인덱스 결과만으로 계속 진행합니다.",
-                    masked_uid,
-                    exc_info=True,
+            except Exception as e:  # noqa: BLE001
+                from backend.agent.error_utils import log_agent_error
+
+                log_agent_error(
+                    logger,
+                    "[HYBRID_SEARCH][ROUTER] 개인화 인덱스 조회 실패 → 빈 결과로 폴백. 전역 인덱스 결과만으로 계속 진행합니다.",
+                    e,
+                    extra_metadata={"masked_uid": masked_uid},
+                    level="warning",
+                    include_traceback=True,
                 )
                 return []
 
@@ -984,13 +996,16 @@ class HybridSearchService:
                     filter_expansion_factor=filter_expansion_factor,
                 )
                 return result.results
-            except Exception:  # noqa: BLE001
-                logger.error(
-                    "[HYBRID_SEARCH][ROUTER] 전역 인덱스 조회 실패 (masked_uid=%s) "
-                    "→ 요청 전체를 실패시킵니다. "
-                    "(전역 인덱스 실패는 Graceful Degradation 대상이 아닙니다.)",
-                    masked_uid,
-                    exc_info=True,
+            except Exception as e:  # noqa: BLE001
+                from backend.agent.error_utils import log_agent_error
+
+                log_agent_error(
+                    logger,
+                    "[HYBRID_SEARCH][ROUTER] 전역 인덱스 조회 실패 → 요청 전체를 실패시킵니다. (전역 인덱스 실패는 Graceful Degradation 대상이 아닙니다.)",
+                    e,
+                    extra_metadata={"masked_uid": masked_uid},
+                    level="error",
+                    include_traceback=True,
                 )
                 raise
 
@@ -1265,11 +1280,15 @@ class HybridSearchService:
             )
         except Exception as e:
             # Pickle UnpicklingError, 버전 불일치 등 역직렬화 오류
-            logger.error(
-                "Failed to deserialize search indices; starting with empty indices. "
-                "This may indicate corrupted or incompatible index files. error_type=%s",
-                type(e).__name__,
-                exc_info=True,
+            from backend.agent.error_utils import log_agent_error
+
+            log_agent_error(
+                logger,
+                "Failed to deserialize search indices; starting with empty indices. This may indicate corrupted or incompatible index files.",
+                e,
+                extra_metadata={"error_type": type(e).__name__},
+                level="error",
+                include_traceback=True,
             )
         return False
 
@@ -1320,7 +1339,7 @@ class HybridSearchService:
 
         # 추가 필터 먼저 삽입
         if extra_filter:
-            merged.update(extra_filter)
+            merged |= extra_filter
 
         # PARACategory Enum 값 삽입
         if category is not None:
@@ -1332,7 +1351,7 @@ class HybridSearchService:
                 )
             merged["category"] = category.value
 
-        return merged if merged else None
+        return merged or None
 
 
 # ------------------------------------------------------------------

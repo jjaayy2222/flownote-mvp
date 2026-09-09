@@ -17,8 +17,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
-from backend.utils.common import format_error_msg
-
 logger = logging.getLogger(__name__)
 
 
@@ -31,19 +29,22 @@ def _log_error(
     exc_info: bool = False,
     **extra: object,
 ) -> None:
+    from backend.agent.error_utils import log_agent_error
+
     log_extra = {
         "action": action,
         "error_type": type(e).__name__,
         **extra,
     }
-    formatted_msg = f"{message}: {type(e).__name__}: {format_error_msg(e)}"
 
-    if level == "error":
-        logger.error(formatted_msg, extra=log_extra, exc_info=exc_info)
-    elif level == "warning":
-        logger.warning(formatted_msg, extra=log_extra, exc_info=exc_info)
-    else:
-        logger.info(formatted_msg, extra=log_extra, exc_info=exc_info)
+    log_agent_error(
+        logger,
+        message,
+        e,
+        extra_metadata=log_extra,
+        level=level,
+        include_traceback=exc_info,
+    )
 
 
 class DataManager:
