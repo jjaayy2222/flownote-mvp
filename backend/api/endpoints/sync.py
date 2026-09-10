@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from backend.agent.error_utils import log_agent_error
 from backend.config.mcp_config import mcp_config
 from backend.services.diff_service import generate_diff
 
@@ -119,8 +120,10 @@ async def get_sync_status():
             file_count=file_count,
         )
     except Exception as e:
-        logger.error(f"Failed to get sync status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        log_agent_error(
+            logger, f"Failed to get sync status: {e}", e, include_traceback=True
+        )
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/mcp/status", response_model=MCPStatusResponse)
@@ -151,8 +154,10 @@ async def get_mcp_status():
             ],
         )
     except Exception as e:
-        logger.error(f"Failed to get MCP status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        log_agent_error(
+            logger, f"Failed to get MCP status: {e}", e, include_traceback=True
+        )
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/conflicts", response_model=List[ConflictLogResponse])
@@ -180,8 +185,10 @@ async def get_conflicts(
 
         return conflicts[:limit]
     except Exception as e:
-        logger.error(f"Failed to get conflicts: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        log_agent_error(
+            logger, f"Failed to get conflicts: {e}", e, include_traceback=True
+        )
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/conflicts/{conflict_id}/diff", response_model=ConflictDiffResponse)
@@ -207,8 +214,10 @@ async def get_conflict_diff(conflict_id: str):
             file_type="markdown",
         )
     except Exception as e:
-        logger.error(f"Failed to generate diff: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        log_agent_error(
+            logger, f"Failed to generate diff: {e}", e, include_traceback=True
+        )
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/conflicts/{conflict_id}/resolve")
@@ -239,5 +248,7 @@ async def resolve_conflict(
             "timestamp": datetime.now(),
         }
     except Exception as e:
-        logger.error(f"Failed to resolve conflict: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        log_agent_error(
+            logger, f"Failed to resolve conflict: {e}", e, include_traceback=True
+        )
+        raise HTTPException(status_code=500, detail=str(e)) from e
