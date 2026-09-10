@@ -37,9 +37,10 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from backend.agent.streaming import (
-    stream_agent_response,
-)  # noqa: F401 (3단계 연동 예정)
+from backend.agent.error_utils import log_agent_error
+
+# 3단계 연동 예정
+from backend.agent.streaming import stream_agent_response  # noqa: F401
 from backend.api.models import ChatQueryRequest
 from backend.core.aws_client_wrapper import fetch_global_pepper
 from backend.core.config.streaming import StreamingConfig
@@ -47,7 +48,7 @@ from backend.core.config_validator import GraphEngineConfig, PersonalizedRAGConf
 from backend.graph import NetworkXGraphRepository
 from backend.schemas.streaming import DoneChunk, ErrorChunk, StreamChunk, TokenChunk
 from backend.services.personalized_index_service import compute_hashed_user_id
-from backend.utils import get_chat_log_extra
+from backend.utils.common import get_chat_log_extra
 
 logger = logging.getLogger(__name__)
 
@@ -268,9 +269,9 @@ async def stream_chat_endpoint(
                   yield chunk
             """
             try:
-                from langchain_core.runnables import (
+                from langchain_core.runnables import (  # type: ignore[import]
                     RunnableConfig,
-                )  # type: ignore[import]
+                )
 
                 from backend.agent.streaming import stream_agent_response
                 from backend.services.chat_service import get_chat_service
@@ -306,10 +307,11 @@ async def stream_chat_endpoint(
                 # 청크 발행 중 예상치 못한 예외
                 # 서버 로그에는 상세 정보 기록, 클라이언트에는 일반화된 메시지만 전달
                 # str(exc)를 클라이언트에 직접 노출하면 내부 경로·데이터가 유출될 수 있음
-                logger.error(
-                    "%s[ERROR] _chunk_stream raised unexpected error",
-                    _LOG_TAG,
-                    exc_info=True,
+                log_agent_error(
+                    logger,
+                    f"{_LOG_TAG}[ERROR] _chunk_stream raised unexpected error",
+                    exc,
+                    include_traceback=True,
                 )
                 yield ErrorChunk(
                     code="PRODUCER_ERROR",
@@ -426,10 +428,11 @@ async def stream_chat_endpoint(
 
         except Exception as exc:  # noqa: BLE001
             # 메인 루프 예외 처리 (로그 기록 후 에러 청크 발행)
-            logger.error(
-                "%s[FATAL] Event generator encountered unexpected error",
-                _LOG_TAG,
-                exc_info=True,
+            log_agent_error(
+                logger,
+                f"{_LOG_TAG}[FATAL] Event generator encountered unexpected error",
+                exc,
+                include_traceback=True,
             )
             yield {
                 "event": _SSE_EVENT_ERROR,
@@ -444,11 +447,13 @@ async def stream_chat_endpoint(
             if stream_gen is not None:
                 try:
                     await stream_gen.aclose()
-                except Exception:  # noqa: BLE001
-                    logger.warning(
-                        "%s[CLEANUP] Failed to close stream generator gracefully.",
-                        _LOG_TAG,
-                        exc_info=True,
+                except Exception as cleanup_exc:  # noqa: BLE001
+                    log_agent_error(
+                        logger,
+                        f"{_LOG_TAG}[CLEANUP] Failed to close stream generator gracefully.",
+                        cleanup_exc,
+                        level="warning",
+                        include_traceback=True,
                     )
 
             total_elapsed = time.monotonic() - request_start
