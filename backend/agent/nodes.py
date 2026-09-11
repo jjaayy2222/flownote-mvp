@@ -8,6 +8,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
 from backend.agent.constants import EMPTY_RETRIEVED_CONTEXT
+from backend.agent.error_utils import log_agent_error
 from backend.agent.state import AgentState
 from backend.agent.utils import (
     extract_keywords,
@@ -88,7 +89,6 @@ class LifespanApp(Protocol):
     """
 
 
-
 @asynccontextmanager
 async def managed_hybrid_search_async(
     _app: LifespanApp | None = None, **_kwargs: Any
@@ -164,7 +164,7 @@ def _format_rrf_results(rrf_result) -> str:
             content = item.get("content") or str(item)
 
         if len(content) > _MAX_CHARS_PER_ITEM:
-            content = content[: _MAX_CHARS_PER_ITEM - 3] + "..."
+            content = f"{content[: _MAX_CHARS_PER_ITEM - 3]}..."
 
         line = f"- {content}"
 
@@ -233,19 +233,24 @@ async def retrieve_node(state: AgentState) -> Dict[str, Any]:
         clusters_res = await cluster_user_topics(hashed_user_id)
         if clusters_res:
             clusters = clusters_res
-    except Exception:
-        logger.warning(
+    except Exception as exc:
+        log_agent_error(
+            logger,
             "[HYBRID_SEARCH] 토픽 클러스터링 실패. 개인화 컨텍스트 없이 하이브리드 검색을 계속합니다.",
-            exc_info=True,
+            exc,
+            level="warning",
+            include_traceback=True,
         )
 
     # 2. 하이브리드 검색 시도
     try:
         context = await _run_hybrid_search(hashed_user_id, query, clusters)
-    except Exception:
-        logger.error(
+    except Exception as exc:
+        log_agent_error(
+            logger,
             "[HYBRID_SEARCH] 라우터 호출 실패. 전역 인덱스 검색으로 Graceful Degradation 처리합니다.",
-            exc_info=True,
+            exc,
+            include_traceback=True,
         )
         context = search_similar_docs(keywords)
 
@@ -279,14 +284,14 @@ async def classify_node(state: AgentState) -> Dict[str, Any]:
     - Archives: Completed or inactive items.
 
     Use the provided extracted keywords and retrieved context to aid your decision.
-    
+
     File Name: {file_name}
     Extracted Keywords: {keywords}
     Retrieved Context: {context}
-    
+
     Document Content (Snippet):
     {content}
-    
+
     {format_instructions}
     """
 
@@ -329,7 +334,12 @@ async def classify_node(state: AgentState) -> Dict[str, Any]:
         }
 
     except OutputParserException as e:
-        logger.error("Parsing Error in classification", exc_info=True)
+        log_agent_error(
+            logger,
+            "[classify_node] Parsing Error in classification",
+            e,
+            include_traceback=True,
+        )
         # 파싱 에러 시 명확한 사유와 함께 실패 처리 (재시도 로직에서 활용 가능)
         return {
             "classification_result": {"category": "Unclassified", "confidence": 0.0},
@@ -338,7 +348,12 @@ async def classify_node(state: AgentState) -> Dict[str, Any]:
         }
 
     except Exception as e:
-        logger.error("Unexpected Error in classification", exc_info=True)
+        log_agent_error(
+            logger,
+            "[classify_node] Unexpected Error in classification",
+            e,
+            include_traceback=True,
+        )
         # 그 외 예상치 못한 에러에 대한 안전장치 (Fail-safe)
         return {
             "classification_result": {"category": "Unclassified", "confidence": 0.0},

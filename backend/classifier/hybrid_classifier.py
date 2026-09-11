@@ -7,6 +7,7 @@ HybridClassifier - 규칙 기반과 AI 기반을 결합한 하이브리드 분�
 import logging
 from typing import Any, Dict, Optional
 
+from backend.agent.error_utils import log_agent_error
 from backend.classifier.ai_classifier import AIClassifier
 from backend.classifier.base_classifier import BaseClassifier
 from backend.services.rule_engine import RuleEngine
@@ -80,7 +81,13 @@ class HybridClassifier(BaseClassifier):
             # Rule Engine 실패는 치명적이지 않으므로 경고만 남기고 AI로 진행
             # 단, 디버깅을 위해 last_error에 기록하고 traceback은 로그로 남김
             error_msg = f"RuleEngine warning: {e}"
-            logger.warning(f"{error_msg}, proceeding to AI", exc_info=True)
+            log_agent_error(
+                logger,
+                f"{error_msg}, proceeding to AI",
+                e,
+                level="warning",
+                include_traceback=True,
+            )
             self.last_error = error_msg
 
         # 2. AI-based Classification (Asynchronous)
@@ -94,7 +101,12 @@ class HybridClassifier(BaseClassifier):
             return ai_result
 
         except Exception as e:
-            logger.error(f"Hybrid classification failed: {e}", exc_info=True)
+            log_agent_error(
+                logger,
+                "[HybridClassifier] Hybrid classification failed",
+                e,
+                include_traceback=True,
+            )
             self.last_error = str(e)
             return self._default_result(f"Error: {str(e)}")
 
