@@ -15,16 +15,17 @@ from typing import Optional
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 서비스 Import (Refactored)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+from backend.agent.error_utils import log_agent_error
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 통합 모델 Import
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 from backend.models import (  # ClassificationRequest,  # Unused; ClassificationResponse, # Unused; ClassifyBatchRequest,   # Unused; ClassifyBatchResponse,  # Unused; MetadataClassifyRequest, # Unused; HybridClassifyRequest,   # Unused; ParallelClassifyRequest, # Unused; FileMetadata,           # Unused; SaveClassificationRequest, # Unused; SearchRequest,          # Unused; HealthCheckResponse,    # Unused; MetadataResponse,       # Unused; ErrorResponse,          # Unused; SuccessResponse,        # Unused
     ClassifyRequest,
     ClassifyResponse,
 )
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 서비스 Import (Refactored)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 from backend.services.classification_service import ClassificationService
 
 # ❌ Removed / Moved to Service
@@ -86,8 +87,8 @@ async def classify_text(request: ClassifyRequest):
         )
 
     except Exception as e:
-        logger.error(f"❌ 분류 실패: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"분류 실패: {str(e)}")
+        log_agent_error(logger, "[분류 API] 분류 실패", e, include_traceback=True)
+        raise HTTPException(status_code=500, detail=f"분류 실패: {str(e)}") from e
 
 
 @router.post(
@@ -161,5 +162,7 @@ async def classify_file_main(
         )
 
     except Exception as e:
-        logger.error(f"❌ 파일 분류 실패: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        log_agent_error(
+            logger, "[파일 분류 API] 파일 분류 실패", e, include_traceback=True
+        )
+        raise HTTPException(status_code=500, detail=str(e)) from e
