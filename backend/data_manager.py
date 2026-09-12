@@ -26,7 +26,7 @@ def _log_error(
     e: Exception,
     *,
     level: str = "error",
-    exc_info: bool = False,
+    include_traceback: bool = False,
     **extra: object,
 ) -> None:
     from backend.agent.error_utils import log_agent_error
@@ -43,7 +43,7 @@ def _log_error(
         e,
         extra_metadata=log_extra,
         level=level,
-        include_traceback=exc_info,
+        include_traceback=include_traceback,
     )
 
 
