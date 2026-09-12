@@ -188,7 +188,7 @@ class DataManager:
                 "사용자 프로필 저장 실패",
                 e,
                 level="error",
-                exc_info=True,
+                include_traceback=True,
                 user_id=user_id,
             )
             return {"status": "error", "message": str(e)}
@@ -269,7 +269,7 @@ class DataManager:
                 "사용자 관심 영역 업데이트 실패",
                 e,
                 level="error",
-                exc_info=True,
+                include_traceback=True,
                 user_id=user_id,
             )
             return {"status": "error", "message": str(e)}
@@ -299,7 +299,7 @@ class DataManager:
                 "컨텍스트 파일 읽기 실패. 빈 상태로 초기화",
                 e,
                 level="warning",
-                exc_info=True,
+                include_traceback=True,
                 user_id=user_id,
             )
             # [KO] 파일이 없거나 손상된 경우 빈 딕셔너리로 초기화
@@ -322,7 +322,7 @@ class DataManager:
                 "사용자 컨텍스트 저장 실패",
                 e,
                 level="error",
-                exc_info=True,
+                include_traceback=True,
                 user_id=user_id,
             )
             return {"status": "error", "message": str(e)}
@@ -422,7 +422,7 @@ class DataManager:
                 "분류 로그 기록 실패",
                 e,
                 level="error",
-                exc_info=True,
+                include_traceback=True,
                 file_name=file_name,
             )
             return {"status": "error", "message": str(e)}
@@ -463,7 +463,7 @@ class DataManager:
                 "JSON 분류 로그 저장 실패",
                 e,
                 level="error",
-                exc_info=True,
+                include_traceback=True,
                 filename=filename,
             )
             return ""
@@ -584,7 +584,7 @@ def save_json_log(
             "글로벌 JSON 로그 저장 실패",
             e,
             level="error",
-            exc_info=True,
+            include_traceback=True,
             file_name=file_name,
         )
         return ""
