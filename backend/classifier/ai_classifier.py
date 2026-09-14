@@ -10,6 +10,7 @@ import logging
 import re
 from typing import Any, Dict, Optional
 
+from backend.agent.error_utils import log_agent_error
 from backend.classifier.base_classifier import BaseClassifier
 from backend.services.gpt_helper import GPT4oHelper
 
@@ -109,7 +110,12 @@ class AIClassifier(BaseClassifier):
             return result
 
         except Exception as e:
-            logger.error(f"AI classification failed: {str(e)}", exc_info=True)
+            log_agent_error(
+                logger,
+                "[AIClassifier] AI classification failed",
+                e,
+                include_traceback=True,
+            )
             self.last_error = str(e)
             return self._default_result(f"Error: {str(e)}")
 
@@ -118,11 +124,9 @@ class AIClassifier(BaseClassifier):
         try:
             text = response_text.strip()
 
-            # JSON 추출 시도 (정규식 사용)
-            # 가장 바깥쪽 중괄호 쌍을 찾음
-            json_match = re.search(r"\{.*\}", text, re.DOTALL)
-            if json_match:
-                text = json_match.group(0)
+            # JSON 추출 시도 (정규식 사용) — 가장 바깥쪽 중괄호 쌍을 찾음
+            if json_match := re.search(r"\{.*\}", text, re.DOTALL):
+                text = json_match[0]
 
             data = json.loads(text)
 
