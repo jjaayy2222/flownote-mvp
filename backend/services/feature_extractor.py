@@ -9,6 +9,8 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List
 
+from backend.agent.error_utils import log_agent_error
+
 logger = logging.getLogger(__name__)
 
 # 상수 정의 (컴파일된 정규식)
@@ -126,8 +128,13 @@ class FeatureExtractor:
             )
 
         except Exception as e:
-            # 에러 로깅 강화 (Stack Trace 포함)
-            logger.error(f"Feature extraction failed: {str(e)}", exc_info=True)
+            # 에러 로깅 강화 (Stack Trace 포함, PII 안전 체인 통과)
+            log_agent_error(
+                logger,
+                "[FeatureExtractor] Feature extraction failed",
+                e,
+                include_traceback=True,
+            )
             return self._default_features()
 
     def _tokenize_words(self, text: str) -> List[str]:

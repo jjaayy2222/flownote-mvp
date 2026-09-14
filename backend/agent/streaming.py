@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any, TypedDict, cast
 from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphRecursionError
 
+from backend.agent.error_utils import log_agent_error
 from backend.core.config.streaming import (
     STREAMING_DEFAULT_STREAM_VERSION,
     StreamVersion,
@@ -256,11 +257,12 @@ async def stream_agent_response(
         # 예상치 못한 예외: 서버 로그에는 상세 정보 기록, 클라이언트에는 일반화된 메시지만 전달
         # 내부 에러 메시지/스택 트레이스의 클라이언트 노출은 Information Disclosure 위험이므로
         # str(exc)는 로그에만 남기고 _GENERIC_STREAM_ERROR_MESSAGE를 클라이언트에 발행
-        logger.error(
-            "[STREAM][ERROR] Unexpected error during streaming: type=%s, detail=%s",
-            type(exc).__name__,
-            str(exc),  # 상세 에러 정보는 서버 로그에만 기록
-            exc_info=True,
+        log_agent_error(
+            logger,
+            "[STREAM][ERROR] Unexpected error during streaming",
+            exc,
+            extra_metadata={"error_type": type(exc).__name__},
+            include_traceback=True,
         )
         yield ErrorChunk(
             code=_ERROR_CODE_STREAM_ERROR,
