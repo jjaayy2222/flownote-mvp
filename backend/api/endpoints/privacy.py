@@ -53,6 +53,7 @@ from backend.core.audit_logger import (
     write_audit_log,
 )
 from backend.core.config_validator import PersonalizedRAGConfig
+from backend.database.connection import DatabaseConnection
 from backend.services.privacy_service import (
     AnonymizationResult,
     DeletionResult,
@@ -67,8 +68,63 @@ router = APIRouter(prefix="/privacy", tags=["privacy"])
 _rag_cfg = PersonalizedRAGConfig.from_env()
 
 
-async def _dummy_db_delete_fn(hashed_uid: str) -> int:
-    return 0
+async def _transactional_db_delete_fn(hashed_uid: str) -> int:
+    """
+    [KO] 사용자의 데이터베이스 레코드를 실제로 삭제하는 트랜잭션 콜백.
+    파일 경로에 hashed_uid가 포함된 레코드들을 찾아 파일, 메타데이터, 검색 통계를 연쇄 삭제합니다.
+    [EN] Transactional callback to actually delete a user's database records.
+    Finds records where the file path contains hashed_uid and cascades deletions across files, metadata, and analytics.
+    """
+
+    def _delete() -> int:
+        db = DatabaseConnection()
+        try:
+            db.cursor.execute("BEGIN TRANSACTION;")
+
+            # 사용자의 파일 조회
+            db.cursor.execute(
+                "SELECT id FROM files WHERE path LIKE ?", (f"%/{hashed_uid}/%",)
+            )
+            rows = db.cursor.fetchall()
+            if not rows:
+                db.conn.commit()
+                db.close()
+                return 0
+
+            file_ids = [row["id"] for row in rows]
+            placeholders = ",".join(["?"] * len(file_ids))
+
+            # 하위 레코드 연쇄 삭제
+            db.cursor.execute(
+                f"DELETE FROM search_analytics WHERE file_id IN ({placeholders})",
+                file_ids,
+            )
+            db.cursor.execute(
+                f"DELETE FROM metadata WHERE file_id IN ({placeholders})", file_ids
+            )
+
+            # 메인 파일 레코드 삭제
+            db.cursor.execute(
+                f"DELETE FROM files WHERE id IN ({placeholders})", file_ids
+            )
+
+            deleted_count = len(file_ids)
+            db.conn.commit()
+            db.close()
+            return deleted_count
+        except Exception as e:
+            db.conn.rollback()
+            db.close()
+            logger.error(
+                "[DB] Error deleting user records",
+                exc_info=True,
+                extra={"error_type": type(e).__name__},
+            )
+            raise e
+
+    import asyncio
+
+    return await asyncio.to_thread(_delete)
 
 
 # SHA-256 결과: 64자리 16진수 (대소문자 허용)
@@ -476,7 +532,7 @@ async def erase_user_data(
     deletion_result: DeletionResult
     try:
         deletion_result = await delete_user_data(
-            hashed_uid, _rag_cfg.storage_base_path, _dummy_db_delete_fn
+            hashed_uid, _rag_cfg.storage_base_path, _transactional_db_delete_fn
         )
     except Exception as exc:
         # 예외 타입명만 로그 — str(exc) 제외로 PII 유출 방지
