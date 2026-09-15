@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from backend.agent.error_utils import log_agent_error
 from backend.api.deps import get_current_user, get_locale
 from backend.api.models import (
     HybridSearchRequest,
@@ -160,7 +161,12 @@ async def _run_hybrid_search(
             detail=str(exc),
         ) from exc
     except Exception as exc:
-        logger.exception("Hybrid search unexpected error: %s", exc)
+        log_agent_error(
+            logger,
+            "Hybrid search unexpected error",
+            exc,
+            include_traceback=True,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="검색 중 내부 오류가 발생했습니다.",

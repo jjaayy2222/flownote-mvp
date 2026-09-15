@@ -9,6 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
+from backend.agent.error_utils import log_agent_error
 from backend.config import AdminConfig
 from backend.services.eval_service import generate_eval_report
 from backend.services.finetune_service import set_active_finetune_model
@@ -33,19 +34,23 @@ async def get_eval_report_endpoint(
         logger.error("[OBS] ADMIN_API_KEY is not configured in environment.")
         raise HTTPException(status_code=500, detail="Server Configuration Error")
 
-    provided = str(x_admin_key or "")
-    expected = str(admin_key or "")
+    provided = x_admin_key or ""
+    expected = admin_key or ""
 
     if not hmac.compare_digest(provided, expected):
         logger.warning("[OBS] Unauthorized attempt to access admin eval report.")
         raise HTTPException(status_code=403, detail="Forbidden: Invalid Admin Key")
 
     try:
-        report = await generate_eval_report()
-        return report
-    except Exception:
-        logger.exception("[OBS] Error generating eval report")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+        return await generate_eval_report()
+    except Exception as e:
+        log_agent_error(
+            logger,
+            "[OBS] Error generating eval report",
+            e,
+            include_traceback=True,
+        )
+        raise HTTPException(status_code=500, detail="Internal Server Error") from e
 
 
 class ActiveModelRequest(BaseModel):
@@ -73,8 +78,8 @@ async def set_active_model_endpoint(
         logger.error("[OBS] ADMIN_API_KEY is not configured in environment.")
         raise HTTPException(status_code=500, detail="Server Configuration Error")
 
-    provided = str(x_admin_key or "")
-    expected = str(admin_key or "")
+    provided = x_admin_key or ""
+    expected = admin_key or ""
 
     if not hmac.compare_digest(provided, expected):
         logger.warning(
@@ -86,11 +91,15 @@ async def set_active_model_endpoint(
     try:
         await set_active_finetune_model(request.model_id)
         return {"status": "success", "active_model_id": request.model_id}
-    except Exception:
-        logger.exception(
-            "[OBS] Error setting active model", extra={"model_id": request.model_id}
+    except Exception as e:
+        log_agent_error(
+            logger,
+            "[OBS] Error setting active model",
+            e,
+            extra_metadata={"model_id": request.model_id},
+            include_traceback=True,
         )
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+        raise HTTPException(status_code=500, detail="Internal Server Error") from e
 
 
 from backend.api.models import ModelPerformanceComparison
@@ -115,8 +124,8 @@ async def get_model_performance_endpoint(
         logger.error("[OBS] ADMIN_API_KEY is not configured in environment.")
         raise HTTPException(status_code=500, detail="Server Configuration Error")
 
-    provided = str(x_admin_key or "")
-    expected = str(admin_key or "")
+    provided = x_admin_key or ""
+    expected = admin_key or ""
 
     if not hmac.compare_digest(provided, expected):
         logger.warning("[OBS] Unauthorized attempt to check model performance.")
@@ -128,6 +137,11 @@ async def get_model_performance_endpoint(
         data = await get_model_performance_comparison()
 
         return ModelPerformanceComparison(status="success", **data)
-    except Exception:
-        logger.exception("[OBS] Error calculating model performance comparison")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+    except Exception as e:
+        log_agent_error(
+            logger,
+            "[OBS] Error calculating model performance comparison",
+            e,
+            include_traceback=True,
+        )
+        raise HTTPException(status_code=500, detail="Internal Server Error") from e

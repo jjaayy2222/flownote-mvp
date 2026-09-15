@@ -4,7 +4,9 @@ import logging
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
+from backend.agent.error_utils import log_agent_error
 from backend.api import deps
+from backend.config import WebSocketConfig
 from backend.services.redis_pubsub import redis_broadcaster
 from backend.services.websocket_manager import manager
 
@@ -80,7 +82,12 @@ async def websocket_endpoint(
         )
 
     except Exception as e:
-        logger.error(f"WebSocket Error (Unexpected): {e}", exc_info=True)
+        log_agent_error(
+            logger,
+            "WebSocket Error (Unexpected)",
+            e,
+            include_traceback=True,
+        )
         close_code = 1011  # Internal Error
 
     finally:
