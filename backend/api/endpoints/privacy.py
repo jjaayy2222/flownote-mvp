@@ -81,7 +81,7 @@ async def _transactional_db_delete_fn(hashed_uid: str) -> int:
         try:
             db.cursor.execute("BEGIN TRANSACTION;")
 
-            # 사용자의 파일 조회
+            # [1] 사용자의 파일 조회 (hashed_uid 기반, 파라미터 바인딩)
             db.cursor.execute(
                 "SELECT id FROM files WHERE path LIKE ?", (f"%/{hashed_uid}/%",)
             )
@@ -91,21 +91,29 @@ async def _transactional_db_delete_fn(hashed_uid: str) -> int:
                 db.close()
                 return 0
 
-            file_ids = [row["id"] for row in rows]
-            file_ids_tuple = [(fid,) for fid in file_ids]
-
-            # 하위 레코드 연쇄 삭제
-            db.cursor.executemany(
-                "DELETE FROM search_analytics WHERE file_id = ?", file_ids_tuple
+            # [2] 임시 테이블에 삭제 대상 ID 적재 (정적 쿼리 + executemany 바인딩)
+            # → 정적 SQL로 SAST 검사 통과 + 집합 기반 IN 절로 성능 확보
+            db.cursor.execute(
+                "CREATE TEMP TABLE IF NOT EXISTS _gdpr_delete_targets (file_id INTEGER NOT NULL)"
             )
+            db.cursor.execute("DELETE FROM _gdpr_delete_targets")
             db.cursor.executemany(
-                "DELETE FROM metadata WHERE file_id = ?", file_ids_tuple
+                "INSERT INTO _gdpr_delete_targets (file_id) VALUES (?)",
+                [(row["id"],) for row in rows],
             )
 
-            # 메인 파일 레코드 삭제
-            db.cursor.executemany("DELETE FROM files WHERE id = ?", file_ids_tuple)
+            # [3] 집합 기반 연쇄 삭제 (3번의 쿼리로 완료 — O(N) DB 스캔)
+            db.cursor.execute(
+                "DELETE FROM search_analytics WHERE file_id IN (SELECT file_id FROM _gdpr_delete_targets)"
+            )
+            db.cursor.execute(
+                "DELETE FROM metadata WHERE file_id IN (SELECT file_id FROM _gdpr_delete_targets)"
+            )
+            db.cursor.execute(
+                "DELETE FROM files WHERE id IN (SELECT file_id FROM _gdpr_delete_targets)"
+            )
 
-            deleted_count = len(file_ids)
+            deleted_count = len(rows)
             db.conn.commit()
             db.close()
             return deleted_count
