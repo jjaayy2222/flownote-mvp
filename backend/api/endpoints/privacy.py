@@ -92,21 +92,18 @@ async def _transactional_db_delete_fn(hashed_uid: str) -> int:
                 return 0
 
             file_ids = [row["id"] for row in rows]
-            placeholders = ",".join(["?"] * len(file_ids))
+            file_ids_tuple = [(fid,) for fid in file_ids]
 
             # 하위 레코드 연쇄 삭제
-            db.cursor.execute(
-                f"DELETE FROM search_analytics WHERE file_id IN ({placeholders})",
-                file_ids,
+            db.cursor.executemany(
+                "DELETE FROM search_analytics WHERE file_id = ?", file_ids_tuple
             )
-            db.cursor.execute(
-                f"DELETE FROM metadata WHERE file_id IN ({placeholders})", file_ids
+            db.cursor.executemany(
+                "DELETE FROM metadata WHERE file_id = ?", file_ids_tuple
             )
 
             # 메인 파일 레코드 삭제
-            db.cursor.execute(
-                f"DELETE FROM files WHERE id IN ({placeholders})", file_ids
-            )
+            db.cursor.executemany("DELETE FROM files WHERE id = ?", file_ids_tuple)
 
             deleted_count = len(file_ids)
             db.conn.commit()
