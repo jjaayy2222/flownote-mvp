@@ -44,6 +44,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 
+from backend.agent.error_utils import log_agent_error
 from backend.api.deps import get_current_user
 from backend.core.audit_logger import (
     AuditConfigError,
@@ -51,6 +52,7 @@ from backend.core.audit_logger import (
     mask_uid,
     write_audit_log,
 )
+from backend.core.config_validator import PersonalizedRAGConfig
 from backend.services.privacy_service import (
     AnonymizationResult,
     DeletionResult,
@@ -61,6 +63,13 @@ from backend.services.privacy_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/privacy", tags=["privacy"])
+
+_rag_cfg = PersonalizedRAGConfig.from_env()
+
+
+async def _dummy_db_delete_fn(hashed_uid: str) -> int:
+    return 0
+
 
 # SHA-256 결과: 64자리 16진수 (대소문자 허용)
 _SHA256_HEX_PATTERN: re.Pattern[str] = re.compile(r"^[0-9a-fA-F]{64}$")
@@ -466,13 +475,20 @@ async def erase_user_data(
     # ── 2. Vector Data 삭제 (2단계) ─────────────────────────────────────────
     deletion_result: DeletionResult
     try:
-        deletion_result = await delete_user_data(hashed_uid)
+        deletion_result = await delete_user_data(
+            hashed_uid, _rag_cfg.storage_base_path, _dummy_db_delete_fn
+        )
     except Exception as exc:
         # 예외 타입명만 로그 — str(exc) 제외로 PII 유출 방지
-        logger.exception(
-            "[OBS][PRIVACY][API] Vector data deletion failed: masked_uid=%s, error_type=%s",
-            masked,
-            type(exc).__name__,
+        log_agent_error(
+            logger,
+            "[OBS][PRIVACY][API] Vector data deletion failed",
+            exc,
+            extra_metadata={
+                "masked_uid": masked,
+                "error_type": type(exc).__name__,
+            },
+            include_traceback=True,
         )
         _try_write_audit_log(
             event_type=AuditEventType.DATA_DELETE_FAILURE,
@@ -514,13 +530,17 @@ async def erase_user_data(
             # 보안(GDPR): logger.exception은 예외 메시지원문을 남겨 PII 유출 리스크가 있으므로,
             # logger.error로 전환하고 보안 해싱(Hashing) 기법을 사용하여 추적성 확보.
             msg_hash = _hash_exception_message(exc)
-            logger.error(
-                "[OBS][PRIVACY][API] Anonymization error: masked_uid=%s, "
-                "field_index=%d, error_type=%s, msg_hash=%s",
-                masked,
-                field_index,
-                type(exc).__name__,
-                msg_hash,
+            log_agent_error(
+                logger,
+                "[OBS][PRIVACY][API] Anonymization error",
+                exc,
+                extra_metadata={
+                    "masked_uid": masked,
+                    "field_index": field_index,
+                    "error_type": type(exc).__name__,
+                    "msg_hash": msg_hash,
+                },
+                include_traceback=True,
             )
             # 내부 구현 세부사항(예외 클래스명)을 API 응답 스키마에 노출하지 않기 위해
             # 예기치 않은 오류는 안정적인 공통 코드로 매핑합니다.
@@ -532,7 +552,7 @@ async def erase_user_data(
 
     # ── 4. 최종 처리 결과 감사 로그 (실제 기록 성공 여부 추적) ──────────────
     anonymization_failed_count: int = sum(
-        1 for s in anonymization_summaries if not s.success
+        not s.success for s in anonymization_summaries
     )
     all_anon_success: bool = anonymization_failed_count == 0
     final_event = (
