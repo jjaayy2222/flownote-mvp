@@ -37,6 +37,7 @@ from typing import (
 
 from rank_bm25 import BM25Okapi
 
+from backend.agent.error_utils import log_agent_error
 from backend.utils import check_metadata_match
 
 logger = logging.getLogger(__name__)
@@ -197,10 +198,13 @@ class BM25Retriever:
                 )
                 return self._default_tokenize(text)
             return tokens
-        except Exception as e:
-            logger.exception(
+        except Exception as exc:
+            log_agent_error(
+                logger,
                 "토크나이징 중 예상치 못한 에러가 발생했습니다. 기본 토크나이저로 대체합니다.",
-                extra={"context": type(e).__name__},
+                exc,
+                extra_metadata={"error_type": type(exc).__name__},
+                include_traceback=True,
             )
             return self._default_tokenize(text)
 

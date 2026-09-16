@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Tuple
 
 from langchain_core.messages import HumanMessage
 
+from backend.agent.error_utils import log_agent_error
+
 logger = logging.getLogger(__name__)
 
 
@@ -197,9 +199,13 @@ class EntityEdgeExtractor:
 
         except Exception as exc:
             # LLM 연동 실패 시 애플리케이션의 중단을 막기 위해 예외 캡처 및 로깅
-            # ai_bot_review_summary 체크리스트에 따라 logger.exception()을 사용하여 Stack Trace 기록
-            logger.exception(
-                f"[Graph Extraction] Failed to extract implicit edges for node {source_node_id}"
+            # PII 보호: source_node_id가 사용자 데이터 식별자일 수 있으므로 log_agent_error로 마이그레이션
+            log_agent_error(
+                logger,
+                "[Graph Extraction] Failed to extract implicit edges",
+                exc,
+                extra_metadata={"error_type": type(exc).__name__},
+                include_traceback=True,
             )
 
         return edges

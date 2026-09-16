@@ -3,6 +3,7 @@ import logging
 import random
 from typing import Any
 
+from backend.agent.error_utils import log_agent_error
 from backend.database.connection import DatabaseConnection
 from backend.schemas.graph import (
     EdgeRelationshipType,
@@ -76,8 +77,14 @@ def build_graph_data() -> GraphDataResponse:
     try:
         with DatabaseConnection() as db:
             files = db.get_files_with_para()
-    except Exception:
-        logger.exception("그래프 데이터 조회 중 DB 연결 실패. 빈 그래프를 반환합니다.")
+    except Exception as exc:
+        log_agent_error(
+            logger,
+            "[GRAPH][BUILDER] DB 연결 실패 및 그래프 데이터 조회 오류. 빈 그래프를 반환합니다.",
+            exc,
+            extra_metadata={"error_type": type(exc).__name__},
+            include_traceback=True,
+        )
         return GraphDataResponse(nodes=nodes, edges=edges)
 
     valid_category_ids = set(_PARA_CATEGORY_POSITIONS)

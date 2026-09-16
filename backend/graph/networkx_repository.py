@@ -30,6 +30,7 @@ from typing import Any, Generator, Iterator
 
 import networkx as nx
 
+from backend.agent.error_utils import log_agent_error
 from backend.graph.base import AbstractGraphRepository, GraphLoadError
 from backend.graph.path_utils import build_graph_path
 
@@ -354,16 +355,18 @@ class NetworkXGraphRepository(AbstractGraphRepository):
                     g.number_of_nodes(),
                     g.number_of_edges(),
                 )
-            except Exception:
+            except Exception as exc:
                 # 실패 시 임시 파일 정리 시도
                 import contextlib
 
                 with contextlib.suppress(OSError):
                     tmp_path.unlink(missing_ok=True)
-                logger.exception(
-                    "[GRAPH][NX] Failed to persist graph (subdir=%s). "
-                    "Temporary file cleaned up.",
-                    "graph_data",
+                log_agent_error(
+                    logger,
+                    "[GRAPH][NX] Failed to persist graph. Temporary file cleaned up.",
+                    exc,
+                    extra_metadata={"error_type": type(exc).__name__},
+                    include_traceback=True,
                 )
                 raise
 
@@ -404,9 +407,15 @@ class NetworkXGraphRepository(AbstractGraphRepository):
                 # 프로그래밍 버그(TypeError 등)는 의도적으로 통과시켜
                 # GraphLoadError로 오해되지 않도록 한다.
                 # `from exc` 체이닝으로 원본 예외는 __cause__에 보존된다.
-                logger.exception(
-                    "[GRAPH][NX] Failed to load graph from file system (file=%s).",
-                    target_path.name,  # storage 내부 경로 비노출, 파일명만 기록
+                log_agent_error(
+                    logger,
+                    "[GRAPH][NX] Failed to load graph from file system.",
+                    exc,
+                    extra_metadata={
+                        "file_name": target_path.name,  # storage 내부 절대 경로 비노출, 파일명만
+                        "error_type": type(exc).__name__,
+                    },
+                    include_traceback=True,
                 )
                 raise GraphLoadError(
                     "Graph file could not be loaded from storage."
@@ -456,8 +465,14 @@ class NetworkXGraphRepository(AbstractGraphRepository):
             if is_loaded:
                 try:
                     self.clear(hashed_user_id)
-                except Exception:
-                    logger.exception(
-                        "[GRAPH][NX] Failed to clear in-memory graph after stateless load (user_id_prefix=%s).",
-                        hashed_user_id[:8],
+                except Exception as exc:
+                    log_agent_error(
+                        logger,
+                        "[GRAPH][NX] Failed to clear in-memory graph after stateless load.",
+                        exc,
+                        extra_metadata={
+                            "user_id_prefix": hashed_user_id[:8],
+                            "error_type": type(exc).__name__,
+                        },
+                        include_traceback=True,
                     )
