@@ -6,6 +6,7 @@
 from .common import (
     INVALID_PII_SENTINEL,
     MAX_ERROR_LOG_LENGTH,
+    check_metadata_match,
     format_error_msg,
     mask_pii_id,
     safe_parse_env_float,
@@ -13,6 +14,7 @@ from .common import (
 )
 
 __all__ = [
+    "check_metadata_match",
     "format_error_msg",
     "MAX_ERROR_LOG_LENGTH",
     "safe_parse_env_int",
