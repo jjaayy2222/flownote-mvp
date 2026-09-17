@@ -20,30 +20,31 @@ from typing import (
 if TYPE_CHECKING:
     from langgraph.graph.state import CompiledStateGraph  # type: ignore[import, import-untyped]
 
-from langchain_core.callbacks.manager import (
+from langchain_core.callbacks.manager import (  # type: ignore[import, import-untyped, reportMissingImports]
     CallbackManagerForRetrieverRun,
-)  # type: ignore[import, import-untyped, reportMissingImports]
-from langchain_core.documents import (
+)
+from langchain_core.documents import (  # type: ignore[import, import-untyped, reportMissingImports]
     Document,
-)  # type: ignore[import, import-untyped, reportMissingImports]
-from langchain_core.output_parsers import (
+)
+from langchain_core.output_parsers import (  # type: ignore[import, import-untyped, reportMissingImports]
     StrOutputParser,
-)  # type: ignore[import, import-untyped, reportMissingImports]
+)
 from langchain_core.prompts import (  # type: ignore[import, import-untyped, reportMissingImports]
     ChatPromptTemplate,
     HumanMessagePromptTemplate,
     SystemMessagePromptTemplate,
 )
-from langchain_core.retrievers import (
+from langchain_core.retrievers import (  # type: ignore[import, import-untyped, reportMissingImports]
     BaseRetriever,
-)  # type: ignore[import, import-untyped, reportMissingImports]
+)
 
-from backend.agent.chat.state import (
+from backend.agent.chat.state import (  # type: ignore[import, import-untyped]
     FeedbackEntry,
-)  # type: ignore[import, import-untyped]
-from backend.api.models import (
+)
+from backend.agent.error_utils import log_agent_error
+from backend.api.models import (  # type: ignore[import, import-untyped, reportMissingImports]
     ChatMessage,
-)  # type: ignore[import, import-untyped, reportMissingImports]
+)
 from backend.services.chat_history_service import (  # type: ignore[import, import-untyped, reportMissingImports]
     ChatHistoryService,
     get_chat_history_service,
@@ -52,12 +53,12 @@ from backend.services.hybrid_search_service import (  # type: ignore[import, imp
     HybridSearchService,
     get_hybrid_search_service,
 )
-from backend.services.onboarding_service import (
+from backend.services.onboarding_service import (  # type: ignore[import, import-untyped, reportMissingImports]
     OnboardingService,
-)  # type: ignore[import, import-untyped, reportMissingImports]
-from backend.utils import (
+)
+from backend.utils import (  # type: ignore[import, import-untyped, reportMissingImports]
     mask_pii_id,
-)  # type: ignore[import, import-untyped, reportMissingImports]
+)
 
 logger = logging.getLogger(__name__)
 
@@ -198,9 +199,9 @@ class ChatService:
 
         import os
 
-        from langchain_openai import (
+        from langchain_openai import (  # type: ignore[import, import-untyped, reportMissingImports]
             ChatOpenAI,
-        )  # type: ignore[import, import-untyped, reportMissingImports]
+        )
 
         # 기본 OPENAI_API_KEY가 없는 환경이므로 .env의 커스텀 환경변수를 명시적으로 주입
         # GPT-4o-mini를 1순위로, GPT-4o 등 다른 모델을 fallback으로 사용
@@ -261,7 +262,7 @@ class ChatService:
         # 1. 이메일: abc@def.com -> a***@def.com
         text = re.sub(
             r"([a-zA-Z0-9_.+-]+)@([a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)",
-            lambda m: m.group(1)[0] + "***@" + m.group(2),
+            lambda m: f"{m.group(1)[0]}***@{m.group(2)}",
             text,
         )
         # 2. 전화번호 (KR): 010-1234-5678 -> 010-****-5678
@@ -412,8 +413,7 @@ Standalone Question:"""
         if event_type == "done":
             return "data: [DONE]\n\n"
 
-        payload = {"type": event_type}
-        payload.update(kwargs)
+        payload = {"type": event_type, **kwargs}
         # JSON 직렬화 불가 객체(UUID, datetime 등) 방어를 위해 default=str 파라미터 적용
         return f"data: {json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
 
@@ -464,9 +464,9 @@ Standalone Question:"""
             "feedback_history": feedback_history,
         }
 
-        from backend.agent.chat.graph import (
+        from backend.agent.chat.graph import (  # type: ignore[import, import-untyped, reportMissingImports]
             create_chat_workflow,
-        )  # type: ignore[import, import-untyped, reportMissingImports]
+        )
 
         agent_graph = create_chat_workflow(checkpointer=None)
 
@@ -504,18 +504,18 @@ Standalone Question:"""
                 # Planner 노드 완료 시 검색된 source payload 추출하여 SSE 전송
                 if name == "planner" and kind == "on_chain_end":
                     planner_output = event["data"].get("output", {})
-                    source_docs_raw = planner_output.get("source_documents", [])
-
-                    if source_docs_raw:
-                        source_docs = []
-                        for doc_dict in source_docs_raw:
-                            content = doc_dict.get("content", "")
-                            metadata = dict(doc_dict.get("metadata", {}))
-                            metadata["id"] = doc_dict.get("id", "")
-                            metadata["score"] = doc_dict.get("score", 0.0)
-                            source_docs.append(
-                                Document(page_content=content, metadata=metadata)
+                    if source_docs_raw := planner_output.get("source_documents", []):
+                        source_docs = [
+                            Document(
+                                page_content=doc.get("content", ""),
+                                metadata={
+                                    **doc.get("metadata", {}),
+                                    "id": doc.get("id", ""),
+                                    "score": doc.get("score", 0.0),
+                                },
                             )
+                            for doc in source_docs_raw
+                        ]
 
                         deduplicated_source_docs, sources_payload = (
                             self._dedupe_and_build_sources(source_docs)
@@ -547,13 +547,17 @@ Standalone Question:"""
             is_cancelled = True
             logger.warning("[OBS] Chat stream locally cancelled by user disconnect.")
             raise
-        except Exception as e:
-            logger.exception(
+        except Exception as exc:
+            log_agent_error(
+                logger,
                 "[OBS] Trace 500: Error during RAG chat streaming pipeline",
-                extra={
+                exc,
+                extra_metadata={
                     "user_id_hash": mask_pii_id(user_id),
                     "session_id_hash": mask_pii_id(session_id),
+                    "error_type": type(exc).__name__,
                 },
+                include_traceback=True,
             )
             yield self._format_sse_event(
                 "error",
