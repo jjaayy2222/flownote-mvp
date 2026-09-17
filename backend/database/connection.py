@@ -5,8 +5,7 @@
 설계 원칙:
   - 모든 DB 예외는 sqlite3 전용 구체 타입(OperationalError, DatabaseError 등)으로 처리합니다.
   - 에러 메시지에 PII(경로, 파일명 원문 등)를 로그에 직접 남기지 않습니다.
-  - 순환 의존성 방지를 위해 agent 계층을 import하지 않으며,
-    표준 logging을 통해 구조화된 포맷으로 에러를 기록합니다.
+  - `log_agent_error`를 통해 구조화된 포맷으로 에러를 기록합니다.
   - _execute_query 내부 헬퍼로 반복되는 try/except 패턴을 단일 지점에서 관리합니다.
 
 [EN] FlowNote metadata SQLite database connection and query helper module.
@@ -14,8 +13,7 @@
 Design Principles:
   - All DB exceptions are handled with sqlite3-specific concrete types.
   - PII (raw paths, filenames, etc.) is never written directly to logs.
-  - Does NOT import agent-layer modules to prevent circular dependencies.
-    Errors are recorded via standard logging in structured format.
+  - Errors are recorded via log_agent_error in structured format.
   - _execute_query helper centralizes repeated try/except patterns in one place.
 """
 
@@ -25,6 +23,8 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, TypeVar
+
+from backend.agent.error_utils import log_agent_error
 
 logger = logging.getLogger(__name__)
 
@@ -120,20 +120,22 @@ class DatabaseConnection:
                 # / Also return default when fetchone() returns None (no rows)
                 return result if result is not None else default
             return None
-        except sqlite3.OperationalError:
-            logger.error(
-                "[DB] %s: 쿼리 실행 실패 / Query execution failed",
-                action,
-                exc_info=True,
-                extra=extra,
+        except sqlite3.OperationalError as exc:
+            log_agent_error(
+                logger,
+                f"[DB] {action}: \ucffc\ub9ac \uc2e4\ud589 \uc2e4\ud328 / Query execution failed",
+                exc,
+                extra_metadata={**extra, "error_type": type(exc).__name__},
+                include_traceback=True,
             )
             return default
-        except sqlite3.DatabaseError:
-            logger.error(
-                "[DB] %s: DB 오류 / Database error",
-                action,
-                exc_info=True,
-                extra=extra,
+        except sqlite3.DatabaseError as exc:
+            log_agent_error(
+                logger,
+                f"[DB] {action}: DB \uc624\ub958 / Database error",
+                exc,
+                extra_metadata={**extra, "error_type": type(exc).__name__},
+                include_traceback=True,
             )
             return default
 

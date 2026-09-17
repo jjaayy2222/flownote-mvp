@@ -31,6 +31,8 @@ import time
 from enum import Enum
 from typing import Dict, Optional
 
+from backend.agent.error_utils import log_agent_error
+
 logger = logging.getLogger(__name__)
 
 # -----------------------------------------------------------------------------
@@ -159,10 +161,13 @@ class HealthRegistry:
                         redis_url is not None,
                         redis_fallback_ttl_secs,
                     )
-            except Exception:
-                logger.exception(
-                    "[HEALTH_REGISTRY] Failed to compare singleton configuration "
-                    "in get_instance."
+            except Exception as exc:
+                log_agent_error(
+                    logger,
+                    "[HEALTH_REGISTRY] Failed to compare singleton configuration in get_instance.",
+                    exc,
+                    extra_metadata={"error_type": type(exc).__name__},
+                    include_traceback=True,
                 )
         return _registry_instance
 
