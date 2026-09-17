@@ -775,13 +775,18 @@ def _remove_faiss_index_file(index_path: Path) -> bool:
             index_path.suffix,
         )
         return True
-    except OSError as e:
-        logger.exception(
-            "[OBS][PRIVACY] Failed to remove FAISS index file at path=%s, error_type=%s, error_msg=%s. "
-            "Manual cleanup may be required.",
-            index_path,
-            type(e).__name__,
-            str(e),
+    except OSError as exc:
+        log_agent_error(
+            logger,
+            "[OBS][PRIVACY] Failed to remove FAISS index file. Manual cleanup may be required.",
+            exc,
+            extra_metadata={
+                # \uc808\ub300 \uacbd\ub85c \ube44\ub178\ucd9c: \ud30c\uc77c\uba85\uacfc \ud655\uc7a5\uc790\ub9cc \uae30\ub85d
+                "file_name": index_path.name,
+                "file_suffix": index_path.suffix,
+                "error_type": type(exc).__name__,
+            },
+            include_traceback=True,
         )
         return False
 
