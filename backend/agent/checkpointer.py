@@ -10,7 +10,9 @@ if TYPE_CHECKING:
 
 from langgraph.checkpoint.memory import MemorySaver
 
-# 로거 설정
+from backend.agent.error_utils import log_agent_error
+
+# \ub85c\uac70 \uc124\uc815
 logger = logging.getLogger(__name__)
 
 try:
@@ -44,16 +46,19 @@ def get_checkpointer() -> BaseCheckpointSaver:
         try:
             # ShallowRedisSaver: 기본 Redis 명령어만 사용 (JSON.SET 불필요)
             # Security Fix: Do not log sensitive REDIS_URL
-            checkpointer = ShallowRedisSaver(redis_url=redis_url)
+            checkpointer = ShallowRedisSaver(redis_url=redis_url)  # type: ignore
             logger.info(
                 "Initialized ShallowRedisSaver (Redis Checkpointer) successfully."
             )
             return checkpointer
 
-        except Exception:
-            logger.error(
+        except Exception as exc:
+            log_agent_error(
+                logger,
                 "Failed to initialize Redis Checkpointer. Falling back to MemorySaver.",
-                exc_info=True,
+                exc,
+                extra_metadata={"error_type": type(exc).__name__},
+                include_traceback=True,
             )
             return MemorySaver()
 
