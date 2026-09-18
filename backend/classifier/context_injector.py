@@ -13,6 +13,8 @@ from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
 
+from backend.agent.error_utils import log_agent_error
+
 # ============================================================
 # 1. 동적 경로 계산 (상대경로 + .env 자동로드)
 # ============================================================
@@ -87,8 +89,14 @@ class ContextInjector:
                 with open(self.context_file, "r", encoding="utf-8") as f:
                     return json.load(f)
             return {}
-        except Exception as e:
-            logger.warning(f"맥락 파일 로드 실패: {str(e)}")
+        except Exception as exc:
+            log_agent_error(
+                logger,
+                "맥락 파일 로드 실패",
+                exc,
+                extra_metadata={"error_type": type(exc).__name__},
+                include_traceback=True,
+            )
             return {}
 
     def _format_context(self, context_data: Dict[str, Any]) -> str:
@@ -114,8 +122,14 @@ class ContextInjector:
 
             return "\n".join(formatted_parts) if formatted_parts else ""
 
-        except Exception as e:
-            logger.error(f"맥락 포맷팅 실패: {str(e)}")
+        except Exception as exc:
+            log_agent_error(
+                logger,
+                "맥락 포맷팅 실패",
+                exc,
+                extra_metadata={"error_type": type(exc).__name__},
+                include_traceback=True,
+            )
             return ""
 
     def inject_context_to_prompt(self, user_id: str, base_prompt: str) -> str:
@@ -138,22 +152,26 @@ class ContextInjector:
                 logger.debug(f"사용자 {user_id}의 맥락 없음")
                 return base_prompt
 
-            formatted_context = self._format_context(context)
-
-            if formatted_context:
+            if formatted_context := self._format_context(context):
                 return f"{base_prompt}\n\n[사용자 맥락]\n{formatted_context}"
 
             return base_prompt
 
-        except Exception as e:
-            logger.error(f"프롬프트 주입 실패: {str(e)}")
+        except Exception as exc:
+            log_agent_error(
+                logger,
+                "프롬프트 주입 실패",
+                exc,
+                extra_metadata={"error_type": type(exc).__name__},
+                include_traceback=True,
+            )
             return base_prompt
 
     def inject_context_from_user_id(
         self, user_id: str, ai_result: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        🆕 온보딩 기반: user_id로 data_manager에서 조회하여 AI 결과에 주입
+        🆕 온보딩 기반: user_id로 data_manager에서 조회하여 AI 결과에 주입 # sourcery skip: extract-method
 
         온보딩에서 수집한 사용자 정보를 활용하여
         AI 분석 결과에 사용자 맥락 정보 추가
@@ -166,6 +184,7 @@ class ContextInjector:
             맥락이 추가된 ai_result dict
         """
         try:
+            # sourcery skip: extract-method
             # data_manager 동적 로드 (순환 참조 방지)
             from backend.data_manager import DataManager
 
@@ -194,8 +213,14 @@ class ContextInjector:
             logger.info(f"사용자 {user_id}의 맥락 주입 완료")
             return ai_result
 
-        except Exception as e:
-            logger.error(f"사용자 맥락 주입 실패: {str(e)}")
+        except Exception as exc:
+            log_agent_error(
+                logger,
+                "사용자 맥락 주입 실패",
+                exc,
+                extra_metadata={"error_type": type(exc).__name__},
+                include_traceback=True,
+            )
             ai_result["context_injected"] = False
             return ai_result
 
@@ -208,16 +233,20 @@ class ContextInjector:
         try:
             context = self.contexts.get(user_id, {})
 
-            result = {
+            return {
                 "file_context": file_metadata,
                 "user_context": self._format_context(context),
                 "enriched": bool(context),
             }
 
-            return result
-
-        except Exception as e:
-            logger.error(f"파일 메타데이터 맥락 주입 실패: {str(e)}")
+        except Exception as exc:
+            log_agent_error(
+                logger,
+                "파일 메타데이터 맥락 주입 실패",
+                exc,
+                extra_metadata={"error_type": type(exc).__name__},
+                include_traceback=True,
+            )
             return {
                 "file_context": file_metadata,
                 "user_context": "",
@@ -241,7 +270,7 @@ def get_context_injector() -> ContextInjector:
 
 """test_result ✓
 
-    `data/context/user_context_mapping.json` → 호출해보기 
+    `data/context/user_context_mapping.json` → 호출해보기
 
     ============================================================
     사용자 맥락:

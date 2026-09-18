@@ -11,6 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from backend.agent.error_utils import log_agent_error
+
 prompt_path = Path(__file__).parent / "prompts" / "para_system.txt"
 
 # from langchain_integration import classify_with_langchain
@@ -130,13 +132,19 @@ class PARAClassifier:
 
             return classification_result
 
-        except Exception as e:
-            logger.error(f"분류 중 오류 발생: {str(e)}")
+        except Exception as exc:
+            log_agent_error(
+                logger,
+                "분류 중 오류 발생",
+                exc,
+                extra_metadata={"error_type": type(exc).__name__},
+                include_traceback=True,
+            )
             # 에러 시 Resources로 폴백
             return {
                 "category": "Resources",
                 "confidence": 0.0,
-                "reason": f"Error: {str(e)}",
+                "reason": f"Error: {type(exc).__name__}",
                 "filename": filename,
                 "source": "error",
             }
@@ -233,11 +241,7 @@ class PARAClassifier:
 
     def _count_keywords(self, text: str, keywords: list) -> int:
         """텍스트에 포함된 키워드 개수 카운트"""
-        count = 0
-        for keyword in keywords:
-            if keyword in text:
-                count += text.count(keyword)
-        return count
+        return sum(text.count(keyword) for keyword in keywords if keyword in text)
 
     def _save_to_history(self, result: Dict):
         """분류 결과를 히스토리에 저장"""
@@ -312,14 +316,14 @@ if __name__ == "__main__":
 """test_result(Phase5.2.2)
 
     python backend/classifier/para_classifier.py
-    
+
     ✅ ModelConfig loaded from backend.config
 
     INFO:__main__:PARAClassifier initialized (LangChain: True)
     ============================================================
     PARA 분류기 테스트 (LangChain 통합)
     ============================================================
-    
+
     INFO:httpx:HTTP Request: POST https:**** "HTTP/1.1 200 OK"
     INFO:langchain_integration:분류 완료: Projects (confidence: 100.00%, metadata: False)
     INFO:__main__:Classified 'project_proposal.txt' as 'Projects' (confidence: 100.00%)
