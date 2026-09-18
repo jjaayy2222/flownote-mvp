@@ -10,6 +10,8 @@ from typing import Any, Dict
 
 from classifier.base_classifier import BaseClassifier
 
+from backend.agent.error_utils import log_agent_error
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,9 +43,15 @@ class KeywordClassifier(BaseClassifier):
 
             return result
 
-        except Exception as e:
-            logger.error(f"Keyword classification failed: {str(e)}")
-            self.last_error = str(e)
+        except Exception as exc:
+            log_agent_error(
+                logger,
+                "Keyword classification failed",
+                exc,
+                extra_metadata={"error_type": type(exc).__name__},
+                include_traceback=True,
+            )
+            self.last_error = type(exc).__name__
             return self._default_result()
 
     def _classify_sync(
@@ -87,7 +95,7 @@ class KeywordClassifier(BaseClassifier):
             best_category = "Inbox"
             confidence = 0.0
         else:
-            best_category = max(scores, key=scores.get)
+            best_category = max(scores, key=lambda k: scores[k])
             # 신뢰도 계산 개선: 키워드 1개당 0.3점, 최대 0.95
             confidence = min(0.95, max_score * 0.3)
 

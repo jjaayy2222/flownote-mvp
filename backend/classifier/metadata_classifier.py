@@ -8,6 +8,8 @@ import logging
 from pathlib import Path
 from typing import Any, Dict
 
+from backend.agent.error_utils import log_agent_error
+
 logger = logging.getLogger(__name__)
 
 
@@ -53,8 +55,14 @@ class MetadataClassifier:
             result = classify_with_metadata(metadata)
             logger.info(f"분류 완료: {result['category']}")
             return result
-        except Exception as e:
-            logger.error(f"분류 실패: {str(e)}")
+        except Exception as exc:
+            log_agent_error(
+                logger,
+                "분류 실패",
+                exc,
+                extra_metadata={"error_type": type(exc).__name__},
+                include_traceback=True,
+            )
             raise
 
     def batch_classify(self, metadata_list: list) -> list:
@@ -73,9 +81,15 @@ class MetadataClassifier:
                 result = self.classify(metadata)
                 results.append(result)
                 logger.info(f"[{i+1}/{len(metadata_list)}] 분류 완료")
-            except Exception as e:
-                logger.error(f"[{i+1}] 분류 실패: {str(e)}")
-                results.append({"status": "error", "message": str(e)})
+            except Exception as exc:
+                log_agent_error(
+                    logger,
+                    f"[{i+1}] 분류 실패",
+                    exc,
+                    extra_metadata={"error_type": type(exc).__name__},
+                    include_traceback=True,
+                )
+                results.append({"status": "error", "message": type(exc).__name__})
 
         return results
 
