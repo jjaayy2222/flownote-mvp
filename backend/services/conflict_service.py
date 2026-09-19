@@ -39,9 +39,7 @@ except ImportError:
     from backend.classifier.para_agent import run_para_agent
     from backend.classifier.snapshot_manager import SnapshotManager
 
-    logger.warning(
-        "Import fallback used"
-    )  # logger.warning(f"Import fallback used: {e}")
+    logger.warning("Import fallback used")
 
 
 class ConflictService:
@@ -85,7 +83,7 @@ class ConflictService:
         #    user_context = {}
 
         try:
-            logger.info(f"📝 통합 분류 시작: {text[:50]}...")
+            logger.info("📝 통합 분류 시작: %s...", text[:50])
 
             # 1. PARA 분류 (이미 있으면 재사용)
             if para_result is None:
@@ -93,7 +91,7 @@ class ConflictService:
                 para_result = await run_para_agent(text)
 
             para_result = para_result or {}
-            logger.info(f"  ✅ PARA: {para_result.get('category')}")
+            logger.info("  ✅ PARA: %s", para_result.get("category"))
 
             # 2. Keyword 분류
             if keyword_result is None:
@@ -103,7 +101,7 @@ class ConflictService:
                 )
 
             keyword_result = keyword_result or {}
-            logger.info(f"   ✅ 키워드: {keyword_result.get('tags', [])}")
+            logger.info("   ✅ 키워드: %s", keyword_result.get("tags", []))
 
             # 3. Conflict Resolution
             logger.info("3. Conflict Resolution 실행...")
@@ -133,7 +131,7 @@ class ConflictService:
                 "status": "success",
             }
 
-            logger.info(f"✅ 통합 분류 완료! Snapshot: {snapshot.id}")
+            logger.info("✅ 통합 분류 완료! Snapshot: %s", snapshot.id)
             return result
 
         except (OSError, ValueError, TypeError, RuntimeError) as e:
