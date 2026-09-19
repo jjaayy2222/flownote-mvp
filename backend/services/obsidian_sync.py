@@ -29,8 +29,10 @@ class ObsidianSyncService(SyncServiceBase):
 
     def __init__(self, connection: ExternalToolConnection):
         super().__init__(connection)
-        base_path = connection.config.base_path or ""
-        self.vault_path = Path(base_path)
+        if base_path := connection.config.base_path:
+            self.vault_path = Path(base_path)
+        else:
+            raise ValueError("Obsidian Vault base_path is required but not configured.")
 
     async def connect(self) -> bool:
         """Vault 경로 유효성 확인"""
