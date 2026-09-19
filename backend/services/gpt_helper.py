@@ -134,7 +134,7 @@ class GPT4oHelper:
         )
 
         if not prompt_path.exists():
-            logger.warning(f"⚠️ 프롬프트 파일 없음: {prompt_path}")
+            logger.warning("⚠️ 프롬프트 파일 없음: %s", prompt_path)
             return ""
 
         with open(prompt_path, "r", encoding="utf-8") as f:
@@ -187,7 +187,7 @@ class GPT4oHelper:
             result = json.loads(response)
             areas = result.get("areas", [])
 
-            logger.info(f"✅ GPT-4o 영역 추천 성공: {occupation} → {len(areas)}개")
+            logger.info("✅ GPT-4o 영역 추천 성공: %s → %d개", occupation, len(areas))
 
             return {
                 "status": "success",
@@ -331,7 +331,7 @@ class GPT4oHelper:
             response = self._call(user_prompt, system_prompt, max_tokens=800)
             result = json.loads(response)
 
-            logger.info(f"✅ 키워드 생성 성공: {len(result)}개 영역")
+            logger.info("✅ 키워드 생성 성공: %d개 영역", len(result))
             return result
 
         except (
@@ -524,8 +524,8 @@ if __name__ == "__main__":
         elif raw_response.startswith("```"):
             raw_response = raw_response.replace("```\n", "").replace("\n```", "")
 
-        logger.info(f"🔍 CLEANED RESPONSE: {raw_response[:200]}")           # ← 처음 200자 출력!
-        logger.info(f"📏 RESPONSE LENGTH: {len(raw_response)}")             # ← 길이 확인!
+        logger.info("🔍 CLEANED RESPONSE: %s", raw_response[:200])           # ← 처음 200자 출력!
+        logger.info("📏 RESPONSE LENGTH: %d", len(raw_response))             # ← 길이 확인!
     ```
 
     python -m backend.services.gpt_helper
@@ -577,8 +577,8 @@ if __name__ == "__main__":
         # 마지막에 ```가 있는 경우에만 제거하도록 $ 앵커를 추가하는 것이 안전
         raw_response = re.sub(r'\n```$', '', raw_response)
 
-        logger.info(f"🔍 CLEANED RESPONSE: {raw_response[:200]}")           # ← 처음 200자 출력!
-        logger.info(f"📏 RESPONSE LENGTH: {len(raw_response)}")             # ← 길이 확인!
+        logger.info("🔍 CLEANED RESPONSE: %s", raw_response[:200])           # ← 처음 200자 출력!
+        logger.info("📏 RESPONSE LENGTH: %d", len(raw_response))             # ← 길이 확인!
 
         return raw_response
 

@@ -29,16 +29,17 @@ class ObsidianSyncService(SyncServiceBase):
 
     def __init__(self, connection: ExternalToolConnection):
         super().__init__(connection)
-        self.vault_path = Path(connection.config.base_path)
+        base_path = connection.config.base_path or ""
+        self.vault_path = Path(base_path)
 
     async def connect(self) -> bool:
         """Vault 경로 유효성 확인"""
         if not self.vault_path.exists():
-            logger.error(f"Obsidian Vault path not found: {self.vault_path}")
+            logger.error("Obsidian Vault path not found: %s", self.vault_path)
             return False
 
         if not self.vault_path.is_dir():
-            logger.error(f"Obsidian Vault path is not a directory: {self.vault_path}")
+            logger.error("Obsidian Vault path is not a directory: %s", self.vault_path)
             return False
 
         return True
@@ -53,8 +54,8 @@ class ObsidianSyncService(SyncServiceBase):
 
     async def pull_file(self, external_id: str) -> Optional[str]:
         """파일 내용 읽기 (external_id = absolute path string)"""
+        path = Path(external_id)
         try:
-            path = Path(external_id)
             if not path.exists():
                 return None
             return await asyncio.to_thread(path.read_text, encoding="utf-8")
@@ -68,14 +69,13 @@ class ObsidianSyncService(SyncServiceBase):
         파일 내용 쓰기 (internal_id = absolute path string)
         NOTE: Watchdog Loop를 방지하기 위해 ignore_manager를 사용해야 함
         """
+        path = Path(internal_id)
         try:
-            path = Path(internal_id)
-
             # Loop Prevention: 쓰기 직전에 무시 목록에 추가
             ignore_manager.add(str(path))
 
             await asyncio.to_thread(path.write_text, content, encoding="utf-8")
-            logger.info(f"Successfully wrote to {path}")
+            logger.info("Successfully wrote to %s", path)
             return True
         except OSError as e:
             meta = build_meta({"action": "push_file", "file_name": path.name})
@@ -93,10 +93,10 @@ class ObsidianSyncService(SyncServiceBase):
         Returns:
             이동된 파일의 새로운 절대 경로 (실패 시 None)
         """
+        src_path = Path(file_path)
         try:
-            src_path = Path(file_path)
             if not src_path.exists():
-                logger.error(f"Source file not found: {src_path}")
+                logger.error("Source file not found: %s", src_path)
                 return None
 
             # 카테고리 폴더 매핑 (단순화: 1.Projects 등 번호가 있을 수도 있으나 일단 이름 그대로 매칭 시도)
@@ -106,13 +106,13 @@ class ObsidianSyncService(SyncServiceBase):
             # 폴더가 없으면 생성
             if not target_dir.exists():
                 target_dir.mkdir(parents=True, exist_ok=True)
-                logger.info(f"Created category directory: {target_dir}")
+                logger.info("Created category directory: %s", target_dir)
 
             dest_path = target_dir / src_path.name
 
             # 이미 같은 위치에 있다면 스킵
             if src_path.resolve() == dest_path.resolve():
-                logger.info(f"File already in correct category: {dest_path}")
+                logger.info("File already in correct category: %s", dest_path)
                 return str(dest_path)
 
             # 이름 충돌 방지 (덮어쓰기 방지)
@@ -122,7 +122,7 @@ class ObsidianSyncService(SyncServiceBase):
                 suffix = src_path.suffix
                 new_name = f"{stem}_{timestamp}{suffix}"
                 dest_path = target_dir / new_name
-                logger.warning(f"File name conflict. Renaming to: {new_name}")
+                logger.warning("File name conflict. Renaming to: %s", new_name)
 
             # Loop Prevention: 이동 대상 경로 무시
             # shutil.move는 copy+delete가 될 수도, rename이 될 수도 있음.
@@ -131,7 +131,9 @@ class ObsidianSyncService(SyncServiceBase):
             ignore_manager.add(str(dest_path))
 
             await asyncio.to_thread(shutil.move, str(src_path), str(dest_path))
-            logger.info(f"Moved file: {src_path.name} -> {category}/{dest_path.name}")
+            logger.info(
+                "Moved file: %s -> %s/%s", src_path.name, category, dest_path.name
+            )
 
             return str(dest_path)
 
