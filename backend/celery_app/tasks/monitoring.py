@@ -1,6 +1,7 @@
 # backend/celery_app/tasks/monitoring.py
 
 import asyncio
+import contextlib
 import logging
 import uuid
 from datetime import datetime
@@ -107,11 +108,8 @@ T = TypeVar("T")
 
 def _run_coroutine_safely(coro: Awaitable[T]) -> T:
     """Executes a coroutine in a temporary event loop with safe cleanup."""
-    old_loop = None
-    try:
+    with contextlib.suppress(RuntimeError):
         old_loop = asyncio.get_event_loop()
-    except RuntimeError:
-        pass
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -190,13 +188,14 @@ def check_sync_status(self):
             return "Connection Failed"
 
         # 성공 시에는 로그를 남기지 않거나, INFO 레벨만 기록 (Log flooding 방지)
-        logger.info(f"✅ Sync Status Check Passed: {mcp_config.obsidian.vault_path}")
+        logger.info("✅ Sync Status Check Passed: %s", mcp_config.obsidian.vault_path)
         return "Healthy"
 
     except Exception as exc:
         error_type = type(exc).__name__
         logger.error(
-            f"{task_name} unexpected error",
+            "%s unexpected error",
+            task_name,
             exc_info=False,
             extra={"task_name": task_name, "error_type": error_type, "unhandled": True},
         )
@@ -249,8 +248,7 @@ def check_task_health(self):
         if is_healthy:
             # inspect().stats() may return None if no workers respond
             inspector = app.control.inspect()
-            stats = inspector.stats()
-            if stats:
+            if stats := inspector.stats():
                 details["worker_stats"] = _sanitize_worker_stats(stats)
             else:
                 details["worker_stats"] = "No stats available"
@@ -269,6 +267,8 @@ def check_task_health(self):
             )
             # Add error detail if exists
             if error_msg:
+                if log.details is None:
+                    log.details = {}
                 log.details["error"] = error_msg
 
             _save_monitoring_log(log)

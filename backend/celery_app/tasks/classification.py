@@ -133,7 +133,7 @@ def _safe_obsidian_move(
     try:
         new_path = run_async(sync_service.move_file_to_para(file_path, category))
         if new_path:
-            logger.info(f"Moved file to: {new_path}")
+            logger.info("Moved file to: %s", new_path)
         return new_path
     except OSError as e:
         meta = build_meta(
@@ -198,7 +198,7 @@ def classify_new_file_task(self, file_path: str):
     ClassificationService를 사용하여 즉시 분류 수행
     """
     safe_path = _safe_path(file_path)
-    logger.info(f"Started classification for new file: {safe_path}")
+    logger.info("Started classification for new file: %s", safe_path)
 
     # Check if safe_path indicates an invalid path before proceeding
     if safe_path == INVALID_PATH_SENTINEL:
@@ -209,12 +209,12 @@ def classify_new_file_task(self, file_path: str):
         # 파일 내용 읽기
         path_obj = Path(file_path)
         if not path_obj.exists():
-            logger.error(f"File not found: {safe_path}")
+            logger.error("File not found: %s", safe_path)
             return {"status": "error", "message": "File not found"}
 
         content = path_obj.read_text(encoding="utf-8", errors="ignore")
         if not content.strip():
-            logger.warning(f"File is empty: {safe_path}")
+            logger.warning("File is empty: %s", safe_path)
             return {"status": "skipped", "message": "Empty file"}
 
         # 서비스 초기화 및 실행
@@ -228,7 +228,7 @@ def classify_new_file_task(self, file_path: str):
             service.classify(text=content, file_id=file_id, user_id=LOCAL_OBSIDIAN_USER)
         )
 
-        logger.info(f"Classification completed for {safe_path}: {result.category}")
+        logger.info("Classification completed for %s: %s", safe_path, result.category)
 
         # Post-Processing: Move file to PARA folder if Obsidian Sync is enabled
         new_path = None
@@ -270,5 +270,5 @@ def update_embedding_task(self, file_path: str):
     """
     파일 수정 시 호출되는 Task (임베딩 업데이트)
     """
-    logger.info(f"Updating embedding for: {_safe_path(file_path)}")
+    logger.info("Updating embedding for: %s", _safe_path(file_path))
     return {"status": "pending_implementation", "file_path": file_path}
