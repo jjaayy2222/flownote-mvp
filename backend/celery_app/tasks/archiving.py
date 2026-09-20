@@ -237,7 +237,9 @@ def _resolve_archive_destination(destination: Path) -> Path:
     new_name = f"{destination.stem}_{unique_suffix}{destination.suffix}"
     new_destination = destination.parent / new_name
 
-    logger.info("Destination exists, renaming: %s -> %s", destination, new_destination)
+    logger.info(
+        "Destination exists, renaming: %s -> %s", destination.name, new_destination.name
+    )
     return new_destination
 
 
@@ -266,7 +268,7 @@ def _execute_archive_move(path_obj: Path, log_id: str) -> ArchivingRecord:
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination = _resolve_archive_destination(destination)
     shutil.move(str(path_obj), str(destination))
-    logger.info("Archived: %s -> %s", path_obj, destination)
+    logger.info("Archived: %s -> %s", path_obj.name, destination.name)
     return ArchivingRecord(
         record_id=str(uuid.uuid4()),
         automation_log_id=log_id,

@@ -37,11 +37,13 @@ class ObsidianSyncService(SyncServiceBase):
     async def connect(self) -> bool:
         """Vault 경로 유효성 확인"""
         if not self.vault_path.exists():
-            logger.error("Obsidian Vault path not found: %s", self.vault_path)
+            logger.error("Obsidian Vault path not found: %s", self.vault_path.name)
             return False
 
         if not self.vault_path.is_dir():
-            logger.error("Obsidian Vault path is not a directory: %s", self.vault_path)
+            logger.error(
+                "Obsidian Vault path is not a directory: %s", self.vault_path.name
+            )
             return False
 
         return True
@@ -77,7 +79,7 @@ class ObsidianSyncService(SyncServiceBase):
             ignore_manager.add(str(path))
 
             await asyncio.to_thread(path.write_text, content, encoding="utf-8")
-            logger.info("Successfully wrote to %s", path)
+            logger.info("Successfully wrote to %s", path.name)
             return True
         except OSError as e:
             meta = build_meta({"action": "push_file", "file_name": path.name})
@@ -98,7 +100,7 @@ class ObsidianSyncService(SyncServiceBase):
         src_path = Path(file_path)
         try:
             if not src_path.exists():
-                logger.error("Source file not found: %s", src_path)
+                logger.error("Source file not found: %s", src_path.name)
                 return None
 
             # 카테고리 폴더 매핑 (단순화: 1.Projects 등 번호가 있을 수도 있으나 일단 이름 그대로 매칭 시도)
@@ -108,13 +110,13 @@ class ObsidianSyncService(SyncServiceBase):
             # 폴더가 없으면 생성
             if not target_dir.exists():
                 target_dir.mkdir(parents=True, exist_ok=True)
-                logger.info("Created category directory: %s", target_dir)
+                logger.info("Created category directory: %s", target_dir.name)
 
             dest_path = target_dir / src_path.name
 
             # 이미 같은 위치에 있다면 스킵
             if src_path.resolve() == dest_path.resolve():
-                logger.info("File already in correct category: %s", dest_path)
+                logger.info("File already in correct category: %s", dest_path.name)
                 return str(dest_path)
 
             # 이름 충돌 방지 (덮어쓰기 방지)
