@@ -133,7 +133,7 @@ def _safe_obsidian_move(
     try:
         new_path = run_async(sync_service.move_file_to_para(file_path, category))
         if new_path:
-            logger.info("Moved file to: %s", new_path)
+            logger.info("Moved file to: %s", _safe_path(new_path))
         return new_path
     except OSError as e:
         meta = build_meta(
