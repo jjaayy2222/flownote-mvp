@@ -82,14 +82,14 @@ def _read_file_content(path_obj: Path) -> Tuple[Optional[str], bool]:
         - If had_error is False and content is not None, read succeeded
     """
     if not path_obj.exists() or not path_obj.is_file():
-        logger.warning(f"File not found or not a file: {path_obj}")
+        logger.warning("File not found or not a file: %s", path_obj.name)
         return None, True
 
     try:
         content = path_obj.read_text(encoding="utf-8", errors="ignore")
     except OSError as exc:
         meta = build_meta({"action": "read_file_content"}, file_path=path_obj.name)
-        log_agent_error(logger, f"Failed to read file {path_obj.name}", exc, meta)
+        log_agent_error(logger, "Failed to read file", exc, meta)
         return None, True
 
     if not content.strip():

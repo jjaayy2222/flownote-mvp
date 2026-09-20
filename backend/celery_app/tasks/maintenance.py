@@ -277,7 +277,7 @@ def backup_automation_data(self):
 
         for source_file, file_type in files_to_backup:
             if not source_file.exists():
-                logger.warning(f"Backup skipped: {source_file} does not exist")
+                logger.warning("Backup skipped: %s does not exist", source_file.name)
                 continue
 
             # 백업 파일명: {type}_{timestamp}.jsonl
@@ -287,7 +287,7 @@ def backup_automation_data(self):
             try:
                 shutil.copy2(source_file, backup_path)
                 backup_files.append(str(backup_path))
-                logger.info(f"Backed up {source_file.name} to {backup_filename}")
+                logger.info("Backed up %s to %s", source_file.name, backup_filename)
 
             except OSError as exc:
                 meta = build_meta(
