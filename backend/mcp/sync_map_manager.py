@@ -81,7 +81,7 @@ class SyncMapManager:
 
             with open(self.storage_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
-            logger.debug(f"Saved {len(data)} mappings to disk.")
+            logger.debug("Saved %d mappings to disk.", len(data))
         except (OSError, TypeError) as e:
             meta = build_meta({"action": "save_mappings"})
             log_agent_error(logger, "Failed to save mappings", e, meta)
@@ -159,7 +159,7 @@ class SyncMapManager:
         if current_hash:
             mapping.last_synced_hash = current_hash
 
-        logger.info(f"Updated mapping for {mapping.internal_file_id}")
+        logger.info("Updated mapping for %s", mapping.internal_file_id)
         return mapping
 
     def _create_new_mapping(
@@ -178,7 +178,7 @@ class SyncMapManager:
             last_synced_at=datetime.now(),
         )
         self._mappings[internal_id] = mapping
-        logger.info(f"Created new mapping for {internal_id} <-> {external_path}")
+        logger.info("Created new mapping for %s <-> %s", internal_id, external_path)
         return mapping
 
     def remove_mapping(self, internal_id: str) -> bool:
@@ -198,7 +198,7 @@ class SyncMapManager:
 
                 # Create snapshot
                 snapshot = list(self._mappings.values())
-                logger.info(f"Removed mapping for {internal_id}")
+                logger.info("Removed mapping for %s", internal_id)
 
         if snapshot is not None:
             self._save_mappings(snapshot)
