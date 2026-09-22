@@ -120,7 +120,7 @@ class RedisPubSub:
         if self.redis:
             self.pubsub = self.redis.pubsub()
             await self.pubsub.subscribe(channel)
-            logger.info(f"Subscribed to Redis channel: {channel}")
+            logger.info("Subscribed to Redis channel: %s", channel)
 
             try:
                 async for message in self.pubsub.listen():
@@ -158,7 +158,7 @@ class RedisBroadcaster:
         try:
             await self._client.connect()
             self._task = asyncio.create_task(self._client.subscribe(channel, handler))
-            logger.info(f"RedisBroadcaster listening on channel: {channel}")
+            logger.info("RedisBroadcaster listening on channel: %s", channel)
         except REDIS_FALLBACK_ERRORS as e:
             meta = build_meta({"action": "redis_broadcaster_start", "channel": channel})
             log_agent_error(

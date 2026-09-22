@@ -81,7 +81,7 @@ class ClassificationService:
             ClassifyResponse: 최종 분류 결과 모델
         """
         try:
-            logger.info(f"🔵 분류 시작: user_id={user_id}, text_len={len(text)}")
+            logger.info("🔵 분류 시작: user_id=%s, text_len=%d", user_id, len(text))
 
             # Step 1: 사용자 컨텍스트 구성
             user_context = self._build_user_context(
@@ -165,7 +165,7 @@ class ClassificationService:
                 log_info=log_info,
             )
 
-            logger.info(f"✅ 분류 완료: {final_category}")
+            logger.info("✅ 분류 완료: %s", final_category)
             return response
 
         except Exception as e:
@@ -256,7 +256,7 @@ class ClassificationService:
         # user_context_matched 복사
         result["user_context_matched"] = metadata.get("user_context_matched", False)
 
-        logger.info(f"✅ Keywords: {tags[:5]}")
+        logger.info("✅ Keywords: %s", tags[:5])
         return result
 
     async def _resolve_conflicts(
@@ -269,7 +269,7 @@ class ClassificationService:
             text=text,
             user_context=user_context,
         )
-        logger.info(f"✅ Conflict: {result.get('final_category')}")
+        logger.info("✅ Conflict: %s", result.get("final_category"))
         return result
 
     def _save_results(
