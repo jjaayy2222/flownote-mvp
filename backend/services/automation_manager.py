@@ -161,7 +161,9 @@ class AutomationManager:
             NotImplementedError: DB 연동 전
         """
         # TODO: DB 연동 후 규칙 수정 구현
-        logger.warning(f"update_automation_rule called for {rule_id} (not implemented)")
+        logger.warning(
+            "update_automation_rule called for %s (not implemented)", rule_id
+        )
         raise NotImplementedError("Rule update requires database integration")
 
     def delete_automation_rule(self, rule_id: str) -> bool:
@@ -178,7 +180,9 @@ class AutomationManager:
             NotImplementedError: DB 연동 전
         """
         # TODO: DB 연동 후 규칙 삭제 구현
-        logger.warning(f"delete_automation_rule called for {rule_id} (not implemented)")
+        logger.warning(
+            "delete_automation_rule called for %s (not implemented)", rule_id
+        )
         raise NotImplementedError("Rule deletion requires database integration")
 
     # ========================================================================
@@ -289,7 +293,9 @@ class AutomationManager:
                         logs.append(log_data)
 
                     except json.JSONDecodeError:
-                        logger.warning(f"Malformed JSON line in {file_path}")
+                        logger.warning(
+                            "Malformed JSON line in %s", Path(file_path).name
+                        )
                         continue
 
         except OSError as exc:

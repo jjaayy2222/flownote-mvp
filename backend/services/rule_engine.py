@@ -191,9 +191,9 @@ class RuleEngine:
         """기본 규칙 데이터를 Rule 객체로 변환하여 로드"""
         for rule_data in self._DEFAULT_RULES_DATA:
             try:
-                self.rules.append(Rule(**rule_data))
+                self.rules.append(Rule(**rule_data))  # type: ignore[arg-type]
             except TypeError as e:
-                logger.error(f"Failed to load rule {rule_data.get('name')}: {e}")
+                logger.error("Failed to load rule %s: %s", rule_data.get("name"), e)
 
     def evaluate(
         self, text: str, metadata: Optional[Dict[str, Any]] = None
@@ -218,14 +218,15 @@ class RuleEngine:
 
         # 모든 규칙 순회
         for rule in self.rules:
-            if rule.compiled_pattern.search(text):
+            if rule.compiled_pattern.search(text) and (
+                best_match is None or rule.confidence > best_match.confidence
+            ):
                 # 매칭 성공
-                if best_match is None or rule.confidence > best_match.confidence:
-                    best_match = RuleResult(
-                        category=rule.category,
-                        confidence=rule.confidence,
-                        matched_rule=rule.name,
-                        details={"description": rule.description},
-                    )
+                best_match = RuleResult(
+                    category=rule.category,
+                    confidence=rule.confidence,
+                    matched_rule=rule.name,
+                    details={"description": rule.description},
+                )
 
         return best_match

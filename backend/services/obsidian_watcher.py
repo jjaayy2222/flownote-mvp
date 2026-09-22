@@ -6,6 +6,7 @@ from typing import Optional
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
+from watchdog.observers.api import BaseObserver
 
 from backend.celery_app.tasks.classification import (
     classify_new_file_task,
@@ -45,7 +46,11 @@ class ObsidianFileEventHandler(FileSystemEventHandler):
             return False
 
         if ignore_manager.is_ignored(path):
-            logger.info(f"🙈 Ignoring {event_type} event (Loop Prevention): {path}")
+            logger.info(
+                "🙈 Ignoring %s event (Loop Prevention): %s",
+                event_type,
+                Path(path).name,
+            )
             return False
 
         return self._is_valid_file(path)
@@ -54,7 +59,7 @@ class ObsidianFileEventHandler(FileSystemEventHandler):
         if not self._should_process(event, event.src_path, "created"):
             return
 
-        logger.info(f"✨ New file detected: {event.src_path}")
+        logger.info("✨ New file detected: %s", Path(event.src_path).name)
         # Trigger Celery Task (Async)
         classify_new_file_task.delay(event.src_path)
 
@@ -62,7 +67,7 @@ class ObsidianFileEventHandler(FileSystemEventHandler):
         if not self._should_process(event, event.src_path, "modified"):
             return
 
-        logger.info(f"📝 File modified: {event.src_path}")
+        logger.info("📝 File modified: %s", Path(event.src_path).name)
         # Trigger Celery Task (Async)
         update_embedding_task.delay(event.src_path)
 
@@ -71,7 +76,11 @@ class ObsidianFileEventHandler(FileSystemEventHandler):
         if not self._should_process(event, event.dest_path, "moved"):
             return
 
-        logger.info(f"📦 File moved: {event.src_path} -> {event.dest_path}")
+        logger.info(
+            "📦 File moved: %s -> %s",
+            Path(event.src_path).name,
+            Path(event.dest_path).name,
+        )
         # Treat move/rename as update
         update_embedding_task.delay(event.dest_path)
 
@@ -83,7 +92,7 @@ class ObsidianWatcherService:
 
     def __init__(self):
         self.config = mcp_config.obsidian
-        self.observer: Optional[Observer] = None
+        self.observer: Optional[BaseObserver] = None
         self.handler = ObsidianFileEventHandler()
 
     def start(self):
@@ -93,14 +102,16 @@ class ObsidianWatcherService:
             return
 
         if not self.config.is_valid:
-            logger.error(f"❌ Invalid Obsidian Vault path: {self.config.vault_path}")
+            logger.error(
+                "❌ Invalid Obsidian Vault path: %s", Path(self.config.vault_path).name
+            )
             return
 
         path = self.config.vault_path
         self.observer = Observer()
         self.observer.schedule(self.handler, path, recursive=True)
         self.observer.start()
-        logger.info(f"👀 Started watching Obsidian Vault at: {path}")
+        logger.info("👀 Started watching Obsidian Vault at: %s", Path(path).name)
 
     def stop(self):
         """Watcher 중지"""
