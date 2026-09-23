@@ -10,18 +10,12 @@ import time
 from collections import OrderedDict
 from typing import Optional
 
-from fastapi import (
-    APIRouter,
-    Depends,
-    Header,  # type: ignore[import]
-    HTTPException,
-    Query,
-    Request,
-)
+from fastapi import Header  # type: ignore[import]
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse  # type: ignore[import]
 
+from backend.api.models import ChatHistoryResponse  # type: ignore[import]
 from backend.api.models import (
-    ChatHistoryResponse,  # type: ignore[import]
     ChatQueryRequest,
     ChatSessionMeta,
     FeedbackRequest,
@@ -36,10 +30,8 @@ from backend.services.chat_history_service import (  # type: ignore[import]
     ChatHistoryService,
     get_chat_history_service,
 )
-from backend.services.chat_service import (
-    ChatService,  # type: ignore[import]
-    get_chat_service,
-)
+from backend.services.chat_service import ChatService  # type: ignore[import]
+from backend.services.chat_service import get_chat_service
 from backend.utils import get_chat_log_extra, mask_pii_id  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
@@ -421,5 +413,5 @@ async def get_feedback_stats_endpoint(
         )
 
     except Exception as e:
-        logger.error(f"[OBS] Error fetching feedback stats: {e}")
+        logger.error("[OBS] Error fetching feedback stats: %s", e)
         raise HTTPException(status_code=500, detail="Internal Server Error")

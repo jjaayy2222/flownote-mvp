@@ -49,7 +49,7 @@ class ConflictResolutionState(TypedDict):
 def analyze_conflict_node(state: ConflictResolutionState) -> ConflictResolutionState:
     """🔍 충돌 분석 노드"""
     conflict = state["current_conflict"]
-    logger.info(f"🔍 분석 시작: {conflict.type}")
+    logger.info("🔍 분석 시작: %s", conflict.type)
 
     llm = ChatOpenAI(
         api_key=ModelConfig.GPT4O_MINI_API_KEY,
@@ -93,21 +93,21 @@ JSON만 반환하세요. 마크다운 코드블록 없이!!!
         if not analysis_text:
             raise ValueError("Empty after cleanup")
 
-        logger.info(f"📝 Raw response: {analysis_text[:100]}")
+        logger.info("📝 Raw response: %s", analysis_text[:100])
 
         # ✅ JSON 파싱
         try:
             analysis_result = json.loads(analysis_text)
         except json.JSONDecodeError as e:
-            logger.error(f"JSON 파싱 실패: {analysis_text}")
+            logger.error("JSON 파싱 실패: %s", analysis_text)
             raise ValueError(f"Invalid JSON: {e}")
 
-        logger.info(f"✅ 분석 완료: {analysis_result.get('priority')}")
+        logger.info("✅ 분석 완료: %s", analysis_result.get("priority"))
 
         return {**state, "analysis_result": analysis_result}
 
     except Exception as e:
-        logger.error(f"❌ 분석 실패: {e}")
+        logger.error("❌ 분석 실패: %s", e)
         return {
             **state,
             "analysis_result": {"root_cause": "분석 실패", "priority": "medium"},
@@ -122,7 +122,7 @@ def suggest_strategies_node(state: ConflictResolutionState) -> ConflictResolutio
     conflict = state["current_conflict"]
     analysis = state["analysis_result"]
 
-    logger.info(f"💡 전략 제안 시작")
+    logger.info("💡 전략 제안 시작")
 
     llm = ChatOpenAI(
         api_key=ModelConfig.GPT4O_MINI_API_KEY,
@@ -167,21 +167,21 @@ JSON만 반환하세요. 마크다운 코드블록 없이!!!
         if not strategy_text:
             raise ValueError("Empty after cleanup")
 
-        logger.info(f"📝 Raw response: {strategy_text[:100]}")
+        logger.info("📝 Raw response: %s", strategy_text[:100])
 
         # ✅ JSON 파싱
         try:
             strategy = json.loads(strategy_text)
         except json.JSONDecodeError as e:
-            logger.error(f"JSON 파싱 실패: {strategy_text}")
+            logger.error("JSON 파싱 실패: %s", strategy_text)
             raise ValueError(f"Invalid JSON: {e}")
 
-        logger.info(f"✅ 전략 제안 완료: {strategy.get('method')}")
+        logger.info("✅ 전략 제안 완료: %s", strategy.get("method"))
 
         return {**state, "suggested_strategies": [strategy]}
 
     except Exception as e:
-        logger.error(f"❌ 전략 제안 실패: {e}")
+        logger.error("❌ 전략 제안 실패: %s", e)
         return {
             **state,
             "suggested_strategies": [
@@ -257,7 +257,7 @@ def apply_resolution_node(state: ConflictResolutionState) -> ConflictResolutionS
     resolutions = state.get("resolutions", [])
     resolutions.append(resolution)
 
-    logger.info(f"✅ 해결 적용: {status.value}")
+    logger.info("✅ 해결 적용: %s", status.value)
 
     return {**state, "resolutions": resolutions}
 
@@ -289,7 +289,7 @@ def generate_report_node(state: ConflictResolutionState) -> ConflictResolutionSt
         summary=f"{total}개 중 {resolved}개 자동 해결",
     )
 
-    logger.info(f"📊 최종: 해결률 {resolution_rate:.1%}")
+    logger.info("📊 최종: 해결률 %.1f%%", resolution_rate * 100)
 
     return {**state, "final_report": report}
 
@@ -324,7 +324,7 @@ def create_conflict_resolver_graph():
 # ============================================
 def resolve_conflicts_sync(conflicts: List[ConflictRecord]) -> ConflictReport:
     """충돌 해결 (동기)"""
-    logger.info(f"🚀 시작: {len(conflicts)}개 충돌")
+    logger.info("🚀 시작: %d개 충돌", len(conflicts))
 
     graph = create_conflict_resolver_graph()
 
@@ -332,7 +332,7 @@ def resolve_conflicts_sync(conflicts: List[ConflictRecord]) -> ConflictReport:
 
     # 각 충돌 처리
     for idx, conflict in enumerate(conflicts):
-        logger.info(f"[{idx+1}/{len(conflicts)}] 처리 중...")
+        logger.info("[%d/%d] 처리 중...", idx + 1, len(conflicts))
 
         initial_state = {
             "conflicts": conflicts,
@@ -369,7 +369,7 @@ def resolve_conflicts_sync(conflicts: List[ConflictRecord]) -> ConflictReport:
         summary=f"{total}개 중 {resolved}개 자동 해결, {pending}개 수동 검토 필요",
     )
 
-    logger.info(f"✅ 완료!!! 해결률: {resolution_rate:.1%}")
+    logger.info("✅ 완료!!! 해결률: %.1f%%", resolution_rate * 100)
 
     return final_report
 
@@ -411,7 +411,7 @@ if __name__ == "__main__":
     print("=" * 60)
 
 
-"""test_result_1 - 복잡한 프롬프트 
+"""test_result_1 - 복잡한 프롬프트
 
     ```bash
     python -c "
