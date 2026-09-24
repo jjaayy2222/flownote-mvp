@@ -244,7 +244,11 @@ class ChatService:
                     "Tailor your response to be suitable and helpful for someone with this background."
                 )
         except Exception as e:
-            logger.warning(f"Failed to fetch onboarding status for user {user_id}: {e}")
+            logger.warning(
+                "Failed to fetch onboarding status for user %s: %s",
+                f"{user_id[:8]}***" if user_id else "None",
+                e,
+            )
 
         return "You are a helpful and expert AI assistant."
 
@@ -472,6 +476,35 @@ Standalone Question:"""
 
         return initial_state, agent_graph
 
+    def _extract_sources_event(self, event: Any) -> Optional[str]:
+        """Planner 노드 완료 이벤트에서 source payload를 추출합니다."""
+        planner_output = event["data"].get("output", {})
+        if source_docs_raw := planner_output.get("source_documents", []):
+            source_docs = [
+                Document(
+                    page_content=doc.get("content", ""),
+                    metadata={
+                        **doc.get("metadata", {}),
+                        "id": doc.get("id", ""),
+                        "score": doc.get("score", 0.0),
+                    },
+                )
+                for doc in source_docs_raw
+            ]
+            _, sources_payload = self._dedupe_and_build_sources(source_docs)
+            if sources_payload:
+                return self._format_sse_event("sources", data=sources_payload)
+        return None
+
+    async def _save_chat_history(self, session_id: str, query: str, full_content: str):
+        """질의와 응답을 PII 마스킹 후 히스토리에 저장합니다."""
+        masked_query = self._mask_pii(query)
+        masked_content = self._mask_pii(full_content)
+        await self.chat_history_service.add_message(session_id, "user", masked_query)
+        await self.chat_history_service.add_message(
+            session_id, "assistant", masked_content
+        )
+
     async def stream_chat(
         self,
         query: str,
@@ -482,7 +515,10 @@ Standalone Question:"""
     ) -> AsyncGenerator[str, None]:
         """질의를 받아 RAG 체인을 실행하고 SSE 규격에 맞게 결과 청크를 반환하는 비동기 제너레이터"""
         start_time = time.perf_counter()
-        logger.info(f"Stream chat started for user {user_id}")
+        logger.info(
+            "Stream chat started for user %s",
+            f"{user_id[:8]}***" if user_id else "None",
+        )
 
         # 1. 공통 에이전트 실행 로직 재사용
         setup_start = time.perf_counter()
@@ -501,35 +537,13 @@ Standalone Question:"""
                 kind = event["event"]
                 name = event.get("name")
 
-                # Planner 노드 완료 시 검색된 source payload 추출하여 SSE 전송
                 if name == "planner" and kind == "on_chain_end":
-                    planner_output = event["data"].get("output", {})
-                    if source_docs_raw := planner_output.get("source_documents", []):
-                        source_docs = [
-                            Document(
-                                page_content=doc.get("content", ""),
-                                metadata={
-                                    **doc.get("metadata", {}),
-                                    "id": doc.get("id", ""),
-                                    "score": doc.get("score", 0.0),
-                                },
-                            )
-                            for doc in source_docs_raw
-                        ]
+                    if sources_event := self._extract_sources_event(event):
+                        yield sources_event
 
-                        deduplicated_source_docs, sources_payload = (
-                            self._dedupe_and_build_sources(source_docs)
-                        )
-                        if sources_payload:
-                            yield self._format_sse_event(
-                                "sources", data=sources_payload
-                            )
-
-                # LLM 스트리밍 토큰 청크 추출하여 SSE 전송 (Responder 동작 시 발생)
                 elif kind == "on_chat_model_stream":
                     chunk = event["data"].get("chunk")
                     if chunk and getattr(chunk, "content", None):
-                        # TTFT(Time To First Token) 기록 및 성능 로깅 (헬퍼 사용)
                         if not ttft_recorded:
                             _ = self._log_ttft_once(
                                 start_time=start_time,
@@ -540,7 +554,6 @@ Standalone Question:"""
 
                         content_chunk = str(chunk.content)
                         full_content_list.append(content_chunk)
-                        # 스트리밍 토큰은 실시간성을 위해 마스킹 없이 우선 전송
                         yield self._format_sse_event("token", data=content_chunk)
 
         except asyncio.CancelledError:
@@ -565,18 +578,9 @@ Standalone Question:"""
             )
 
         if not is_cancelled:
-            full_content = "".join(full_content_list)
-            if session_id and full_content:
-                # 저장 시 최종 결과물(질의 및 답변)에 대해 PII 마스킹 적용
-                masked_query = self._mask_pii(query)
-                masked_content = self._mask_pii(full_content)
-
-                await self.chat_history_service.add_message(
-                    session_id, "user", masked_query
-                )
-                await self.chat_history_service.add_message(
-                    session_id, "assistant", masked_content
-                )
+            if session_id and full_content_list:
+                full_content = "".join(full_content_list)
+                await self._save_chat_history(session_id, query, full_content)
 
             yield self._format_sse_event("done")
 

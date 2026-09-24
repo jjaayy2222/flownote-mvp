@@ -68,7 +68,7 @@ class ConflictResolutionService:
                 # MVP: Rename 전략 사용 (양쪽 모두 보존)
                 success = await self._resolve_rename(conflict)
             else:
-                logger.warning(f"Unsupported resolution method: {strategy.method}")
+                logger.warning("Unsupported resolution method: %s", strategy.method)
                 success = False
 
             # 결과 객체 생성 및 즉시 반환
@@ -278,7 +278,7 @@ class ConflictResolutionService:
         )
 
         # TODO: JSONL 파일에 기록 (PathConfig 사용)
-        logger.info(f"📝 Conflict resolution logged: {log_entry.id}")
+        logger.info("📝 Conflict resolution logged: %s", log_entry.id)
 
     async def _resolve_remote_wins(self, conflict: SyncConflict) -> bool:
         """외부(Obsidian) 데이터로 로컬 파일을 덮어씀 (Deprecated: use _resolve_rename)"""
