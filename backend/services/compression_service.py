@@ -37,6 +37,6 @@ def compress_payload(payload: str) -> Tuple[Union[str, bytes], bool]:
                 )
                 return compressed, True
         except Exception as e:
-            logger.error(f"Compression failed: {e}")
+            logger.error("Compression failed: %s", e)
 
     return payload, False

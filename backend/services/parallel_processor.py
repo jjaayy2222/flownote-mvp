@@ -51,7 +51,7 @@ class ParallelClassifier:
                 execution_time = time.time() - start_time
 
                 # 로깅 추가
-                logger.info(f"✅ 병렬 분류 완료 ({execution_time:.2f}초)")
+                logger.info("✅ 병렬 분류 완료 (%.2f초)", execution_time)
 
                 return {
                     "status": "success",
@@ -62,7 +62,7 @@ class ParallelClassifier:
                 }
 
         except Exception as e:
-            logger.error(f"❌ 병렬 분류 실패: {str(e)}")
+            logger.error("❌ 병렬 분류 실패: %s", e)
             return {"status": "error", "message": str(e)}
 
 
