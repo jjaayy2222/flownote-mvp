@@ -88,12 +88,12 @@ class FlowNoteCLI:
             log_file_id = get_safe_file_id(file_path)
 
             if not path_obj.exists():
-                logger.warning(f"File not found: {log_file_id}")
+                logger.warning("File not found: %s", log_file_id)
                 print(f"❌ 파일을 찾을 수 없습니다: {path_obj.name}")
                 return None
 
             if not path_obj.is_file():
-                logger.warning(f"Not a file: {log_file_id}")
+                logger.warning("Not a file: %s", log_file_id)
                 print(f"❌ 유효한 파일이 아닙니다: {path_obj.name}")
                 return None
 
@@ -232,7 +232,7 @@ async def main():
         await cli.batch_classify(directory, user_id)
 
     else:
-        logger.warning(f"Invalid CLI command invoked: {command}")
+        logger.warning("Invalid CLI command invoked: %s", command)
         print("❌ 지원하지 않는 명령어입니다.")
 
 
