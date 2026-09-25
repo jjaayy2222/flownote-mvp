@@ -145,7 +145,7 @@ def get_llm(model_name: str = DEFAULT_MODEL_NAME) -> Optional["BaseChatModel"]:
 
     try:
         # 분류 및 추출 작업에는 결정적인 출력을 위해 temperature=0 사용
-        logger.debug(f"Initializing LLM with model: {model_name}")
+        logger.debug("Initializing LLM with model: %s", model_name)
         return ChatOpenAI(model=model_name, temperature=0)
     except (ValueError, ImportError, RuntimeError) as e:
         meta = build_meta(

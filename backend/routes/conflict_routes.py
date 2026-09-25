@@ -44,10 +44,10 @@ async def resolve_conflicts(conflicts: List[ConflictRecord]):
     try:
         # ConflictService의 기존 로직 사용
         result = await conflict_service.resolve_batch(conflicts)
-        logger.info(f"✅ 충돌 {len(conflicts)}개 해결 완료")
+        logger.info("✅ 충돌 %d개 해결 완료", len(conflicts))
         return result
     except Exception as e:
-        logger.error(f"❌ 충돌 해결 실패: {e}")
+        logger.error("❌ 충돌 해결 실패: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
