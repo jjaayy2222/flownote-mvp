@@ -40,7 +40,7 @@ class ConflictResolver:
         """
         self.threshold = confidence_gap_threshold
         self.resolution_history = []
-        logger.info(f"ConflictResolver initialized (threshold: {self.threshold})")
+        logger.info("ConflictResolver initialized (threshold: %s)", self.threshold)
 
     def resolve(
         self, para_result: ClassificationResult, keyword_result: ClassificationResult
@@ -137,7 +137,8 @@ class ConflictResolver:
 
         total = len(self.resolution_history)
         conflicts = sum(
-            1 for h in self.resolution_history if h["resolution"]["conflict_detected"]
+            bool(h["resolution"].get("conflict_detected"))
+            for h in self.resolution_history
         )
         auto_resolved = total - conflicts
 

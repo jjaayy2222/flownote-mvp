@@ -64,7 +64,7 @@ class PARAClassifier:
         self.categories = self.CATEGORIES
         self.classification_history = []
         self.use_langchain = use_langchain
-        logger.info(f"PARAClassifier initialized (LangChain: {use_langchain})")
+        logger.info("PARAClassifier initialized (LangChain: %s)", use_langchain)
 
     def classify_text(
         self,
@@ -85,7 +85,7 @@ class PARAClassifier:
         """
 
         if not text or not isinstance(text, str):
-            logger.warning(f"Invalid text input for {filename}")
+            logger.warning("Invalid text input for %s", filename)
             return {
                 "category": "Resources",
                 "confidence": 0.0,

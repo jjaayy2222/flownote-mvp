@@ -36,7 +36,7 @@ class MetadataClassifier:
             "temporal_info": data.get("temporal_info", {}),
             "status_info": data.get("status_info", {}),
         }
-        logger.info(f"메타데이터 추출 완료: {extracted.keys()}")
+        logger.info("메타데이터 추출 완료: %s", list(extracted.keys()))
         return extracted
 
     def classify(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
@@ -53,7 +53,7 @@ class MetadataClassifier:
 
         try:
             result = classify_with_metadata(metadata)
-            logger.info(f"분류 완료: {result['category']}")
+            logger.info("분류 완료: %s", result["category"])
             return result
         except Exception as exc:
             log_agent_error(
@@ -80,7 +80,7 @@ class MetadataClassifier:
             try:
                 result = self.classify(metadata)
                 results.append(result)
-                logger.info(f"[{i+1}/{len(metadata_list)}] 분류 완료")
+                logger.info("[%d/%d] 분류 완료", i + 1, len(metadata_list))
             except Exception as exc:
                 log_agent_error(
                     logger,

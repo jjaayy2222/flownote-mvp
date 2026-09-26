@@ -5,6 +5,7 @@ import json
 import logging
 import uuid
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Dict, List
 
 from backend.agent.error_utils import (  # type: ignore[import]
@@ -56,7 +57,9 @@ def _save_report(report: Report):
     with open(path, "w", encoding="utf-8") as f:
         f.write(report.model_dump_json(indent=2))
 
-    logger.info(f"Report saved: {path}")
+    logger.info(
+        "Report saved: %s", Path(path).name if isinstance(path, (str, Path)) else path
+    )
     return str(path)
 
 
