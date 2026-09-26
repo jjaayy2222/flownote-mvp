@@ -246,7 +246,7 @@ class ChatService:
         except Exception as e:
             logger.warning(
                 "Failed to fetch onboarding status for user %s: %s",
-                f"{user_id[:8]}***" if user_id else "None",
+                "[REDACTED]" if user_id else "None",
                 e,
             )
 
@@ -517,7 +517,7 @@ Standalone Question:"""
         start_time = time.perf_counter()
         logger.info(
             "Stream chat started for user %s",
-            f"{user_id[:8]}***" if user_id else "None",
+            "[REDACTED]" if user_id else "None",
         )
 
         # 1. 공통 에이전트 실행 로직 재사용
@@ -527,7 +527,27 @@ Standalone Question:"""
         )
         setup_duration = time.perf_counter() - setup_start
 
-        # 3. Streaming 실행 (astream_events v2 사용)
+        async for chunk in self._process_stream_events(
+            agent_graph=agent_graph,
+            initial_state=initial_state,
+            start_time=start_time,
+            setup_duration=setup_duration,
+            user_id=user_id,
+            session_id=session_id,
+            query=query,
+        ):
+            yield chunk
+
+    async def _process_stream_events(
+        self,
+        agent_graph: Any,
+        initial_state: Any,
+        start_time: float,
+        setup_duration: float,
+        user_id: str,
+        session_id: Optional[str],
+        query: str,
+    ) -> AsyncGenerator[str, None]:
         is_cancelled = False
         full_content_list: List[str] = []
         ttft_recorded = False

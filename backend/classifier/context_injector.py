@@ -150,7 +150,7 @@ class ContextInjector:
 
             if not context:
                 logger.debug(
-                    "사용자 %s의 맥락 없음", f"{user_id[:8]}***" if user_id else "None"
+                    "사용자 %s의 맥락 없음", "[REDACTED]" if user_id else "None"
                 )
                 return base_prompt
 
@@ -199,7 +199,7 @@ class ContextInjector:
             if not user_profile or not user_context:
                 logger.debug(
                     "사용자 %s의 프로필/맥락 없음",
-                    f"{user_id[:8]}***" if user_id else "None",
+                    "[REDACTED]" if user_id else "None",
                 )
                 ai_result["context_injected"] = False
                 return ai_result
@@ -216,7 +216,7 @@ class ContextInjector:
             ai_result["context_injected"] = True
 
             logger.info(
-                "사용자 %s의 맥락 주입 완료", f"{user_id[:8]}***" if user_id else "None"
+                "사용자 %s의 맥락 주입 완료", "[REDACTED]" if user_id else "None"
             )
             return ai_result
 
