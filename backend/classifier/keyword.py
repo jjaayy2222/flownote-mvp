@@ -38,7 +38,7 @@ class KeywordClassifier(BaseClassifier):
             # 검증
             is_valid, error_msg = self.validate_result(result)
             if not is_valid:
-                logger.warning(f"Validation failed: {error_msg}")
+                logger.warning("Validation failed: %s", error_msg)
                 return self._default_result()
 
             return result

@@ -103,7 +103,7 @@ class AIClassifier(BaseClassifier):
             # 결과 검증
             is_valid, error_msg = self.validate_result(result)
             if not is_valid:
-                logger.warning(f"Invalid AI classification result: {error_msg}")
+                logger.warning("Invalid AI classification result: %s", error_msg)
                 # 검증 실패 시 로그 남기고 Unclassified 처리 (단, method 필드는 포함해야 함)
                 return self._default_result(f"Validation failed: {error_msg}")
 
@@ -149,7 +149,7 @@ class AIClassifier(BaseClassifier):
                 "method": "ai",  # BaseClassifier 필수 필드
             }
         except Exception:
-            logger.warning(f"Failed to parse JSON response: {response_text}")
+            logger.warning("Failed to parse JSON response: %s", response_text)
             return self._default_result("JSON parsing failed")
 
     def _default_result(self, reason: str = "Unknown error") -> Dict[str, Any]:

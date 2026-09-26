@@ -149,7 +149,9 @@ class ContextInjector:
             context = self.contexts.get(user_id, {})
 
             if not context:
-                logger.debug(f"사용자 {user_id}의 맥락 없음")
+                logger.debug(
+                    "사용자 %s의 맥락 없음", f"{user_id[:8]}***" if user_id else "None"
+                )
                 return base_prompt
 
             if formatted_context := self._format_context(context):
@@ -195,7 +197,10 @@ class ContextInjector:
             user_context = dm.get_user_context(user_id)
 
             if not user_profile or not user_context:
-                logger.debug(f"사용자 {user_id}의 프로필/맥락 없음")
+                logger.debug(
+                    "사용자 %s의 프로필/맥락 없음",
+                    f"{user_id[:8]}***" if user_id else "None",
+                )
                 ai_result["context_injected"] = False
                 return ai_result
 
@@ -210,7 +215,9 @@ class ContextInjector:
             }
             ai_result["context_injected"] = True
 
-            logger.info(f"사용자 {user_id}의 맥락 주입 완료")
+            logger.info(
+                "사용자 %s의 맥락 주입 완료", f"{user_id[:8]}***" if user_id else "None"
+            )
             return ai_result
 
         except Exception as exc:
