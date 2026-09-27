@@ -41,6 +41,9 @@ except ImportError:
 
     logger.warning("Import fallback used")
 
+# ResolutionStatus는 models 레이어에서 독립적으로 import (conflict_resolver_agent 가용성과 무관)
+from backend.models.conflict import ResolutionStatus
+
 _RESOLVE_BATCH_UNAVAILABLE = False
 try:
     from backend.api.endpoints.conflict_resolver_agent import resolve_conflicts_sync
@@ -280,15 +283,41 @@ class ConflictService:
 
         try:
             report = await asyncio.to_thread(resolve_conflicts_sync, conflicts)
+
+            # LLM 실패 등으로 FAILED 상태가 된 경우도 수동 검토 대상에 포함 (generate_report_node는
+            # PENDING_REVIEW만 집계하므로, FAILED는 여기서 재집계함)
+            failed_count = sum(
+                r.status == ResolutionStatus.FAILED for r in report.resolutions
+            )
+            actual_manual = report.manual_review_needed + failed_count
+            actual_auto = report.auto_resolved_count
+            actual_total = report.total_conflicts
+            actual_rate = (actual_auto / actual_total) if actual_total > 0 else 0.0
+
+            if failed_count > 0:
+                logger.warning(
+                    "[ConflictService] resolve_batch: LLM 실패로 FAILED 해결 %d건 대 수동 검토 포함",
+                    failed_count,
+                )
+
+            derived_status = (
+                "completed"
+                if actual_rate >= 0.8 and actual_manual == 0
+                else "partial" if actual_auto > 0 else "pending_review"
+            )
+
             return {
-                "total_conflicts": report.total_conflicts,
+                "total_conflicts": actual_total,
                 "detected_conflicts": report.detected_conflicts,
                 "resolutions": report.resolutions,
-                "auto_resolved_count": report.auto_resolved_count,
-                "manual_review_needed": report.manual_review_needed,
-                "resolution_rate": report.resolution_rate,
-                "status": report.status,
-                "summary": report.summary,
+                "auto_resolved_count": actual_auto,
+                "manual_review_needed": actual_manual,
+                "resolution_rate": actual_rate,
+                "status": derived_status,
+                "summary": (
+                    f"{actual_total}개 충돌 — {actual_auto}개 자동 해결, "
+                    f"{actual_manual}개 수동 검토 필요"
+                ),
             }
         except Exception as e:
             meta_info = build_meta()
