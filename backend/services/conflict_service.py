@@ -41,6 +41,15 @@ except ImportError:
 
     logger.warning("Import fallback used")
 
+_RESOLVE_BATCH_UNAVAILABLE = False
+try:
+    from backend.api.endpoints.conflict_resolver_agent import resolve_conflicts_sync
+except ImportError:
+    _RESOLVE_BATCH_UNAVAILABLE = True
+    logger.warning(
+        "[ConflictService] resolve_conflicts_sync 로드 실패 — 배치 해결 기능 비활성화"
+    )
+
 
 class ConflictService:
     """
@@ -236,17 +245,70 @@ class ConflictService:
         logger.info("✅ 모든 스냅샷 삭제 완료")
 
     async def resolve_batch(self, conflicts: list) -> dict:
-        """충돌 레코드 일괄 해결 (더미/임시 구현)"""
-        return {
-            "total_conflicts": len(conflicts),
-            "detected_conflicts": conflicts,
-            "resolutions": [],
-            "auto_resolved_count": 0,
-            "manual_review_needed": len(conflicts),
-            "resolution_rate": 0.0,
-            "status": "completed",
-            "summary": f"{len(conflicts)}개 처리 완료",
-        }
+        """충돌 레코드 일괄 해결.
+
+        이미 구현된 resolve_conflicts_sync 로직을 비동기 컵어로 호출합니다.
+        해당 소스를 로드할 수 없는 경우에는 안전한 fallback 응답을 반환합니다.
+        """
+        total = len(conflicts)
+        if not conflicts:
+            return {
+                "total_conflicts": 0,
+                "detected_conflicts": [],
+                "resolutions": [],
+                "auto_resolved_count": 0,
+                "manual_review_needed": 0,
+                "resolution_rate": 0.0,
+                "status": "completed",
+                "summary": "충돌 없음",
+            }
+
+        if _RESOLVE_BATCH_UNAVAILABLE:
+            logger.warning(
+                "[ConflictService] resolve_conflicts_sync 미사용 가능 — 수동 검토 모드로 fallback"
+            )
+            return {
+                "total_conflicts": total,
+                "detected_conflicts": conflicts,
+                "resolutions": [],
+                "auto_resolved_count": 0,
+                "manual_review_needed": total,
+                "resolution_rate": 0.0,
+                "status": "pending_review",
+                "summary": f"{total}개 충돌 — 자동 해결 기능 시작 전 수동 검토 필요",
+            }
+
+        try:
+            report = await asyncio.to_thread(resolve_conflicts_sync, conflicts)
+            return {
+                "total_conflicts": report.total_conflicts,
+                "detected_conflicts": report.detected_conflicts,
+                "resolutions": report.resolutions,
+                "auto_resolved_count": report.auto_resolved_count,
+                "manual_review_needed": report.manual_review_needed,
+                "resolution_rate": report.resolution_rate,
+                "status": report.status,
+                "summary": report.summary,
+            }
+        except Exception as e:
+            meta_info = build_meta()
+            log_agent_error(
+                logger,
+                "[ConflictService] resolve_batch 실패 — fallback 반환",
+                e,
+                meta_info,
+                include_traceback=True,
+            )
+            return {
+                "total_conflicts": total,
+                "detected_conflicts": conflicts,
+                "resolutions": [],
+                "auto_resolved_count": 0,
+                "manual_review_needed": total,
+                "resolution_rate": 0.0,
+                "status": "error",
+                "summary": f"{total}개 충돌 — 해결 중 오류 발생, 수동 검토 필요",
+            }
 
 
 # ✅ 싱글톤 인스턴스
