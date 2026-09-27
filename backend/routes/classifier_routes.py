@@ -165,4 +165,7 @@ async def classify_file_main(
         log_agent_error(
             logger, "[파일 분류 API] 파일 분류 실패", e, include_traceback=True
         )
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        ) from e

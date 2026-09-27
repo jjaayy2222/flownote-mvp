@@ -123,7 +123,10 @@ async def get_sync_status():
         log_agent_error(
             logger, f"Failed to get sync status: {e}", e, include_traceback=True
         )
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        ) from e
 
 
 @router.get("/mcp/status", response_model=MCPStatusResponse)
@@ -157,7 +160,10 @@ async def get_mcp_status():
         log_agent_error(
             logger, f"Failed to get MCP status: {e}", e, include_traceback=True
         )
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        ) from e
 
 
 @router.get("/conflicts", response_model=List[ConflictLogResponse])
@@ -188,7 +194,10 @@ async def get_conflicts(
         log_agent_error(
             logger, f"Failed to get conflicts: {e}", e, include_traceback=True
         )
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        ) from e
 
 
 @router.get("/conflicts/{conflict_id}/diff", response_model=ConflictDiffResponse)
@@ -217,7 +226,10 @@ async def get_conflict_diff(conflict_id: str):
         log_agent_error(
             logger, f"Failed to generate diff: {e}", e, include_traceback=True
         )
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        ) from e
 
 
 @router.post("/conflicts/{conflict_id}/resolve")
@@ -251,4 +263,7 @@ async def resolve_conflict(
         log_agent_error(
             logger, f"Failed to resolve conflict: {e}", e, include_traceback=True
         )
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        ) from e

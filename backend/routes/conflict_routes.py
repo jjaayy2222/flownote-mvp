@@ -11,6 +11,7 @@ from typing import List
 
 from fastapi import APIRouter, HTTPException
 
+from backend.agent.error_utils import log_agent_error
 from backend.models import ConflictRecord, ConflictReport
 from backend.services.conflict_service import ConflictService
 
@@ -47,8 +48,11 @@ async def resolve_conflicts(conflicts: List[ConflictRecord]):
         logger.info("✅ 충돌 %d개 해결 완료", len(conflicts))
         return result
     except Exception as e:
-        logger.error("❌ 충돌 해결 실패: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        log_agent_error(logger, "❌ 충돌 해결 실패", e, include_traceback=True)
+        raise HTTPException(
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        ) from e
 
 
 @router.get("/snapshots", tags=["Conflict", "History"])
