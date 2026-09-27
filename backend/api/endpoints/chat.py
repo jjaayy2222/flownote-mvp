@@ -95,7 +95,9 @@ async def get_chat_history(
             status="success", session_id=session_id, messages=messages
         )
     except ValueError as e:
-        log_agent_error(logger, "[채팅 API] 히스토리 조회 실패", e)
+        log_agent_error(
+            logger, "[채팅 API] 히스토리 조회 실패", e, include_traceback=True
+        )
         raise HTTPException(
             status_code=400, detail="잘못된 요청입니다. 입력값을 확인해주세요."
         ) from e
@@ -118,7 +120,9 @@ async def clear_chat_history(
             "message": f"Session {session_id} cleared.",
         }
     except ValueError as e:
-        log_agent_error(logger, "[채팅 API] 세션 초기화 실패", e)
+        log_agent_error(
+            logger, "[채팅 API] 세션 초기화 실패", e, include_traceback=True
+        )
         raise HTTPException(
             status_code=400, detail="잘못된 요청입니다. 입력값을 확인해주세요."
         ) from e
@@ -151,7 +155,9 @@ async def register_session(
         )
         return {"status": "success", "session_id": session_id}
     except ValueError as e:
-        log_agent_error(logger, "[채팅 API] 세션 등록/갱신 실패", e)
+        log_agent_error(
+            logger, "[채팅 API] 세션 등록/갱신 실패", e, include_traceback=True
+        )
         raise HTTPException(
             status_code=400, detail="잘못된 요청입니다. 입력값을 확인해주세요."
         ) from e
@@ -179,7 +185,9 @@ async def list_sessions(
             count=len(sessions),
         )
     except ValueError as e:
-        log_agent_error(logger, "[채팅 API] 세션 목록 조회 실패", e)
+        log_agent_error(
+            logger, "[채팅 API] 세션 목록 조회 실패", e, include_traceback=True
+        )
         raise HTTPException(
             status_code=400, detail="잘못된 요청입니다. 입력값을 확인해주세요."
         ) from e
@@ -209,7 +217,9 @@ async def rename_session(
             )
         return {"status": "success", "session_id": session_id, "name": body.name}
     except ValueError as e:
-        log_agent_error(logger, "[채팅 API] 세션 이름 수정 실패", e)
+        log_agent_error(
+            logger, "[채팅 API] 세션 이름 수정 실패", e, include_traceback=True
+        )
         raise HTTPException(
             status_code=400, detail="잘못된 요청입니다. 입력값을 확인해주세요."
         ) from e
