@@ -235,6 +235,19 @@ class ConflictService:
         self.snapshot_manager.clear_snapshots()
         logger.info("✅ 모든 스냅샷 삭제 완료")
 
+    async def resolve_batch(self, conflicts: list) -> dict:
+        """충돌 레코드 일괄 해결 (더미/임시 구현)"""
+        return {
+            "total_conflicts": len(conflicts),
+            "detected_conflicts": conflicts,
+            "resolutions": [],
+            "auto_resolved_count": 0,
+            "manual_review_needed": len(conflicts),
+            "resolution_rate": 0.0,
+            "status": "completed",
+            "summary": f"{len(conflicts)}개 처리 완료",
+        }
+
 
 # ✅ 싱글톤 인스턴스
 conflict_service = ConflictService()

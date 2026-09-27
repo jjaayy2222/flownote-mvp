@@ -14,6 +14,7 @@ from fastapi import Header  # type: ignore[import]
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse  # type: ignore[import]
 
+from backend.agent.error_utils import log_agent_error
 from backend.api.models import ChatHistoryResponse  # type: ignore[import]
 from backend.api.models import (
     ChatQueryRequest,
@@ -94,7 +95,10 @@ async def get_chat_history(
             status="success", session_id=session_id, messages=messages
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        log_agent_error(logger, "[채팅 API] 히스토리 조회 실패", e)
+        raise HTTPException(
+            status_code=400, detail="잘못된 요청입니다. 입력값을 확인해주세요."
+        ) from e
 
 
 @router.delete("/history/{session_id}", summary="대화 히스토리 초기화")
@@ -114,7 +118,10 @@ async def clear_chat_history(
             "message": f"Session {session_id} cleared.",
         }
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        log_agent_error(logger, "[채팅 API] 세션 초기화 실패", e)
+        raise HTTPException(
+            status_code=400, detail="잘못된 요청입니다. 입력값을 확인해주세요."
+        ) from e
 
 
 # ─────────────────────────────────────────────────────────────
@@ -144,7 +151,10 @@ async def register_session(
         )
         return {"status": "success", "session_id": session_id}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        log_agent_error(logger, "[채팅 API] 세션 등록/갱신 실패", e)
+        raise HTTPException(
+            status_code=400, detail="잘못된 요청입니다. 입력값을 확인해주세요."
+        ) from e
 
 
 @router.get(
@@ -169,7 +179,10 @@ async def list_sessions(
             count=len(sessions),
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        log_agent_error(logger, "[채팅 API] 세션 목록 조회 실패", e)
+        raise HTTPException(
+            status_code=400, detail="잘못된 요청입니다. 입력값을 확인해주세요."
+        ) from e
 
 
 @router.patch(
@@ -196,7 +209,10 @@ async def rename_session(
             )
         return {"status": "success", "session_id": session_id, "name": body.name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        log_agent_error(logger, "[채팅 API] 세션 이름 수정 실패", e)
+        raise HTTPException(
+            status_code=400, detail="잘못된 요청입니다. 입력값을 확인해주세요."
+        ) from e
 
 
 # ─────────────────────────────────────────────────────────────
@@ -298,13 +314,11 @@ def get_client_ip(request: Request) -> str:
     client_ip = request.client.host if request.client else "unknown"
 
     if client_ip in _TRUSTED_PROXIES:
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
+        if forwarded := request.headers.get("X-Forwarded-For"):
             # X-Forwarded-For의 가장 첫 번째 값(가장 좌측)은 최초 발신지(Original Client) IP이며,
             # 이는 신뢰할 수 있는 프록시(_TRUSTED_PROXIES)를 거친 경우에만 위조되지 않은 것으로 간주하여 신뢰합니다.
             return forwarded.split(",")[0].strip()
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
+        if real_ip := request.headers.get("X-Real-IP"):
             return real_ip.strip()
 
     return client_ip
@@ -414,4 +428,4 @@ async def get_feedback_stats_endpoint(
 
     except Exception as e:
         logger.error("[OBS] Error fetching feedback stats: %s", e)
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+        raise HTTPException(status_code=500, detail="Internal Server Error") from e
