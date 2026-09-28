@@ -9,11 +9,14 @@ Streamlit 코드를 자동 생성하는 모듈
 """
 
 import base64
+import logging
 import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
 from backend.config import ModelConfig
+
+logger = logging.getLogger(__name__)
 
 
 class VisionCodeGenerator:
@@ -92,7 +95,9 @@ class VisionCodeGenerator:
             base64_image = self.encode_image(image_path)
 
             # 사용자 프롬프트 구성
-            user_prompt = custom_prompt if custom_prompt else """
+            user_prompt = (
+                custom_prompt
+                or """
 이미지에 있는 UI를 Streamlit으로 재현하는 코드를 작성해주세요.
 
 요구사항:
@@ -101,6 +106,7 @@ class VisionCodeGenerator:
 - 코드 설명 포함
 - 사용된 Streamlit 컴포넌트 목록 제공
             """.strip()
+            )
 
             # GPT-4.1 Vision API 호출
             response = self.client.chat.completions.create(
@@ -124,25 +130,17 @@ class VisionCodeGenerator:
                 temperature=0.7,
             )
 
-            # 응답 파싱
-            content = response.choices[0].message.content
-
-            # 코드 추출 (`````` 블록에서)
-            code_match = re.search(r"``````", content, re.DOTALL)
-            code = code_match.group(1).strip() if code_match else content
-
-            # Streamlit 컴포넌트 추출
-            components = self._extract_streamlit_components(code)
-
-            # 코드 설명 추출 (코드 블록 이전/이후 텍스트)
-            description = re.sub(r"``````", "", content, flags=re.DOTALL).strip()
+            # 응답 파싱 (content None 방어: API가 None을 반환할 수 있음)
+            content = response.choices[0].message.content or ""
+            code, description, components = self._parse_response_content(content)
+            tokens_used = response.usage.total_tokens if response.usage else 0
 
             return {
                 "success": True,
                 "code": code,
                 "description": description,
                 "components": components,
-                "tokens_used": response.usage.total_tokens,
+                "tokens_used": tokens_used,
                 "model": self.model_name,
             }
 
@@ -181,6 +179,28 @@ class VisionCodeGenerator:
         # 중복 제거 & 정렬
         return sorted(set(components))
 
+    def _parse_response_content(self, content: str) -> tuple:
+        """
+        LLM 응답 content 문자열에서 코드/설명/컴포넌트를 추출하는 공통 헬퍼.
+
+        Args:
+            content: response.choices[0].message.content (None 제거 후 전달)
+
+        Returns:
+            (code: str, description: str, components: list) 튜플
+        """
+        # 코드 추출 (`````` 블록에서) — m[1] 은 m.group(1) 과 동일 (PEP 3132)
+        code_match = re.search(r"``````", content, re.DOTALL)
+        code = code_match[1].strip() if code_match else content
+
+        # Streamlit 컴포넌트 추출
+        components = self._extract_streamlit_components(code)
+
+        # 코드 설명 추출 (코드 블록 이전/이후 텍스트)
+        description = re.sub(r"``````", "", content, flags=re.DOTALL).strip()
+
+        return code, description, components
+
     def generate_from_url(
         self,
         image_url: str,
@@ -200,7 +220,9 @@ class VisionCodeGenerator:
         """
         try:
             # 사용자 프롬프트 구성
-            user_prompt = custom_prompt if custom_prompt else """
+            user_prompt = (
+                custom_prompt
+                or """
 이미지에 있는 UI를 Streamlit으로 재현하는 코드를 작성해주세요.
 
 요구사항:
@@ -208,6 +230,7 @@ class VisionCodeGenerator:
 - 실제 실행 가능한 코드 작성
 - 코드 설명 포함
             """.strip()
+            )
 
             # GPT-4.1 Vision API 호출
             response = self.client.chat.completions.create(
@@ -226,19 +249,17 @@ class VisionCodeGenerator:
                 temperature=0.7,
             )
 
-            # 응답 파싱 (위와 동일)
-            content = response.choices[0].message.content
-            code_match = re.search(r"``````", content, re.DOTALL)
-            code = code_match.group(1).strip() if code_match else content
-            components = self._extract_streamlit_components(code)
-            description = re.sub(r"``````", "", content, flags=re.DOTALL).strip()
+            # 응답 파싱 (content None 방어: API가 None을 반환할 수 있음)
+            content = response.choices[0].message.content or ""
+            code, description, components = self._parse_response_content(content)
+            tokens_used = response.usage.total_tokens if response.usage else 0
 
             return {
                 "success": True,
                 "code": code,
                 "description": description,
                 "components": components,
-                "tokens_used": response.usage.total_tokens,
+                "tokens_used": tokens_used,
                 "model": self.model_name,
             }
 
@@ -257,6 +278,7 @@ class VisionCodeGenerator:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG)
     from pathlib import Path
 
     # 프로젝트 루트 기준 경로
@@ -267,9 +289,9 @@ if __name__ == "__main__":
     result = generator.generate_streamlit_code(image_path=str(test_image))
 
     if result["success"]:
-        print("✅ 코드 생성 성공!")
-        print(f"\n📝 설명:\n{result['description']}\n")
-        print(f"🔧 사용된 컴포넌트: {result['components']}\n")
-        print(f"💻 생성된 코드:\n{result['code']}")
+        logger.debug("✅ 코드 생성 성공!")
+        logger.debug("📝 설명:\n%s", result["description"])
+        logger.debug("🔧 사용된 컴포넌트: %s", result["components"])
+        logger.debug("💻 생성된 코드:\n%s", result["code"])
     else:
-        print(f"❌ 실패: {result['error']}")
+        logger.debug("❌ 실패: %s", result["error"])
