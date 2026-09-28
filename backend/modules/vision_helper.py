@@ -130,9 +130,14 @@ class VisionCodeGenerator:
                 temperature=0.7,
             )
 
-            # 응답 파싱 (content None 방어: API가 None을 반환할 수 있음)
-            content = response.choices[0].message.content or ""
-            code, description, components = self._parse_response_content(content)
+            # 응답 파싱: None/빈응답는 실패 딕셔너리로, 성공 시 코드/설명/컴포넌트 튜플 수령
+            ok, parsed = self._parse_response_content(
+                response.choices[0].message.content
+            )
+            if not ok:
+                return parsed  # type: ignore[return-value]
+
+            code, description, components = parsed  # type: ignore[misc]
             tokens_used = response.usage.total_tokens if response.usage else 0
 
             return {
@@ -179,27 +184,45 @@ class VisionCodeGenerator:
         # 중복 제거 & 정렬
         return sorted(set(components))
 
-    def _parse_response_content(self, content: str) -> tuple:
+    def _parse_response_content(
+        self, raw_content: "str | None"
+    ) -> "tuple[bool, dict | tuple]":
         """
-        LLM 응답 content 문자열에서 코드/설명/컴포넌트를 추출하는 공통 헬퍼.
+        LLM 응답 raw_content에서 코드/설명/컴포넌트를 추출하는 공통 헬퍼.
+
+        None 또는 빈 문자열인 경우 (API 빈 응답)는 코드 생성 실패로 판단하여
+        호출자가 `success=True`를 오표하지 않도록 실패 딕셔너리를 반환합니다.
 
         Args:
-            content: response.choices[0].message.content (None 제거 후 전달)
+            raw_content: response.choices[0].message.content (원시 값, None 허용)
 
         Returns:
-            (code: str, description: str, components: list) 튜플
+            (True, (code, description, components)) — 성공
+            (False, failure_dict) — API 빈 응답
         """
+        if not raw_content:
+            logger.warning(
+                "[VisionHelper] API 응답 content가 비어있음 — 코드 생성 실패로 처리"
+            )
+            return False, {
+                "success": False,
+                "error": "코드 생성 실패: API가 빈 응답을 반환했습니다.",
+                "code": None,
+                "description": None,
+                "components": [],
+            }
+
         # 코드 추출 (`````` 블록에서) — m[1] 은 m.group(1) 과 동일 (PEP 3132)
-        code_match = re.search(r"``````", content, re.DOTALL)
-        code = code_match[1].strip() if code_match else content
+        code_match = re.search(r"``````", raw_content, re.DOTALL)
+        code = code_match[1].strip() if code_match else raw_content
 
         # Streamlit 컴포넌트 추출
         components = self._extract_streamlit_components(code)
 
         # 코드 설명 추출 (코드 블록 이전/이후 텍스트)
-        description = re.sub(r"``````", "", content, flags=re.DOTALL).strip()
+        description = re.sub(r"``````", "", raw_content, flags=re.DOTALL).strip()
 
-        return code, description, components
+        return True, (code, description, components)
 
     def generate_from_url(
         self,
@@ -249,9 +272,14 @@ class VisionCodeGenerator:
                 temperature=0.7,
             )
 
-            # 응답 파싱 (content None 방어: API가 None을 반환할 수 있음)
-            content = response.choices[0].message.content or ""
-            code, description, components = self._parse_response_content(content)
+            # 응답 파싱: None/빈응답는 실패 딕셔너리로, 성공 시 코드/설명/컴포넌트 튜플 수령
+            ok, parsed = self._parse_response_content(
+                response.choices[0].message.content
+            )
+            if not ok:
+                return parsed  # type: ignore[return-value]
+
+            code, description, components = parsed  # type: ignore[misc]
             tokens_used = response.usage.total_tokens if response.usage else 0
 
             return {
