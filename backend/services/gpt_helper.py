@@ -431,40 +431,40 @@ def get_gpt_helper() -> GPT4oHelper:
 # ============================================
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
 
-    print("\n" + "=" * 60)
-    print("🤖 GPT-4o Helper 테스트")
-    print("=" * 60)
+    logger.debug("\n" + "=" * 60)
+    logger.debug("🤖 GPT-4o Helper 테스트")
+    logger.debug("=" * 60)
 
     helper = GPT4oHelper()
 
     # 수정: 10개 영역 추천 테스트
-    print("\n[테스트 1] 직업별 영역 추천 (10개)")
+    logger.debug("[테스트 1] 직업별 영역 추천 (10개)")
     result = helper.suggest_areas("교사", count=10)
-    print(f"상태: {result['status']}")
-    print(f"영역 개수: {len(result['areas'])}")
-    print(f"영역: {result['areas']}")
-    print(f"메시지: {result['message']}")
+    logger.debug("상태: %s", result["status"])
+    logger.debug("영역 개수: %d", len(result["areas"]))
+    logger.debug("영역: %s", result["areas"])
+    logger.debug("메시지: %s", result["message"])
 
     # 테스트 2: 키워드 생성
-    print("\n[테스트 2] 영역별 키워드 생성 (5개 영역만)")
+    logger.debug("[테스트 2] 영역별 키워드 생성 (5개 영역만)")
     keywords = helper.generate_keywords("교사", result["areas"][:5])
     for area, kws in keywords.items():
-        print(f"  {area}: {', '.join(kws)}")
+        logger.debug("  %s: %s", area, ", ".join(kws))
 
     # 테스트 3: 텍스트 분류
-    print("\n[테스트 3] 텍스트 분류")
+    logger.debug("[테스트 3] 텍스트 분류")
     classify_result = helper.classify_text(
         "2025년 수업 계획서 작성", ["Projects", "Areas", "Resources", "Archives"]
     )
-    print(f"카테고리: {classify_result['category']}")
-    print(f"신뢰도: {classify_result['confidence']}")
-    print(f"이유: {classify_result['reasoning']}")
+    logger.debug("카테고리: %s", classify_result["category"])
+    logger.debug("신뢰도: %s", classify_result["confidence"])
+    logger.debug("이유: %s", classify_result["reasoning"])
 
-    print("\n" + "=" * 60)
-    print("🤖 GPT-4o Helper 테스트 완료")
-    print("=" * 60)
+    logger.debug("\n" + "=" * 60)
+    logger.debug("🤖 GPT-4o Helper 테스트 완료")
+    logger.debug("=" * 60)
 
 
 """test_result_1 - ❌
