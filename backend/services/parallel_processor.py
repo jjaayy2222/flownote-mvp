@@ -10,6 +10,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict
 
+from backend.agent.error_utils import build_meta, log_agent_error, sanitize_error_msg
 from backend.classifier.langchain_integration import (  # hybrid_classify
     classify_with_langchain,
     classify_with_metadata,
@@ -62,8 +63,9 @@ class ParallelClassifier:
                 }
 
         except Exception as e:
-            logger.error("❌ 병렬 분류 실패: %s", e)
-            return {"status": "error", "message": str(e)}
+            meta = build_meta({"action": "parallel_classify"})
+            log_agent_error(logger, "❌ 병렬 분류 실패", e, meta, level="error")
+            return {"status": "error", "message": sanitize_error_msg(e)}
 
 
 """test_result
