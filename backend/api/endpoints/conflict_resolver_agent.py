@@ -8,11 +8,12 @@ Conflict Resolution Agent (LangGraph 기반)
 
 import json
 import logging
-from typing import Any, Dict, List, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict
 
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 
+from backend.agent.error_utils import build_meta, log_agent_error
 from backend.config import ModelConfig
 
 # 모델 통합 마이그레이션 임포트
@@ -37,8 +38,8 @@ class ConflictResolutionState(TypedDict):
     conflicts: List[ConflictRecord]  # 입력: 감지된 충돌들
     current_conflict: ConflictRecord  # 현재 처리 중인 충돌
     analysis_result: Dict[str, Any]  # 분석 결과
-    suggested_strategies: List[Dict]  # 제안된 전략들
-    selected_strategy: Dict  # 선택된 최적 전략
+    suggested_strategies: List[Dict[str, Any]]  # 제안된 전략들
+    selected_strategy: Optional[Dict[str, Any]]  # 선택된 최적 전략
     resolutions: List[ConflictResolution]  # 해결책들
     final_report: ConflictReport  # 최종 보고서
 
@@ -76,7 +77,7 @@ JSON만 반환하세요. 마크다운 코드블록 없이!!!
         if not response or not response.content:
             raise ValueError("LLM response is empty")
 
-        analysis_text = response.content.strip()
+        analysis_text = str(response.content).strip()
 
         # ✅ 마크다운 제거!!!
         if analysis_text.startswith("```"):
@@ -100,14 +101,15 @@ JSON만 반환하세요. 마크다운 코드블록 없이!!!
             analysis_result = json.loads(analysis_text)
         except json.JSONDecodeError as e:
             logger.error("JSON 파싱 실패: %s", analysis_text)
-            raise ValueError(f"Invalid JSON: {e}")
+            raise ValueError(f"Invalid JSON: {e}") from e
 
         logger.info("✅ 분석 완료: %s", analysis_result.get("priority"))
 
         return {**state, "analysis_result": analysis_result}
 
     except Exception as e:
-        logger.error("❌ 분석 실패: %s", e)
+        meta = build_meta({"action": "analyze_conflict"})
+        log_agent_error(logger, "❌ 분석 실패", e, meta, level="error")
         return {
             **state,
             "analysis_result": {"root_cause": "분석 실패", "priority": "medium"},
@@ -152,7 +154,7 @@ JSON만 반환하세요. 마크다운 코드블록 없이!!!
         if not response or not response.content:
             raise ValueError("LLM response is empty")
 
-        strategy_text = response.content.strip()
+        strategy_text = str(response.content).strip()
 
         # ✅ 마크다운 제거!!!
         if strategy_text.startswith("```"):
@@ -174,14 +176,15 @@ JSON만 반환하세요. 마크다운 코드블록 없이!!!
             strategy = json.loads(strategy_text)
         except json.JSONDecodeError as e:
             logger.error("JSON 파싱 실패: %s", strategy_text)
-            raise ValueError(f"Invalid JSON: {e}")
+            raise ValueError(f"Invalid JSON: {e}") from e
 
         logger.info("✅ 전략 제안 완료: %s", strategy.get("method"))
 
         return {**state, "suggested_strategies": [strategy]}
 
     except Exception as e:
-        logger.error("❌ 전략 제안 실패: %s", e)
+        meta = build_meta({"action": "suggest_strategies"})
+        log_agent_error(logger, "❌ 전략 제안 실패", e, meta, level="error")
         return {
             **state,
             "suggested_strategies": [
@@ -299,7 +302,7 @@ def generate_report_node(state: ConflictResolutionState) -> ConflictResolutionSt
 # ============================================
 def create_conflict_resolver_graph():
     """LangGraph 생성"""
-    graph = StateGraph(ConflictResolutionState)
+    graph = StateGraph(ConflictResolutionState)  # type: ignore
 
     # 노드 추가
     graph.add_node("analyze", analyze_conflict_node)

@@ -5,6 +5,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
+from backend.agent.error_utils import build_meta, log_agent_error
 from backend.services.redis_pubsub import redis_client
 
 logger = logging.getLogger(__name__)
@@ -74,7 +75,7 @@ class SearchCacheService:
         filter_expansion_factor: int,
     ) -> Optional[List[Dict]]:
         """캐시에서 결과 조회"""
-        if not redis_client.is_connected():
+        if not redis_client.is_connected() or redis_client.redis is None:
             return None
 
         key = self.make_cache_key(
@@ -87,7 +88,14 @@ class SearchCacheService:
                 logger.info("Search cache hit: query_len=%d", len(query))
                 return json.loads(cached_data)
         except Exception as e:
-            logger.warning("Failed to retrieve search results from cache: %s", e)
+            meta = build_meta({"action": "get_results"}, key=key)
+            log_agent_error(
+                logger,
+                "Failed to retrieve search results from cache",
+                e,
+                meta,
+                level="warning",
+            )
 
         return None
 
@@ -101,7 +109,7 @@ class SearchCacheService:
         results: List[Dict],
     ) -> None:
         """검색 결과를 캐시에 저장"""
-        if not redis_client.is_connected():
+        if not redis_client.is_connected() or redis_client.redis is None:
             return
 
         key = self.make_cache_key(
@@ -114,7 +122,10 @@ class SearchCacheService:
             await redis_client.redis.set(key, serialized, ex=self.ttl)
             logger.debug("Search results cached: query_len=%d", len(query))
         except Exception as e:
-            logger.warning("Failed to cache search results: %s", e)
+            meta = build_meta({"action": "set_results"}, key=key)
+            log_agent_error(
+                logger, "Failed to cache search results", e, meta, level="warning"
+            )
 
     @staticmethod
     def _json_default(obj: Any) -> Any:

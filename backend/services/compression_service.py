@@ -4,6 +4,7 @@ import gzip
 import logging
 from typing import Tuple, Union
 
+from backend.agent.error_utils import build_meta, log_agent_error
 from backend.config import WebSocketConfig
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,9 @@ def compress_payload(payload: str) -> Tuple[Union[str, bytes], bool]:
                 )
                 return compressed, True
         except Exception as e:
-            logger.error("Compression failed: %s", e)
+            meta = build_meta(
+                {"action": "compress_payload"}, original_size=len(data_bytes)
+            )
+            log_agent_error(logger, "Compression failed", e, meta, level="error")
 
     return payload, False

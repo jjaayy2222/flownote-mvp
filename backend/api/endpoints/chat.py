@@ -14,7 +14,7 @@ from fastapi import Header  # type: ignore[import]
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse  # type: ignore[import]
 
-from backend.agent.error_utils import log_agent_error
+from backend.agent.error_utils import build_meta, log_agent_error
 from backend.api.models import ChatHistoryResponse  # type: ignore[import]
 from backend.api.models import (
     ChatQueryRequest,
@@ -437,5 +437,12 @@ async def get_feedback_stats_endpoint(
         )
 
     except Exception as e:
-        logger.error("[OBS] Error fetching feedback stats: %s", e)
+        meta = build_meta({"action": "get_feedback_stats_endpoint"})
+        log_agent_error(
+            logger,
+            "[OBS] Error fetching feedback stats",
+            e,
+            meta,
+            include_traceback=True,
+        )
         raise HTTPException(status_code=500, detail="Internal Server Error") from e
