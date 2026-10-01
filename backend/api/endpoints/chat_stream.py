@@ -37,7 +37,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from backend.agent.error_utils import log_agent_error
+from backend.agent.error_utils import is_system_error, log_agent_error
 
 # 3단계 연동 예정
 from backend.agent.streaming import stream_agent_response  # noqa: F401
@@ -175,6 +175,8 @@ def _safe_repr(obj: Any, _depth: int = 0) -> str:
         else:
             return f"{obj.__class__.__name__}(type={type(obj)})"
     except Exception as e:
+        if is_system_error(e):
+            raise
         return f"<repr_error: {type(e).__name__}>"
 
 
@@ -226,6 +228,8 @@ async def stream_chat_endpoint(
 
         current_node_count = await anyio.to_thread.run_sync(_get_node_count)
     except Exception as exc:
+        if is_system_error(exc):
+            raise
         logger.warning(
             "%s[MIGRATION] Failed to fetch node count for trigger: %s",
             _LOG_TAG,
@@ -303,7 +307,9 @@ async def stream_chat_endpoint(
                 ):
                     yield chunk
 
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
+                if is_system_error(exc):
+                    raise
                 # 청크 발행 중 예상치 못한 예외
                 # 서버 로그에는 상세 정보 기록, 클라이언트에는 일반화된 메시지만 전달
                 # str(exc)를 클라이언트에 직접 노출하면 내부 경로·데이터가 유출될 수 있음
@@ -426,7 +432,9 @@ async def stream_chat_endpoint(
             logger.info("%s Event generator cancelled.", _LOG_TAG)
             raise
 
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
+            if is_system_error(exc):
+                raise
             # 메인 루프 예외 처리 (로그 기록 후 에러 청크 발행)
             log_agent_error(
                 logger,
@@ -447,7 +455,9 @@ async def stream_chat_endpoint(
             if stream_gen is not None:
                 try:
                     await stream_gen.aclose()
-                except Exception as cleanup_exc:  # noqa: BLE001
+                except Exception as cleanup_exc:
+                    if is_system_error(cleanup_exc):
+                        raise
                     log_agent_error(
                         logger,
                         f"{_LOG_TAG}[CLEANUP] Failed to close stream generator gracefully.",
