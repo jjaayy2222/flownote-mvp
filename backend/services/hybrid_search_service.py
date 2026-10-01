@@ -530,6 +530,7 @@ async def _log_search_history_bg(hashed_user_id: str, query: str) -> None:
         )
     except Exception as e:
         # 히스토리 로깅 실패는 검색 응답에 영향을 주지 않는다 (best-effort).
+        # 단, CancelledError 등 시스템 레벨 예외는 상위로 전파하여 작업을 안전하게 중단한다.
         # 쿼리 원문은 PII 노출 위험이 있으므로 로그에 포함하지 않는다.
         # [리뷰반영] PII 정책: 비-PII 식별자인 hashed_user_id를 로그에 포함하여 장애 연관성 추적 강화
         from backend.agent.error_utils import is_system_error, log_agent_error
@@ -973,7 +974,7 @@ class HybridSearchService:
 
                 log_agent_error(
                     logger,
-                    "[HYBRID_SEARCH][ROUTER] 개인화 인덱스 조회 실패 → 빈 결과로 폴백. 전역 인덱스 결과만으로 계속 진행합니다.",
+                    "[HYBRID_SEARCH][ROUTER] 개인화 인덱스 조회 실패 → 빈 결과로 폴백. 전역 인덱스 결과만으로 계속 진행합니다. (단, 시스템 에러는 전파됨)",
                     e,
                     extra_metadata={"masked_uid": masked_uid},
                     level="warning",
@@ -989,7 +990,7 @@ class HybridSearchService:
               - 성공: 결과 목록 반환
               - 실패: ERROR 로그 후 예외를 상위로 전파하여 요청 전체를 실패시킨다.
               - (개인화 인덱스와의 차이) 개인화 인덱스는 부가적(Optional)이라
-                실패 시 빈 결과로 Graceful Degradation하지만,
+                일반적인 실패 시 빈 결과로 Graceful Degradation하지만 (시스템 오류 제외),
                 전역 인덱스는 폴백이 없으므로 예외를 전파한다.
             """
             try:

@@ -140,6 +140,7 @@ def _safe_repr(obj: Any, _depth: int = 0) -> str:
     비정상적으로 깊은 중첩 객체(list of list of list...)가 인입될 경우
     Stack Overflow 또는 로그 크기 무제한 팽창을 방지하기 위해
     _SAFE_REPR_MAX_DEPTH 상수로 최대 깊이를 제한합니다.
+    (단, 파싱 중 CancelledError 등 시스템 레벨 예외가 발생하면 삼키지 않고 전파합니다.)
     """
     if obj is None:
         return "None"
@@ -310,7 +311,8 @@ async def stream_chat_endpoint(
             except Exception as exc:
                 if is_system_error(exc):
                     raise
-                # 청크 발행 중 예상치 못한 예외
+                # 청크 발행 중 예상치 못한 일반 예외
+                # (시스템 레벨 예외는 위에서 전파됨)
                 # 서버 로그에는 상세 정보 기록, 클라이언트에는 일반화된 메시지만 전달
                 # str(exc)를 클라이언트에 직접 노출하면 내부 경로·데이터가 유출될 수 있음
                 log_agent_error(
@@ -436,6 +438,7 @@ async def stream_chat_endpoint(
             if is_system_error(exc):
                 raise
             # 메인 루프 예외 처리 (로그 기록 후 에러 청크 발행)
+            # 시스템 레벨 예외(CancelledError 등)는 위에서 먼저 상위로 전파됩니다.
             log_agent_error(
                 logger,
                 f"{_LOG_TAG}[FATAL] Event generator encountered unexpected error",
@@ -458,6 +461,7 @@ async def stream_chat_endpoint(
                 except Exception as cleanup_exc:
                     if is_system_error(cleanup_exc):
                         raise
+                    # 리소스 정리 중 일반적인 예외는 로깅 후 무시 (시스템 예외 제외)
                     log_agent_error(
                         logger,
                         f"{_LOG_TAG}[CLEANUP] Failed to close stream generator gracefully.",
