@@ -421,25 +421,25 @@ def _assert_valid_clustering_config(
     이 함수는 모듈 레벨의 설정 상수를 인자로 주입받아 유효성을 검사하며,
     전역 상태에 직접 의존하지 않아 테스트 용이성(Testability)이 높다.
     """
-    if min_k_flatten < 2:
-        err = ClusteringConfigError(
-            "[TOPIC_CLUSTERING] Misconfiguration: _MIN_K_FOR_INERTIA_FLATTEN must be >= 2.",
-            param="_MIN_K_FOR_INERTIA_FLATTEN",
-            value=min_k_flatten,
-        )
-        # [리뷰반영] 예외 객체 내부에 캡슐화된 메서드를 호출하여 extra kwargs 제공 (DRY)
+
+    def _raise_config_err(msg: str, param: str, value: Any) -> None:
+        err = ClusteringConfigError(msg, param=param, value=value)
         logger.critical(str(err), extra=err.get_log_extra())
         raise err
 
-    if min_consecutive_steps < 1:
-        err = ClusteringConfigError(
-            "[TOPIC_CLUSTERING] Misconfiguration: _MIN_FLATTEN_CONSECUTIVE_STEPS must be >= 1.",
-            param="_MIN_FLATTEN_CONSECUTIVE_STEPS",
-            value=min_consecutive_steps,
+    if min_k_flatten < 2:
+        _raise_config_err(
+            "[TOPIC_CLUSTERING] Misconfiguration: _MIN_K_FOR_INERTIA_FLATTEN must be >= 2.",
+            "_MIN_K_FOR_INERTIA_FLATTEN",
+            min_k_flatten,
         )
-        # [리뷰반영] 예외 객체 내부에 캡슐화된 메서드를 호출하여 extra kwargs 제공 (DRY)
-        logger.critical(str(err), extra=err.get_log_extra())
-        raise err
+
+    if min_consecutive_steps < 1:
+        _raise_config_err(
+            "[TOPIC_CLUSTERING] Misconfiguration: _MIN_FLATTEN_CONSECUTIVE_STEPS must be >= 1.",
+            "_MIN_FLATTEN_CONSECUTIVE_STEPS",
+            min_consecutive_steps,
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -478,6 +478,7 @@ async def _ensure_redis_connected() -> None:
     Redis 연결이 끊어진 경우 재연결을 시도한다.
     일시적인 장애 시 예외를 삼키지 않고 WARNING 로그만 남기며 계속 진행한다.
     (콜드 스타트 플로우가 Redis 장애로 완전히 멈추지 않도록 Graceful Degradation)
+    단, CancelledError 등 시스템 레벨 예외는 계속 진행하지 않고 상위로 전파(raise)한다.
     """
     if not redis_client.is_connected():
         try:
@@ -523,7 +524,10 @@ async def _get_redis_count(key: str) -> int:
     (Cold Start 판별은 best-effort — Redis 장애가 사용자 플로우를 막지 않아야 함)
     """
     try:
-        raw = await redis_client.redis.get(key)
+        redis_conn = redis_client.redis
+        if redis_conn is None:
+            return 0
+        raw = await redis_conn.get(key)
         return _parse_raw_int(raw)
     except RedisError as exc:  # 연결/타임아웃/명령 실패 등
         logger.warning(
@@ -541,7 +545,10 @@ async def _get_two_redis_counts(key1: str, key2: str) -> tuple[int, int]:
     조회 실패, 예상 외 응답(None/짧은 리스트), 파싱 실패 시 모두 0으로 처리 (best-effort).
     """
     try:
-        results = await redis_client.redis.mget(key1, key2)
+        redis_conn = redis_client.redis
+        if redis_conn is None:
+            return 0, 0
+        results = await redis_conn.mget(key1, key2)
     except RedisError as exc:
         logger.warning(
             "[TOPIC_CLUSTERING] MGET 조회 실패 (keys=%r, %r). 0으로 처리합니다. exc=%r",
@@ -634,7 +641,9 @@ async def increment_msg_pair_count(hashed_user_id: str) -> None:
     await _ensure_redis_connected()
     key = _build_msg_pair_count_key(hashed_user_id)
     try:
-        await redis_client.redis.incr(key)
+        redis_conn = redis_client.redis
+        if redis_conn is not None:
+            await redis_conn.incr(key)
     except RedisError as exc:
         logger.warning(
             "[TOPIC_CLUSTERING] 메시지 쌍 카운터 증분 실패 (best-effort, 흐름 유지). exc=%r",
@@ -653,7 +662,9 @@ async def increment_rag_search_count(hashed_user_id: str) -> None:
     await _ensure_redis_connected()
     key = _build_rag_search_count_key(hashed_user_id)
     try:
-        await redis_client.redis.incr(key)
+        redis_conn = redis_client.redis
+        if redis_conn is not None:
+            await redis_conn.incr(key)
     except RedisError as exc:
         logger.warning(
             "[TOPIC_CLUSTERING] RAG 검색 카운터 증분 실패 (best-effort, 흐름 유지). exc=%r",
@@ -691,7 +702,9 @@ async def _invalidate_cluster_cache(hashed_user_id: str) -> None:
     cache_key = _build_cluster_cache_key(hashed_user_id)
     try:
         await _ensure_redis_connected()  # [리뷰반영] 캐시 조작 전 일관된 연결 보장
-        await redis_client.redis.delete(cache_key)
+        redis_conn = redis_client.redis
+        if redis_conn is not None:
+            await redis_conn.delete(cache_key)
     except RedisError as exc:
         # [리뷰반영] 여러 경로(검색, 디코딩 실패 등)에서 호출되므로 범용적인 로그 메시지 사용
         logger.warning(
@@ -725,8 +738,10 @@ async def log_search_query(hashed_user_id: str, query: str) -> None:
 
     try:
         # LPUSH(최신 쿼리가 맨 앞) + LTRIM(최대 길이 유지) 수행
-        await redis_client.redis.lpush(history_key, clean_query)
-        await redis_client.redis.ltrim(history_key, 0, _SEARCH_HISTORY_MAX_LEN - 1)
+        redis_conn = redis_client.redis
+        if redis_conn is not None:
+            await redis_conn.lpush(history_key, clean_query)  # type: ignore
+            await redis_conn.ltrim(history_key, 0, _SEARCH_HISTORY_MAX_LEN - 1)  # type: ignore
     except RedisError as exc:
         logger.warning(
             "[TOPIC_CLUSTERING] 검색 히스토리 기록 실패 (masked_uid=%s). exc=%r",
@@ -834,12 +849,13 @@ async def vectorize_queries(queries: List[str]) -> List[List[float]]:
 async def get_search_history(hashed_user_id: str) -> List[str]:
     """
     사용자의 최근 검색어 히스토리를 반환한다. (최신순)
-    Redis 연결 실패를 포함하여 모든 예외를 내부에서 처리하며,
+    Redis 연결 실패를 포함하여 일반적인 예외를 내부에서 처리하며,
     오류 발생 시 빈 리스트를 반환한다 (best-effort).
+    단, 시스템 레벨 예외(CancelledError 등)는 예외적으로 상위로 전파된다.
 
     [리뷰반영] except 범위를 Exception으로 확장하여 docstring과 동작을 일치시킨다.
-    RedisError · UnicodeDecodeError 외에도 OSError 등 예상치 못한 예외가 발생할 수 있으므로,
-    모두 빈 리스트로 폐기 처리한다.
+    RedisError · UnicodeDecodeError 외에도 OSError 등 일반적인 예상치 못한 예외가 발생할 수 있으므로,
+    이들은 모두 빈 리스트로 폐기 처리한다 (시스템 레벨 예외 제외).
 
     Returns:
         검색어 리스트 (비어있을 수 있음)
@@ -850,7 +866,10 @@ async def get_search_history(hashed_user_id: str) -> List[str]:
         # [리뷰반영] _ensure_redis_connected를 try 블록 안으로 이동:
         # 연결 오류 발생 시에도 docstring대로 빈 리스트를 반환한다.
         await _ensure_redis_connected()
-        raw_list = await redis_client.redis.lrange(history_key, 0, -1)
+        redis_conn = redis_client.redis
+        if redis_conn is None:
+            return []
+        raw_list = await redis_conn.lrange(history_key, 0, -1)  # type: ignore
         if not raw_list:
             return []
 
@@ -859,7 +878,7 @@ async def get_search_history(hashed_user_id: str) -> List[str]:
     except Exception as exc:
         if is_system_error(exc):
             raise
-        # RedisError · UnicodeDecodeError 외의 예상치 못한 예외도 조용히 폐기한다.
+        # 일반적인 예외(RedisError, UnicodeDecodeError 등)는 조용히 폐기한다.
         logger.warning(
             "[TOPIC_CLUSTERING] 검색 히스토리 조회 실패 (masked_uid=%s). exc=%r",
             mask_pii_id(hashed_user_id),
@@ -907,7 +926,7 @@ def _find_elbow_point(inertias: List[float], k_range: List[int]) -> int:
         dist = float(np.abs(np.cross(p2 - p1, p1 - p3)) / np.linalg.norm(p2 - p1))
         distances.append(dist)
 
-    return int(k_range[np.argmax(distances)])
+    return k_range[int(np.argmax(distances))]
 
 
 def _create_kmeans(n_clusters: int) -> KMeans:
@@ -1044,10 +1063,10 @@ def _determine_optimal_k(
     elbow_sil = sil_by_k.get(elbow_k)
 
     # 1차 엘보우를 기본으로 하되, 실루엣 점수가 현저히 좋은 K가 있다면 그걸 채택
-    if elbow_sil is None:
-        # elbow_k가 조기 종료로 인해 실루엣 계산에서 제외된 경우
-        optimal_k = elbow_k
-    elif (best_sil - elbow_sil) > _SILHOUETTE_IMPROVEMENT_THRESHOLD:
+    if (
+        elbow_sil is not None
+        and (best_sil - elbow_sil) > _SILHOUETTE_IMPROVEMENT_THRESHOLD
+    ):
         optimal_k = best_sil_k
     else:
         optimal_k = elbow_k
@@ -1069,7 +1088,7 @@ def _extract_cluster_labels(
     각 클러스터의 센트로이드(centroid)와 가장 가까운 쿼리를 찾아 클러스터의 대표 레이블로 사용한다.
     """
     labels: List[Optional[str]] = []
-    for i in range(kmeans.n_clusters):
+    for i in range(len(kmeans.cluster_centers_)):
         centroid = kmeans.cluster_centers_[i]
         # 클러스터 i에 할당된 데이터 인덱스들
         cluster_indices = np.where(kmeans.labels_ == i)[0]
@@ -1101,7 +1120,10 @@ async def _get_cached_cluster_result(
     cache_key = _build_cluster_cache_key(hashed_user_id)
     try:
         await _ensure_redis_connected()
-        cached_data = await redis_client.redis.get(cache_key)
+        redis_conn = redis_client.redis
+        if redis_conn is None:
+            return None
+        cached_data = await redis_conn.get(cache_key)
         if not cached_data:
             return None
 
@@ -1146,11 +1168,13 @@ async def _set_cluster_result_cache(
     cache_key = _build_cluster_cache_key(hashed_user_id)
     try:
         await _ensure_redis_connected()  # [리뷰반영] 캐시 조작 전 일관된 연결 보장
-        await redis_client.redis.setex(
-            cache_key,
-            _TOPIC_CLUSTER_CACHE_TTL,
-            json.dumps(clusters_info, ensure_ascii=False),
-        )
+        redis_conn = redis_client.redis
+        if redis_conn is not None:
+            await redis_conn.setex(
+                cache_key,
+                _TOPIC_CLUSTER_CACHE_TTL,
+                json.dumps(clusters_info, ensure_ascii=False),
+            )
     except RedisError as exc:
         logger.warning(
             "[TOPIC_CLUSTERING] 캐시 쓰기 실패 (best-effort 무시) (masked_uid=%s). exc=%r",
