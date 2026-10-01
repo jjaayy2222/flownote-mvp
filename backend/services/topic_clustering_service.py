@@ -36,6 +36,7 @@ from redis.exceptions import RedisError  # 연결/타임아웃/명령 실패 포
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 
+from backend.agent.error_utils import is_system_error
 from backend.embedding import EmbeddingGenerator  # type: ignore[import]
 from backend.services.redis_pubsub import redis_client  # type: ignore[import]
 from backend.utils import mask_pii_id  # type: ignore[import]
@@ -481,7 +482,9 @@ async def _ensure_redis_connected() -> None:
     if not redis_client.is_connected():
         try:
             await redis_client.connect()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
+            if is_system_error(exc):
+                raise
             logger.warning(
                 "[TOPIC_CLUSTERING] Redis 재연결 실패. Cold Start 조회는 기본값(0)으로 폴백합니다. exc=%r",
                 exc,
@@ -817,7 +820,9 @@ async def vectorize_queries(queries: List[str]) -> List[List[float]]:
             return []
 
         return embeddings
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
+        if is_system_error(exc):
+            raise
         logger.error(
             "[TOPIC_CLUSTERING] 검색 히스토리 벡터화 실패 (count=%d). exc=%r",
             len(queries),
@@ -851,7 +856,9 @@ async def get_search_history(hashed_user_id: str) -> List[str]:
 
         # Redis 응답은 bytes일 수 있으므로 디코딩
         return [q.decode("utf-8") if isinstance(q, bytes) else str(q) for q in raw_list]
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
+        if is_system_error(exc):
+            raise
         # RedisError · UnicodeDecodeError 외의 예상치 못한 예외도 조용히 폐기한다.
         logger.warning(
             "[TOPIC_CLUSTERING] 검색 히스토리 조회 실패 (masked_uid=%s). exc=%r",
@@ -1243,7 +1250,9 @@ async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
         await _set_cluster_result_cache(hashed_user_id, clusters_info)
 
         return clusters_info
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
+        if is_system_error(exc):
+            raise
         logger.error(
             "[TOPIC_CLUSTERING] 클러스터링 실행 실패 (masked_uid=%s). exc=%r",
             mask_pii_id(hashed_user_id),

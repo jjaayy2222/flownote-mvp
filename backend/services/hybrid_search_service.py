@@ -528,11 +528,14 @@ async def _log_search_history_bg(hashed_user_id: str, query: str) -> None:
             topic_clustering_service.log_search_query(hashed_user_id, query),
             timeout=3.0,
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         # 히스토리 로깅 실패는 검색 응답에 영향을 주지 않는다 (best-effort).
         # 쿼리 원문은 PII 노출 위험이 있으므로 로그에 포함하지 않는다.
         # [리뷰반영] PII 정책: 비-PII 식별자인 hashed_user_id를 로그에 포함하여 장애 연관성 추적 강화
-        from backend.agent.error_utils import log_agent_error
+        from backend.agent.error_utils import is_system_error, log_agent_error
+
+        if is_system_error(e):
+            raise
 
         log_agent_error(
             logger,
@@ -962,8 +965,11 @@ class HybridSearchService:
                     _PERSONALIZED_SEARCH_TIMEOUT,
                 )
                 return []
-            except Exception as e:  # noqa: BLE001
-                from backend.agent.error_utils import log_agent_error
+            except Exception as e:
+                from backend.agent.error_utils import is_system_error, log_agent_error
+
+                if is_system_error(e):
+                    raise
 
                 log_agent_error(
                     logger,
@@ -996,8 +1002,11 @@ class HybridSearchService:
                     filter_expansion_factor=filter_expansion_factor,
                 )
                 return result.results
-            except Exception as e:  # noqa: BLE001
-                from backend.agent.error_utils import log_agent_error
+            except Exception as e:
+                from backend.agent.error_utils import is_system_error, log_agent_error
+
+                if is_system_error(e):
+                    raise
 
                 log_agent_error(
                     logger,
@@ -1280,7 +1289,10 @@ class HybridSearchService:
             )
         except Exception as e:
             # Pickle UnpicklingError, 버전 불일치 등 역직렬화 오류
-            from backend.agent.error_utils import log_agent_error
+            from backend.agent.error_utils import is_system_error, log_agent_error
+
+            if is_system_error(e):
+                raise
 
             log_agent_error(
                 logger,
