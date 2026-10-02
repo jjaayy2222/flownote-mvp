@@ -143,29 +143,35 @@ async def get_mcp_status():
         config = mcp_config
 
         # 등록된 툴리스트는 설정 기반으로 구성함 (하드코딩 제거)
-        registered_tools = [
-            tool
-            for tool in getattr(config, "registered_tools", [])
-            or [
+        configured_tools = getattr(config, "registered_tools", None)
+        registered_tools = (
+            configured_tools
+            if configured_tools is not None
+            else [
                 "classify_content",
                 "search_notes",
                 "get_automation_stats",
             ]
-        ]
-        registered_resources = [
-            res
-            for res in getattr(config, "registered_resources", [])
-            or [
+        )
+
+        configured_resources = getattr(config, "registered_resources", None)
+        registered_resources = (
+            configured_resources
+            if configured_resources is not None
+            else [
                 "flownote://para/projects",
                 "flownote://dashboard/summary",
             ]
-        ]
+        )
 
         # 연결된 클라이언트 목록: 향후 MCP 런타임에서 주입될 때까지 빈 리스트
-        active_clients: list = getattr(config, "active_clients", []) or []
+        configured_clients = getattr(config, "active_clients", None)
+        active_clients: list = (
+            configured_clients if configured_clients is not None else []
+        )
 
         return MCPStatusResponse(
-            running=getattr(config, "server_running", True),
+            running=getattr(config, "server_running", False),
             active_clients=active_clients,
             tools_registered=registered_tools,
             resources_registered=registered_resources,

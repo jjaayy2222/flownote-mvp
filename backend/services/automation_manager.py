@@ -154,11 +154,15 @@ class AutomationManager:
         """
         규칙 목록 전체를 RULES_FILE에 덮어씌운다 (rewrite-on-update 패턴).
         MVP 규모에서는 규칙 수가 충분히 적어 전체 재기록이 안전하다.
+        임시 파일에 쓰고 성공 시 원자적으로 교체하여 파일 손상을 방지한다.
         """
         try:
-            with open(RULES_FILE, "w", encoding="utf-8") as f:
+            temp_file = RULES_FILE.with_suffix(".tmp")
+            with open(temp_file, "w", encoding="utf-8") as f:
                 for rule in rules:
                     f.write(rule.model_dump_json() + "\n")
+                f.flush()
+            temp_file.replace(RULES_FILE)
         except OSError as exc:
             meta = build_meta({"action": "_persist_all_rules", "file": RULES_FILE.name})
             log_agent_error(logger, "Failed to persist rules", exc, meta)
@@ -216,6 +220,7 @@ class AutomationManager:
         found = False
         for r in existing:
             if r.rule_id == rule_id:
+                rule.rule_id = rule_id  # 경로 파라미터와 불일치 방지
                 updated.append(rule)
                 found = True
             else:
