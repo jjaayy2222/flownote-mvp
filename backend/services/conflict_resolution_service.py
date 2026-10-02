@@ -12,6 +12,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from backend.agent.error_utils import build_meta, get_safe_file_id, log_agent_error
+from backend.config import PathConfig
 from backend.mcp.sync_map_manager import SyncMapManager
 from backend.models.conflict import (
     ConflictResolution,
@@ -25,6 +26,10 @@ from backend.services.ignore_manager import ignore_manager
 from backend.services.sync_service import SyncServiceBase
 
 logger = logging.getLogger(__name__)
+
+# 충돌 이력 JSONL 저장 경로 (PathConfig 기반 - 하드코딩 없음)
+_CONFLICT_LOG_DIR = PathConfig.DATA_DIR / "sync_logs"
+_CONFLICT_LOG_FILE = _CONFLICT_LOG_DIR / "conflict_resolution.jsonl"
 
 
 class ConflictResolutionService:
@@ -277,8 +282,19 @@ class ConflictResolutionService:
             },
         )
 
-        # TODO: JSONL 파일에 기록 (PathConfig 사용)
-        logger.info("📝 Conflict resolution logged: %s", log_entry.id)
+        # PathConfig 기반 JSONL 파일에 충돌 이력을 영속화
+        try:
+            _CONFLICT_LOG_DIR.mkdir(parents=True, exist_ok=True)
+            with open(_CONFLICT_LOG_FILE, "a", encoding="utf-8") as f:
+                f.write(log_entry.model_dump_json() + "\n")
+            logger.info("📝 Conflict resolution logged: %s", log_entry.id)
+        except OSError as exc:
+            meta = build_meta(
+                {"action": "_log_conflict_resolution", "log_id": log_entry.id}
+            )
+            log_agent_error(
+                logger, "Failed to write conflict resolution log", exc, meta
+            )
 
     async def _resolve_remote_wins(self, conflict: SyncConflict) -> bool:
         """외부(Obsidian) 데이터로 로컬 파일을 덮어씀 (Deprecated: use _resolve_rename)"""

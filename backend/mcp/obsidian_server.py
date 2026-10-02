@@ -145,20 +145,24 @@ class ObsidianSyncService(SyncServiceBase):
 
     async def _process_file_change(self, file_path: str, event_type: str):
         """파일 변경 이벤트 처리 (비동기)"""
-        # TODO: Implement actual sync logic
+        # TODO: 실제 동기화(sync) 및 충돌 감지 로직 구현 필요 (DB 연동 기반)
         logger.debug("Processing %s for %s", event_type, Path(file_path).name)
+        raise NotImplementedError(
+            "File change event processing requires DB-backed sync logic"
+        )
 
     async def sync_all(self) -> List[SyncConflict]:
         """전체 파일 스캔 및 동기화 (MVP: 단순 스캔)"""
         if not self.vault_path.exists():
             return []
 
-        # 재귀적으로 md 파일 탐색 (직접 반환)
+        # 재귀적으로 md 파일 탐색
+        conflicts = []
         for _ in self.vault_path.rglob("*.md"):
-            # TODO: Match with internal DB hash
+            # TODO: DB의 내부 해시와 원격 파일 해시 비교, 충돌 감지 로직 구현
             pass
 
-        return []
+        return conflicts
 
     async def pull_file(self, external_id: str) -> Optional[str]:
         """외부 파일 읽기 (external_id = absolute path)"""

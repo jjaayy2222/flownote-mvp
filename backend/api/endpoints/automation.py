@@ -296,19 +296,64 @@ async def get_dashboard_summary():
     대시보드 요약 정보 조회
 
     - 전체 파일 수, 분류 수, 충돌 수 등
-    - Summary Card에 표시될 정보
+    - AutomationManager 로그 실데이터를 기반으로 집계
     """
-    # TODO: 실제 데이터 집계
-    # - 파일 시스템에서 파일 수 계산
-    # - classification_log.csv에서 분류 수 계산
-    # - ExternalSyncLog에서 충돌 수 계산
-    # - AutomationLog에서 오늘 작업 수 계산
+    from datetime import date
+
+    from backend.models.automation import AutomationStatus
+
+    # 오늘 날짜 실행된 작업 수 집계
+    today = date.today()
+    all_logs = automation_manager.get_automation_logs(limit=1000)
+    tasks_today = sum(
+        1
+        for log in all_logs
+        if log.started_at.date() == today and log.status == AutomationStatus.COMPLETED
+    )
+
+    # Vault 파일 수: mcp_config 기반 실제 카운트
+    from pathlib import Path as _Path
+
+    from backend.config.mcp_config import mcp_config
+
+    vault_path = (
+        _Path(mcp_config.obsidian.vault_path)
+        if mcp_config.obsidian.vault_path
+        else None
+    )
+    total_files = (
+        len(list(vault_path.rglob("*.md"))) if vault_path and vault_path.exists() else 0
+    )
+
+    # 분류 수: reclassification 이력 사용
+    reclass_records = automation_manager.get_reclassification_history(limit=10000)
+    total_classifications = len(reclass_records)
+
+    # 충돌 수: archiving 이력 기반 집계 (충돌 로그 JSONL 파일이 연동될 때까지는 0)
+    from backend.config import PathConfig
+
+    conflict_log = PathConfig.DATA_DIR / "sync_logs" / "detected_conflicts.jsonl"
+    total_conflicts = 0
+    if conflict_log.exists():
+        try:
+            with open(conflict_log, "r", encoding="utf-8") as f:
+                total_conflicts = sum(1 for line in f if line.strip())
+        except OSError:
+            total_conflicts = 0
+
+    # 동기화 상태
+    sync_status = (
+        "Connected" if (vault_path and vault_path.exists()) else "Disconnected"
+    )
+
+    # last_sync: SyncMapManager 연동 전까지 None
+    last_sync = None
 
     return DashboardSummary(
-        total_files=150,
-        total_classifications=320,
-        total_conflicts=5,
-        automation_tasks_today=12,
-        sync_status="Connected",
-        last_sync="2025-12-25T18:50:00",
+        total_files=total_files,
+        total_classifications=total_classifications,
+        total_conflicts=total_conflicts,
+        automation_tasks_today=tasks_today,
+        sync_status=sync_status,
+        last_sync=last_sync,
     )

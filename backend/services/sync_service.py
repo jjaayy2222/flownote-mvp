@@ -6,16 +6,22 @@ Sync Service Abstraction
 """
 
 import hashlib
+import json
 import logging
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import List, Optional
 
+from backend.agent.error_utils import build_meta, get_safe_file_id, log_agent_error
+from backend.config import PathConfig
 from backend.models.conflict import SyncConflict, SyncConflictType
-from backend.models.external_sync import (
-    ExternalToolConnection,
-)
+from backend.models.external_sync import ExternalToolConnection
 
 logger = logging.getLogger(__name__)
+
+# 충돌 레코드 JSONL 저장 경로 (PathConfig 기반)
+_SYNC_LOG_DIR = PathConfig.DATA_DIR / "sync_logs"
+_CONFLICT_RECORD_FILE = _SYNC_LOG_DIR / "detected_conflicts.jsonl"
 
 
 class SyncServiceBase(ABC):
@@ -147,12 +153,40 @@ class SyncServiceBase(ABC):
 
     async def _handle_conflict(self, conflict: SyncConflict) -> bool:
         """
-        [공통] 충돌 발생 시 처리 (DB 기록 등)
-        실제 해결은 ConflictResolutionService에서 담당
+        [공통] 충돌 발생 시 충돌 레코드를 JSONL 파일에 저장하고 False를 반환한다.
+        실제 해결은 ConflictResolutionService에서 담당한다.
         """
         logger.warning(
-            f"Conflict detected for {conflict.file_id}: "
-            f"Local({conflict.local_hash}) vs Remote({conflict.remote_hash})"
+            "Conflict detected for %s: Local(%s) vs Remote(%s)",
+            get_safe_file_id(conflict.file_id),
+            (conflict.local_hash or "")[:8],
+            (conflict.remote_hash or "")[:8],
         )
-        # TODO: DB에 충돌 레코드 저장
+        try:
+            _SYNC_LOG_DIR.mkdir(parents=True, exist_ok=True)
+            local_hash_safe = conflict.local_hash[:16] if conflict.local_hash else ""
+            remote_hash_safe = conflict.remote_hash[:16] if conflict.remote_hash else ""
+            record = {
+                "conflict_id": conflict.conflict_id,
+                "file_id": get_safe_file_id(conflict.file_id),
+                "external_path": conflict.external_path,
+                "tool_type": (
+                    conflict.tool_type.value
+                    if hasattr(conflict.tool_type, "value")
+                    else str(conflict.tool_type)
+                ),
+                "conflict_type": (
+                    conflict.conflict_type.value
+                    if hasattr(conflict.conflict_type, "value")
+                    else str(conflict.conflict_type)
+                ),
+                "local_hash": local_hash_safe,
+                "remote_hash": remote_hash_safe,
+                "detected_at": datetime.now().isoformat(),
+            }
+            with open(_CONFLICT_RECORD_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError as exc:
+            meta = build_meta({"action": "_handle_conflict"})
+            log_agent_error(logger, "Failed to persist conflict record", exc, meta)
         return False
