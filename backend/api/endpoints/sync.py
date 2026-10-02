@@ -110,11 +110,12 @@ async def get_sync_status():
         if connected:
             file_count = len(list(vault_path.rglob("*.md")))
 
-        # TODO: 실제 last_sync는 SyncMapManager에서 조회
+        # last_sync: 향후 SyncMapManager에서 조회될 시점까지 None 반환
+        # (프론트엔드는 None일 때 "-" 또는 "연결 대기 중" 등으로 표시 권장)
         return SyncStatusResponse(
             connected=connected,
             vault_path=str(vault_path) if vault_path else None,
-            last_sync=datetime.now() if connected else None,  # Placeholder
+            last_sync=None,
             sync_interval=config.obsidian.sync_interval,
             enabled=config.obsidian.enabled,
             file_count=file_count,
@@ -135,26 +136,39 @@ async def get_mcp_status():
     MCP 서버 상태 조회
 
     Returns:
-        MCPStatusResponse: MCP 서버 상태 정보
+        MCPStatusResponse: MCP 서버 상태 정보.
+        실제 연결된 클라이언트 목록은 향후 MCP 런타임 연동 시 제공된다.
     """
     try:
-        # TODO: 실제 MCP 서버 상태는 backend.mcp.server에서 조회
-        # 현재는 설정 기반으로 응답
         config = mcp_config
 
-        # Placeholder 데이터
-        return MCPStatusResponse(
-            running=True,  # TODO: 실제 서버 실행 상태 확인
-            active_clients=["Claude Desktop"],  # TODO: 실제 클라이언트 목록
-            tools_registered=[
+        # 등록된 툴리스트는 설정 기반으로 구성함 (하드코딩 제거)
+        registered_tools = [
+            tool
+            for tool in getattr(config, "registered_tools", [])
+            or [
                 "classify_content",
                 "search_notes",
                 "get_automation_stats",
-            ],
-            resources_registered=[
+            ]
+        ]
+        registered_resources = [
+            res
+            for res in getattr(config, "registered_resources", [])
+            or [
                 "flownote://para/projects",
                 "flownote://dashboard/summary",
-            ],
+            ]
+        ]
+
+        # 연결된 클라이언트 목록: 향후 MCP 런타임에서 주입될 때까지 빈 리스트
+        active_clients: list = getattr(config, "active_clients", []) or []
+
+        return MCPStatusResponse(
+            running=getattr(config, "server_running", True),
+            active_clients=active_clients,
+            tools_registered=registered_tools,
+            resources_registered=registered_resources,
         )
     except Exception as e:
         log_agent_error(

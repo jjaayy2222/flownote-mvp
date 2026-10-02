@@ -35,6 +35,9 @@ AUTO_LOG_FILE = LOG_DIR / "automation.jsonl"
 RECLASS_LOG_FILE = LOG_DIR / "reclassification.jsonl"
 ARCHIVE_LOG_FILE = LOG_DIR / "archiving.jsonl"
 
+# 규칙 저장 파일 경로 (MVP: JSONL 기반 경량 영속성. 향후 DB 연동 시 교체)
+RULES_FILE = LOG_DIR / "automation_rules.jsonl"
+
 
 class AutomationManager:
     """자동화 시스템 관리 서비스"""
@@ -113,77 +116,136 @@ class AutomationManager:
         return None
 
     # ========================================================================
-    # 규칙 관리 (현재는 Stub - DB 연동 필요)
+    # 규칙 관리 (MVP: JSONL 파일 기반 경량 영속성. 향후 DB 연동 시 이 섹션 전체를 교체)
     # ========================================================================
+
+    def _load_all_rules(self) -> List[AutomationRule]:
+        """
+        JSONL 규칙 파일에서 모든 규칙을 로드한다.
+        파싱 실패한 항목은 로그를 남기고 건너뛴다.
+        """
+        rules: List[AutomationRule] = []
+        if not RULES_FILE.exists():
+            return rules
+        try:
+            with open(RULES_FILE, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rules.append(AutomationRule(**json.loads(line)))
+                    except (
+                        json.JSONDecodeError,
+                        ValueError,
+                        TypeError,
+                        ValidationError,
+                    ) as exc:
+                        meta = build_meta({"action": "_load_all_rules"})
+                        log_agent_error(
+                            logger, "Malformed rule entry skipped", exc, meta
+                        )
+        except OSError as exc:
+            meta = build_meta({"action": "_load_all_rules", "file": RULES_FILE.name})
+            log_agent_error(logger, "Failed to read rules file", exc, meta)
+        return rules
+
+    def _persist_all_rules(self, rules: List[AutomationRule]) -> None:
+        """
+        규칙 목록 전체를 RULES_FILE에 덮어씌운다 (rewrite-on-update 패턴).
+        MVP 규모에서는 규칙 수가 충분히 적어 전체 재기록이 안전하다.
+        """
+        try:
+            with open(RULES_FILE, "w", encoding="utf-8") as f:
+                for rule in rules:
+                    f.write(rule.model_dump_json() + "\n")
+        except OSError as exc:
+            meta = build_meta({"action": "_persist_all_rules", "file": RULES_FILE.name})
+            log_agent_error(logger, "Failed to persist rules", exc, meta)
+            raise
 
     def get_automation_rules(self) -> List[AutomationRule]:
         """
-        자동화 규칙 목록 조회
+        자동화 규칙 목록 조회 (JSONL 파일 기반).
 
         Returns:
-            AutomationRule 리스트 (현재는 빈 리스트)
+            저장된 AutomationRule 리스트. 파일이 없으면 빈 리스트.
         """
-        # TODO: DB 연동 후 실제 규칙 조회 구현
-        logger.info("get_automation_rules called (stub)")
-        return []
+        return self._load_all_rules()
 
     def create_automation_rule(self, rule: AutomationRule) -> AutomationRule:
         """
-        자동화 규칙 생성
+        자동화 규칙 생성 및 JSONL 파일에 저장.
 
         Args:
-            rule: 생성할 규칙
+            rule: 생성할 규칙 (rule_id는 호출자가 채워 전달해야 함)
 
         Returns:
-            생성된 규칙
+            저장된 규칙 객체
 
         Raises:
-            NotImplementedError: DB 연동 전
+            ValueError: 동일한 rule_id가 이미 존재하는 경우
+            OSError: 파일 쓰기 실패 시
         """
-        # TODO: DB 연동 후 규칙 저장 구현
-        logger.warning("create_automation_rule called (not implemented)")
-        raise NotImplementedError("Rule creation requires database integration")
+        existing = self._load_all_rules()
+        if any(r.rule_id == rule.rule_id for r in existing):
+            raise ValueError(f"Rule already exists: {rule.rule_id}")
+        existing.append(rule)
+        self._persist_all_rules(existing)
+        logger.info("[AUTOMATION] 규칙 생성 완료 (rule_id=%s)", rule.rule_id)
+        return rule
 
     def update_automation_rule(
         self, rule_id: str, rule: AutomationRule
     ) -> Optional[AutomationRule]:
         """
-        자동화 규칙 수정
+        기존 자동화 규칙을 수정하고 저장.
 
         Args:
-            rule_id: 규칙 ID
-            rule: 수정할 규칙 데이터
+            rule_id: 수정 대상 규칙 ID
+            rule: 새로운 규칙 데이터
 
         Returns:
-            수정된 규칙 또는 None
+            수정된 규칙 객체 또는 None (rule_id가 존재하지 않는 경우)
 
         Raises:
-            NotImplementedError: DB 연동 전
+            OSError: 파일 쓰기 실패 시
         """
-        # TODO: DB 연동 후 규칙 수정 구현
-        logger.warning(
-            "update_automation_rule called for %s (not implemented)", rule_id
-        )
-        raise NotImplementedError("Rule update requires database integration")
+        existing = self._load_all_rules()
+        updated: List[AutomationRule] = []
+        found = False
+        for r in existing:
+            if r.rule_id == rule_id:
+                updated.append(rule)
+                found = True
+            else:
+                updated.append(r)
+        if not found:
+            return None
+        self._persist_all_rules(updated)
+        logger.info("[AUTOMATION] 규칙 수정 완료 (rule_id=%s)", rule_id)
+        return rule
 
     def delete_automation_rule(self, rule_id: str) -> bool:
         """
-        자동화 규칙 삭제
+        기존 자동화 규칙을 삭제.
 
         Args:
-            rule_id: 규칙 ID
+            rule_id: 삭제 대상 규칙 ID
 
         Returns:
-            삭제 성공 여부
+            삭제 성공 여부 (rule_id가 없으면 False)
 
         Raises:
-            NotImplementedError: DB 연동 전
+            OSError: 파일 쓰기 실패 시
         """
-        # TODO: DB 연동 후 규칙 삭제 구현
-        logger.warning(
-            "delete_automation_rule called for %s (not implemented)", rule_id
-        )
-        raise NotImplementedError("Rule deletion requires database integration")
+        existing = self._load_all_rules()
+        filtered = [r for r in existing if r.rule_id != rule_id]
+        if len(filtered) == len(existing):
+            return False
+        self._persist_all_rules(filtered)
+        logger.info("[AUTOMATION] 규칙 삭제 완료 (rule_id=%s)", rule_id)
+        return True
 
     # ========================================================================
     # 이력 조회
