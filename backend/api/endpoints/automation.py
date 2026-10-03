@@ -67,7 +67,7 @@ class ArchivingHistoryResponse(BaseModel):
 
 
 @router.get("/logs", response_model=AutomationLogListResponse)
-async def get_automation_logs(
+def get_automation_logs(
     limit: int = Query(100, ge=1, le=1000, description="최대 반환 개수"),
     task_type: Optional[AutomationTaskType] = Query(None, description="작업 유형 필터"),
     status: Optional[AutomationStatus] = Query(None, description="상태 필터"),
@@ -86,9 +86,7 @@ async def get_automation_logs(
 
 
 @router.get("/logs/{log_id}", response_model=AutomationLog)
-async def get_automation_log_detail(
-    log_id: str = PathParam(..., description="로그 ID")
-):
+def get_automation_log_detail(log_id: str = PathParam(..., description="로그 ID")):
     """
     자동화 로그 상세 조회
 
@@ -103,7 +101,7 @@ async def get_automation_log_detail(
 
 
 @router.get("/rules", response_model=AutomationRuleListResponse)
-async def get_automation_rules():
+def get_automation_rules():
     """
     자동화 규칙 목록 조회
 
@@ -115,7 +113,7 @@ async def get_automation_rules():
 
 
 @router.post("/rules", response_model=AutomationRule, status_code=201)
-async def create_automation_rule(rule: AutomationRule):
+def create_automation_rule(rule: AutomationRule):
     """
     자동화 규칙 생성
 
@@ -130,7 +128,7 @@ async def create_automation_rule(rule: AutomationRule):
 
 
 @router.put("/rules/{rule_id}", response_model=AutomationRule)
-async def update_automation_rule(
+def update_automation_rule(
     rule: AutomationRule, rule_id: str = PathParam(..., description="규칙 ID")
 ):
     """
@@ -148,7 +146,7 @@ async def update_automation_rule(
 
 
 @router.delete("/rules/{rule_id}", status_code=204)
-async def delete_automation_rule(rule_id: str = PathParam(..., description="규칙 ID")):
+def delete_automation_rule(rule_id: str = PathParam(..., description="규칙 ID")):
     """
     자동화 규칙 삭제
 
@@ -163,7 +161,7 @@ async def delete_automation_rule(rule_id: str = PathParam(..., description="규�
 
 
 @router.get("/reclassifications", response_model=ReclassificationHistoryResponse)
-async def get_reclassification_history(
+def get_reclassification_history(
     limit: int = Query(100, ge=1, le=1000, description="최대 반환 개수")
 ):
     """
@@ -176,7 +174,7 @@ async def get_reclassification_history(
 
 
 @router.get("/archives", response_model=ArchivingHistoryResponse)
-async def get_archiving_history(
+def get_archiving_history(
     limit: int = Query(100, ge=1, le=1000, description="최대 반환 개수")
 ):
     """
@@ -189,7 +187,7 @@ async def get_archiving_history(
 
 
 @router.post("/tasks/trigger", status_code=202)
-async def trigger_automation_task(
+def trigger_automation_task(
     task_type: AutomationTaskType = Query(..., description="작업 유형")
 ):
     """
@@ -236,7 +234,7 @@ class WatchdogEventListResponse(BaseModel):
 
 
 @router.get("/watchdog/events", response_model=WatchdogEventListResponse)
-async def get_watchdog_events(
+def get_watchdog_events(
     limit: int = Query(50, ge=1, le=500, description="최대 반환 개수"),
     event_type: Optional[str] = Query(None, description="이벤트 유형 필터"),
 ):
@@ -290,7 +288,7 @@ class DashboardSummary(BaseModel):
 
 
 @router.get("/dashboard/summary", response_model=DashboardSummary)
-async def get_dashboard_summary():
+def get_dashboard_summary():
     """
     대시보드 요약 정보 조회
 
