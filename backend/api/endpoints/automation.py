@@ -107,8 +107,8 @@ async def get_automation_rules():
     """
     자동화 규칙 목록 조회
 
-    - 현재는 파일 기반 저장소가 없으므로 빈 목록 반환
-    - 향후 DB 연동 시 구현 예정
+    - JSONL 기반 임시 저장소에서 조회
+    - 향후 DB 연동 시 교체 예정
     """
     rules = automation_manager.get_automation_rules()
     return AutomationRuleListResponse(total=len(rules), rules=rules)
@@ -119,13 +119,14 @@ async def create_automation_rule(rule: AutomationRule):
     """
     자동화 규칙 생성
 
-    - 새로운 자동화 규칙 생성
-    - 현재는 미구현 (DB 필요)
+    - 새로운 자동화 규칙 생성 (JSONL 저장소에 추가)
     """
     try:
         return automation_manager.create_automation_rule(rule)
-    except NotImplementedError as exc:
-        raise HTTPException(status_code=501, detail=str(exc))
+    except ValueError:
+        raise HTTPException(status_code=409, detail="Rule with this ID already exists.")
+    except OSError:
+        raise HTTPException(status_code=500, detail="Failed to save automation rule.")
 
 
 @router.put("/rules/{rule_id}", response_model=AutomationRule)
@@ -135,16 +136,15 @@ async def update_automation_rule(
     """
     자동화 규칙 수정
 
-    - 기존 규칙 수정
-    - 현재는 미구현 (DB 필요)
+    - 기존 규칙 수정 (JSONL 저장소 갱신)
     """
     try:
         result = automation_manager.update_automation_rule(rule_id, rule)
         if result is None:
             raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
         return result
-    except NotImplementedError as exc:
-        raise HTTPException(status_code=501, detail=str(exc))
+    except OSError:
+        raise HTTPException(status_code=500, detail="Failed to update automation rule.")
 
 
 @router.delete("/rules/{rule_id}", status_code=204)
@@ -152,15 +152,14 @@ async def delete_automation_rule(rule_id: str = PathParam(..., description="규�
     """
     자동화 규칙 삭제
 
-    - 기존 규칙 삭제
-    - 현재는 미구현 (DB 필요)
+    - 기존 규칙 삭제 (JSONL 저장소 갱신)
     """
     try:
         success = automation_manager.delete_automation_rule(rule_id)
         if not success:
             raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
-    except NotImplementedError as exc:
-        raise HTTPException(status_code=501, detail=str(exc))
+    except OSError:
+        raise HTTPException(status_code=500, detail="Failed to delete automation rule.")
 
 
 @router.get("/reclassifications", response_model=ReclassificationHistoryResponse)
