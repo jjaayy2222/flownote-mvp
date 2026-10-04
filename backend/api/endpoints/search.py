@@ -155,7 +155,7 @@ async def _run_hybrid_search(
         )
     except ValueError as exc:
         # PARA 카테고리 유효성 오류 등
-        log_agent_error(logger, "Hybrid search validation error", exc)
+        log_agent_error(logger, "Hybrid search validation error", exc, level="warning")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="잘못된 검색 매개변수가 제공되었습니다.",
