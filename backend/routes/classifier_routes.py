@@ -88,7 +88,10 @@ async def classify_text(request: ClassifyRequest):
 
     except Exception as e:
         log_agent_error(logger, "[분류 API] 분류 실패", e, include_traceback=True)
-        raise HTTPException(status_code=500, detail=f"분류 실패: {str(e)}") from e
+        raise HTTPException(
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        ) from e
 
 
 @router.post(
