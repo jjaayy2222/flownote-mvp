@@ -52,7 +52,7 @@ async def extract_and_serialize_golden_dataset():
         # a_text도 고정값이므로 루프 외부에서 한 번만 정의
         a_text = "Positive AI response"
         for fb in feedbacks:
-            # TODO: 차후에 session_id와 message_id를 통해 실제 ChatHistory와 조인하여
+            # FUTURE: 차후에 session_id와 message_id를 통해 실제 ChatHistory와 조인하여
             # 정확한 Question(Q)과 Answer(A) 컨텍스트를 구성해야 합니다.
             # 지금은 아키텍처 관점에서 스케줄러와 직렬화 파이프라인의 연결을 최우선으로 합니다.
 

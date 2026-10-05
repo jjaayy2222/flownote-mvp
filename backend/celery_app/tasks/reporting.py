@@ -76,7 +76,7 @@ def _collect_metrics(days: int) -> Dict[str, ReportMetric]:
 
     # 1. 자동화 로그 분석 (AutomationLog)
     # 실제로는 DB나 JSONL을 쿼리해야 함. 여기서는 파일 직접 읽기 방식(간이 구현)
-    # TODO: 추후 DB 쿼리로 개선 권장
+    # FUTURE: 추후 DB 쿼리로 개선 권장
     try:
         start_date = datetime.now() - timedelta(days=days)
         reclassify_count = 0

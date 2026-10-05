@@ -271,5 +271,5 @@ def update_embedding_task(self, file_path: str):
     파일 수정 시 호출되는 Task (임베딩 업데이트)
     """
     logger.info("Updating embedding for: %s", _safe_path(file_path))
-    # TODO: 임베딩 업데이트 로직 구현 (DB 연동 필요)
+    # FUTURE: 임베딩 업데이트 로직 구현 (DB 연동 필요)
     raise NotImplementedError("Embedding update requires database integration")

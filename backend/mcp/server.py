@@ -58,7 +58,7 @@ def get_classifier() -> HybridClassifier:
 
 def get_retriever() -> FAISSRetriever:
     """Thread-safe lazy initialization of FAISSRetriever"""
-    # TODO: Persistent loading of embeddings should be implemented here or in FAISSRetriever
+    # FUTURE: Persistent loading of embeddings should be implemented here or in FAISSRetriever
     return _lazy_init(_retriever_ref, FAISSRetriever)
 
 
