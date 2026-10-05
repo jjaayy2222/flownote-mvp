@@ -196,7 +196,7 @@ def trigger_automation_task(
     - Celery 태스크를 수동으로 실행
     - 현재는 미구현 (Celery 연동 필요)
     """
-    # FUTURE: Celery 태스크 트리거 구현
+    # TODO: Celery 태스크 트리거 구현
     # from backend.celery_app.tasks import ...
     # task.delay()
 
@@ -244,7 +244,7 @@ def get_watchdog_events(
     - Obsidian Vault의 파일 변경 이벤트 로그
     - 예: [Obsidian] File Created: "Idea.md" -> Triggered Reclassification
     """
-    # FUTURE: 실제로는 파일 시스템 또는 DB에서 조회
+    # TODO: 실제로는 파일 시스템 또는 DB에서 조회
     # 현재는 Placeholder 데이터 반환
     events = [
         WatchdogEvent(

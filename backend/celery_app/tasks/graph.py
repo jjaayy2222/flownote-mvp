@@ -90,7 +90,7 @@ def _load_embeddings_for_nodes(node_ids: list[str]) -> dict[str, list[float]]:
     현재는 임베딩 컬럼/테이블이 없어 빈 딕셔너리를 반환합니다.
     추후 DB/캐시에서 임베딩을 조회하도록 교체합니다.
     """
-    # FUTURE: DB/캐시에서 임베딩 로드 로직으로 교체
+    # TODO: DB/캐시에서 임베딩 로드 로직으로 교체
     return {}
 
 

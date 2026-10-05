@@ -202,7 +202,7 @@ async def get_conflicts(
         List[ConflictLogResponse]: 충돌 로그 목록
     """
     try:
-        # FUTURE: 실제로는 ExternalSyncLog에서 충돌 이력 조회
+        # TODO: 실제로는 ExternalSyncLog에서 충돌 이력 조회
         # 현재는 빈 목록 반환
         conflicts = []
 
@@ -226,7 +226,7 @@ async def get_conflict_diff(conflict_id: str):
     충돌 파일의 Diff 데이터 반환
     """
     try:
-        # FUTURE: 실제 프로덕션에서는 DB에서 conflict_id로 경로 정보 조회
+        # TODO: 실제 프로덕션에서는 DB에서 conflict_id로 경로 정보 조회
         # 여기서는 테스트를 위해 더미 데이터 생성 (프론트엔드 연동용 Mock)
 
         # Mock Data
@@ -268,7 +268,7 @@ async def resolve_conflict(
         dict: 해결 결과
     """
     try:
-        # FUTURE: ConflictResolutionService를 통해 실제 충돌 해결
+        # TODO: ConflictResolutionService를 통해 실제 충돌 해결
         logger.info(
             f"Resolving conflict {conflict_id} with method: {resolution_method}"
         )

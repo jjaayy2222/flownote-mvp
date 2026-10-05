@@ -16,7 +16,7 @@ async def get_metadata(
     file_id: str, locale: str = Depends(get_locale)
 ) -> MetadataResponse:
     """메타데이터 조회 (다국어 지원)"""
-    # FUTURE: Implement actual metadata retrieval
+    # TODO: Implement actual metadata retrieval
     metadata = {}
     return MetadataResponse(
         status="success",
@@ -31,7 +31,7 @@ async def update_metadata(
     file_id: str, locale: str = Depends(get_locale)
 ) -> MetadataResponse:
     """메타데이터 업데이트 (다국어 지원)"""
-    # FUTURE: Implement actual metadata update
+    # TODO: Implement actual metadata update
     metadata = {}
     return MetadataResponse(
         status="success",
