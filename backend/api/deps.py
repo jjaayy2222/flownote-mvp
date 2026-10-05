@@ -50,7 +50,7 @@ def _ensure_dev_environment(
             비개발 환경에서 호출될 경우, factory를 통해 생성된 예외를 즉시 발생시킵니다.
     """
     # Note: Accessing os.getenv directly as config module doesn't expose ENVIRONMENT yet.
-    # FUTURE: Route this through backend.config.AppConfig when available.
+    # TODO: Route this through backend.config.AppConfig when available.
     env = os.getenv("ENVIRONMENT", "production")
     if env not in ["local", "development"]:
         raise exception_factory()
@@ -87,7 +87,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
         )
     )
 
-    # FUTURE: Verify token logic
+    # TODO: Verify token logic
 
     return MOCK_ADMIN_USER
 
@@ -127,7 +127,7 @@ async def get_current_user_ws(
         )
     )
 
-    # FUTURE: Verify token logic
+    # TODO: Verify token logic
 
     return MOCK_REGULAR_USER
 
