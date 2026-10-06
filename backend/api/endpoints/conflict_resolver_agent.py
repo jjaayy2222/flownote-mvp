@@ -403,15 +403,14 @@ if __name__ == "__main__":
     # 해결 실행
     report = resolve_conflicts_sync(test_conflicts)
 
-    print("\n" + "=" * 60)
-    print("📊 최종 보고서")
-    print("=" * 60)
-    print(f"총 충돌: {report.total_conflicts}")
-    print(f"자동 해결: {report.auto_resolved_count}")
-    print(f"수동 검토: {report.manual_review_needed}")
-    print(f"해결률: {report.resolution_rate:.1%}")
-    print(f"\n요약: {report.summary}")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("테스트: 최종 보고서")
+    logger.info("총 충돌: %d", report.total_conflicts)
+    logger.info("자동 해결: %d", report.auto_resolved_count)
+    logger.info("수동 검토: %d", report.manual_review_needed)
+    logger.info("해결률: %.1f%%", report.resolution_rate * 100)
+    logger.info("요약: %s", report.summary)
+    logger.info("=" * 60)
 
 
 """test_result_1 - 복잡한 프롬프트
