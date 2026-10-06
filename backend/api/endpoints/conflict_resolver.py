@@ -1,9 +1,13 @@
 # backend/api/endpoints/conflict_resolver.py
 
+import logging
 from difflib import SequenceMatcher
 from typing import List
 
+from backend.agent.error_utils import log_agent_error
 from backend.models import ConflictRecord, ConflictReport, ConflictType
+
+logger = logging.getLogger(__name__)
 
 
 class ConflictDetector:
@@ -46,8 +50,12 @@ class ConflictDetector:
                 return metadata if metadata else self._get_mock_data()
 
             except Exception as e:
-                print(f"⚠️ Dashboard 데이터 로드 실패: {e}")
-                print("   Mock 데이터로 대체합니다.")
+                log_agent_error(
+                    logger,
+                    "Dashboard 데이터 로드 실패, Mock으로 대체합니다",
+                    e,
+                    level="warning",
+                )
                 return self._get_mock_data()  # 실패 시 Mock으로 대체
 
         else:
@@ -199,7 +207,7 @@ class ConflictDetector:
 
 """test_result_3 - `dashboard_core.py 분석`
 
-있는 메소드들 → 코드 수정 → 다시 테스트 
+있는 메소드들 → 코드 수정 → 다시 테스트
     ✅ get_file_statistics() - 파일 통계
     ✅ get_para_breakdown() - PARA별 분류
     ✅ get_keyword_categories() - 키워드 카테고리
@@ -225,11 +233,11 @@ except ValueError as e:
     print(f'✅ Error handling works: {e}')
 "
 
-✅ Mock: 2 conflicts found 
-    - ✅ 완벽 (2개 충돌) 
+✅ Mock: 2 conflicts found
+    - ✅ 완벽 (2개 충돌)
     - ✅ 2개 충돌 감지
     - 충돌 감지 로직 정상
-✅ Dashboard: 0 conflicts found 
+✅ Dashboard: 0 conflicts found
     - ✅ 0개 충돌 + 안전한 폴백
     - 데이터 없어도 에러 안 남
 ✅ Error handling works: Invalid data_source: invalid. Must be 'mock' or 'dashboard'
