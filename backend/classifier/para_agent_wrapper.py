@@ -55,7 +55,7 @@ if __name__ == "__main__":
     """
 
     result = run_para_agent_sync(test_text)
-    print(f"✅ 분류 결과: {result}")
+    logger.info("테스트: 분류 결과: %s", result)
 
 
 """test_result_1 → ⭕️ (`python -m backend.classifier.para_agent_wrapper`)
