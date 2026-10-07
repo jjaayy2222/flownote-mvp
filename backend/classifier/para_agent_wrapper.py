@@ -48,6 +48,7 @@ def run_para_agent_sync(text: str, metadata: Optional[Dict] = None) -> Dict[str,
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     # 테스트용
     test_text = """
     FlowNote는 AI 기반 문서 분류 도구입니다.

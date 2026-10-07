@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import TypedDict
+from typing import Any, Dict, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
@@ -40,13 +40,13 @@ def para_classification_node(state: PARAAgentState) -> PARAAgentState:
     return {**state, "para_result": result}
 
 
-# 🔷 2. Keyword 분류 노드 (✅ Step 2)
-def keyword_classification_node(state: PARAAgentState) -> PARAAgentState:
+# 🔷 2. Keyword 분류 노드
+async def keyword_classification_node(state: PARAAgentState) -> PARAAgentState:
     """Keyword 분류 수행"""
     text = state["text"]
 
     classifier = KeywordClassifier()
-    keyword_result = classifier.classify(text)
+    keyword_result = await classifier.classify(text)
 
     return {**state, "keyword_result": keyword_result}
 
@@ -96,7 +96,7 @@ def snapshot_node(state: PARAAgentState) -> PARAAgentState:
         conflict_result=state["conflict_result"],
     )
 
-    return {**state, "snapshot_id": snapshot_id}
+    return {**state, "snapshot_id": snapshot_id.id}
 
 
 # 🔷 5. 최종 결정 노드
@@ -120,7 +120,7 @@ def final_decision_node(state: PARAAgentState) -> PARAAgentState:
 # 🔷 6. Graph 생성
 def create_para_agent_graph():
     """PARAAgent Graph 생성"""
-    graph = StateGraph(PARAAgentState)
+    graph = StateGraph(PARAAgentState)  # type: ignore[arg-type]  # LangGraph supports TypedDict; Pyrefly false positive
 
     # 노드 추가
     graph.add_node("para_classification", para_classification_node)
@@ -141,7 +141,7 @@ def create_para_agent_graph():
 
 
 # 🔷 7. 메인 함수 (비동기)
-async def run_para_agent(text: str, metadata: dict = None) -> dict:
+async def run_para_agent(text: str, metadata: Optional[Dict[str, Any]] = None) -> dict:
     """PARA Agent 실행 (비동기)"""
     if metadata is None:
         metadata = {}
@@ -163,13 +163,14 @@ async def run_para_agent(text: str, metadata: dict = None) -> dict:
 
 
 # 🔷 8. 동기 래퍼 함수 (✅ 추가!)
-def run_para_agent_sync(text: str, metadata: dict = None) -> dict:
+def run_para_agent_sync(text: str, metadata: Optional[Dict[str, Any]] = None) -> dict:
     """PARA Agent 실행 (동기 버전 - asyncio.run 래퍼)"""
     return asyncio.run(run_para_agent(text, metadata))
 
 
 # 테스트 함수
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     # 테스트 1: 정상 경로
     logger.info("테스트 1: 정상 경로")
     result1 = run_para_agent(
