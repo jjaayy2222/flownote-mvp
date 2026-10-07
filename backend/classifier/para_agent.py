@@ -169,19 +169,23 @@ def run_para_agent_sync(text: str, metadata: Optional[Dict[str, Any]] = None) ->
 
 
 # 테스트 함수
-if __name__ == "__main__":
+async def main():
     logging.basicConfig(level=logging.INFO)
     # 테스트 1: 정상 경로
     logger.info("테스트 1: 정상 경로")
-    result1 = run_para_agent(
+    result1 = await run_para_agent(
         text="이번 프로젝트는 새로운 대시보드 기능을 개발하는 것입니다.", metadata={}
     )
     logger.info("Result: %s", result1)
 
     # 테스트 2: 재분석 경로
     logger.info("테스트 2: 재분석 경로")
-    result2 = run_para_agent(text="기획", metadata={"type": "project"})
+    result2 = await run_para_agent(text="기획", metadata={"type": "project"})
     logger.info("Result: %s", result2)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 
 
 """통합 후 test_result → ⭕️ (테스트 파일: `../tests/test_classify_cli.py`)
