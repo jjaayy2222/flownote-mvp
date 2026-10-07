@@ -1,6 +1,7 @@
 # backend/classifier/para_agent.py
 
 import asyncio
+import logging
 from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -9,6 +10,8 @@ from backend.classifier.conflict_resolver import ClassificationResult, ConflictR
 from backend.classifier.keyword import KeywordClassifier
 from backend.classifier.langchain_integration import classify_with_langchain
 from backend.classifier.snapshot_manager import SnapshotManager
+
+logger = logging.getLogger(__name__)
 
 
 # 🔷 State 정의
@@ -168,24 +171,24 @@ def run_para_agent_sync(text: str, metadata: dict = None) -> dict:
 # 테스트 함수
 if __name__ == "__main__":
     # 테스트 1: 정상 경로
-    print("Test 1: 정상 경로")
+    logger.info("테스트 1: 정상 경로")
     result1 = run_para_agent(
         text="이번 프로젝트는 새로운 대시보드 기능을 개발하는 것입니다.", metadata={}
     )
-    print(f"Result: {result1}\n")
+    logger.info("Result: %s", result1)
 
     # 테스트 2: 재분석 경로
-    print("Test 2: 재분석 경로")
+    logger.info("테스트 2: 재분석 경로")
     result2 = run_para_agent(text="기획", metadata={"type": "project"})
-    print(f"Result: {result2}")
+    logger.info("Result: %s", result2)
 
 
 """통합 후 test_result → ⭕️ (테스트 파일: `../tests/test_classify_cli.py`)
 
     `python tests/test_classify_cli.py`
-    
+
     ✅ ModelConfig loaded from backend.config
-    
+
     🔍 분류 중: '프로젝트 문서 작성'
 
     ================================================================================
@@ -220,24 +223,24 @@ if __name__ == "__main__":
 
     ✅ 결과:
     Snapshot ID: snap_20251103_194643
-    PARA Result: 
-        {'category': 'Projects', 'confidence': 0.9, 
-        'snapshot_id': Snapshot(id='snap_20251103_194649', 
-        timestamp=datetime.datetime(2025, 11, 3, 19, 46, 49, 8536), 
-        text='프로젝트 문서 작성', 
-        para_result={'category': 'Projects', 'confidence': 0.9, 'reasoning': '프로젝트 문서 작성은 명확한 작업 목표가 있으며, 특정 기한이 암시될 수 있는 작업으로 보아 Projects로 분류됨.', 
-                    'detected_cues': ['프로젝트', '문서', '작성'], 'source': 'langchain', 'has_metadata': False}, 
-        keyword_result={'tags': ['업무'], 'confidence': 0.7, 
-                        'matched_keywords': {'업무': ['프로젝트']}, 
-                        'reasoning': '프로젝트 문서 작성은 업무 관련 활동으로 명확히 분류됨', 
-                        'para_hints': {'업무': ['Projects']}}, 
-        conflict_result={'final_category': 'Projects', 'para_category': 'Projects', 
-                        'keyword_tags': ['업무'], 'confidence': 0.9, 'confidence_gap': 0.2, 
-                        'conflict_detected': False, 'resolution_method': 'auto_by_confidence', 
-                        'requires_review': False, 'winner_source': 'para', 
-                        'para_reasoning': '프로젝트 문서 작성은 명확한 작업 목표가 있으며, 특정 기한이 암시될 수 있는 작업으로 보아 Projects로 분류됨.', 
-                        'reason': '명확한 승자 선택됨 (Gap: 0.20)'}, 
-                        metadata={'confidence': 0, 'is_conflict': False, 'final_category': 'Projects'}), 
+    PARA Result:
+        {'category': 'Projects', 'confidence': 0.9,
+        'snapshot_id': Snapshot(id='snap_20251103_194649',
+        timestamp=datetime.datetime(2025, 11, 3, 19, 46, 49, 8536),
+        text='프로젝트 문서 작성',
+        para_result={'category': 'Projects', 'confidence': 0.9, 'reasoning': '프로젝트 문서 작성은 명확한 작업 목표가 있으며, 특정 기한이 암시될 수 있는 작업으로 보아 Projects로 분류됨.',
+                    'detected_cues': ['프로젝트', '문서', '작성'], 'source': 'langchain', 'has_metadata': False},
+        keyword_result={'tags': ['업무'], 'confidence': 0.7,
+                        'matched_keywords': {'업무': ['프로젝트']},
+                        'reasoning': '프로젝트 문서 작성은 업무 관련 활동으로 명확히 분류됨',
+                        'para_hints': {'업무': ['Projects']}},
+        conflict_result={'final_category': 'Projects', 'para_category': 'Projects',
+                        'keyword_tags': ['업무'], 'confidence': 0.9, 'confidence_gap': 0.2,
+                        'conflict_detected': False, 'resolution_method': 'auto_by_confidence',
+                        'requires_review': False, 'winner_source': 'para',
+                        'para_reasoning': '프로젝트 문서 작성은 명확한 작업 목표가 있으며, 특정 기한이 암시될 수 있는 작업으로 보아 Projects로 분류됨.',
+                        'reason': '명확한 승자 선택됨 (Gap: 0.20)'},
+                        metadata={'confidence': 0, 'is_conflict': False, 'final_category': 'Projects'}),
         'conflict_detected': False, 'requires_review': False, 'keyword_tags': ['업무'], 'reasoning': '명확한 승자 선택됨 (Gap: 0.20)'
         }
     Conflict Result: {'is_conflict': False}

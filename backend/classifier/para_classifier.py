@@ -277,16 +277,18 @@ if __name__ == "__main__":
         ("API 문서 및 참고자료", "api_reference.pdf"),
     ]
 
-    print("=" * 60)
-    print("PARA 분류기 테스트 (LangChain 통합)")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("PARA 분류기 테스트 (LangChain 통합)")
+    logger.info("=" * 60)
 
     for text, filename in test_texts:
         result = classifier.classify_text(text, filename)
-        print(f"\n📄 {filename}")
-        print(f"   분류: {result['category']} ({result['confidence']:.0%})")
-        print(f"   근거: {result.get('reasoning', 'N/A')}")
-        print(f"   단서: {', '.join(result.get('detected_cues', [])[:3])}")
+        logger.info("파일: %s", filename)
+        logger.info(
+            "  분류: %s (%.0f%%)", result["category"], result["confidence"] * 100
+        )
+        logger.info("  근거: %s", result.get("reasoning", "N/A"))
+        logger.info("  단서: %s", ", ".join(result.get("detected_cues", [])[:3]))
 
 
 """test_result(Phase5.2.1)

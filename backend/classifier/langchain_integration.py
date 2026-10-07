@@ -43,21 +43,24 @@ from langchain_openai import ChatOpenAI
 # Unified model migration import
 from backend.models import PARAClassificationOutput
 
+# logger를 ModelConfig fallback 블록보다 먼저 정의 (ImportError 분기에서 사용하므로)
+logger = logging.getLogger(__name__)
+
 # 3-level fallback for ModelConfig to support both package and standalone execution
 try:
     # Attempt 1: absolute import (standard app context)
     from backend.config import ModelConfig
 
-    print("ModelConfig loaded from backend.config")
+    logger.info("ModelConfig loaded from backend.config")
 except ImportError:
     try:
         # Attempt 2: relative import (when run from within backend/)
         from config import ModelConfig
 
-        print("ModelConfig loaded from config")
+        logger.info("ModelConfig loaded from config")
     except ImportError:
         # Attempt 3: fallback to raw environment variables
-        print("[WARN] Using os.getenv fallback for ModelConfig")
+        logger.warning("[WARN] Using os.getenv fallback for ModelConfig")
 
         class ModelConfig:
             GPT4O_MINI_API_KEY = os.getenv("GPT4O_MINI_API_KEY")
@@ -65,7 +68,9 @@ except ImportError:
             GPT4O_MINI_MODEL = os.getenv("GPT4O_MINI_MODEL", "gpt-4o-mini")
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(
+    __name__
+)  # noqa: F811 (re-bound for clarity; same instance as above)
 
 
 def escape_json_braces_complete(content: str) -> str:
@@ -505,41 +510,50 @@ def hybrid_classify(text: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    print("=" * 60)
-    print("Config 기반 LangChain 테스트")
-    print("=" * 60)
-    print(
-        f"API Key: {ModelConfig.GPT4O_MINI_API_KEY[:3]}..."
-        if ModelConfig.GPT4O_MINI_API_KEY
-        else "❌ API Key 없음"
+    logger.info("=" * 60)
+    logger.info("Config 기반 LangChain 테스트")
+    logger.info("=" * 60)
+    logger.info(
+        "API Key: %s...",
+        (
+            ModelConfig.GPT4O_MINI_API_KEY[:3]
+            if ModelConfig.GPT4O_MINI_API_KEY
+            else "❌ API Key 없음"
+        ),
     )
-    print(
-        f"API Base: {ModelConfig.GPT4O_MINI_BASE_URL[:3]}..................."
-        if ModelConfig.GPT4O_MINI_BASE_URL
-        else "❌ API Base 못찾음"
+    logger.info(
+        "API Base: %s...................",
+        (
+            ModelConfig.GPT4O_MINI_BASE_URL[:3]
+            if ModelConfig.GPT4O_MINI_BASE_URL
+            else "❌ API Base 못찾음"
+        ),
     )
-    print(
-        f"Model: {ModelConfig.GPT4O_MINI_MODEL}"
-        if ModelConfig.GPT4O_MINI_MODEL
-        else "❌ Model 없음"
+    logger.info(
+        "Model: %s",
+        (
+            ModelConfig.GPT4O_MINI_MODEL
+            if ModelConfig.GPT4O_MINI_MODEL
+            else "❌ Model 없음"
+        ),
     )
-    print("=" * 60)
+    logger.info("=" * 60)
 
     # 테스트 1: 텍스트만
     test_text_1 = "11월 30일까지 완성해야 하는 프로젝트 제안서"
 
-    print("=" * 60)
-    print("테스트 1: 텍스트만 분류")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("테스트 1: 텍스트만 분류")
+    logger.info("=" * 60)
 
     try:
         result = classify_with_langchain(test_text_1)
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+        logger.info(json.dumps(result, indent=2, ensure_ascii=False))
     except Exception as e:
-        print(f"오류: {e}")
+        log_agent_error(logger, "테스트 1 오류", e)
 
     # 테스트 2: 메타데이터 포함
-    print("\n테스트 2: 메타데이터 포함 분류\n")
+    # 테스트 2: 메타데이터 포함
     test_text_2 = "마케팅 전략"
     test_metadata = {
         "filename": "marketing_strategy_2025.md",
@@ -547,21 +561,21 @@ if __name__ == "__main__":
         "tags": ["work", "important"],
     }
 
-    print("\n" + "=" * 60)
-    print("테스트 2: 메타데이터 포함 분류")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("테스트 2: 메타데이터 포함 분류")
+    logger.info("=" * 60)
 
     try:
         result = classify_with_langchain(test_text_2, metadata=test_metadata)
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+        logger.info(json.dumps(result, indent=2, ensure_ascii=False))
     except Exception as e:
-        print(f"오류: {e}")
+        log_agent_error(logger, "테스트 2 오류", e)
 
     # 추가
     # 테스트 3: 메타데이터만 분류 (새로운 함수)
-    print("\n" + "=" * 60)
-    print("테스트 3: 메타데이터만 분류")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("테스트 3: 메타데이터만 분류")
+    logger.info("=" * 60)
 
     test_metadata = {
         "basic_info": {
@@ -578,14 +592,14 @@ if __name__ == "__main__":
 
     try:
         result = classify_with_metadata(test_metadata)
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+        logger.info(json.dumps(result, indent=2, ensure_ascii=False))
     except Exception as e:
-        print(f"오류: {e}")
+        log_agent_error(logger, "테스트 3 오류", e)
 
     # 테스트 4: 하이브리드 분류 (새로운 함수)
-    print("\n" + "=" * 60)
-    print("테스트 4: 하이브리드 분류 (텍스트 + 메타데이터)")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("테스트 4: 하이브리드 분류 (텍스트 + 메타데이터)")
+    logger.info("=" * 60)
 
     test_text = "다음 분기 마케팅 캠페인"
     test_metadata = {
@@ -598,9 +612,9 @@ if __name__ == "__main__":
 
     try:
         result = hybrid_classify(test_text, test_metadata)
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+        logger.info(json.dumps(result, indent=2, ensure_ascii=False))
     except Exception as e:
-        print(f"오류: {e}")
+        log_agent_error(logger, "테스트 4 오류", e)
 
 
 """test_result
