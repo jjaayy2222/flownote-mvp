@@ -7,6 +7,7 @@ Automation Manager Service
 
 import json
 import logging
+import threading
 from itertools import islice
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -46,6 +47,8 @@ class AutomationManager:
         """초기화"""
         # 로그 디렉토리 생성
         LOG_DIR.mkdir(parents=True, exist_ok=True)
+        # 규칙 CRUD 작업을 직렬화하기 위한 락
+        self._rule_lock = threading.Lock()
 
     # ========================================================================
     # 로그 조회
@@ -191,13 +194,14 @@ class AutomationManager:
             ValueError: 동일한 rule_id가 이미 존재하는 경우
             OSError: 파일 쓰기 실패 시
         """
-        existing = self._load_all_rules()
-        if any(r.rule_id == rule.rule_id for r in existing):
-            raise ValueError(f"Rule already exists: {rule.rule_id}")
-        existing.append(rule)
-        self._persist_all_rules(existing)
-        logger.info("[AUTOMATION] 규칙 생성 완료 (rule_id=%s)", rule.rule_id)
-        return rule
+        with self._rule_lock:
+            existing = self._load_all_rules()
+            if any(r.rule_id == rule.rule_id for r in existing):
+                raise ValueError(f"Rule already exists: {rule.rule_id}")
+            existing.append(rule)
+            self._persist_all_rules(existing)
+            logger.info("[AUTOMATION] 규칙 생성 완료 (rule_id=%s)", rule.rule_id)
+            return rule
 
     def update_automation_rule(
         self, rule_id: str, rule: AutomationRule
@@ -215,21 +219,22 @@ class AutomationManager:
         Raises:
             OSError: 파일 쓰기 실패 시
         """
-        existing = self._load_all_rules()
-        updated: List[AutomationRule] = []
-        found = False
-        for r in existing:
-            if r.rule_id == rule_id:
-                rule.rule_id = rule_id  # 경로 파라미터와 불일치 방지
-                updated.append(rule)
-                found = True
-            else:
-                updated.append(r)
-        if not found:
-            return None
-        self._persist_all_rules(updated)
-        logger.info("[AUTOMATION] 규칙 수정 완료 (rule_id=%s)", rule_id)
-        return rule
+        with self._rule_lock:
+            existing = self._load_all_rules()
+            updated: List[AutomationRule] = []
+            found = False
+            for r in existing:
+                if r.rule_id == rule_id:
+                    rule.rule_id = rule_id  # 경로 파라미터와 불일치 방지
+                    updated.append(rule)
+                    found = True
+                else:
+                    updated.append(r)
+            if not found:
+                return None
+            self._persist_all_rules(updated)
+            logger.info("[AUTOMATION] 규칙 수정 완료 (rule_id=%s)", rule_id)
+            return rule
 
     def delete_automation_rule(self, rule_id: str) -> bool:
         """
@@ -244,13 +249,14 @@ class AutomationManager:
         Raises:
             OSError: 파일 쓰기 실패 시
         """
-        existing = self._load_all_rules()
-        filtered = [r for r in existing if r.rule_id != rule_id]
-        if len(filtered) == len(existing):
-            return False
-        self._persist_all_rules(filtered)
-        logger.info("[AUTOMATION] 규칙 삭제 완료 (rule_id=%s)", rule_id)
-        return True
+        with self._rule_lock:
+            existing = self._load_all_rules()
+            filtered = [r for r in existing if r.rule_id != rule_id]
+            if len(filtered) == len(existing):
+                return False
+            self._persist_all_rules(filtered)
+            logger.info("[AUTOMATION] 규칙 삭제 완료 (rule_id=%s)", rule_id)
+            return True
 
     # ========================================================================
     # 이력 조회

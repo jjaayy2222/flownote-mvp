@@ -244,12 +244,16 @@ class ConflictResolutionService:
                 meta_info,
                 include_traceback=True,
             )
-            self._log_conflict_resolution(
-                conflict=conflict,
-                action="rename_backup",
-                status=SyncStatus.FAILED,
-                message="Resolution failed due to internal error",
-            )
+            try:
+                self._log_conflict_resolution(
+                    conflict=conflict,
+                    action="rename_backup",
+                    status=SyncStatus.FAILED,
+                    message="Resolution failed due to internal error",
+                )
+            except OSError:
+                # 무한 루프나 중복 로깅 실패를 피하기 위해 FAILED 기록 실패는 조용히 넘김
+                pass
             return False
 
     def _log_conflict_resolution(
@@ -295,6 +299,7 @@ class ConflictResolutionService:
             log_agent_error(
                 logger, "Failed to write conflict resolution log", exc, meta
             )
+            raise  # 예외를 상위로 전파하여 실패 처리
 
     async def _resolve_remote_wins(self, conflict: SyncConflict) -> bool:
         """외부(Obsidian) 데이터로 로컬 파일을 덮어씀 (Deprecated: use _resolve_rename)"""

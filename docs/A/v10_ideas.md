@@ -1,13 +1,13 @@
 # v10 Roadmap Ideas: Production-Ready & User-Centric (기획 중)
 
-> 상위 이슈: TBD | 마일스톤: v10.0 | 기준 브랜치: develop (v9.0)  
+> 상위 이슈: TBD | 마일스톤: v10.0 | 기준 브랜치: develop (v9.0)
 > 생성일: 2026-06-16 | 상태: 🌱 초기 아이디어 단계
 
 ---
 
 ## 🎯 v10 비전
 
-v9.0에서 구축한 **적응형 AI 코어(Adaptive Intelligence Core)** 위에,  
+v9.0에서 구축한 **적응형 AI 코어(Adaptive Intelligence Core)** 위에,
 v10에서 **프로덕션 레디(Production-Ready)** 와 **사용자 중심 경험(User-Centric UX)** 을 완성하기.
 
 ```
@@ -15,8 +15,8 @@ v9.0: 파인튜닝 → 개인화 → 사용자 적응 (인텔리전스)
 v10:  보안 강화 → 멀티유저 → 배포/확장 (프로덕션)
 ```
 
-> 💡 **v10 선택 이유**: v9.0 완료로 AI 코어가 완성된 시점에서, 다음 단계는 이 AI를  
-> 실제 사용자들에게 안전하게 제공할 수 있는 프로덕션 수준의 인프라·보안·경험을 갖추는 것.  
+> 💡 **v10 선택 이유**: v9.0 완료로 AI 코어가 완성된 시점에서, 다음 단계는 이 AI를
+> 실제 사용자들에게 안전하게 제공할 수 있는 프로덕션 수준의 인프라·보안·경험을 갖추는 것.
 > TODO.md의 P1(인증)·P2(자동화) 기술 부채도 이 단계에서 자연스럽게 해소될 수 있음.
 
 ---
@@ -34,7 +34,7 @@ v10:  보안 강화 → 멀티유저 → 배포/확장 (프로덕션)
 
 ## 📋 Phase 1: 실제 인증 시스템 도입 (Production Auth)
 
-> 연결 이슈: TODO.md `[P1]` 항목  
+> 연결 이슈: TODO.md `[P1]` 항목
 > 기술 부채 해소: `backend/api/deps.py` Mock 인증 → 실제 인증
 
 ### 배경
@@ -46,7 +46,7 @@ v10:  보안 강화 → 멀티유저 → 배포/확장 (프로덕션)
 - [ ] JWT 기반 실제 토큰 인증 로직 구현 (`backend/api/deps.py` 내 `verify_token` 함수 신설 예정 — 현재 TODO 주석으로만 존재)
 - [ ] `backend/core/config.py::Settings` 를 통한 글로벌 의존성 라우팅 정비
 - [ ] Sync DB 충돌 레코드 영구 저장 로직 (`sync_service.py::_handle_conflict`)
-- [ ] Conflict Resolution 파일 시스템(JSONL) 안전 기록 완성 (`backend/services/conflict_resolution_service.py`)
+- [x] Conflict Resolution 파일 시스템(JSONL) 안전 기록 완성 (`backend/services/conflict_resolution_service.py`)
 
 ### 기대 효과
 - Mock 제거로 코드베이스 신뢰성 향상
@@ -57,7 +57,7 @@ v10:  보안 강화 → 멀티유저 → 배포/확장 (프로덕션)
 
 ## 📋 Phase 2: 멀티유저 확장 및 자동화 DB 연동 (Multi-User Scale)
 
-> 연결 이슈: TODO.md `[P2]` 항목  
+> 연결 이슈: TODO.md `[P2]` 항목
 > 기술 부채 해소: `automation_manager.py`, `automation.py`, `scheduler_service.py`
 
 ### 배경
@@ -79,7 +79,7 @@ v10:  보안 강화 → 멀티유저 → 배포/확장 (프로덕션)
 
 ## 📋 Phase 3: 다국어 확장 및 UX 고도화 (UX & Globalization)
 
-> 연결 이슈: TODO.md `[P3]` 항목 + README 로드맵 "진행 예정" 항목  
+> 연결 이슈: TODO.md `[P3]` 항목 + README 로드맵 "진행 예정" 항목
 > 기술 부채 해소: `backend/mcp/obsidian_server.py` Sync 비교 엔진, `backend/mcp/server.py` & `backend/celery_app/tasks/graph.py` Persistent Embeddings, `backend/api/endpoints/sync.py` Sync Status API
 
 ### 배경
@@ -93,6 +93,7 @@ v10:  보안 강화 → 멀티유저 → 배포/확장 (프로덕션)
 - [ ] 파일 버전 히스토리: 변경 이력 추적 및 롤백 기능
 - [ ] Obsidian Sync 핵심 비교 엔진 구현 (해시 대조 기반)
 - [ ] Persistent Embeddings: FAISSRetriever 활용 DB/Cache 기반 영구 로딩
+- [ ] 분류 결과 기반 임베딩 업데이트 로직 추가 구현 (`backend/celery_app/tasks/classification.py` 등)
 - [ ] Sync Status API 실제 매니저/DB 연결 (`[P3]` 해소)
 
 ### 기대 효과
@@ -103,7 +104,7 @@ v10:  보안 강화 → 멀티유저 → 배포/확장 (프로덕션)
 
 ## 📋 Phase 4: 운영 가시성 및 배포 자동화 (Observability & DevOps)
 
-> 연결 이슈: TODO.md `[P4]` 항목  
+> 연결 이슈: TODO.md `[P4]` 항목
 > 기술 부채 해소: Dashboard Stats, Metadata API, Reporting Task
 
 ### 배경
@@ -161,7 +162,7 @@ main
 
 > 기획 확정 전 논의가 필요한 항목들입니다.
 
-1. **v10 vs v9.1**: 마이너 업데이트(v9.1)로 일부 Phase만 먼저 진행할지,  
+1. **v10 vs v9.1**: 마이너 업데이트(v9.1)로 일부 Phase만 먼저 진행할지,
    메이저 업데이트(v10)로 전체 비전을 한 번에 잡을지?
 2. **인증 방식**: JWT 자체 구현 vs Auth0/Firebase Auth 외부 서비스 활용?
 3. **다국어 번역**: 수동 번역 vs AI 자동 번역 파이프라인 구축?
