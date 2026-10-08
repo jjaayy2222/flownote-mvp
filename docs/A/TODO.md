@@ -10,14 +10,14 @@
   - 전역 의존성을 `backend.config.AppConfig`를 통해 라우팅하도록 개선.
 - [ ] **Sync DB (`backend/services/sync_service.py`)**
   - `_handle_conflict` 메서드: 충돌 발생 시 DB에 충돌 레코드를 영구 저장하는 로직.
-- [ ] **Conflict Resolution (`backend/services/conflict_resolution_service.py`)**
+- [x] **Conflict Resolution (`backend/services/conflict_resolution_service.py`)**
   - 파일 시스템(JSONL) 안전 기록 및 `PathConfig` 활용 보완.
 
 ## 🟠 [P2] Phase 3: Automation & Scheduler 구현
 자동화 작업의 실질적인 동작과 데이터 신뢰성을 보장하는 항목입니다.
 
-- [ ] **Automation Rules DB 연동 (`backend/services/automation_manager.py`)**
-  - `get_automation_rules`, `create_automation_rule` 등 규칙 CRUD 전체 메서드: 파일/Mock 기반에서 DB 연동으로 전환.
+- [x] **Automation Rules DB 연동 (`backend/services/automation_manager.py`)**
+  - `get_automation_rules`, `create_automation_rule` 등 규칙 CRUD 전체 메서드: 파일/Mock 기반에서 DB 연동으로 전환 (JSONL 영속성 적용 완료).
 - [ ] **Celery 연동 (`backend/api/endpoints/automation.py`)**
   - `trigger_automation_task` 엔드포인트: 실제 Celery 태스크 지연 실행(`task.delay()`) 트리거 활성화.
 - [ ] **Golden Dataset 조인 (`backend/services/scheduler_service.py`)**
@@ -28,8 +28,9 @@
 
 - [ ] **Obsidian Sync Logic (`backend/mcp/obsidian_server.py`)**
   - 실제 파일 동기화(Sync) 로직 및 내부 DB 해시와 대조(Match)하는 핵심 비교 엔진 구현.
-- [ ] **Persistent Embeddings (`backend/mcp/server.py` & `backend/celery_app/tasks/graph.py`)**
+- [ ] **Persistent Embeddings (`backend/mcp/server.py`, `backend/celery_app/tasks/graph.py`, `backend/celery_app/tasks/classification.py`)**
   - 임베딩 메모리 로드 방식을 DB/Cache 기반 영구 로딩(Persistent loading) 로직으로 교체 (`FAISSRetriever` 활용).
+  - 분류 결과 기반 임베딩 업데이트 로직 추가 구현 필요.
 - [ ] **Sync Status API (`backend/api/endpoints/sync.py`)**
   - `get_sync_status`, `get_mcp_status`, `get_conflicts` 등: 상태 응답을 `SyncMapManager`, `ExternalSyncLog` 등의 실제 매니저/DB에서 동적으로 조회하도록 연결.
 
@@ -45,5 +46,5 @@
 
 ---
 *💡 관리 가이드: 해결된 항목은 본 문서에서 체크표시(`[x]`) 처리하고, 실제 소스 코드 상의 주석을 제거하여 단일 진실 공급원(SSOT)을 유지합니다.*
-- **✅ 코드베이스 싱크 상태**: `# TODO` 주석과 본 문서의 항목이 정확히 일치함을 확인했습니다. (마지막 점검일: 2026-06-25)
+- **✅ 코드베이스 싱크 상태**: `# TODO` 주석과 본 문서의 항목이 정확히 일치함을 확인했습니다. (마지막 점검일: 2026-10-08)
 - **💡 변동성(Drift) 주의**: TODO 항목의 개수나 내용은 개발 과정에 따라 수시로 변동될 수 있으므로, 주기적인 정합성 점검을 권장합니다.
