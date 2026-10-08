@@ -16,8 +16,8 @@
 ## 🟠 [P2] Phase 3: Automation & Scheduler 구현
 자동화 작업의 실질적인 동작과 데이터 신뢰성을 보장하는 항목입니다.
 
-- [x] **Automation Rules DB 연동 (`backend/services/automation_manager.py`)**
-  - `get_automation_rules`, `create_automation_rule` 등 규칙 CRUD 전체 메서드: 파일/Mock 기반에서 DB 연동으로 전환 (JSONL 영속성 적용 완료).
+- [ ] **Automation Rules DB 연동 (`backend/services/automation_manager.py`)**
+  - `get_automation_rules`, `create_automation_rule` 등 규칙 CRUD 전체 메서드: 파일/Mock 기반에서 DB 연동으로 전환 (현재 JSONL은 임시 스토리지로, 재배포/다중 인스턴스 환경을 위해 DB 마이그레이션 필수).
 - [ ] **Celery 연동 (`backend/api/endpoints/automation.py`)**
   - `trigger_automation_task` 엔드포인트: 실제 Celery 태스크 지연 실행(`task.delay()`) 트리거 활성화.
 - [ ] **Golden Dataset 조인 (`backend/services/scheduler_service.py`)**
@@ -33,6 +33,7 @@
   - 분류 결과 기반 임베딩 업데이트 로직 추가 구현 필요.
 - [ ] **Sync Status API (`backend/api/endpoints/sync.py`)**
   - `get_sync_status`, `get_mcp_status`, `get_conflicts` 등: 상태 응답을 `SyncMapManager`, `ExternalSyncLog` 등의 실제 매니저/DB에서 동적으로 조회하도록 연결.
+  - `get_conflict_diff`, `resolve_conflict`: Mock 데이터를 제거하고 데이터베이스에서 diff 경로를 조회 및 실제 ConflictResolutionService를 연동하여 충돌 해결을 트리거.
 
 ## 🟢 [P4] 기타: Dashboard & Metadata (MVP 이후)
 운영 가시성 및 사용자 부가 정보 제공 영역입니다.
