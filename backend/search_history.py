@@ -398,16 +398,17 @@ class SearchHistory:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 if __name__ == "__main__":
-    print("=" * 50)
-    print("검색 히스토리 테스트")
-    print("=" * 50)
+    logging.basicConfig(level=logging.INFO)
+    logger.info("=" * 50)
+    logger.info("검색 히스토리 테스트")
+    logger.info("=" * 50)
 
     # 히스토리 관리자 생성
     history = SearchHistory()
 
     # 테스트 검색 추가
-    print("\n1. 검색 기록 추가 테스트")
-    print("-" * 50)
+    logger.info("\n1. 검색 기록 추가 테스트")
+    logger.info("-" * 50)
 
     search_id1 = history.add_search(
         query="FlowNote 사용법",
@@ -418,7 +419,7 @@ if __name__ == "__main__":
             "검색 기능이 강력합니다.",
         ],
     )
-    print(f"✅ 검색 추가 완료: {search_id1}")
+    logger.info(f"✅ 검색 추가 완료: {search_id1}")
 
     search_id2 = history.add_search(
         query="임베딩이란",
@@ -428,36 +429,36 @@ if __name__ == "__main__":
             "유사도 검색에 사용됩니다.",
         ],
     )
-    print(f"✅ 검색 추가 완료: {search_id2}")
+    logger.info(f"✅ 검색 추가 완료: {search_id2}")
 
     search_id3 = history.add_search(
         query="FlowNote 사용법",  # 중복 검색
         results_count=5,
         top_results=["FlowNote는 간단합니다."],
     )
-    print(f"✅ 검색 추가 완료: {search_id3}")
+    logger.info(f"✅ 검색 추가 완료: {search_id3}")
 
     # 최근 검색 조회
-    print("\n2. 최근 검색 조회 테스트")
-    print("-" * 50)
+    logger.info("\n2. 최근 검색 조회 테스트")
+    logger.info("-" * 50)
 
     recent = history.get_recent_searches(limit=5)
-    print(f"📚 최근 검색 {len(recent)}개:")
+    logger.info(f"📚 최근 검색 {len(recent)}개:")
     for i, search in enumerate(recent, 1):
-        print(f"\n{i}. {search['query']}")
-        print(f"   - 결과: {search['results_count']}개")
-        print(f"   - 시간: {search['created_at']}")
+        logger.info(f"\n{i}. {search['query']}")
+        logger.info(f"   - 결과: {search['results_count']}개")
+        logger.info(f"   - 시간: {search['created_at']}")
 
     # 통계
-    print("\n3. 통계 테스트")
-    print("-" * 50)
+    logger.info("\n3. 통계 테스트")
+    logger.info("-" * 50)
 
     stats = history.get_statistics()
-    print("📊 통계:")
-    print(f"   - 총 검색: {stats['total_searches']}회")
-    print(f"   - 평균 결과: {stats['avg_results']}개")
-    print(f"   - 자주 검색: {stats['most_common_query']}")
+    logger.info("📊 통계:")
+    logger.info(f"   - 총 검색: {stats['total_searches']}회")
+    logger.info(f"   - 평균 결과: {stats['avg_results']}개")
+    logger.info(f"   - 자주 검색: {stats['most_common_query']}")
 
-    print("\n" + "=" * 50)
-    print("테스트 완료!")
-    print("=" * 50)
+    logger.info("\n" + "=" * 50)
+    logger.info("테스트 완료!")
+    logger.info("=" * 50)
