@@ -10,20 +10,20 @@ from fastapi import (
     Depends,
     Header,
     HTTPException,
-    Query,
     WebSocket,
     WebSocketException,
     status,
 )
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from backend.config import AppConfig, AuthConfig
 from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# OAuth2 스키마 정의
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+# HTTP Bearer 스키마 정의 (표준 JWT Bearer 인증)
+http_bearer = HTTPBearer(auto_error=True)
+oauth2_scheme = http_bearer  # 하위 호환성 유지용 별칭
 
 
 # [Security] Mock User Definitions (Centralized)
@@ -185,12 +185,15 @@ def verify_token(token: str) -> Dict[str, Any]:
     }
 
 
-def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
+def get_current_user(
+    credentials: Union[HTTPAuthorizationCredentials, str] = Depends(http_bearer),
+) -> Dict[str, Any]:
     """
     HTTP 요청의 Authorization Bearer 토큰을 검증하여 현재 인증된 사용자 정보를 반환하는 FastAPI 의존성입니다.
 
     Args:
-        token (str): 'Authorization: Bearer <token>' 헤더를 통해 전달된 OAuth2 Bearer 토큰.
+        credentials (Union[HTTPAuthorizationCredentials, str]):
+            'Authorization: Bearer <token>' 헤더를 통해 전달된 자격 증명 또는 직접 전달된 토큰 문자열.
 
     Returns:
         Dict[str, Any]: 사용자 정보가 담긴 딕셔너리 (id, username, role).
@@ -199,32 +202,79 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
         HTTPException (401 Unauthorized): 토큰이 만료되었거나 서명이 유효하지 않은 경우.
         HTTPException (500 Internal Server Error): 서버 JWT 시크릿 키 미설정.
     """
-    return verify_token(token)
+    token_str = (
+        credentials.credentials
+        if isinstance(credentials, HTTPAuthorizationCredentials)
+        else credentials
+    )
+    return verify_token(token_str)
 
 
 async def get_current_user_ws(
-    websocket: WebSocket, token: Optional[str] = Query(None)
+    websocket: WebSocket,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    sec_websocket_protocol: Optional[str] = Header(
+        None, alias="Sec-WebSocket-Protocol"
+    ),
 ) -> Dict[str, Any]:
     """
-    WebSocket 연결 시 쿼리 파라미터(?token=...)를 통해 전달된 토큰으로 인증된 사용자 정보를 반환하는 의존성입니다.
+    WebSocket 연결 시 HTTP 헤더(Authorization 또는 Sec-WebSocket-Protocol)를 통해 전달된
+    토큰으로 인증된 사용자 정보를 반환하는 의존성입니다.
+
+    보안/개인정보보호 정책:
+    - 액세스 로그에 베어러 토큰이 영구 노출되는 것을 방지하기 위해 URL 쿼리 파라미터를 통한
+      토큰 전송은 원천 금지되며, 시도 시 즉시 1008 Policy Violation으로 연결을 거부합니다.
 
     Args:
         websocket (WebSocket): 현재 연결을 시도하는 WebSocket 객체.
-        token (Optional[str]): 연결 URI의 쿼리 파라미터로 전달된 인증 토큰.
+        authorization (Optional[str]): Authorization 헤더 (예: 'Bearer <token>').
+        sec_websocket_protocol (Optional[str]): Sec-WebSocket-Protocol 헤더.
 
     Returns:
         Dict[str, Any]: 사용자 정보가 담긴 딕셔너리 (id, username, role).
 
     Raises:
         WebSocketException (1008 Policy Violation):
-            - 토큰이 쿼리 파라미터에서 누락된 경우.
+            - 쿼리 파라미터로 토큰을 전송하려 한 경우.
+            - 인증 헤더가 누락되었거나 비어있는 경우.
             - 토큰이 유효하지 않거나, 만료되었거나, 검증에 실패한 경우.
     """
-    if token is None or not token.strip():
-        logger.warning("WebSocket connection rejected: Missing token query parameter")
+    # 1. 쿼리 스트링 토큰 전송 차단 (URL 로깅에 의한 토큰 노출 방지)
+    query_params = getattr(websocket, "query_params", {})
+    if "token" in query_params or query_params.get("token"):
+        logger.warning(
+            "WebSocket rejected: Query parameter authentication is forbidden (URL logging exposure prevention)."
+        )
         raise WebSocketException(
             code=status.WS_1008_POLICY_VIOLATION,
-            reason="Missing authentication token via query parameter",
+            reason="Query parameter token transmission is forbidden. Use Authorization or Sec-WebSocket-Protocol header.",
+        )
+
+    # 2. 헤더에서 토큰 추출 (Authorization 우선, Sec-WebSocket-Protocol 차선)
+    token: Optional[str] = authorization
+    if not token and hasattr(websocket, "headers"):
+        token = websocket.headers.get("authorization")
+
+    if not token:
+        protocol_header = sec_websocket_protocol
+        if not protocol_header and hasattr(websocket, "headers"):
+            protocol_header = websocket.headers.get("sec-websocket-protocol")
+
+        if protocol_header:
+            # "Bearer, <token>" 또는 "access_token, <token>" 또는 단독 "<token>" 파싱
+            protocols = [p.strip() for p in protocol_header.split(",") if p.strip()]
+            for p in protocols:
+                if p.lower() not in ("bearer", "access_token", "jwt", "flownote_sync"):
+                    token = p
+                    break
+
+    if not token or not token.strip():
+        logger.warning(
+            "WebSocket rejected: Missing authentication header (Authorization / Sec-WebSocket-Protocol)"
+        )
+        raise WebSocketException(
+            code=status.WS_1008_POLICY_VIOLATION,
+            reason="Missing authentication header",
         )
 
     try:

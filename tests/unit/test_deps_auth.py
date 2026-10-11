@@ -2,7 +2,8 @@
 
 """
 Unit tests for authentication dependency and JWT token verification (backend/api/deps.py).
-Tests token creation, decoding, expiration handling, error responses, and environment routing.
+Tests token creation, decoding, expiration handling, error responses, environment routing,
+PII masking in WebSocket contexts, and token issuance endpoints.
 """
 
 import datetime
@@ -11,6 +12,8 @@ from unittest.mock import MagicMock, patch
 import jwt
 import pytest
 from fastapi import HTTPException, WebSocketException, status
+from fastapi.security import HTTPAuthorizationCredentials
+from fastapi.testclient import TestClient
 
 from backend.api.deps import (
     _ensure_dev_environment,
@@ -20,6 +23,8 @@ from backend.api.deps import (
     verify_token,
 )
 from backend.config import AppConfig, AuthConfig
+from backend.main import app
+from backend.services.websocket_manager import UserContext
 
 
 class TestJWTTokenVerification:
@@ -41,20 +46,17 @@ class TestJWTTokenVerification:
         payload = {"sub": "99", "username": "prefixed_user", "role": "user"}
         token = create_access_token(payload)
 
-        # "Bearer " 접두사 포함 검증
         user = verify_token(f"Bearer {token}")
         assert user["id"] == 99
         assert user["username"] == "prefixed_user"
         assert user["role"] == "user"
 
-        # 소문자 "bearer " 접두사 포함 검증
         user_lower = verify_token(f"bearer {token}")
         assert user_lower["id"] == 99
 
     def test_verify_token_expired(self):
         """만료된 토큰 검증 시 401 및 명확한 오류 메시지 반환 검증."""
         payload = {"id": 1, "username": "expired_user"}
-        # 과거 시간으로 만료된 토큰 생성
         expired_token = create_access_token(
             payload, expires_delta=datetime.timedelta(seconds=-60)
         )
@@ -68,7 +70,6 @@ class TestJWTTokenVerification:
 
     def test_verify_token_invalid_signature(self):
         """잘못된 비밀키로 서명된 토큰 검증 시 401 반환 검증."""
-        # 다른 비밀키로 서명된 토큰 수동 생성
         now = datetime.datetime.now(datetime.timezone.utc)
         payload = {
             "sub": "2",
@@ -78,7 +79,7 @@ class TestJWTTokenVerification:
             "iat": now,
         }
         tampered_token = jwt.encode(
-            payload, "wrong-secret-key-12345", algorithm="HS256"
+            payload, "wrong-secret-key-at-least-32-chars-long!", algorithm="HS256"
         )
 
         with pytest.raises(HTTPException) as exc_info:
@@ -145,85 +146,204 @@ class TestJWTTokenVerification:
             assert exc_info.value.detail == "Authentication service configuration error"
 
 
+class TestAuthConfigValidation:
+    """AuthConfig 설정 검증 및 안전성 테스트 (댓글 1, 2, 5 검증)."""
+
+    def test_validate_config_production_requires_secret(self, monkeypatch):
+        """운영 환경에서 시크릿 미설정 시 ValueError 발생 확인."""
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+        monkeypatch.delenv("SECRET_KEY", raising=False)
+
+        with pytest.raises(
+            ValueError, match="CRITICAL: JWT_SECRET_KEY.*is required in production"
+        ):
+            AuthConfig.validate_config()
+
+    def test_validate_config_production_rejects_short_secret(self, monkeypatch):
+        """운영 환경에서 32자 미만 시크릿 거부 확인."""
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.setenv("JWT_SECRET_KEY", "short-secret-123")
+
+        with pytest.raises(ValueError, match="too short"):
+            AuthConfig.validate_config()
+
+    def test_validate_config_production_rejects_insecure_placeholder(self, monkeypatch):
+        """운영 환경에서 기본 placeholder 및 취약한 키 거부 확인."""
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.setenv("JWT_SECRET_KEY", "your-secret-key-at-least-32-chars-long")
+
+        with pytest.raises(ValueError, match="known insecure placeholder"):
+            AuthConfig.validate_config()
+
+    def test_validate_config_production_accepts_strong_secret(self, monkeypatch):
+        """운영 환경에서 32자 이상의 안전한 시크릿 통과 확인."""
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.setenv(
+            "JWT_SECRET_KEY",
+            "a-very-strong-production-random-secret-key-value-9876543210!",
+        )
+        # 예외 없이 통과해야 함
+        AuthConfig.validate_config()
+
+    def test_safe_integer_parsing_expiration_minutes(self, monkeypatch):
+        """정수가 아닌 환경 변수 값이 제공되어도 안전하게 기본값 60분 적용 확인."""
+        monkeypatch.setenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "invalid_string")
+        assert AuthConfig.get_access_token_expire_minutes() == 60
+
+
 class TestFastAPIDependencies:
     """FastAPI HTTP 및 WebSocket 의존성(get_current_user, get_current_user_ws) 테스트."""
 
-    def test_get_current_user_http_dependency(self):
-        """get_current_user가 유효한 토큰으로부터 사용자 정보를 정상 반환하는지 확인."""
+    def test_get_current_user_http_dependency_with_credentials(self):
+        """HTTPAuthorizationCredentials 객체로 get_current_user 호출 시 정상 동작 확인."""
         payload = {"id": 1, "username": "admin_user", "role": "admin"}
         token = create_access_token(payload)
 
-        user = get_current_user(token=token)
+        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        user = get_current_user(credentials=creds)
         assert user["username"] == "admin_user"
         assert user["role"] == "admin"
 
+    def test_get_current_user_http_dependency_with_raw_string(self):
+        """문자열 토큰을 직접 전달하여 get_current_user 호출 시 정상 동작 확인."""
+        payload = {"id": 1, "username": "admin_user", "role": "admin"}
+        token = create_access_token(payload)
+
+        user = get_current_user(credentials=token)
+        assert user["username"] == "admin_user"
+
     @pytest.mark.asyncio
-    async def test_get_current_user_ws_valid_token(self):
-        """WebSocket 연결 시 쿼리 파라미터 유효 토큰으로 사용자 반환 검증."""
+    async def test_get_current_user_ws_with_authorization_header(self):
+        """WebSocket 연결 시 Authorization 헤더를 통한 인증 성공 검증 (댓글 3)."""
         payload = {"id": 2, "username": "ws_user", "role": "user"}
         token = create_access_token(payload)
         mock_ws = MagicMock()
+        mock_ws.query_params = {}
+        mock_ws.headers = {"authorization": f"Bearer {token}"}
 
-        user = await get_current_user_ws(websocket=mock_ws, token=token)
+        user = await get_current_user_ws(
+            websocket=mock_ws, authorization=f"Bearer {token}"
+        )
         assert user["id"] == 2
         assert user["username"] == "ws_user"
 
     @pytest.mark.asyncio
-    async def test_get_current_user_ws_missing_token(self):
-        """WebSocket 연결 시 토큰 파라미터 누락인 경우 1008 Policy Violation 발생 확인."""
+    async def test_get_current_user_ws_with_sec_websocket_protocol(self):
+        """WebSocket 연결 시 Sec-WebSocket-Protocol 헤더를 통한 인증 성공 검증 (댓글 3)."""
+        payload = {"id": 3, "username": "protocol_user", "role": "user"}
+        token = create_access_token(payload)
         mock_ws = MagicMock()
+        mock_ws.query_params = {}
+        mock_ws.headers = {"sec-websocket-protocol": f"access_token, {token}"}
+
+        user = await get_current_user_ws(
+            websocket=mock_ws,
+            authorization=None,
+            sec_websocket_protocol=f"access_token, {token}",
+        )
+        assert user["id"] == 3
+        assert user["username"] == "protocol_user"
+
+    @pytest.mark.asyncio
+    async def test_get_current_user_ws_rejects_query_parameter_token(self):
+        """URL 쿼리 파라미터로 토큰 전송 시 1008 Policy Violation으로 차단 검증 (댓글 3)."""
+        mock_ws = MagicMock()
+        mock_ws.query_params = {"token": "some-token-in-url"}
 
         with pytest.raises(WebSocketException) as exc_info:
-            await get_current_user_ws(websocket=mock_ws, token=None)
+            await get_current_user_ws(websocket=mock_ws)
 
         assert exc_info.value.code == status.WS_1008_POLICY_VIOLATION
         assert (
-            exc_info.value.reason == "Missing authentication token via query parameter"
+            "Query parameter token transmission is forbidden" in exc_info.value.reason
         )
 
     @pytest.mark.asyncio
-    async def test_get_current_user_ws_invalid_token(self):
-        """WebSocket 연결 시 유효하지 않은 토큰 전달 시 1008 Policy Violation 발생 확인."""
+    async def test_get_current_user_ws_missing_header(self):
+        """인증 헤더가 완전히 누락된 경우 1008 Policy Violation 발생 검증."""
         mock_ws = MagicMock()
+        mock_ws.query_params = {}
+        mock_ws.headers = {}
 
         with pytest.raises(WebSocketException) as exc_info:
-            await get_current_user_ws(websocket=mock_ws, token="invalid-token")
+            await get_current_user_ws(websocket=mock_ws, authorization=None)
 
         assert exc_info.value.code == status.WS_1008_POLICY_VIOLATION
+        assert exc_info.value.reason == "Missing authentication header"
 
 
 class TestAppConfigEnvironmentRouting:
-    """AppConfig 환경 라우팅 및 _ensure_dev_environment 단위 테스트."""
+    """AppConfig 환경 라우팅 및 _ensure_dev_environment 단위 테스트 (댓글 7 회귀 방지)."""
 
-    def test_app_config_environment_detection(self):
-        """AppConfig의 get_environment 및 is_dev_environment 동작 확인."""
-        with patch.object(AppConfig, "get_environment", return_value="production"):
-            assert AppConfig.is_dev_environment() is False
+    def test_app_config_environment_detection(self, monkeypatch):
+        """monkeypatch를 사용하여 실제 AppConfig.get_environment()와 is_dev_environment() 검증."""
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        assert AppConfig.get_environment() == "production"
+        assert AppConfig.is_dev_environment() is False
 
-        with patch.object(AppConfig, "get_environment", return_value="development"):
-            assert AppConfig.is_dev_environment() is True
+        monkeypatch.setenv("ENVIRONMENT", "development")
+        assert AppConfig.get_environment() == "development"
+        assert AppConfig.is_dev_environment() is True
 
-        with patch.object(AppConfig, "get_environment", return_value="local"):
-            assert AppConfig.is_dev_environment() is True
+        monkeypatch.setenv("ENVIRONMENT", "local")
+        assert AppConfig.get_environment() == "local"
+        assert AppConfig.is_dev_environment() is True
 
-        with patch.object(AppConfig, "get_environment", return_value="test"):
-            assert AppConfig.is_dev_environment() is True
+        monkeypatch.setenv("ENVIRONMENT", "test")
+        assert AppConfig.get_environment() == "test"
+        assert AppConfig.is_dev_environment() is True
 
-    def test_ensure_dev_environment_raises_in_production(self):
-        """_ensure_dev_environment가 비개발(production) 환경에서 예외를 발생시키는지 검증."""
-        with patch.object(AppConfig, "is_dev_environment", return_value=False):
-            with pytest.raises(HTTPException) as exc_info:
-                _ensure_dev_environment(
-                    lambda: HTTPException(
-                        status_code=403, detail="Forbidden in production"
-                    )
-                )
-            assert exc_info.value.status_code == 403
-
-    def test_ensure_dev_environment_passes_in_dev(self):
-        """_ensure_dev_environment가 개발/로컬 환경에서는 통과하는지 검증."""
-        with patch.object(AppConfig, "is_dev_environment", return_value=True):
-            # 예외가 발생하지 않아야 함
+    def test_ensure_dev_environment_raises_in_production(self, monkeypatch):
+        """_ensure_dev_environment가 production 환경에서 예외를 발생시키는지 검증."""
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        with pytest.raises(HTTPException) as exc_info:
             _ensure_dev_environment(
-                lambda: HTTPException(status_code=403, detail="Error")
+                lambda: HTTPException(status_code=403, detail="Forbidden in production")
             )
+        assert exc_info.value.status_code == 403
+
+    def test_ensure_dev_environment_passes_in_dev(self, monkeypatch):
+        """_ensure_dev_environment가 dev 환경에서는 통과하는지 검증."""
+        monkeypatch.setenv("ENVIRONMENT", "development")
+        # 예외가 발생하지 않아야 함
+        _ensure_dev_environment(lambda: HTTPException(status_code=403, detail="Error"))
+
+
+class TestAuthEndpointsAndPII:
+    """토큰 발급 엔드포인트 및 PII 마스킹 검증 (댓글 4, 6 검증)."""
+
+    def test_token_issuance_endpoints(self):
+        """POST /api/auth/token 및 /token 엔드포인트 토큰 발급 확인."""
+        client = TestClient(app)
+
+        # /api/auth/token
+        res1 = client.post(
+            "/api/auth/token",
+            json={"username": "flow_tester", "role": "admin"},
+        )
+        assert res1.status_code == 200
+        data1 = res1.json()
+        assert "access_token" in data1
+        assert data1["token_type"] == "bearer"
+        assert data1["expires_in"] > 0
+
+        # /token
+        res2 = client.post(
+            "/token",
+            json={"username": "flow_tester", "role": "user"},
+        )
+        assert res2.status_code == 200
+        data2 = res2.json()
+        assert "access_token" in data2
+
+    def test_user_context_repr_masks_pii(self):
+        """UserContext의 __repr__이 사용자 ID와 이름을 마스킹하여 로그에 노출되지 않는지 검증 (댓글 6)."""
+        ctx = UserContext(user_id=98765, username="secret_personal_name", role="admin")
+        repr_str = repr(ctx)
+
+        assert "98765" not in repr_str
+        assert "secret_personal_name" not in repr_str
+        assert "user_id=***" in repr_str
+        assert "username=***" in repr_str
+        assert "role='admin'" in repr_str

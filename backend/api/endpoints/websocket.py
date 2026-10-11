@@ -50,7 +50,7 @@ async def websocket_endpoint(
     """
     WebSocket 연결 엔드포인트
 
-    - 쿼리 파라미터 `token`을 통해 JWT 인증 수행 (deps.get_current_user_ws)
+    - HTTP 헤더(Authorization 또는 Sec-WebSocket-Protocol)를 통해 JWT 인증 수행 (deps.get_current_user_ws)
     - ConnectionManager를 통한 연결 수명 주기 및 컨텍스트 관리
     """
     # [Connection Phase]
@@ -64,10 +64,8 @@ async def websocket_endpoint(
         # [Communication Phase]
         while True:
             data = await websocket.receive_text()
-            # 로깅: 실제 운영 환경에서는 debug 레벨 권장
-            logger.debug(
-                f"Received message from {current_user.get('username')}: {data}"
-            )
+            # 로깅: 실제 운영 환경에서는 debug 레벨 권장 (PII 마스킹 및 페이로드 크기만 기록)
+            logger.debug("Received WebSocket message (%d bytes)", len(data))
 
             # Simple Echo (Phase 1)
             # 향후 manager.broadcast() 또는 개별 응답 로직으로 대체
@@ -77,9 +75,7 @@ async def websocket_endpoint(
         # 클라이언트가 연결을 끊은 경우
         close_code = e.code
         close_reason = e.reason
-        logger.info(
-            f"WebSocket Client Disconnected: UserID={current_user.get('id')}, Code={close_code}"
-        )
+        logger.info("WebSocket Client Disconnected: Code=%s", close_code)
 
     except Exception as e:
         log_agent_error(
