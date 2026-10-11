@@ -9,6 +9,7 @@
   - `get_current_user` 및 `get_current_user_ws` 함수: 현재 Mock 사용 중인 부분을 `verify_token(token)` 기반 실제 JWT 인증 로직으로 대체 (PyJWT 기반 서명/만료시간 검증).
   - 전역 의존성을 `backend.config.AppConfig` 및 `AuthConfig`를 통해 라우팅하도록 개선.
   - [x] `deps.py` 1차 개선: JWT 시크릿 강도 검증(최소 32자/취약값 거부), WebSocket URL 쿼리 토큰 노출 차단(헤더 전용 인증), 토큰 발급 엔드포인트(`/api/auth/token`, `/token`) 추가 및 WebSocket 로그 PII 마스킹.
+  - [x] `deps.py` 2차 개선: JWT 시크릿 플레이스홀더 대소문자 무관 검사, RFC 7518 §3.2 기반 HMAC 알고리즘별 최소 키 길이(HS256: 32자, HS384: 48자, HS512: 64자) 동적 검증 및 'none' 알고리즘 차단, WebSocket 연결 종료 사유(reason) 정제(CWE-117 로그 인젝션 및 PII 차단).
 - [ ] **Sync DB (`backend/services/sync_service.py`)**
   - `_handle_conflict` 메서드: 충돌 발생 시 DB에 충돌 레코드를 영구 저장하는 로직.
 - [x] **Conflict Resolution (`backend/services/conflict_resolution_service.py`)**

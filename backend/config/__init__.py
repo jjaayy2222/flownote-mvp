@@ -425,8 +425,21 @@ class AuthConfig:
             DEFAULT_ACCESS_TOKEN_EXPIRE_MINUTES,
         )
 
-    # HMAC 서명 키 최소 요구 바이트/문자 수 (RFC 7518 §3.2 기준 256비트 = 32바이트 이상)
-    MIN_SECRET_LENGTH: int = 32
+    # 지원하는 안전한 HMAC 서명 알고리즘 화이트리스트 (RFC 7518 §3.2)
+    # 취약한 'none' 알고리즘(CVE-2015-9235) 및 비대칭 키 혼용 공격 차단
+    SUPPORTED_ALGORITHMS: frozenset[str] = frozenset({"HS256", "HS384", "HS512"})
+
+    # HMAC 알고리즘별 최소 키 바이트/문자 수 (RFC 7518 §3.2 기준 hash output size 이상 요구)
+    # - HS256: 256 bits = 32 bytes/chars
+    # - HS384: 384 bits = 48 bytes/chars
+    # - HS512: 512 bits = 64 bytes/chars
+    ALGORITHM_MIN_SECRET_LENGTHS: dict[str, int] = {
+        "HS256": 32,
+        "HS384": 48,
+        "HS512": 64,
+    }
+    DEFAULT_MIN_SECRET_LENGTH: int = 32
+    MIN_SECRET_LENGTH: int = 32  # 하위 호환성 유지용
 
     # 취약/예측 가능한 기본값 블랙리스트
     KNOWN_INSECURE_SECRETS: frozenset[str] = frozenset(
@@ -438,8 +451,35 @@ class AuthConfig:
             "jwtsecret",
             "your-secret-key-at-least-32-chars-long",
             "testing-insecure-dummy-jwt-secret-key",
+            "default-insecure-secret-key-change-in-production",
         }
     )
+
+    # 취약/플레이스홀더 접두사 목록 (대소문자 무관하게 검사)
+    INSECURE_PREFIXES: tuple[str, ...] = (
+        "your-secret-key",
+        "changeme",
+        "default-secret",
+        "testing-insecure",
+        "replace-this",
+    )
+
+    @classmethod
+    def get_jwt_algorithm(cls) -> str:
+        """현재 구성된 JWT 서명 알고리즘을 대문자로 정규화하여 반환합니다."""
+        algo = os.getenv("JWT_ALGORITHM") or cls.JWT_ALGORITHM
+        return algo.strip().upper()
+
+    @classmethod
+    def get_min_secret_length(cls, algorithm: Optional[str] = None) -> int:
+        """
+        선택된 HMAC 알고리즘에 필요한 최소 시크릿 바이트/문자 길이를 반환합니다 (RFC 7518 §3.2 준수).
+        - HS256: 32자 (256비트)
+        - HS384: 48자 (384비트)
+        - HS512: 64자 (512비트)
+        """
+        algo = (algorithm or cls.get_jwt_algorithm()).upper()
+        return cls.ALGORITHM_MIN_SECRET_LENGTHS.get(algo, cls.DEFAULT_MIN_SECRET_LENGTH)
 
     @classmethod
     def get_access_token_expire_minutes(cls) -> int:
@@ -467,11 +507,23 @@ class AuthConfig:
     def validate_config(cls) -> None:
         """
         애플리케이션 시작 시 JWT 시크릿 키의 강도 및 필수 설정을 검증합니다.
-        운영 환경에서는 충분한 강도(32자 이상, 비취약값)의 시크릿 키가 반드시 구성되어야 합니다.
+        운영 환경에서는 선택된 알고리즘의 표준 길이 이상(HS256: 32자, HS384: 48자, HS512: 64자)과
+        비취약값의 시크릿 키가 반드시 구성되어야 합니다.
         """
         secret = cls.get_jwt_secret()
         is_dev = AppConfig.is_dev_environment()
+        algo = cls.get_jwt_algorithm()
 
+        # 1. 알고리즘 화이트리스트 검증 (CVE-2015-9235 'none' 공격 차단)
+        if algo not in cls.SUPPORTED_ALGORITHMS:
+            raise ValueError(
+                f"CRITICAL: Unsupported or insecure JWT_ALGORITHM '{algo}'. "
+                f"Supported HMAC algorithms: {sorted(cls.SUPPORTED_ALGORITHMS)}"
+            )
+
+        min_len = cls.get_min_secret_length(algo)
+
+        # 2. 시크릿 키 존재 여부 검증
         if not secret:
             if not is_dev:
                 raise ValueError(
@@ -482,15 +534,17 @@ class AuthConfig:
             )
             return
 
-        # 운영 환경 시크릿 강도 검증 (RFC 7518 및 OWASP 권고사항 준수)
+        # 3. 운영 환경 시크릿 강도 검증 (RFC 7518 §3.2 및 OWASP 권고사항 준수)
         if not is_dev:
-            if len(secret) < cls.MIN_SECRET_LENGTH:
+            if len(secret) < min_len:
                 raise ValueError(
-                    f"CRITICAL: JWT_SECRET_KEY is too short ({len(secret)} chars). "
-                    f"Production environment requires at least {cls.MIN_SECRET_LENGTH} characters."
+                    f"CRITICAL: JWT_SECRET_KEY is too short ({len(secret)} chars) for algorithm '{algo}'. "
+                    f"Production environment requires at least {min_len} characters."
                 )
-            if secret.lower() in cls.KNOWN_INSECURE_SECRETS or secret.startswith(
-                "your-secret-key"
+
+            secret_lower = secret.lower()
+            if secret_lower in cls.KNOWN_INSECURE_SECRETS or any(
+                secret_lower.startswith(prefix) for prefix in cls.INSECURE_PREFIXES
             ):
                 raise ValueError(
                     "CRITICAL: JWT_SECRET_KEY is set to a known insecure placeholder or default value."

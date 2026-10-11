@@ -24,7 +24,7 @@ from backend.api.deps import (
 )
 from backend.config import AppConfig, AuthConfig
 from backend.main import app
-from backend.services.websocket_manager import UserContext
+from backend.services.websocket_manager import ConnectionManager, UserContext
 
 
 class TestJWTTokenVerification:
@@ -169,12 +169,69 @@ class TestAuthConfigValidation:
             AuthConfig.validate_config()
 
     def test_validate_config_production_rejects_insecure_placeholder(self, monkeypatch):
-        """운영 환경에서 기본 placeholder 및 취약한 키 거부 확인."""
+        """운영 환경에서 기본 placeholder 및 취약한 키 거부 확인 (대소문자 무관 검사)."""
         monkeypatch.setenv("ENVIRONMENT", "production")
-        monkeypatch.setenv("JWT_SECRET_KEY", "your-secret-key-at-least-32-chars-long")
 
-        with pytest.raises(ValueError, match="known insecure placeholder"):
+        # 소문자, 대문자, 혼합 대소문자 변형 모두 거부되는지 확인 (PR#1872 댓글 1)
+        insecure_variations = [
+            "your-secret-key-at-least-32-chars-long",
+            "YOUR-SECRET-KEY-at-least-32-chars-long",
+            "Your-Secret-Key-production-suffix-123456",
+            "changeme-production-secret-value-longer-than-32",
+        ]
+        for bad_secret in insecure_variations:
+            monkeypatch.setenv("JWT_SECRET_KEY", bad_secret)
+            with pytest.raises(ValueError, match="known insecure placeholder"):
+                AuthConfig.validate_config()
+
+    def test_validate_config_algorithm_length_enforcement(self, monkeypatch):
+        """선택된 HMAC 알고리즘에 따른 최소 키 길이 검증 (PR#1872 댓글 2, RFC 7518 §3.2)."""
+        monkeypatch.setenv("ENVIRONMENT", "production")
+
+        # HS384: 48자 요구
+        monkeypatch.setenv("JWT_ALGORITHM", "HS384")
+        monkeypatch.setenv(
+            "JWT_SECRET_KEY", "thirty-two-chars-long-secret-key-ok!"
+        )  # 35 chars < 48
+        with pytest.raises(ValueError, match="too short.*HS384.*48"):
             AuthConfig.validate_config()
+
+        # HS384: 48자 이상 통과
+        monkeypatch.setenv(
+            "JWT_SECRET_KEY",
+            "forty-eight-chars-minimum-valid-secret-key-for-hs384-here!",
+        )
+        AuthConfig.validate_config()
+
+        # HS512: 64자 요구
+        monkeypatch.setenv("JWT_ALGORITHM", "HS512")
+        monkeypatch.setenv(
+            "JWT_SECRET_KEY",
+            "forty-eight-chars-minimum-valid-secret-key-for-hs384-here!",
+        )  # 58 chars < 64
+        with pytest.raises(ValueError, match="too short.*HS512.*64"):
+            AuthConfig.validate_config()
+
+        # HS512: 64자 이상 통과
+        monkeypatch.setenv(
+            "JWT_SECRET_KEY",
+            "sixty-four-chars-minimum-valid-secret-key-for-hs512-algorithm-testing-123456!",
+        )
+        AuthConfig.validate_config()
+
+    def test_validate_config_rejects_unsupported_or_insecure_algorithms(
+        self, monkeypatch
+    ):
+        """none 알고리즘 및 미지원 알고리즘 거부 확인 (CVE-2015-9235 방지)."""
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.setenv("JWT_SECRET_KEY", "a" * 64)
+
+        for invalid_algo in ["none", "NONE", "RS256", "DES"]:
+            monkeypatch.setenv("JWT_ALGORITHM", invalid_algo)
+            with pytest.raises(
+                ValueError, match="Unsupported or insecure JWT_ALGORITHM"
+            ):
+                AuthConfig.validate_config()
 
     def test_validate_config_production_accepts_strong_secret(self, monkeypatch):
         """운영 환경에서 32자 이상의 안전한 시크릿 통과 확인."""
@@ -347,3 +404,44 @@ class TestAuthEndpointsAndPII:
         assert "user_id=***" in repr_str
         assert "username=***" in repr_str
         assert "role='admin'" in repr_str
+
+
+class TestWebSocketCloseReasonSanitization:
+    """WebSocket 연결 종료 사유 정제 및 로그 안전성 단위 테스트 (PR#1872 댓글 3, CWE-117 방지)."""
+
+    def test_sanitize_close_reason_strips_newlines_and_control_chars(self):
+        """줄바꿈 및 제어 문자가 공백으로 치환되어 로그 위조(Log Injection)가 차단되는지 검증."""
+        malicious_reason = (
+            "normal_close\r\n2026-10-12 00:00:00 [INFO] Fake log injection line\n"
+        )
+        sanitized = ConnectionManager.sanitize_close_reason(malicious_reason)
+
+        assert "\r" not in sanitized
+        assert "\n" not in sanitized
+        assert "normal_close" in sanitized
+        assert "Fake log injection line" in sanitized
+
+    def test_sanitize_close_reason_masks_tokens_and_emails(self):
+        """개인정보(이메일, Bearer 토큰)가 로그에 노출되지 않고 마스킹되는지 검증."""
+        reason_with_pii = "User test.user@example.com disconnected after using Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.token"
+        sanitized = ConnectionManager.sanitize_close_reason(reason_with_pii)
+
+        assert "test.user@example.com" not in sanitized
+        assert "[EMAIL_REDACTED]" in sanitized
+        assert "eyJhbGciOi" not in sanitized
+        assert "Bearer [REDACTED]" in sanitized
+
+    def test_sanitize_close_reason_truncates_oversized_payloads(self):
+        """과도하게 긴 종료 사유가 기본 50자로 안전하게 축약되는지 검증."""
+        long_reason = "X" * 120
+        sanitized = ConnectionManager.sanitize_close_reason(long_reason, max_len=50)
+
+        assert len(sanitized) == 53  # 50자 + "..."
+        assert sanitized.endswith("...")
+
+    def test_sanitize_close_reason_null_safety(self):
+        """None, 빈 문자열, 공백만 있는 경우 안전하게 'none'을 반환하는지 검증."""
+        assert ConnectionManager.sanitize_close_reason(None) == "none"
+        assert ConnectionManager.sanitize_close_reason("") == "none"
+        assert ConnectionManager.sanitize_close_reason("   ") == "none"
+        assert ConnectionManager.sanitize_close_reason("\r\n\t") == "none"
