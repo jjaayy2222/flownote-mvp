@@ -34,6 +34,8 @@
 - [ ] **Sync Status API (`backend/api/endpoints/sync.py`)**
   - `get_sync_status`, `get_mcp_status`, `get_conflicts` 등: 상태 응답을 `SyncMapManager`, `ExternalSyncLog` 등의 실제 매니저/DB에서 동적으로 조회하도록 연결.
   - [x] `get_conflict_diff`, `resolve_conflict`: Mock 데이터를 제거하고 데이터베이스에서 diff 경로를 조회 및 실제 ConflictResolutionService를 연동하여 충돌 해결을 트리거 (JSONL 로그 연동 완료).
+  - [x] `get_conflict_diff` 1차 개선: 로컬/원격 파일 사용 불가 시 빈 문자열 대신 422 오류 반환 — 유효한 빈 파일과 사용 불가 상태를 명확히 구분. `test_diff_viewer_flow.py`도 함께 수정.
+
 
 ## 🟢 [P4] 기타: Dashboard & Metadata (MVP 이후)
 운영 가시성 및 사용자 부가 정보 제공 영역입니다.
