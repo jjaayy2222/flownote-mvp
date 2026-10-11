@@ -29,6 +29,10 @@ class UserContext:
     username: str
     role: str
 
+    def __repr__(self) -> str:
+        # PII 보호: 식별자 서비스 로그 직접 노출 원천 차단
+        return f"UserContext(user_id=***, username=***, role='{self.role}')"
+
 
 class ConnectionManager:
     """
@@ -96,8 +100,9 @@ class ConnectionManager:
             self._peak_connections = current_conn
 
         logger.info(
-            f"WebSocket Client Connected: {context}. "
-            f"Active connections: {current_conn}"
+            "WebSocket Client Connected (Role: %s). Active connections: %d",
+            context.role,
+            current_conn,
         )
 
     async def disconnect(
@@ -121,8 +126,11 @@ class ConnectionManager:
 
         if context:
             logger.info(
-                f"WebSocket Client Removed: {context} (Code: {code}, Reason: {reason or 'none'}). "
-                f"Active connections: {len(self.active_connections)}"
+                "WebSocket Client Removed (Role: %s, Code: %s, Reason: %s). Active connections: %d",
+                context.role,
+                code,
+                reason or "none",
+                len(self.active_connections),
             )
 
         try:
@@ -133,7 +141,7 @@ class ConnectionManager:
             meta = build_meta(
                 {
                     "action": "disconnect",
-                    "user_id": context.user_id if context else "unknown",
+                    "role": context.role if context else "unknown",
                 }
             )
             log_agent_error(

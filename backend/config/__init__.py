@@ -409,21 +409,92 @@ class AuthConfig:
     """인증 및 JWT 토큰 관리 설정"""
 
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(
-        os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60")
+
+    # 만료 시간(분) 기본값 및 안전한 파싱
+    DEFAULT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    _RAW_EXPIRE_MINUTES = os.getenv(
+        "JWT_ACCESS_TOKEN_EXPIRE_MINUTES", str(DEFAULT_ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
+    try:
+        JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = max(1, int(_RAW_EXPIRE_MINUTES))
+    except (ValueError, TypeError):
+        JWT_ACCESS_TOKEN_EXPIRE_MINUTES = DEFAULT_ACCESS_TOKEN_EXPIRE_MINUTES
+        logger.warning(
+            "Invalid JWT_ACCESS_TOKEN_EXPIRE_MINUTES=%r; falling back to default %d minutes",
+            _RAW_EXPIRE_MINUTES,
+            DEFAULT_ACCESS_TOKEN_EXPIRE_MINUTES,
+        )
+
+    # HMAC 서명 키 최소 요구 바이트/문자 수 (RFC 7518 §3.2 기준 256비트 = 32바이트 이상)
+    MIN_SECRET_LENGTH: int = 32
+
+    # 취약/예측 가능한 기본값 블랙리스트
+    KNOWN_INSECURE_SECRETS: frozenset[str] = frozenset(
+        {
+            "secret",
+            "password",
+            "12345678",
+            "changeme",
+            "jwtsecret",
+            "your-secret-key-at-least-32-chars-long",
+            "testing-insecure-dummy-jwt-secret-key",
+        }
     )
 
-    @staticmethod
-    def get_jwt_secret() -> Optional[str]:
+    @classmethod
+    def get_access_token_expire_minutes(cls) -> int:
+        """현재 구성된 액세스 토큰 유효 기간(분)을 안전하게 조회합니다."""
+        raw = os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES")
+        if raw is not None:
+            try:
+                return max(1, int(raw))
+            except (ValueError, TypeError):
+                pass
+        return cls.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+
+    @classmethod
+    def get_jwt_secret(cls) -> Optional[str]:
         """
         JWT 서명 및 검증에 사용할 시크릿 키를 환경 변수에서 조회합니다.
-        JWT_SECRET_KEY 또는 SECRET_KEY를 조회하며, 하드코딩된 기본값은 제공하지 않습니다.
-        단, 단위 테스트 환경(TESTING=true)의 경우 격리된 테스트용 더미 키를 반환합니다.
+        하드코딩된 공개 기본 키는 일절 허용하지 않으며, 환경 변수를 통해서만 주입받습니다.
         """
         secret = os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY")
-        if not secret and os.getenv("TESTING") == "true":
-            return "testing-insecure-dummy-jwt-secret-key"
-        return secret
+        if secret:
+            secret = secret.strip()
+        return secret or None
+
+    @classmethod
+    def validate_config(cls) -> None:
+        """
+        애플리케이션 시작 시 JWT 시크릿 키의 강도 및 필수 설정을 검증합니다.
+        운영 환경에서는 충분한 강도(32자 이상, 비취약값)의 시크릿 키가 반드시 구성되어야 합니다.
+        """
+        secret = cls.get_jwt_secret()
+        is_dev = AppConfig.is_dev_environment()
+
+        if not secret:
+            if not is_dev:
+                raise ValueError(
+                    "CRITICAL: JWT_SECRET_KEY (or SECRET_KEY) is required in production environment."
+                )
+            logger.warning(
+                "JWT_SECRET_KEY is not configured in development environment. Authenticated endpoints will fail until configured."
+            )
+            return
+
+        # 운영 환경 시크릿 강도 검증 (RFC 7518 및 OWASP 권고사항 준수)
+        if not is_dev:
+            if len(secret) < cls.MIN_SECRET_LENGTH:
+                raise ValueError(
+                    f"CRITICAL: JWT_SECRET_KEY is too short ({len(secret)} chars). "
+                    f"Production environment requires at least {cls.MIN_SECRET_LENGTH} characters."
+                )
+            if secret.lower() in cls.KNOWN_INSECURE_SECRETS or secret.startswith(
+                "your-secret-key"
+            ):
+                raise ValueError(
+                    "CRITICAL: JWT_SECRET_KEY is set to a known insecure placeholder or default value."
+                )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━

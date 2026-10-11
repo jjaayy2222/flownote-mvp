@@ -12,6 +12,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile  # type: ignore[imp
 from fastapi.middleware.cors import CORSMiddleware  # type: ignore[import]
 from pydantic import BaseModel  # type: ignore[import]
 
+from backend.api.endpoints.auth import router as auth_router  # type: ignore[import]
 from backend.api.endpoints.automation import (
     router as automation_router,  # type: ignore[import]
 )
@@ -70,6 +71,10 @@ async def lifespan(app: FastAPI):
         app: FastAPI app instance
     """
     # Startup
+    from backend.config import AuthConfig
+
+    AuthConfig.validate_config()
+
     logger.info("Starting up: Initializing WebSocket Manager & Redis...")
     await manager.initialize()
 
@@ -243,6 +248,11 @@ logger.info("✅ graph_router 등록 완료 (Visualization)")
 # chat_router (Issue #614: RAG 스트리밍 채팅)
 app.include_router(chat_router, prefix="/api")
 logger.info("✅ chat_router 등록 완료 (RAG Streaming Chat)")
+
+# auth_router (JWT Token Issuance)
+app.include_router(auth_router, prefix="/api")
+app.include_router(auth_router)
+logger.info("✅ auth_router 등록 완료 (JWT Token Issuance)")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

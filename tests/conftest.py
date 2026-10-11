@@ -15,6 +15,9 @@ sys.path.append(str(Path(__file__).parent.parent))
 # 테스트 환경 변수 설정
 os.environ["TESTING"] = "true"
 os.environ["GPT4O_MINI_API_KEY"] = "test-key"  # Mocking용
+os.environ["JWT_SECRET_KEY"] = (
+    "flownote-test-session-secret-key-32chars-min-secure-test-only"
+)
 
 # ────────────────────────────────────────────────────────
 # 공용 테스트 설정 (Centralized Test Config)
@@ -36,7 +39,6 @@ def rag_config() -> RAGTestConfig:
     return RAGTestConfig()
 
 
-from backend.data_manager import DataManager
 from backend.main import app
 from backend.services.classification_service import ClassificationService
 from backend.services.onboarding_service import OnboardingService
