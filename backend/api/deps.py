@@ -87,7 +87,7 @@ def create_access_token(
         )
 
     to_encode.update({"exp": expire, "iat": now})
-    return jwt.encode(to_encode, secret_key, algorithm=AuthConfig.JWT_ALGORITHM)
+    return jwt.encode(to_encode, secret_key, algorithm=AuthConfig.get_jwt_algorithm())
 
 
 def verify_token(token: str) -> Dict[str, Any]:
@@ -134,7 +134,7 @@ def verify_token(token: str) -> Dict[str, Any]:
         payload = jwt.decode(
             cleaned_token,
             secret_key,
-            algorithms=[AuthConfig.JWT_ALGORITHM],
+            algorithms=[AuthConfig.get_jwt_algorithm()],
             options={"require": ["exp"]},
         )
     except jwt.ExpiredSignatureError as exc:

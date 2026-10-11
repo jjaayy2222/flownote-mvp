@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 import time
 from collections import Counter, deque
 from dataclasses import dataclass
@@ -105,6 +106,39 @@ class ConnectionManager:
             current_conn,
         )
 
+    @staticmethod
+    def sanitize_close_reason(reason: Optional[str], max_len: int = 50) -> str:
+        """
+        WebSocket 연결 종료 사유(reason)를 정제하여 로그 주입(CWE-117) 및 개인정보(PII) 유출을 방지합니다.
+
+        - 줄바꿈(\\r, \\n) 및 제어 문자를 공백으로 치환하여 로그 변조 차단
+        - 이메일, 토큰 등 잠재적 민감 정보 패턴 마스킹
+        - 최대 길이 제한(기본 50자)을 적용하여 로그 비대화 방지
+        """
+        if not reason or not isinstance(reason, str):
+            return "none"
+
+        # 1. 제어 문자 및 줄바꿈 치환 (CWE-117 Log Injection 방지)
+        sanitized = re.sub(r"[\r\n\x00-\x1f\x7f-\x9f]", " ", reason).strip()
+        if not sanitized:
+            return "none"
+
+        # 2. 잠재적 인증 토큰 / 이메일 등 민감 정보 마스킹
+        sanitized = re.sub(
+            r"(?i)bearer\s+[A-Za-z0-9\-._~+/]+=*", "Bearer [REDACTED]", sanitized
+        )
+        sanitized = re.sub(
+            r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+",
+            "[EMAIL_REDACTED]",
+            sanitized,
+        )
+
+        # 3. 로그 길이 제한
+        if len(sanitized) > max_len:
+            sanitized = sanitized[:max_len] + "..."
+
+        return sanitized
+
     async def disconnect(
         self,
         websocket: WebSocket,
@@ -125,18 +159,23 @@ class ConnectionManager:
         context = self.active_connections.pop(websocket, None)
 
         if context:
+            safe_reason = self.sanitize_close_reason(reason)
             logger.info(
                 "WebSocket Client Removed (Role: %s, Code: %s, Reason: %s). Active connections: %d",
                 context.role,
                 code,
-                reason or "none",
+                safe_reason,
                 len(self.active_connections),
             )
 
         try:
             # WebSocketState.DISCONNECTED(2) 상수를 사용하여 상태 체크 (brittle-fix)
             if websocket.client_state != WebSocketState.DISCONNECTED:
-                await websocket.close(code=code, reason=reason)
+                # RFC 6455 §5.5.1: Close frame reason payload length must not exceed 123 bytes UTF-8
+                wire_reason = (
+                    reason[:123] if reason and isinstance(reason, str) else None
+                )
+                await websocket.close(code=code, reason=wire_reason)
         except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError) as exc:
             meta = build_meta(
                 {
