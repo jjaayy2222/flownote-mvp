@@ -63,7 +63,7 @@ class ObsidianSyncService(SyncServiceBase):
             if not path.exists():
                 return None
             return await asyncio.to_thread(path.read_text, encoding="utf-8")
-        except OSError as e:
+        except (OSError, UnicodeDecodeError) as e:
             meta = build_meta({"action": "pull_file", "file_name": path.name})
             log_agent_error(logger, "Error reading file", e, meta)
             return None
