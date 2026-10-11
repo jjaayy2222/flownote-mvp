@@ -278,7 +278,7 @@ async def get_conflict_diff(conflict_id: str):
             local_content = await asyncio.to_thread(
                 local_path.read_text, encoding="utf-8"
             )
-        except OSError as read_err:
+        except (OSError, UnicodeDecodeError) as read_err:
             logger.warning(
                 "Failed to read local file for diff (conflict_id=%s)",
                 conflict.conflict_id,
