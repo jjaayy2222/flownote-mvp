@@ -9,12 +9,13 @@ Step 6: /search/hybrid 엔드포인트 단위 테스트 (리팩토링 최종 반
 3. 외부 관찰 가능한 동작(searcher.rrf_k 등) 검증 강화
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.api.deps import get_current_user
 from backend.api.models import PARACategory
 from backend.main import app
 from backend.services.hybrid_search_service import (
@@ -69,6 +70,11 @@ def hybrid_service(mock_retrievers):
 def client(hybrid_service):
     """모킹된 서비스를 DI로 주입한 TestClient."""
     app.dependency_overrides[get_hybrid_search_service] = lambda: hybrid_service
+    app.dependency_overrides[get_current_user] = lambda: {
+        "username": "test_user",
+        "id": 1,
+        "role": "user",
+    }
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
@@ -341,7 +347,6 @@ class TestLoadIndicesReturnValue:
 
     def test_load_indices_returns_false_when_no_files(self, mock_retrievers):
         """인덱스 파일이 없을 때 load_indices는 False를 반환해야 한다."""
-        from unittest.mock import patch
 
         faiss, bm25 = mock_retrievers
         svc = HybridSearchService(faiss_retriever=faiss, bm25_retriever=bm25)

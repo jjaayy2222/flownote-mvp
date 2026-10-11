@@ -5,9 +5,9 @@
 ## 🔴 [P1] Phase 2: Authentication & Core DB 연동
 보안 및 핵심 데이터 무결성과 직결되므로 최우선으로 해결해야 할 부채입니다.
 
-- [ ] **Authentication (`backend/api/deps.py`)**
-  - `get_current_user` 및 `get_current_user_ws` 함수: 현재 Mock 사용 중인 부분을 `verify_token(token)` 기반 실제 인증 로직으로 대체.
-  - 전역 의존성을 `backend.config.AppConfig`를 통해 라우팅하도록 개선.
+- [x] **Authentication (`backend/api/deps.py`)**
+  - `get_current_user` 및 `get_current_user_ws` 함수: 현재 Mock 사용 중인 부분을 `verify_token(token)` 기반 실제 JWT 인증 로직으로 대체 (PyJWT 기반 서명/만료시간 검증).
+  - 전역 의존성을 `backend.config.AppConfig` 및 `AuthConfig`를 통해 라우팅하도록 개선.
 - [ ] **Sync DB (`backend/services/sync_service.py`)**
   - `_handle_conflict` 메서드: 충돌 발생 시 DB에 충돌 레코드를 영구 저장하는 로직.
 - [x] **Conflict Resolution (`backend/services/conflict_resolution_service.py`)**

@@ -1,9 +1,11 @@
 # backend/api/deps.py
 
+import datetime
 import logging
-import os
+from datetime import timezone
 from typing import Any, Callable, Dict, NamedTuple, Optional, Union
 
+import jwt
 from fastapi import (
     Depends,
     Header,
@@ -15,6 +17,7 @@ from fastapi import (
 )
 from fastapi.security import OAuth2PasswordBearer
 
+from backend.config import AppConfig, AuthConfig
 from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -35,101 +38,209 @@ def _ensure_dev_environment(
     exception_factory: Callable[[], Union[HTTPException, WebSocketException]],
 ) -> None:
     """
-    현재 실행 환경이 개발 환경(ENVIRONMENT 값이 'local' 또는 'development')인지 검증하여,
-    그렇지 않은 비개발 환경인 경우 제공된 예외를 발생시킵니다.
-
-    이 함수는 테스트용 인증 토큰이나 우회 로직이 비개발 환경(예: staging, production 등 그 외 운영 계열 환경)에서
-    실수로 적용되는 것을 방지하는 보안 계층 역할을 합니다.
+    현재 실행 환경이 개발 환경(ENVIRONMENT 값이 'local', 'development', 'test')인지
+    AppConfig를 통해 검증하여, 그렇지 않은 비개발 환경인 경우 제공된 예외를 발생시킵니다.
 
     Args:
         exception_factory: 발생시킬 예외를 생성하여 반환하는 콜러블 객체.
-            콜러블 객체를 사용함으로써 예외 인스턴스의 불필요한 사전 생성을 방지합니다.
 
     Raises:
         HTTPException | WebSocketException:
             비개발 환경에서 호출될 경우, factory를 통해 생성된 예외를 즉시 발생시킵니다.
     """
-    # Note: Accessing os.getenv directly as config module doesn't expose ENVIRONMENT yet.
-    # TODO: Route this through backend.config.AppConfig when available.
-    env = os.getenv("ENVIRONMENT", "production")
-    if env not in ["local", "development"]:
+    if not AppConfig.is_dev_environment():
         raise exception_factory()
+
+
+def create_access_token(
+    data: Dict[str, Any],
+    expires_delta: Optional[datetime.timedelta] = None,
+) -> str:
+    """
+    주어진 페이로드 데이터를 기반으로 서명된 JWT 액세스 토큰을 생성합니다.
+
+    Args:
+        data (Dict[str, Any]): 토큰에 포함할 사용자 클레임 딕셔너리.
+        expires_delta (Optional[datetime.timedelta]): 만료 시간 오프셋. 미지정 시 AuthConfig 기본값 적용.
+
+    Returns:
+        str: 인코딩된 JWT 액세스 토큰 문자열.
+
+    Raises:
+        HTTPException (500): 서버에 JWT 시크릿 키가 설정되지 않은 경우.
+    """
+    secret_key = AuthConfig.get_jwt_secret()
+    if not secret_key:
+        logger.error("Authentication configuration error: JWT secret key is not set.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Authentication service configuration error",
+        )
+
+    to_encode = data.copy()
+    now = datetime.datetime.now(timezone.utc)
+    if expires_delta is not None:
+        expire = now + expires_delta
+    else:
+        expire = now + datetime.timedelta(
+            minutes=AuthConfig.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+        )
+
+    to_encode.update({"exp": expire, "iat": now})
+    return jwt.encode(to_encode, secret_key, algorithm=AuthConfig.JWT_ALGORITHM)
+
+
+def verify_token(token: str) -> Dict[str, Any]:
+    """
+    JWT Bearer 토큰의 유효성을 검증하고 디코딩된 사용자 정보를 반환합니다.
+
+    Args:
+        token (str): 검증할 JWT 토큰 문자열.
+
+    Returns:
+        Dict[str, Any]: 검증된 사용자 정보 딕셔너리.
+            - id (Union[int, str]): 사용자 고유 ID
+            - username (str): 사용자 식별자
+            - role (str): 사용자 권한 역할
+
+    Raises:
+        HTTPException (401 Unauthorized):
+            - 토큰이 비어있거나 형식이 올바르지 않은 경우
+            - 토큰이 만료되었거나 서명이 올바르지 않은 경우
+            - 필수 사용자 식별자가 누락된 경우
+        HTTPException (500 Internal Server Error):
+            - 서버에 JWT 시크릿 키가 설정되지 않은 경우
+    """
+    if not token or not token.strip():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token is missing",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    cleaned_token = token.strip()
+    if cleaned_token.lower().startswith("bearer "):
+        cleaned_token = cleaned_token[7:].strip()
+
+    secret_key = AuthConfig.get_jwt_secret()
+    if not secret_key:
+        logger.error("Authentication configuration error: JWT secret key is not set.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Authentication service configuration error",
+        )
+
+    try:
+        payload = jwt.decode(
+            cleaned_token,
+            secret_key,
+            algorithms=[AuthConfig.JWT_ALGORITHM],
+            options={"require": ["exp"]},
+        )
+    except jwt.ExpiredSignatureError as exc:
+        logger.warning("Token verification failed: Signature has expired")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    except jwt.InvalidTokenError as exc:
+        logger.warning(
+            "Token verification failed: Invalid token (%s)", type(exc).__name__
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
+    raw_id = payload.get("id") or payload.get("sub")
+    raw_username = payload.get("username") or payload.get("sub")
+    role = payload.get("role", "user")
+
+    if raw_id is None and raw_username is None:
+        logger.warning(
+            "Token verification failed: Missing subject/id claims in payload"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload: missing user identification",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user_id: Union[int, str]
+    if isinstance(raw_id, str) and raw_id.isdigit():
+        user_id = int(raw_id)
+    elif raw_id is not None:
+        user_id = raw_id
+    else:
+        user_id = str(raw_username)
+
+    username = str(raw_username if raw_username is not None else user_id)
+
+    return {
+        "id": user_id,
+        "username": username,
+        "role": str(role),
+    }
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
     """
-    HTTP 요청에 대한 현재 인증된 사용자 정보를 가져오는 FastAPI 의존성입니다.
-
-    개발 환경에서는 테스트 및 시스템 운영을 원활하게 하기 위해
-    테스트용 관리자 계정(MOCK_ADMIN_USER)을 반환합니다.
-    실제 인증 로직이 추가되기 전까지 비개발 환경에서의 호출은 보안상 차단됩니다.
+    HTTP 요청의 Authorization Bearer 토큰을 검증하여 현재 인증된 사용자 정보를 반환하는 FastAPI 의존성입니다.
 
     Args:
-        token (str): 'Authorization' 헤더를 통해 전달된 OAuth2 Bearer 토큰.
-                     현재는 유효성 검증을 거치지 않으며 형태만 유지합니다.
+        token (str): 'Authorization: Bearer <token>' 헤더를 통해 전달된 OAuth2 Bearer 토큰.
 
     Returns:
-        Dict[str, Any]: 사용자 정보가 담긴 딕셔너리.
-            - username (str): 사용자 식별자
-            - id (int): 사용자 고유 ID
-            - role (str): 사용자 권한 역할 (예: 'admin', 'user')
+        Dict[str, Any]: 사용자 정보가 담긴 딕셔너리 (id, username, role).
 
     Raises:
-        HTTPException (501 Not Implemented):
-            비개발 환경(예: staging, production 등 그 외 운영 계열 환경)에서 호출될 경우 발생하는 예외.
-            실제 인증 로직이 추가되기 전까지 접근을 차단하기 위함입니다.
+        HTTPException (401 Unauthorized): 토큰이 만료되었거나 서명이 유효하지 않은 경우.
+        HTTPException (500 Internal Server Error): 서버 JWT 시크릿 키 미설정.
     """
-    # Default behavior: 501 Not Implemented in production
-    _ensure_dev_environment(
-        lambda: HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Authentication Logic is not yet implemented for production.",
-        )
-    )
-
-    # TODO: Verify token logic
-
-    return MOCK_ADMIN_USER
+    return verify_token(token)
 
 
 async def get_current_user_ws(
     websocket: WebSocket, token: Optional[str] = Query(None)
 ) -> Dict[str, Any]:
     """
-    WebSocket 연결 시 쿼리 파라미터를 통해 전달된 토큰으로 인증된 사용자 정보를 반환하는 의존성입니다.
-
-    개발 환경에서는 표준 접근 제어 테스트를 위해 테스트용 일반 계정(MOCK_REGULAR_USER)을
-    반환합니다. HTTP 의존성과 마찬가지로 실제 인증 로직이 추가되기 전까지 비개발 환경에서의 호출은 차단됩니다.
+    WebSocket 연결 시 쿼리 파라미터(?token=...)를 통해 전달된 토큰으로 인증된 사용자 정보를 반환하는 의존성입니다.
 
     Args:
         websocket (WebSocket): 현재 연결을 시도하는 WebSocket 객체.
-        token (Optional[str]): 연결 URI의 쿼리 파라미터로 전달된 인증 토큰 (예: `?token=...`).
+        token (Optional[str]): 연결 URI의 쿼리 파라미터로 전달된 인증 토큰.
 
     Returns:
-        Dict[str, Any]: 사용자 정보가 담긴 딕셔너리 (username, id, role).
+        Dict[str, Any]: 사용자 정보가 담긴 딕셔너리 (id, username, role).
 
     Raises:
         WebSocketException (1008 Policy Violation):
             - 토큰이 쿼리 파라미터에서 누락된 경우.
-            - 비개발 환경(예: staging, production 등 그 외 운영 계열 환경)에서 호출되어 인증 로직 부재로 차단될 경우.
+            - 토큰이 유효하지 않거나, 만료되었거나, 검증에 실패한 경우.
     """
-    if token is None:
-        # Strictly reject missing tokens with WebSocket Close Code 1008 (Policy Violation)
+    if token is None or not token.strip():
+        logger.warning("WebSocket connection rejected: Missing token query parameter")
         raise WebSocketException(
             code=status.WS_1008_POLICY_VIOLATION,
             reason="Missing authentication token via query parameter",
         )
 
-    # Use WebSocketException for environment guard as well
-    _ensure_dev_environment(
-        lambda: WebSocketException(
-            code=status.WS_1008_POLICY_VIOLATION, reason="Auth not implemented"
+    try:
+        return verify_token(token)
+    except HTTPException as exc:
+        logger.warning(
+            "WebSocket authentication failed (code=%s)",
+            status.WS_1008_POLICY_VIOLATION,
         )
-    )
-
-    # TODO: Verify token logic
-
-    return MOCK_REGULAR_USER
+        detail_msg = (
+            exc.detail if isinstance(exc.detail, str) else "Authentication failed"
+        )
+        raise WebSocketException(
+            code=status.WS_1008_POLICY_VIOLATION,
+            reason=detail_msg,
+        ) from exc
 
 
 class LanguageEntry(NamedTuple):

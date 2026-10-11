@@ -9,7 +9,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Generic, Optional, TypeVar, Union
+from typing import Generic, Optional, TypeVar
 
 from dotenv import load_dotenv
 
@@ -364,6 +364,24 @@ class AppConfig:
     # 자동화 설정
     ARCHIVE_DAYS_THRESHOLD = 30  # 아카이브 기준일 (미접근 기간)
 
+    # 실행 환경 설정 (production, development, local, test)
+    ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
+
+    @classmethod
+    def get_environment(cls) -> str:
+        """
+        현재 실행 환경(ENVIRONMENT)을 조회한다.
+        호출 시점 조회로 환경 변수 변경 및 테스트 유연성을 확보한다.
+        """
+        return os.getenv("ENVIRONMENT", cls.ENVIRONMENT)
+
+    @classmethod
+    def is_dev_environment(cls) -> bool:
+        """
+        현재 실행 환경이 개발/로컬/테스트 환경인지 여부를 반환한다.
+        """
+        return cls.get_environment() in ("local", "development", "test")
+
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 어드민 설정
@@ -380,6 +398,32 @@ class AdminConfig:
         모듈 로드 시점이 아닌 호출 시점에 조회하여 핫 리로드 및 테스트 유연성 확보.
         """
         return os.getenv("ADMIN_API_KEY")
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 인증 및 보안 설정
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+class AuthConfig:
+    """인증 및 JWT 토큰 관리 설정"""
+
+    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(
+        os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60")
+    )
+
+    @staticmethod
+    def get_jwt_secret() -> Optional[str]:
+        """
+        JWT 서명 및 검증에 사용할 시크릿 키를 환경 변수에서 조회합니다.
+        JWT_SECRET_KEY 또는 SECRET_KEY를 조회하며, 하드코딩된 기본값은 제공하지 않습니다.
+        단, 단위 테스트 환경(TESTING=true)의 경우 격리된 테스트용 더미 키를 반환합니다.
+        """
+        secret = os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY")
+        if not secret and os.getenv("TESTING") == "true":
+            return "testing-insecure-dummy-jwt-secret-key"
+        return secret
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -451,7 +495,7 @@ if __name__ == "__main__":
 
 """result_5 - ⭕️ Configured successfully
 
-    - .env에서 환경변수 이름 수정 후 성공 
+    - .env에서 환경변수 이름 수정 후 성공
 
     🔍 Model Configuration Status:
     ==================================================
