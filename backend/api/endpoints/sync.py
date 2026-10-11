@@ -254,21 +254,42 @@ def _get_conflict(conflict_id: str) -> Optional[SyncConflict]:
 async def get_conflict_diff(conflict_id: str):
     """
     충돌 파일의 Diff 데이터 반환
+
+    - 로컬/원격 파일이 없거나 읽기 불가 시 422를 반환하여
+      유효한 빈 파일과 사용 불가 상태를 명확히 구분합니다.
     """
     try:
         conflict = _get_conflict(conflict_id)
         if not conflict:
             raise HTTPException(status_code=404, detail="Conflict not found")
 
+        # 1. 로컬 파일 읽기 (존재하지 않으면 비교 불가 → 422)
         local_path = Path(conflict.file_id)
-        if local_path.exists():
+        if not local_path.exists():
+            logger.warning(
+                "Local file unavailable for diff (conflict_id=%s)",
+                conflict.conflict_id,
+            )
+            raise HTTPException(
+                status_code=422,
+                detail="로컬 파일을 찾을 수 없어 비교를 수행할 수 없습니다.",
+            )
+        try:
             local_content = await asyncio.to_thread(
                 local_path.read_text, encoding="utf-8"
             )
-        else:
-            local_content = ""
+        except OSError as read_err:
+            logger.warning(
+                "Failed to read local file for diff (conflict_id=%s)",
+                conflict.conflict_id,
+                extra={"error": type(read_err).__name__},
+            )
+            raise HTTPException(
+                status_code=422,
+                detail="로컬 파일을 읽을 수 없어 비교를 수행할 수 없습니다.",
+            ) from read_err
 
-        # Setup Sync Service
+        # 2. 원격 파일 읽기 (None = 파일 없음 또는 읽기 오류 → 422)
         conn = ExternalToolConnection(
             tool_type=ExternalToolType.OBSIDIAN,
             config=ConnectionConfig(
@@ -280,7 +301,14 @@ async def get_conflict_diff(conflict_id: str):
 
         remote_content = await sync_service.pull_file(conflict.external_path)
         if remote_content is None:
-            remote_content = ""
+            logger.warning(
+                "Remote file unavailable for diff (conflict_id=%s)",
+                conflict.conflict_id,
+            )
+            raise HTTPException(
+                status_code=422,
+                detail="원격 파일을 읽을 수 없어 비교를 수행할 수 없습니다.",
+            )
 
         diff_result = generate_diff(local_content, remote_content)
 
