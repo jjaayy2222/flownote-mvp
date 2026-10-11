@@ -33,7 +33,7 @@
   - 분류 결과 기반 임베딩 업데이트 로직 추가 구현 필요.
 - [ ] **Sync Status API (`backend/api/endpoints/sync.py`)**
   - `get_sync_status`, `get_mcp_status`, `get_conflicts` 등: 상태 응답을 `SyncMapManager`, `ExternalSyncLog` 등의 실제 매니저/DB에서 동적으로 조회하도록 연결.
-  - `get_conflict_diff`, `resolve_conflict`: Mock 데이터를 제거하고 데이터베이스에서 diff 경로를 조회 및 실제 ConflictResolutionService를 연동하여 충돌 해결을 트리거.
+  - [x] `get_conflict_diff`, `resolve_conflict`: Mock 데이터를 제거하고 데이터베이스에서 diff 경로를 조회 및 실제 ConflictResolutionService를 연동하여 충돌 해결을 트리거 (JSONL 로그 연동 완료).
 
 ## 🟢 [P4] 기타: Dashboard & Metadata (MVP 이후)
 운영 가시성 및 사용자 부가 정보 제공 영역입니다.

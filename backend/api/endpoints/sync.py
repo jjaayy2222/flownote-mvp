@@ -6,6 +6,8 @@ External Sync API Endpoints
 MCP 서버 및 Obsidian 동기화 상태 모니터링 API
 """
 
+import asyncio
+import json
 import logging
 from datetime import datetime
 from enum import Enum
@@ -16,8 +18,20 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.agent.error_utils import log_agent_error
+from backend.config import PathConfig
 from backend.config.mcp_config import mcp_config
+from backend.mcp.sync_map_manager import SyncMapManager
+from backend.models.conflict import ResolutionMethod
+from backend.models.conflict import ResolutionStrategy as DomainResolutionStrategy
+from backend.models.conflict import SyncConflict
+from backend.models.external_sync import (
+    ConnectionConfig,
+    ExternalToolConnection,
+    ExternalToolType,
+)
+from backend.services.conflict_resolution_service import ConflictResolutionService
 from backend.services.diff_service import generate_diff
+from backend.services.obsidian_sync import ObsidianSyncService
 
 logger = logging.getLogger(__name__)
 
@@ -220,18 +234,53 @@ async def get_conflicts(
         ) from e
 
 
+def _get_conflict(conflict_id: str) -> Optional[SyncConflict]:
+    """저장된 충돌 로그에서 conflict_id로 충돌 정보 조회"""
+    log_file = PathConfig.DATA_DIR / "sync_logs" / "detected_conflicts.jsonl"
+    if not log_file.exists():
+        return None
+    with open(log_file, "r", encoding="utf-8") as f:
+        for line in f:
+            try:
+                data = json.loads(line)
+                if data.get("conflict_id") == conflict_id:
+                    return SyncConflict(**data)
+            except Exception:
+                continue
+    return None
+
+
 @router.get("/conflicts/{conflict_id}/diff", response_model=ConflictDiffResponse)
 async def get_conflict_diff(conflict_id: str):
     """
     충돌 파일의 Diff 데이터 반환
     """
     try:
-        # TODO: 실제 프로덕션에서는 DB에서 conflict_id로 경로 정보 조회
-        # 여기서는 테스트를 위해 더미 데이터 생성 (프론트엔드 연동용 Mock)
+        conflict = _get_conflict(conflict_id)
+        if not conflict:
+            raise HTTPException(status_code=404, detail="Conflict not found")
 
-        # Mock Data
-        local_content = "# Hello FlowNote\n\nThis is the local version of the document.\nIt contains some changes that are unique to my machine."
-        remote_content = "# Hello FlowNote\n\nThis is the remote version of the document.\nIt contains some changes that were synced from the server."
+        local_path = Path(conflict.file_id)
+        if local_path.exists():
+            local_content = await asyncio.to_thread(
+                local_path.read_text, encoding="utf-8"
+            )
+        else:
+            local_content = ""
+
+        # Setup Sync Service
+        conn = ExternalToolConnection(
+            tool_type=ExternalToolType.OBSIDIAN,
+            config=ConnectionConfig(
+                base_path=mcp_config.obsidian.vault_path,
+                enabled=mcp_config.obsidian.enabled,
+            ),
+        )
+        sync_service = ObsidianSyncService(conn)
+
+        remote_content = await sync_service.pull_file(conflict.external_path)
+        if remote_content is None:
+            remote_content = ""
 
         diff_result = generate_diff(local_content, remote_content)
 
@@ -242,6 +291,8 @@ async def get_conflict_diff(conflict_id: str):
             diff=diff_result,
             file_type="markdown",
         )
+    except HTTPException:
+        raise
     except Exception as e:
         log_agent_error(
             logger, f"Failed to generate diff: {e}", e, include_traceback=True
@@ -268,17 +319,59 @@ async def resolve_conflict(
         dict: 해결 결과
     """
     try:
-        # TODO: ConflictResolutionService를 통해 실제 충돌 해결
+        conflict = _get_conflict(conflict_id)
+        if not conflict:
+            raise HTTPException(status_code=404, detail="Conflict not found")
+
         logger.info(
             f"Resolving conflict {conflict_id} with method: {resolution_method}"
         )
+
+        # Map API enum to Domain model
+        # MVP에서는 Rename(keep_both) 전략을 기본으로 사용
+        domain_method = ResolutionMethod.AUTO_BY_CONTEXT
+        if resolution_method != ResolutionStrategy.KEEP_BOTH:
+            logger.warning(
+                f"Resolution method {resolution_method} requested, but falling back to keep_both (rename) for MVP"
+            )
+
+        domain_strategy = DomainResolutionStrategy(
+            method=domain_method,
+            recommended_value=resolution_method.value,
+            confidence=1.0,
+            reasoning="User manually selected resolution from UI",
+            conflict_id=conflict_id,
+        )
+
+        # Setup Services
+        conn = ExternalToolConnection(
+            tool_type=ExternalToolType.OBSIDIAN,
+            config=ConnectionConfig(
+                base_path=mcp_config.obsidian.vault_path,
+                enabled=mcp_config.obsidian.enabled,
+            ),
+        )
+        sync_service = ObsidianSyncService(conn)
+        map_manager = SyncMapManager()
+        conflict_service = ConflictResolutionService(sync_service, map_manager)
+
+        # Resolve
+        resolution = await conflict_service.resolve_conflict(conflict, domain_strategy)
+
+        if resolution.status.value not in ("resolved", "resolved_with_rename"):
+            if resolution.status.value == "failed":
+                raise HTTPException(
+                    status_code=500, detail="Failed to resolve conflict internally"
+                )
 
         return {
             "conflict_id": conflict_id,
             "status": "resolved",
             "method": resolution_method,
-            "timestamp": datetime.now(),
+            "timestamp": resolution.resolved_at,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         log_agent_error(
             logger, f"Failed to resolve conflict: {e}", e, include_traceback=True
