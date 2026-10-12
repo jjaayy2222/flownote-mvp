@@ -38,6 +38,7 @@
   - [x] `get_conflict_diff`, `resolve_conflict`: Mock 데이터를 제거하고 데이터베이스에서 diff 경로를 조회 및 실제 ConflictResolutionService를 연동하여 충돌 해결을 트리거 (JSONL 로그 연동 완료).
   - [x] `get_conflict_diff` 1차 개선: 로컬/원격 파일 사용 불가 시 빈 문자열 대신 422 오류 반환 — 유효한 빈 파일과 사용 불가 상태를 명확히 구분. `test_diff_viewer_flow.py`도 함께 수정.
   - [x] `get_conflict_diff` 2차 개선: `UnicodeDecodeError` 처리 추가 — 잘못된 UTF-8 파일을 500 대신 422로 반환. `ObsidianSyncService.pull_file()`도 동일하게 일관성 확보.
+  - [x] `get_conflicts` 실연동: `detected_conflicts.jsonl` JSONL 파일 기반 실제 충돌 이력 반환으로 Mock 제거 — 최신순 정렬, status 필터링, 파싱 에러 카운터 집계 로그 적용.
 
 
 ## 🟢 [P4] 기타: Dashboard & Metadata (MVP 이후)
@@ -52,5 +53,5 @@
 
 ---
 *💡 관리 가이드: 해결된 항목은 본 문서에서 체크표시(`[x]`) 처리하고, 실제 소스 코드 상의 주석을 제거하여 단일 진실 공급원(SSOT)을 유지합니다.*
-- **✅ 코드베이스 싱크 상태**: `# TODO` 주석과 본 문서의 항목이 정확히 일치함을 확인했습니다. (마지막 점검일: 2026-10-08)
+- **✅ 코드베이스 싱크 상태**: `# TODO` 주석과 본 문서의 항목이 정확히 일치함을 확인했습니다. (마지막 점검일: 2026-10-12)
 - **💡 변동성(Drift) 주의**: TODO 항목의 개수나 내용은 개발 과정에 따라 수시로 변동될 수 있으므로, 주기적인 정합성 점검을 권장합니다.
