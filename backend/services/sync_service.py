@@ -26,11 +26,6 @@ def get_conflict_record_file() -> Path:
     return PathConfig.DATA_DIR / "sync_logs" / "detected_conflicts.jsonl"
 
 
-# 충돌 레코드 JSONL 저장 경로 (하위 호환성 유지)
-_SYNC_LOG_DIR = PathConfig.DATA_DIR / "sync_logs"
-_CONFLICT_RECORD_FILE = _SYNC_LOG_DIR / "detected_conflicts.jsonl"
-
-
 class SyncServiceBase(ABC):
     """
     모든 외부 동기화 서비스(Obsidian, Notion 등)의 Base Class
