@@ -10,6 +10,7 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional
 
 from backend.agent.error_utils import build_meta, get_safe_file_id, log_agent_error
@@ -19,7 +20,13 @@ from backend.models.external_sync import ExternalToolConnection
 
 logger = logging.getLogger(__name__)
 
-# 충돌 레코드 JSONL 저장 경로 (PathConfig 기반)
+
+def get_conflict_record_file() -> Path:
+    """충돌 레코드 JSONL 파일 경로 반환 (PathConfig.DATA_DIR 기반 동적 확인)."""
+    return PathConfig.DATA_DIR / "sync_logs" / "detected_conflicts.jsonl"
+
+
+# 충돌 레코드 JSONL 저장 경로 (하위 호환성 유지)
 _SYNC_LOG_DIR = PathConfig.DATA_DIR / "sync_logs"
 _CONFLICT_RECORD_FILE = _SYNC_LOG_DIR / "detected_conflicts.jsonl"
 
@@ -139,8 +146,8 @@ class SyncServiceBase(ABC):
                 f"Local: {local_hash[:8]}, Remote: {remote_hash[:8]}, Last: {last_synced_hash[:8]}"
             )
 
-            # SyncConflict 객체 생성 및 반환
-            return SyncConflict(
+            # SyncConflict 객체 생성
+            conflict = SyncConflict(
                 file_id=file_id,
                 external_path=external_path,
                 tool_type=self.tool_type,
@@ -149,9 +156,14 @@ class SyncServiceBase(ABC):
                 remote_hash=remote_hash,
             )
 
+            # 충돌 레코드 영구 저장 (detected_conflicts.jsonl)
+            self._handle_conflict(conflict)
+
+            return conflict
+
         return None
 
-    async def _handle_conflict(self, conflict: SyncConflict) -> bool:
+    def _handle_conflict(self, conflict: SyncConflict) -> bool:
         """
         [공통] 충돌 발생 시 충돌 레코드를 JSONL 파일에 저장하고 False를 반환한다.
         실제 해결은 ConflictResolutionService에서 담당한다.
@@ -163,9 +175,20 @@ class SyncServiceBase(ABC):
             (conflict.remote_hash or "")[:8],
         )
         try:
-            _SYNC_LOG_DIR.mkdir(parents=True, exist_ok=True)
+            log_file = get_conflict_record_file()
+            log_file.parent.mkdir(parents=True, exist_ok=True)
             local_hash_safe = conflict.local_hash[:16] if conflict.local_hash else ""
             remote_hash_safe = conflict.remote_hash[:16] if conflict.remote_hash else ""
+            status_val = (
+                conflict.status.value
+                if hasattr(conflict.status, "value")
+                else str(conflict.status)
+            )
+            detected_at_iso = (
+                conflict.detected_at.isoformat()
+                if hasattr(conflict, "detected_at") and conflict.detected_at
+                else datetime.now().isoformat()
+            )
             record = {
                 "conflict_id": conflict.conflict_id,
                 "file_id": get_safe_file_id(conflict.file_id),
@@ -182,9 +205,10 @@ class SyncServiceBase(ABC):
                 ),
                 "local_hash": local_hash_safe,
                 "remote_hash": remote_hash_safe,
-                "detected_at": datetime.now().isoformat(),
+                "status": status_val,
+                "detected_at": detected_at_iso,
             }
-            with open(_CONFLICT_RECORD_FILE, "a", encoding="utf-8") as f:
+            with open(log_file, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
         except OSError as exc:
             meta = build_meta({"action": "_handle_conflict"})

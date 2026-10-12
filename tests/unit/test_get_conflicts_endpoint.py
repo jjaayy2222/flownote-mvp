@@ -22,6 +22,28 @@ from fastapi import HTTPException
 
 from backend.api.endpoints.sync import get_conflicts
 from backend.config import PathConfig
+from backend.models.external_sync import (
+    ConnectionConfig,
+    ExternalToolConnection,
+    ExternalToolType,
+)
+from backend.services.sync_service import SyncServiceBase
+
+
+class DummySyncService(SyncServiceBase):
+    """SyncServiceBase 단위 테스트를 위한 최소 구체 클래스."""
+
+    async def connect(self) -> bool:
+        return True
+
+    async def sync_all(self):
+        return []
+
+    async def pull_file(self, external_id: str):
+        return None
+
+    async def push_file(self, internal_id: str, content: str) -> bool:
+        return True
 
 
 @pytest.fixture
@@ -217,3 +239,84 @@ async def test_get_conflicts_oserror_raises_500(mock_conflict_log_dir: Path):
 
         assert exc_info.value.status_code == 500
         assert "서버 내부 오류" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_detect_conflict_3way_persists_record_and_get_conflicts(
+    mock_conflict_log_dir: Path,
+):
+    """
+    3-way 충돌 감지 시 _handle_conflict가 자동 호출되어 JSONL 파일에 기록되고,
+    이를 get_conflicts() 엔드포인트에서 정상적으로 조회할 수 있는지 검증.
+    """
+    conn = ExternalToolConnection(
+        tool_type=ExternalToolType.OBSIDIAN,
+        config=ConnectionConfig(base_path="/tmp/mock_vault", enabled=True),
+    )
+    service = DummySyncService(conn)
+
+    # 1. 충돌 없는 경우 (로컬만 변경) -> JSONL에 기록되지 않아야 함
+    no_conflict = service.detect_conflict_3way(
+        file_id="/path/to/note.md",
+        external_path="vault/note.md",
+        local_hash="local_changed_123",
+        remote_hash="synced_hash_000",
+        last_synced_hash="synced_hash_000",
+    )
+    assert no_conflict is None
+    log_file = mock_conflict_log_dir / "detected_conflicts.jsonl"
+    assert not log_file.exists() or log_file.read_text().strip() == ""
+
+    # 2. 충돌 발생 (양쪽 모두 변경) -> SyncConflict 반환 및 JSONL 파일 기록
+    conflict = service.detect_conflict_3way(
+        file_id="/path/to/note.md",
+        external_path="vault/note.md",
+        local_hash="local_new_abc1234567890",
+        remote_hash="remote_new_def9876543210",
+        last_synced_hash="synced_hash_000",
+    )
+    assert conflict is not None
+    assert log_file.exists()
+
+    # JSONL 파일 내용 확인 (PII 마스킹 및 해시 길이 검증)
+    lines = log_file.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    raw_data = json.loads(lines[0])
+    assert raw_data["conflict_id"] == conflict.conflict_id
+    assert raw_data["external_path"] == "vault/note.md"
+    assert raw_data["local_hash"] == "local_new_abc123"  # 16자리 절삭
+    assert raw_data["remote_hash"] == "remote_new_def9"  # 16자리 절삭
+    assert raw_data["status"] == "pending"
+    assert "note.md_" in raw_data["file_id"]  # PII 마스킹 (get_safe_file_id)
+
+    # 3. get_conflicts() 엔드포인트를 통해 조회가 되는지 확인
+    results = await get_conflicts()
+    assert len(results) == 1
+    assert results[0].conflict_id == conflict.conflict_id
+    assert results[0].file_path == "vault/note.md"
+    assert results[0].status == "pending"
+
+
+def test_detect_conflict_3way_handles_oserror_gracefully(
+    mock_conflict_log_dir: Path,
+):
+    """
+    _handle_conflict()에서 파일 쓰기 중 OSError가 발생하더라도
+    충돌 감지(detect_conflict_3way) 프로세스가 중단되지 않고 SyncConflict를 정상 반환하는지 검증.
+    """
+    conn = ExternalToolConnection(
+        tool_type=ExternalToolType.OBSIDIAN,
+        config=ConnectionConfig(base_path="/tmp/mock_vault", enabled=True),
+    )
+    service = DummySyncService(conn)
+
+    with patch("builtins.open", side_effect=OSError("Disk full")):
+        conflict = service.detect_conflict_3way(
+            file_id="/path/to/note.md",
+            external_path="vault/note.md",
+            local_hash="local_1",
+            remote_hash="remote_2",
+            last_synced_hash="base_0",
+        )
+        assert conflict is not None
+        assert conflict.external_path == "vault/note.md"
