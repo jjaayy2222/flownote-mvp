@@ -208,30 +208,99 @@ async def get_conflicts(
     """
     충돌 이력 조회
 
+    `sync_service.py`의 `_handle_conflict()`가 기록하는
+    `detected_conflicts.jsonl` 파일을 읽어 실제 충돌 이력을 반환합니다.
+
     Args:
-        limit: 조회할 최대 개수
-        status: 필터링할 상태 (resolved, pending 등)
+        limit: 조회할 최대 개수 (기본값 50, 최신순 정렬)
+        status: 필터링할 상태 (예: "pending", "resolved"). 미지정 시 전체 반환.
 
     Returns:
-        List[ConflictLogResponse]: 충돌 로그 목록
+        List[ConflictLogResponse]: 충돌 로그 목록 (최신 발생 순)
     """
-    try:
-        # TODO: 실제로는 ExternalSyncLog에서 충돌 이력 조회
-        # 현재는 빈 목록 반환
-        conflicts = []
+    log_file = PathConfig.DATA_DIR / "sync_logs" / "detected_conflicts.jsonl"
 
-        if status:
-            conflicts = [c for c in conflicts if c["status"] == status]
-
-        return conflicts[:limit]
-    except Exception as e:
-        log_agent_error(
-            logger, f"Failed to get conflicts: {e}", e, include_traceback=True
+    if not log_file.exists():
+        logger.debug(
+            "Conflict log file not found; returning empty list. path_exists=False"
         )
+        return []
+
+    conflicts: List[ConflictLogResponse] = []
+    parse_error_count = 0
+
+    try:
+        with open(log_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    if not isinstance(data, dict):
+                        parse_error_count += 1
+                        continue
+
+                    # detected_at → timestamp 매핑 (ISO 8601 형식 안전 파싱)
+                    detected_at_raw = data.get("detected_at")
+                    try:
+                        timestamp = (
+                            datetime.fromisoformat(detected_at_raw)
+                            if detected_at_raw
+                            else datetime.now()
+                        )
+                    except (ValueError, TypeError):
+                        timestamp = datetime.now()
+
+                    # JSONL 레코드에 status 필드가 없는 경우 "pending"으로 기본 처리
+                    # (detected_conflicts.jsonl은 감지 시점에만 기록되며,
+                    #  해결 이력은 conflict_resolution.jsonl에 별도 저장됨)
+                    record_status = data.get("status", "pending")
+
+                    conflicts.append(
+                        ConflictLogResponse(
+                            conflict_id=data.get("conflict_id", ""),
+                            timestamp=timestamp,
+                            file_path=data.get("external_path", ""),
+                            conflict_type=data.get("conflict_type", ""),
+                            local_hash=data.get("local_hash", ""),
+                            remote_hash=data.get("remote_hash", ""),
+                            status=record_status,
+                            resolution_method=data.get("resolution_method"),
+                            notes=data.get("notes"),
+                        )
+                    )
+                except (json.JSONDecodeError, KeyError, TypeError):
+                    parse_error_count += 1
+                    continue
+
+        if parse_error_count > 0:
+            logger.warning(
+                "Conflict log parsing: %d line(s) skipped due to invalid format.",
+                parse_error_count,
+            )
+
+    except OSError as exc:
+        log_agent_error(logger, "Failed to read conflict log file", exc)
         raise HTTPException(
             status_code=500,
             detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
-        ) from e
+        ) from exc
+
+    # 최신순 정렬 (detected_at 기준 내림차순)
+    conflicts.sort(key=lambda c: c.timestamp, reverse=True)
+
+    if status:
+        conflicts = [c for c in conflicts if c.status == status]
+
+    logger.debug(
+        "Conflict log query: total=%d, status_filter=%s, returning=%d",
+        len(conflicts),
+        status or "all",
+        min(len(conflicts), limit),
+    )
+
+    return conflicts[:limit]
 
 
 def _get_conflict(conflict_id: str) -> Optional[SyncConflict]:
