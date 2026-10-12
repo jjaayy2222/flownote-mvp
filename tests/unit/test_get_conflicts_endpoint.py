@@ -285,7 +285,7 @@ async def test_detect_conflict_3way_persists_record_and_get_conflicts(
     assert raw_data["conflict_id"] == conflict.conflict_id
     assert raw_data["external_path"] == "vault/note.md"
     assert raw_data["local_hash"] == "local_new_abc123"  # 16자리 절삭
-    assert raw_data["remote_hash"] == "remote_new_def9"  # 16자리 절삭
+    assert raw_data["remote_hash"] == "remote_new_def98"  # 16자리 절삭
     assert raw_data["status"] == "pending"
     assert "note.md_" in raw_data["file_id"]  # PII 마스킹 (get_safe_file_id)
 
