@@ -46,7 +46,11 @@ class AutomationManager:
     def __init__(self):
         """초기화"""
         # 로그 디렉토리 생성
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            LOG_DIR.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            meta = build_meta({"action": "__init__", "log_dir": LOG_DIR.name})
+            log_agent_error(logger, "Failed to create log directory", exc, meta)
         # 규칙 CRUD 작업을 직렬화하기 위한 락
         self._rule_lock = threading.Lock()
 
@@ -71,24 +75,43 @@ class AutomationManager:
         Returns:
             AutomationLog 리스트 (최신 순)
         """
-        # Enum을 문자열로 변환
-        task_type_str = task_type.value if task_type else None
-        status_str = status.value if status else None
+        # Enum 또는 문자열을 안전하게 문자열로 변환 (Null Safety & Type Safety)
+        task_type_str = (
+            task_type.value
+            if isinstance(task_type, AutomationTaskType)
+            else (str(task_type) if task_type is not None else None)
+        )
+        status_str = (
+            status.value
+            if isinstance(status, AutomationStatus)
+            else (str(status) if status is not None else None)
+        )
 
         logs_data = self._read_jsonl_logs(
             AUTO_LOG_FILE, limit=limit, task_type=task_type_str, status=status_str
         )
 
         logs = []
+        invalid_count = 0
         for data in logs_data:
+            if not isinstance(data, dict):
+                invalid_count += 1
+                continue
             try:
                 logs.append(AutomationLog(**data))
-            except (ValueError, TypeError, ValidationError) as exc:
-                meta = build_meta(
-                    {"action": "get_automation_logs", "log_id": data.get("log_id")}
-                )
-                log_agent_error(logger, "Invalid log data", exc, meta)
+            except (ValueError, TypeError, ValidationError):
+                invalid_count += 1
                 continue
+
+        if invalid_count > 0:
+            meta = build_meta(
+                {"action": "get_automation_logs", "invalid_count": invalid_count}
+            )
+            logger.warning(
+                "get_automation_logs: %d invalid log record(s) skipped",
+                invalid_count,
+                extra={"meta": meta},
+            )
 
         return logs
 
@@ -102,10 +125,15 @@ class AutomationManager:
         Returns:
             AutomationLog 또는 None
         """
+        if not log_id or not isinstance(log_id, str) or not log_id.strip():
+            return None
+
         # limit 없이 전체 로그 검색 (오래된 로그도 접근 가능)
         logs_data = self._read_jsonl_logs(AUTO_LOG_FILE, limit=None)
 
         for data in logs_data:
+            if not isinstance(data, dict):
+                continue
             if data.get("log_id") == log_id:
                 try:
                     return AutomationLog(**data)
@@ -125,11 +153,13 @@ class AutomationManager:
     def _load_all_rules(self) -> List[AutomationRule]:
         """
         JSONL 규칙 파일에서 모든 규칙을 로드한다.
-        파싱 실패한 항목은 로그를 남기고 건너뛴다.
+        파싱 실패한 항목은 카운터 집계 후 요약 로그를 남기고 건너뛴다.
         """
         rules: List[AutomationRule] = []
-        if not RULES_FILE.exists():
+        if not RULES_FILE or not RULES_FILE.exists():
             return rules
+
+        malformed_count = 0
         try:
             with open(RULES_FILE, "r", encoding="utf-8") as f:
                 for line in f:
@@ -137,19 +167,38 @@ class AutomationManager:
                     if not line:
                         continue
                     try:
-                        rules.append(AutomationRule(**json.loads(line)))
+                        raw_data = json.loads(line)
+                        if not isinstance(raw_data, dict):
+                            malformed_count += 1
+                            continue
+                        rules.append(AutomationRule(**raw_data))
                     except (
                         json.JSONDecodeError,
                         ValueError,
                         TypeError,
                         ValidationError,
-                    ) as exc:
-                        meta = build_meta({"action": "_load_all_rules"})
-                        log_agent_error(
-                            logger, "Malformed rule entry skipped", exc, meta
-                        )
+                    ):
+                        malformed_count += 1
+                        continue
+
+            if malformed_count > 0:
+                meta = build_meta(
+                    {
+                        "action": "_load_all_rules",
+                        "malformed_count": malformed_count,
+                        "file_name": RULES_FILE.name,
+                    }
+                )
+                logger.warning(
+                    "_load_all_rules: %d malformed rule entry(ies) skipped in '%s'",
+                    malformed_count,
+                    RULES_FILE.name,
+                    extra={"meta": meta},
+                )
         except OSError as exc:
-            meta = build_meta({"action": "_load_all_rules", "file": RULES_FILE.name})
+            meta = build_meta(
+                {"action": "_load_all_rules", "file_name": RULES_FILE.name}
+            )
             log_agent_error(logger, "Failed to read rules file", exc, meta)
         return rules
 
@@ -159,15 +208,29 @@ class AutomationManager:
         MVP 규모에서는 규칙 수가 충분히 적어 전체 재기록이 안전하다.
         임시 파일에 쓰고 성공 시 원자적으로 교체하여 파일 손상을 방지한다.
         """
+        if rules is None:
+            raise ValueError("rules list cannot be None")
+
+        temp_file = RULES_FILE.with_suffix(".tmp")
         try:
-            temp_file = RULES_FILE.with_suffix(".tmp")
             with open(temp_file, "w", encoding="utf-8") as f:
                 for rule in rules:
+                    if not isinstance(rule, AutomationRule):
+                        raise TypeError(
+                            f"Expected AutomationRule, got {type(rule).__name__}"
+                        )
                     f.write(rule.model_dump_json() + "\n")
                 f.flush()
             temp_file.replace(RULES_FILE)
         except OSError as exc:
-            meta = build_meta({"action": "_persist_all_rules", "file": RULES_FILE.name})
+            if temp_file.exists():
+                try:
+                    temp_file.unlink()
+                except OSError:
+                    pass
+            meta = build_meta(
+                {"action": "_persist_all_rules", "file_name": RULES_FILE.name}
+            )
             log_agent_error(logger, "Failed to persist rules", exc, meta)
             raise
 
@@ -191,9 +254,14 @@ class AutomationManager:
             저장된 규칙 객체
 
         Raises:
-            ValueError: 동일한 rule_id가 이미 존재하는 경우
+            ValueError: 유효하지 않은 규칙이거나 동일한 rule_id가 이미 존재하는 경우
             OSError: 파일 쓰기 실패 시
         """
+        if not rule or not isinstance(rule, AutomationRule):
+            raise ValueError("Valid AutomationRule is required")
+        if not rule.rule_id or not rule.rule_id.strip():
+            raise ValueError("rule_id must not be empty")
+
         with self._rule_lock:
             existing = self._load_all_rules()
             if any(r.rule_id == rule.rule_id for r in existing):
@@ -217,8 +285,14 @@ class AutomationManager:
             수정된 규칙 객체 또는 None (rule_id가 존재하지 않는 경우)
 
         Raises:
+            ValueError: rule_id가 비어있거나 rule이 유효하지 않은 경우
             OSError: 파일 쓰기 실패 시
         """
+        if not rule_id or not isinstance(rule_id, str) or not rule_id.strip():
+            raise ValueError("rule_id must not be empty")
+        if not rule or not isinstance(rule, AutomationRule):
+            raise ValueError("Valid AutomationRule is required")
+
         with self._rule_lock:
             existing = self._load_all_rules()
             updated: List[AutomationRule] = []
@@ -244,11 +318,14 @@ class AutomationManager:
             rule_id: 삭제 대상 규칙 ID
 
         Returns:
-            삭제 성공 여부 (rule_id가 없으면 False)
+            삭제 성공 여부 (rule_id가 없거나 빈 값이면 False)
 
         Raises:
             OSError: 파일 쓰기 실패 시
         """
+        if not rule_id or not isinstance(rule_id, str) or not rule_id.strip():
+            return False
+
         with self._rule_lock:
             existing = self._load_all_rules()
             filtered = [r for r in existing if r.rule_id != rule_id]
@@ -277,18 +354,29 @@ class AutomationManager:
         records_data = self._read_jsonl_logs(RECLASS_LOG_FILE, limit=limit)
 
         records = []
+        invalid_count = 0
         for data in records_data:
+            if not isinstance(data, dict):
+                invalid_count += 1
+                continue
             try:
                 records.append(ReclassificationRecord(**data))
-            except (ValueError, TypeError, ValidationError) as exc:
-                meta = build_meta(
-                    {
-                        "action": "get_reclassification_history",
-                        "record_id": data.get("record_id"),
-                    }
-                )
-                log_agent_error(logger, "Invalid reclassification record", exc, meta)
+            except (ValueError, TypeError, ValidationError):
+                invalid_count += 1
                 continue
+
+        if invalid_count > 0:
+            meta = build_meta(
+                {
+                    "action": "get_reclassification_history",
+                    "invalid_count": invalid_count,
+                }
+            )
+            logger.warning(
+                "get_reclassification_history: %d invalid record(s) skipped",
+                invalid_count,
+                extra={"meta": meta},
+            )
 
         return records
 
@@ -305,18 +393,29 @@ class AutomationManager:
         records_data = self._read_jsonl_logs(ARCHIVE_LOG_FILE, limit=limit)
 
         records = []
+        invalid_count = 0
         for data in records_data:
+            if not isinstance(data, dict):
+                invalid_count += 1
+                continue
             try:
                 records.append(ArchivingRecord(**data))
-            except (ValueError, TypeError, ValidationError) as exc:
-                meta = build_meta(
-                    {
-                        "action": "get_archiving_history",
-                        "record_id": data.get("record_id"),
-                    }
-                )
-                log_agent_error(logger, "Invalid archiving record", exc, meta)
+            except (ValueError, TypeError, ValidationError):
+                invalid_count += 1
                 continue
+
+        if invalid_count > 0:
+            meta = build_meta(
+                {
+                    "action": "get_archiving_history",
+                    "invalid_count": invalid_count,
+                }
+            )
+            logger.warning(
+                "get_archiving_history: %d invalid record(s) skipped",
+                invalid_count,
+                extra={"meta": meta},
+            )
 
         return records
 
@@ -343,10 +442,25 @@ class AutomationManager:
         Returns:
             로그 딕셔너리 리스트 (최신 순)
         """
+        # limit 검증: None 또는 0 이상의 정수만 허용 (bool 제외) - Fail Fast
+        if limit is not None:
+            # int 서브클래스 허용, bool 제외
+            if isinstance(limit, bool) or not isinstance(limit, int):
+                raise TypeError("limit must be a non-boolean int or None")
+            if limit < 0:
+                raise ValueError("limit must be non-negative")
+
+        if not file_path:
+            return []
+
+        if not isinstance(file_path, Path):
+            file_path = Path(file_path)
+
         if not file_path.exists():
             return []
 
         logs = []
+        parse_error_count = 0
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 for line in f:
@@ -356,6 +470,9 @@ class AutomationManager:
 
                     try:
                         log_data = json.loads(line)
+                        if not isinstance(log_data, dict):
+                            parse_error_count += 1
+                            continue
 
                         # 필터링
                         if task_type and log_data.get("task_type") != task_type:
@@ -365,27 +482,23 @@ class AutomationManager:
 
                         logs.append(log_data)
 
-                    except json.JSONDecodeError:
-                        logger.warning(
-                            "Malformed JSON line in %s", Path(file_path).name
-                        )
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        parse_error_count += 1
                         continue
+
+            if parse_error_count > 0:
+                logger.warning(
+                    "_read_jsonl_logs: %d malformed line(s) skipped in '%s'",
+                    parse_error_count,
+                    file_path.name,
+                )
 
         except OSError as exc:
             meta = build_meta(
                 {"action": "_read_jsonl_logs", "file_name": file_path.name}
             )
-            log_agent_error(
-                logger, f"Failed to read log file: {file_path.name}", exc, meta
-            )
+            log_agent_error(logger, "Failed to read log file", exc, meta)
 
-        # limit 검증: None 또는 0 이상의 정수만 허용 (bool 제외)
-        if limit is not None:
-            # int 서브클래스 허용, bool 제외
-            if isinstance(limit, bool) or not isinstance(limit, int):
-                raise TypeError("limit must be a non-boolean int or None")
-            if limit < 0:
-                raise ValueError("limit must be non-negative")
         # 최신 로그가 먼저 오도록 역순 iterator 사용
         reversed_logs = reversed(logs)
         if limit is not None:
