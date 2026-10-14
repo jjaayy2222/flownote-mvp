@@ -41,7 +41,7 @@ _MAX_ERROR_MSG_CHARS: int = 200
 
 # [Security] PII 마스킹 정규식 (프리컴파일로 성능 최적화)
 _EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-_TOKEN_PATTERN = re.compile(r"\b[0-9A-Za-z]{32,}\b")
+_TOKEN_PATTERN = re.compile(r"(?<![A-Za-z0-9])[0-9A-Za-z]{32,}(?![A-Za-z0-9])")
 _E164_MAX_DIGITS: int = 15
 _PHONE_PATTERN = re.compile(
     rf"""
@@ -63,17 +63,31 @@ _UNIX_ABS_PATH_PATTERN = re.compile(r"(?<![:\w])/(?:[^\s/\'\",:;]+/)+[^\s/\'\",:
 # Windows 절대 경로 (예: C:\Users\jay\file.txt)
 _WIN_ABS_PATH_PATTERN = re.compile(r"[A-Za-z]:\\[^\s<>:\"?*|]+(?:\\[^\s<>:\"?*|]+)*")
 
-# [Security] 주민등록번호 마스킹 패턴 (6자리-7자리)
-_RRN_PATTERN = re.compile(r"\b\d{6}[- ][1-4]\d{6}\b")
-# [Security] 신용카드 번호 마스킹 패턴 (16자리)
-_CREDIT_CARD_PATTERN = re.compile(r"\b(?:\d{4}[- ]?){3}\d{4}\b")
-# [Security] 주요 클라우드/LLM API 키 및 인증 토큰 패턴
+# [Security] 주민등록번호 마스킹 패턴 (구분자 유무 무관, 한글 인접 호환 유니코드 경계)
+_RRN_PATTERN = re.compile(r"(?<!\d)\d{6}[- ]?[1-4]\d{6}(?!\d)")
+# [Security] 신용카드 번호 마스킹 패턴 (최대 19자리 지원, 한글 인접 호환 유니코드 경계)
+_CREDIT_CARD_PATTERN = re.compile(
+    r"(?<!\d)(?:"
+    r"(?:\d{4}[- ]?){3}\d{4,7}"  # 16~19자리 (하이픈/공백 구분 또는 무구분 16~19자리)
+    r"|\d{4}[- ]\d{6}[- ]\d{4,5}"  # 14~15자리 (Amex/Diners 구분자 포맷)
+    r")(?!\d)"
+)
+# [Security] 주요 클라우드/LLM API 키 및 인증 토큰 패턴 (GitLab glpat- 포함, 한글 인접 호환 유니코드 경계)
 _API_KEY_PATTERN = re.compile(
-    r"\b(?:sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9_-]{20,}|Bearer\s+[A-Za-z0-9._~+/-]+=*)\b",
+    r"(?<![A-Za-z0-9_-])(?:"
+    r"glpat-[A-Za-z0-9_-]{20,}"  # GitLab Personal Access Token
+    r"|gl[a-z]{2,4}-[A-Za-z0-9_-]{20,}"  # GitLab CI/Deploy/Feature 토큰 (glcbt-, gldt-, glft- 등)
+    r"|gh[pousr]_[A-Za-z0-9_-]{20,}"  # GitHub 토큰 (ghp_, gho_, ghu_, ghs_, ghr_)
+    r"|sk-[A-Za-z0-9_-]{20,}"  # OpenAI / Anthropic 등 LLM API 키
+    r"|hf_[A-Za-z0-9_-]{20,}"  # HuggingFace 토큰
+    r"|xox[baprs]-[A-Za-z0-9_-]{10,}"  # Slack 토큰
+    r"|(?:AKIA|ASIA)[A-Z0-9]{16}"  # AWS Access Key ID
+    r"|Bearer\s+[A-Za-z0-9._~+/-]+=*"  # HTTP Bearer 인증 토큰
+    r")(?![A-Za-z0-9_-])",
     re.IGNORECASE,
 )
-# [Security] IPv4 주소 마스킹 패턴
-_IP_PATTERN = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+# [Security] IPv4 주소 마스킹 패턴 (한글 인접 호환 경계)
+_IP_PATTERN = re.compile(r"(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)")
 
 # [Security] 로그 내 보안 정책 식별자 — 변경 시 이 상수 하나만 수정하면 모든 호출부에 반영됨
 _SECURITY_NOTICE: str = (
@@ -132,10 +146,11 @@ def sanitize_content_pii(text: Optional[str]) -> str:
     if not text:
         return ""
     sanitized = _EMAIL_PATTERN.sub("[REDACTED_EMAIL]", text)
-    sanitized = _PHONE_PATTERN.sub("[REDACTED_PHONE]", sanitized)
-    sanitized = _RRN_PATTERN.sub("[REDACTED_RRN]", sanitized)
-    sanitized = _CREDIT_CARD_PATTERN.sub("[REDACTED_CARD]", sanitized)
+    # 구체적이고 긴 패턴(API키, 카드, 주민번호)을 범용 숫자 패턴(전화번호, 토큰)보다 먼저 처리
     sanitized = _API_KEY_PATTERN.sub("[REDACTED_KEY]", sanitized)
+    sanitized = _CREDIT_CARD_PATTERN.sub("[REDACTED_CARD]", sanitized)
+    sanitized = _RRN_PATTERN.sub("[REDACTED_RRN]", sanitized)
+    sanitized = _PHONE_PATTERN.sub("[REDACTED_PHONE]", sanitized)
     sanitized = _TOKEN_PATTERN.sub("[REDACTED_TOKEN]", sanitized)
     sanitized = _UNIX_ABS_PATH_PATTERN.sub("[REDACTED_PATH]", sanitized)
     sanitized = _WIN_ABS_PATH_PATTERN.sub("[REDACTED_PATH]", sanitized)

@@ -449,3 +449,180 @@ def test_log_env_fallback_redaction(caplog):
     # 민감한 시크릿 값이 노출되지 않고 마스킹되었는지 검증
     assert "sk-12345secret" not in warning_msgs[0]
     assert "***REDACTED***" in warning_msgs[0]
+
+
+# ============================================================================
+# 4. PII 마스킹 확장 및 멱등성 검증 (2차 개선: Comment 1~5)
+# ============================================================================
+
+
+def test_sanitize_content_pii_extended_credentials():
+    """
+    Comment 1 & Comment 4:
+    - GitLab `glpat-` 토큰, GitHub, Slack, HuggingFace 등 확장 토큰 마스킹 검증
+    - 한국어 유니코드 단어 경계(한글 인접) 호환성 검증
+    """
+    from backend.agent.error_utils import sanitize_content_pii
+
+    # GitLab Personal Access Token (20자 이상)
+    assert (
+        sanitize_content_pii("GitLab 토큰은 glpat-abcdefghijklmnopqrst12345입니다")
+        == "GitLab 토큰은 [REDACTED_KEY]입니다"
+    )
+    # GitLab CI/Deploy 토큰
+    assert (
+        sanitize_content_pii("CI 토큰: glcbt-0123456789abcdefghij입니다")
+        == "CI 토큰: [REDACTED_KEY]입니다"
+    )
+    # GitHub OAuth 토큰
+    assert (
+        sanitize_content_pii("gho_1234567890abcdefghijklmnopqrstuvwxyz입니다")
+        == "[REDACTED_KEY]입니다"
+    )
+    # HuggingFace 토큰
+    assert (
+        sanitize_content_pii("hf_1234567890abcdefghijklmnopqrstuvwxyz입니다")
+        == "[REDACTED_KEY]입니다"
+    )
+    # OpenAI/Anthropic sk- 토큰 + 한글 인접
+    assert (
+        sanitize_content_pii("키는sk-abcdefghijklmnopqrstuvwxyz123입니다")
+        == "키는[REDACTED_KEY]입니다"
+    )
+    # Bearer 토큰
+    assert (
+        sanitize_content_pii(
+            "헤더: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.xyz입니다"
+        )
+        == "헤더: [REDACTED_KEY]입니다"
+    )
+
+
+def test_sanitize_content_pii_unhyphenated_rrn():
+    """
+    Comment 2 & Comment 4:
+    - 하이픈/공백 없는 13자리 연속 숫자 주민등록번호 마스킹 검증
+    - 한글 인접 단어 경계 호환성 검증
+    - 14자리 이상 연속 숫자의 부분 일치 오탐 방지 검증
+    """
+    from backend.agent.error_utils import sanitize_content_pii
+
+    # 구분자 없는 13자리 주민번호
+    assert (
+        sanitize_content_pii("제 주민번호는 9001011234567입니다")
+        == "제 주민번호는 [REDACTED_RRN]입니다"
+    )
+    # 하이픈 구분 주민번호
+    assert (
+        sanitize_content_pii("주민등록번호:900101-1234567입니다")
+        == "주민등록번호:[REDACTED_RRN]입니다"
+    )
+    # 공백 구분 주민번호
+    assert (
+        sanitize_content_pii("주민번호 900101 2234567 입니다")
+        == "주민번호 [REDACTED_RRN] 입니다"
+    )
+    # 14자리 이상 연속 숫자: 주민번호로 부분 일치되지 않아야 함 (RRN 오탐 방지)
+    assert "[REDACTED_RRN]" not in sanitize_content_pii("일반ID 190010112345678 입니다")
+
+
+def test_sanitize_content_pii_long_credit_cards():
+    """
+    Comment 3 & Comment 4:
+    - 16~19자리 결제 카드 번호(구분자 유무 무관) 마스킹 검증
+    - 한글 인접 단어 경계 호환성 검증
+    - 일반 휴대폰 번호와의 오탐 충돌 방지 검증
+    """
+    from backend.agent.error_utils import sanitize_content_pii
+
+    # 16자리 카드 번호 (하이픈 구분)
+    assert (
+        sanitize_content_pii("카드 1234-5678-1234-5678입니다")
+        == "카드 [REDACTED_CARD]입니다"
+    )
+    # 17자리 카드 번호 (구분자 없음)
+    assert (
+        sanitize_content_pii("17자리 12345678123456789입니다")
+        == "17자리 [REDACTED_CARD]입니다"
+    )
+    # 18자리 카드 번호 (구분자 없음)
+    assert (
+        sanitize_content_pii("18자리 123456781234567890입니다")
+        == "18자리 [REDACTED_CARD]입니다"
+    )
+    # 19자리 카드 번호 (하이픈 구분)
+    assert (
+        sanitize_content_pii("19자리 1234-5678-1234-5678901입니다")
+        == "19자리 [REDACTED_CARD]입니다"
+    )
+    # 19자리 카드 번호 (구분자 없음)
+    assert (
+        sanitize_content_pii("19자리 1234567812345678901입니다")
+        == "19자리 [REDACTED_CARD]입니다"
+    )
+    # 일반 전화번호는 카드로 오인되지 않고 정상적으로 PHONE 마스킹
+    assert (
+        sanitize_content_pii("전화번호는 010-1234-5678입니다")
+        == "전화번호는 [REDACTED_PHONE]입니다"
+    )
+
+
+@pytest.mark.asyncio
+async def test_save_chat_history_idempotency_retry():
+    """
+    Comment 5:
+    - 클라이언트 재시도 시 안정적인 turn_id를 기반으로 히스토리 저장의 멱등성 검증
+    - 동일 turn_id에 대해 2회차 저장 시 중복 저장 건너뜀 (add_message 미호출, False 반환)
+    """
+    from backend.services.chat_service import ChatService
+
+    mock_history_service = MagicMock()
+    mock_history_service.add_message = AsyncMock()
+
+    # 1회차 호출 시: 히스토리가 비어있음
+    mock_history_service.get_history = AsyncMock(return_value=[])
+
+    chat_service = ChatService(
+        hybrid_search_service=MagicMock(),
+        onboarding_service=MagicMock(),
+        chat_history_service=mock_history_service,
+    )
+
+    first_save = await chat_service._save_chat_history(
+        session_id="session-test-idempotent",
+        query="플로우노트 사용법 알려줘",
+        full_content="플로우노트는 스마트 마크다운 노트 앱입니다.",
+        turn_id="turn-stable-req-001",
+        message_id="asst-stable-msg-001",
+    )
+    assert first_save is True
+    assert mock_history_service.add_message.call_count == 2
+
+    # 2회차 호출 (재시도 시뮬레이션): get_history에서 이미 1회차 turn_id가 반환됨
+    mock_history_service.get_history = AsyncMock(
+        return_value=[
+            ChatMessage(
+                role="user",
+                content="플로우노트 사용법 알려줘",
+                turn_id="turn-stable-req-001",
+            ),
+            ChatMessage(
+                role="assistant",
+                content="플로우노트는 스마트 마크다운 노트 앱입니다.",
+                message_id="asst-stable-msg-001",
+                turn_id="turn-stable-req-001",
+            ),
+        ]
+    )
+    mock_history_service.add_message.reset_mock()
+
+    second_save = await chat_service._save_chat_history(
+        session_id="session-test-idempotent",
+        query="플로우노트 사용법 알려줘",
+        full_content="플로우노트는 스마트 마크다운 노트 앱입니다.",
+        turn_id="turn-stable-req-001",
+        message_id="asst-stable-msg-001",
+    )
+    # 중복 저장 건너뜀 검증 (False 반환 및 add_message 호출 없음)
+    assert second_save is False
+    assert mock_history_service.add_message.call_count == 0

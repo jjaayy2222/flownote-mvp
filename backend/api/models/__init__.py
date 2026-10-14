@@ -208,6 +208,14 @@ class ChatQueryRequest(BaseModel):
     alpha: float = Field(
         default=0.5, ge=0.0, le=1.0, description="하이브리드 검색 FAISS 가중치"
     )
+    request_id: Optional[str] = Field(
+        default=None,
+        description="안정적인 요청 식별자 (재시도 시 멱등한 턴 저장을 위한 식별자)",
+    )
+    turn_id: Optional[str] = Field(
+        default=None,
+        description="대화 턴 식별자 (재시도 중복 방지 및 동시 스트림 격리용)",
+    )
 
     @field_validator("query")
     @classmethod

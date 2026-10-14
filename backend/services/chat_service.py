@@ -505,21 +505,49 @@ Standalone Question:"""
         *,
         message_id: Optional[str] = None,
         turn_id: Optional[str] = None,
-    ) -> None:
+    ) -> bool:
         """질의와 응답을 PII 마스킹 후 히스토리에 저장합니다.
 
         - turn_id: user+assistant 메시지를 하나의 대화 턴으로 연결하는 식별자.
           동시 요청이 같은 세션에서 발생해도 Q/A 쌍이 뒤섞이지 않도록 보호합니다.
         - message_id: assistant 메시지 식별자. 피드백 대상 조회 시 정확 매칭에 사용됩니다.
+        - 멱등성 보장: 동일 turn_id가 이미 저장되어 있으면 중복 저장을 건너뜁니다.
         """
-        masked_query = self._mask_pii(query)
-        masked_content = self._mask_pii(full_content)
-
         # 공통 turn_id를 생성하여 user/assistant 메시지를 하나의 턴으로 연결
         # 제공된 값이 없으면 새 UUID를 생성합니다 (하드코딩 없음)
         effective_turn_id = (turn_id and turn_id.strip()) or str(uuid.uuid4())
         # assistant 메시지 ID — 피드백 대상 정확 매칭용
         effective_message_id = (message_id and message_id.strip()) or str(uuid.uuid4())
+
+        # [Idempotency] 안정적인 turn_id가 제공된 경우, 재시도 시 동일 턴이 중복 저장되는 것을 방지
+        if session_id:
+            try:
+                recent_messages = await self.chat_history_service.get_history(
+                    session_id, limit=50
+                )
+                if any(
+                    getattr(m, "turn_id", None) == effective_turn_id
+                    or (
+                        effective_message_id
+                        and getattr(m, "message_id", None) == effective_message_id
+                    )
+                    for m in recent_messages
+                ):
+                    logger.info(
+                        "[IDEMPOTENCY] Chat turn already committed for session %s (turn_id=%s), skipping duplicate save.",
+                        mask_pii_id(session_id),
+                        mask_pii_id(effective_turn_id),
+                    )
+                    return False
+            except Exception as e:
+                # 멱등성 검사 실패 시(Redis 일시 장애 등) 저장을 차단하지 않고 경고 후 저장 진행
+                logger.warning(
+                    "[IDEMPOTENCY] Failed to verify existing turn_id, proceeding with save: %s",
+                    e,
+                )
+
+        masked_query = self._mask_pii(query)
+        masked_content = self._mask_pii(full_content)
 
         await self.chat_history_service.add_message(
             session_id,
@@ -534,6 +562,7 @@ Standalone Question:"""
             message_id=effective_message_id,
             turn_id=effective_turn_id,
         )
+        return True
 
     async def stream_chat(
         self,
@@ -542,6 +571,9 @@ Standalone Question:"""
         session_id: Optional[str] = None,
         k: int = 5,
         alpha: Optional[float] = None,
+        request_id: Optional[str] = None,
+        turn_id: Optional[str] = None,
+        message_id: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         """질의를 받아 RAG 체인을 실행하고 SSE 규격에 맞게 결과 청크를 반환하는 비동기 제너레이터"""
         start_time = time.perf_counter()
@@ -565,6 +597,9 @@ Standalone Question:"""
             user_id=user_id,
             session_id=session_id,
             query=query,
+            request_id=request_id,
+            turn_id=turn_id,
+            message_id=message_id,
         ):
             yield chunk
 
@@ -577,6 +612,10 @@ Standalone Question:"""
         user_id: str,
         session_id: Optional[str],
         query: str,
+        *,
+        request_id: Optional[str] = None,
+        turn_id: Optional[str] = None,
+        message_id: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         is_cancelled = False
         full_content_list: List[str] = []
@@ -630,16 +669,25 @@ Standalone Question:"""
         if not is_cancelled:
             if session_id and full_content_list:
                 full_content = "".join(full_content_list)
-                # 스트림마다 고유한 assistant message_id와 turn_id를 생성하여
-                # 동시 스트림이 같은 세션에 기록되더라도 Q/A 쌍이 뒤섞이지 않도록 보호합니다.
-                assistant_message_id = str(uuid.uuid4())
-                stream_turn_id = str(uuid.uuid4())
+                # 안정적인 요청 식별자(turn_id 또는 request_id)가 제공되면 이를 우선 사용하고,
+                # 없을 경우 새 UUID를 생성합니다.
+                # 이를 통해 클라이언트 재시도 시 새 ID가 발급되어 중복 턴이 생성되는 문제를 방지합니다 (멱등성 보장).
+                stable_turn_id = (
+                    (turn_id and turn_id.strip())
+                    or (request_id and request_id.strip())
+                    or str(uuid.uuid4())
+                )
+                # assistant_message_id도 클라이언트 지정값이 없으면 session_id와 stable_turn_id로부터
+                # 결정적(deterministic) UUID5를 생성하여 재시도 시에도 동일한 message_id가 유지되도록 합니다.
+                assistant_message_id = (message_id and message_id.strip()) or str(
+                    uuid.uuid5(uuid.NAMESPACE_OID, f"{session_id}:{stable_turn_id}")
+                )
                 await self._save_chat_history(
                     session_id,
                     query,
                     full_content,
                     message_id=assistant_message_id,
-                    turn_id=stream_turn_id,
+                    turn_id=stable_turn_id,
                 )
                 # done 이벤트에 assistant_message_id를 포함해 프론트엔드가
                 # 피드백 제출 시 정확한 message_id를 사용할 수 있도록 합니다.
