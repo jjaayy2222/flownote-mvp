@@ -22,8 +22,8 @@
   - `get_automation_rules`, `create_automation_rule` 등 규칙 CRUD 전체 메서드: 파일/Mock 기반에서 DB 연동으로 전환 (현재 JSONL은 임시 스토리지로, 재배포/다중 인스턴스 환경을 위해 DB 마이그레이션 필수).
 - [ ] **Celery 연동 (`backend/api/endpoints/automation.py`)**
   - `trigger_automation_task` 엔드포인트: 실제 Celery 태스크 지연 실행(`task.delay()`) 트리거 활성화.
-- [ ] **Golden Dataset 조인 (`backend/services/scheduler_service.py`)**
-  - `extract_and_serialize_golden_dataset` 함수: 피드백 텍스트뿐만 아니라 `session_id`, `message_id`를 활용해 실제 `ChatHistory`와 조인하여 컨텍스트 보강.
+- [x] **Golden Dataset 조인 (`backend/services/scheduler_service.py`)**
+  - `extract_and_serialize_golden_dataset` 함수: 피드백 텍스트뿐만 아니라 `session_id`, `message_id`를 활용해 실제 `ChatHistory`와 조인하여 컨텍스트 보강 (1차 연동 및 세션 캐시, PathConfig 기반 SSOT 적용).
 
 ## 🟡 [P3] Phase 4: MCP & Obsidian Sync 실시간 연동
 외부 에이전트 및 로컬 에디터와의 동기화 완결성을 위한 작업입니다.
