@@ -14,6 +14,7 @@ from apscheduler.triggers.cron import CronTrigger
 from backend.agent.error_utils import (  # type: ignore[import]
     build_meta,
     log_agent_error,
+    sanitize_content_pii,
 )
 from backend.api.models import ChatMessage  # type: ignore[import]
 from backend.config import PathConfig
@@ -53,24 +54,31 @@ async def _resolve_qa_context(
     피드백 데이터포인트(session_id, message_id)를 기반으로
     ChatHistory와 조인하여 실제 사용자 질문(Q)과 AI 응답(A)을 복원합니다.
 
-    조인 전략:
-        1. chat_history_service를 통해 세션 대화 내역 조회 (세션 캐시로 N+1 방지)
-        2. message_id 일치하는 assistant 메시지 검색 (1순위 정확 매칭)
-        3. 일치 항목 부재 시 가장 최신 assistant 메시지 매칭 (2순위 fallback)
-        4. assistant 메시지 직전의 user 메시지를 질문(Q)으로 복원
-        5. 조인 실패 또는 기록 부재 시 기존 피드백 텍스트 기반 fallback 적용
+    보안 정책:
+        - fb.message_id가 없거나 history에서 일치하는 assistant 메시지를 찾지 못하면
+          다른 메시지로 대체(fallback)하지 않고 was_joined=False를 반환합니다.
+          (데이터 오염 방지: 다른 사용자 세션의 Q/A가 골든 데이터셋에 유입되는 것을 방지)
+        - turn_id가 둘 다 존재하이 서로 일치하는 user 메시지를 질문으로 선택합니다.
+          turn_id가 없으면 assistant 보다 앞에 있는 user 메시지를 fallback으로 선택합니다.
+        - 연결할 user 메시지가 없으면 was_joined=False 반환 (피드백 텍스트를 가짜 질문으로 사용하지 않음)
+        - 복원된 모든 텍스트는 콘텐츠 레벨 PII 마스킹을 적용합니다.
 
     Returns:
         tuple[question, answer, was_joined]:
-            - question: 복원된 사용자 질문 또는 피드백 텍스트
-            - answer: 복원된 AI 응답 또는 기본 응답
+            - question: 복원된 사용자 질문 (복원 실패 시 빈 문자열)
+            - answer: 복원된 AI 응답 (복원 실패 시 빈 문자열)
             - was_joined: 실제 ChatHistory 조인 성공 여부 (True/False)
     """
-    default_q = f"Feedback: {fb.feedback_text or 'No text'}"
-    default_a = _FALLBACK_ANSWER_TEXT
-
     if not fb or not fb.session_id or not fb.session_id.strip():
-        return default_q, default_a, False
+        return "", "", False
+
+    # fb.message_id가 비어 있으면 정확 매칭 불가 → 짆접 실패 (fallback 금지)
+    if not fb.message_id or not fb.message_id.strip():
+        logger.debug(
+            "[OBS] _resolve_qa_context: empty message_id for session %s, skipping.",
+            mask_pii_id(fb.session_id),
+        )
+        return "", "", False
 
     # ChatHistoryService 인스턴스 확보
     history_service = chat_history_service or get_chat_history_service()
@@ -90,54 +98,78 @@ async def _resolve_qa_context(
                 mask_pii_id(fb.session_id),
                 str(exc),
             )
-            return default_q, default_a, False
+            return "", "", False
 
     if not history:
-        return default_q, default_a, False
+        return "", "", False
 
     matched_idx: Optional[int] = None
 
-    # 1순위: message_id 정확 매칭
-    if fb.message_id and fb.message_id.strip():
-        for idx, msg in enumerate(history):
-            if (
-                getattr(msg, "role", None) == "assistant"
-                and getattr(msg, "message_id", None) == fb.message_id
-            ):
-                matched_idx = idx
-                break
-
-    # 2순위: 정확 매칭 실패 시 가장 최신 assistant 메시지로 fallback
-    if matched_idx is None:
-        for idx in reversed(range(len(history))):
-            if getattr(history[idx], "role", None) == "assistant":
-                matched_idx = idx
-                break
+    # 1순위: message_id 정확 매칭 (fallback 없음 — 보안 정책)
+    # 다른 사용자 세션의 데이터가 조작된 message_id로 유입되는 것을 방지합니다.
+    for idx, msg in enumerate(history):
+        if (
+            getattr(msg, "role", None) == "assistant"
+            and getattr(msg, "message_id", None) == fb.message_id.strip()
+        ):
+            matched_idx = idx
+            break
 
     if matched_idx is None:
-        return default_q, default_a, False
+        # 정확 매칭 실패 — 다른 메시지로 fallback 하지 않고 바로 실패 련턴
+        logger.debug(
+            "[OBS] _resolve_qa_context: message_id %s not found in history for session %s.",
+            mask_pii_id(fb.message_id),
+            mask_pii_id(fb.session_id),
+        )
+        return "", "", False
 
     matched_assistant = history[matched_idx]
     ans_content = getattr(matched_assistant, "content", None)
     if not ans_content or not str(ans_content).strip():
-        return default_q, default_a, False
+        return "", "", False
 
     resolved_a = str(ans_content).strip()
 
-    # assistant 직전의 user 메시지 탐색 (질문 복원)
+    # 사용자 질문 복원: turn_id 기반 매칭 (Comment 6 대응)
+    # 동시 스트림이 같은 세션에 동시 저장되더라도 올바른 Q를 가리킵니다.
     resolved_q: Optional[str] = None
-    for idx in reversed(range(0, matched_idx)):
-        if getattr(history[idx], "role", None) == "user":
-            q_candidate = getattr(history[idx], "content", None)
-            if q_candidate and str(q_candidate).strip():
-                resolved_q = str(q_candidate).strip()
-                break
+    assistant_turn_id = getattr(matched_assistant, "turn_id", None)
 
-    if resolved_q:
-        return resolved_q, resolved_a, True
+    if assistant_turn_id and assistant_turn_id.strip():
+        # turn_id가 있으면: 같은 turn_id를 가진 user 메시지를 직접 검색
+        for msg in history:
+            if (
+                getattr(msg, "role", None) == "user"
+                and getattr(msg, "turn_id", None) == assistant_turn_id.strip()
+            ):
+                q_candidate = getattr(msg, "content", None)
+                if q_candidate and str(q_candidate).strip():
+                    resolved_q = str(q_candidate).strip()
+                    break
     else:
-        # assistant 응답은 복원했으나 직전 질문이 없는 경우
-        return default_q, resolved_a, True
+        # turn_id가 없으면 (활성 전 데이터): assistant 직전의 user 메시지 fallback
+        for idx in reversed(range(0, matched_idx)):
+            if getattr(history[idx], "role", None) == "user":
+                q_candidate = getattr(history[idx], "content", None)
+                if q_candidate and str(q_candidate).strip():
+                    resolved_q = str(q_candidate).strip()
+                    break
+
+    if not resolved_q:
+        # 연결할 질문이 없으면 조인 실패 — 피드백 텍스트를 가짜 질문으로 대체하지 않음 (Comment 5)
+        logger.debug(
+            "[OBS] _resolve_qa_context: no user question found for assistant at idx %d (session %s).",
+            matched_idx,
+            mask_pii_id(fb.session_id),
+        )
+        return "", "", False
+
+    # 콘텐츠 레벨 PII 마스킹 적용 (Comment 1) — 모든 텍스트를 파인튜닝 제공사에 보내기 전에 수정
+    sanitized_q = sanitize_content_pii(resolved_q)
+    sanitized_a = sanitize_content_pii(resolved_a)
+
+    return sanitized_q, sanitized_a, True
 
 
 async def extract_and_serialize_golden_dataset():
@@ -166,19 +198,28 @@ async def extract_and_serialize_golden_dataset():
         session_cache: dict[str, list[ChatMessage]] = {}
         joined_count = 0
         fallback_count = 0
+        skipped_unmatched = 0  # message_id 불일치 또는 조인 실패로 제외된 건수
 
         for fb in feedbacks:
             if not fb:
                 continue
 
-            # ChatHistory 조인 및 컨텍스트 복원
+            # ChatHistory 조인 및 콘텍스트 복원
             q_text, a_text, was_joined = await _resolve_qa_context(
                 fb, session_cache=session_cache
             )
             if was_joined:
                 joined_count += 1
             else:
-                fallback_count += 1
+                # 조인 실패 레코드는 골든 데이터셋에 입력하지 않음 (Comments 2, 3, 5)
+                # 부정확한 Q/A가 파인튜닝 데이터에 포함되는 것을 방지합니다.
+                skipped_unmatched += 1
+                continue
+
+            # 콘텐츠 레벨 PII 마스킹: 피드백 텍스트도 수정 (Comment 1)
+            sanitized_feedback_text = (
+                sanitize_content_pii(fb.feedback_text) if fb.feedback_text else None
+            )
 
             messages = format_finetune_message(
                 question=q_text,
@@ -192,8 +233,8 @@ async def extract_and_serialize_golden_dataset():
                 "session_id": fb.session_id,
                 "message_id": fb.message_id,
             }
-            if fb.feedback_text:
-                entry["feedback_text"] = fb.feedback_text
+            if sanitized_feedback_text:
+                entry["feedback_text"] = sanitized_feedback_text
 
             dataset.append(entry)
 
@@ -216,7 +257,7 @@ async def extract_and_serialize_golden_dataset():
                 "filename": Path(saved_path).name,
                 "dataset_size": len(dataset),
                 "joined_count": joined_count,
-                "fallback_count": fallback_count,
+                "skipped_unmatched": skipped_unmatched,
                 "date": date_str,
             },
         )
