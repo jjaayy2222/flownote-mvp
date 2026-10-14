@@ -225,6 +225,7 @@ class ChatMessage(BaseModel):
     content: str = Field(..., description="메시지 내용")
     timestamp: Optional[str] = Field(None, description="ISO 형식의 타임스탬프")
     message_id: Optional[str] = Field(None, description="메시지 식별자 (선택)")
+    turn_id: Optional[str] = Field(None, description="대화 턴 식별자 (선택)")
 
 
 class ChatHistoryResponse(BaseModel):

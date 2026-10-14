@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import time
+import uuid
 from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
@@ -496,13 +497,42 @@ Standalone Question:"""
                 return self._format_sse_event("sources", data=sources_payload)
         return None
 
-    async def _save_chat_history(self, session_id: str, query: str, full_content: str):
-        """질의와 응답을 PII 마스킹 후 히스토리에 저장합니다."""
+    async def _save_chat_history(
+        self,
+        session_id: str,
+        query: str,
+        full_content: str,
+        *,
+        message_id: Optional[str] = None,
+        turn_id: Optional[str] = None,
+    ) -> None:
+        """질의와 응답을 PII 마스킹 후 히스토리에 저장합니다.
+
+        - turn_id: user+assistant 메시지를 하나의 대화 턴으로 연결하는 식별자.
+          동시 요청이 같은 세션에서 발생해도 Q/A 쌍이 뒤섞이지 않도록 보호합니다.
+        - message_id: assistant 메시지 식별자. 피드백 대상 조회 시 정확 매칭에 사용됩니다.
+        """
         masked_query = self._mask_pii(query)
         masked_content = self._mask_pii(full_content)
-        await self.chat_history_service.add_message(session_id, "user", masked_query)
+
+        # 공통 turn_id를 생성하여 user/assistant 메시지를 하나의 턴으로 연결
+        # 제공된 값이 없으면 새 UUID를 생성합니다 (하드코딩 없음)
+        effective_turn_id = (turn_id and turn_id.strip()) or str(uuid.uuid4())
+        # assistant 메시지 ID — 피드백 대상 정확 매칭용
+        effective_message_id = (message_id and message_id.strip()) or str(uuid.uuid4())
+
         await self.chat_history_service.add_message(
-            session_id, "assistant", masked_content
+            session_id,
+            "user",
+            masked_query,
+            turn_id=effective_turn_id,
+        )
+        await self.chat_history_service.add_message(
+            session_id,
+            "assistant",
+            masked_content,
+            message_id=effective_message_id,
+            turn_id=effective_turn_id,
         )
 
     async def stream_chat(
@@ -600,9 +630,22 @@ Standalone Question:"""
         if not is_cancelled:
             if session_id and full_content_list:
                 full_content = "".join(full_content_list)
-                await self._save_chat_history(session_id, query, full_content)
-
-            yield self._format_sse_event("done")
+                # 스트림마다 고유한 assistant message_id와 turn_id를 생성하여
+                # 동시 스트림이 같은 세션에 기록되더라도 Q/A 쌍이 뒤섞이지 않도록 보호합니다.
+                assistant_message_id = str(uuid.uuid4())
+                stream_turn_id = str(uuid.uuid4())
+                await self._save_chat_history(
+                    session_id,
+                    query,
+                    full_content,
+                    message_id=assistant_message_id,
+                    turn_id=stream_turn_id,
+                )
+                # done 이벤트에 assistant_message_id를 포함해 프론트엔드가
+                # 피드백 제출 시 정확한 message_id를 사용할 수 있도록 합니다.
+                yield self._format_sse_event("done", message_id=assistant_message_id)
+            else:
+                yield self._format_sse_event("done")
 
 
 @lru_cache(maxsize=None)

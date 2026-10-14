@@ -63,6 +63,18 @@ _UNIX_ABS_PATH_PATTERN = re.compile(r"(?<![:\w])/(?:[^\s/\'\",:;]+/)+[^\s/\'\",:
 # Windows 절대 경로 (예: C:\Users\jay\file.txt)
 _WIN_ABS_PATH_PATTERN = re.compile(r"[A-Za-z]:\\[^\s<>:\"?*|]+(?:\\[^\s<>:\"?*|]+)*")
 
+# [Security] 주민등록번호 마스킹 패턴 (6자리-7자리)
+_RRN_PATTERN = re.compile(r"\b\d{6}[- ][1-4]\d{6}\b")
+# [Security] 신용카드 번호 마스킹 패턴 (16자리)
+_CREDIT_CARD_PATTERN = re.compile(r"\b(?:\d{4}[- ]?){3}\d{4}\b")
+# [Security] 주요 클라우드/LLM API 키 및 인증 토큰 패턴
+_API_KEY_PATTERN = re.compile(
+    r"\b(?:sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9_-]{20,}|Bearer\s+[A-Za-z0-9._~+/-]+=*)\b",
+    re.IGNORECASE,
+)
+# [Security] IPv4 주소 마스킹 패턴
+_IP_PATTERN = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+
 # [Security] 로그 내 보안 정책 식별자 — 변경 시 이 상수 하나만 수정하면 모든 호출부에 반영됨
 _SECURITY_NOTICE: str = (
     "Traceback omitted for PII protection; error_msg sanitized and truncated"
@@ -108,17 +120,35 @@ def get_safe_file_id(file_path: Union[str, Path]) -> str:
     return f"{path_obj.name}_{path_hash}"
 
 
-def _sanitize_pii(text: str) -> str:
+def sanitize_content_pii(text: Optional[str]) -> str:
     """
-    [KO] 텍스트 내의 이메일, 전화번호, 인증 토큰, 파일시스템 경로 등 민감 정보(PII)를 탐지하여 마스킹합니다.
-    [EN] Detects and masks PII (email, phone number, auth tokens, filesystem paths) in the given text.
+    [KO] 텍스트 내의 이메일, 전화번호, 주민등록번호, 신용카드 번호, API 키/토큰,
+    파일시스템 절대 경로, IP 주소 등 민감 정보(PII)를 탐지하여 마스킹합니다.
+    파인튜닝 데이터셋 저장 전 콘텐츠 수준의 마스킹(Content-level redaction)에 사용됩니다.
+
+    [EN] Detects and masks PII (email, phone, RRN, credit card, API keys, tokens,
+    filesystem paths, IP addresses) in text for content-level sanitization.
     """
+    if not text:
+        return ""
     sanitized = _EMAIL_PATTERN.sub("[REDACTED_EMAIL]", text)
     sanitized = _PHONE_PATTERN.sub("[REDACTED_PHONE]", sanitized)
+    sanitized = _RRN_PATTERN.sub("[REDACTED_RRN]", sanitized)
+    sanitized = _CREDIT_CARD_PATTERN.sub("[REDACTED_CARD]", sanitized)
+    sanitized = _API_KEY_PATTERN.sub("[REDACTED_KEY]", sanitized)
     sanitized = _TOKEN_PATTERN.sub("[REDACTED_TOKEN]", sanitized)
     sanitized = _UNIX_ABS_PATH_PATTERN.sub("[REDACTED_PATH]", sanitized)
     sanitized = _WIN_ABS_PATH_PATTERN.sub("[REDACTED_PATH]", sanitized)
+    sanitized = _IP_PATTERN.sub("[REDACTED_IP]", sanitized)
     return sanitized
+
+
+def _sanitize_pii(text: str) -> str:
+    """
+    [KO] 텍스트 내의 민감 정보(PII)를 탐지하여 마스킹합니다.
+    [EN] Detects and masks PII in the given text.
+    """
+    return sanitize_content_pii(text)
 
 
 def sanitize_error_msg(exc: Exception, max_chars: int = _MAX_ERROR_MSG_CHARS) -> str:
