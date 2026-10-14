@@ -15,7 +15,17 @@ from backend.agent.error_utils import (  # type: ignore[import]
     build_meta,
     log_agent_error,
 )
-from backend.services.golden_dataset_service import filter_positive_feedbacks
+from backend.api.models import ChatMessage  # type: ignore[import]
+from backend.config import PathConfig
+from backend.services.chat_history_service import (  # type: ignore[import]
+    ChatHistoryService,
+    get_chat_history_service,
+)
+from backend.services.golden_dataset_service import (
+    FeedbackDataPoint,
+    filter_positive_feedbacks,
+)
+from backend.utils import mask_pii_id  # type: ignore[import]
 from backend.utils.finetune_parser import format_finetune_message, serialize_to_jsonl
 
 logger = logging.getLogger(__name__)
@@ -23,12 +33,118 @@ logger = logging.getLogger(__name__)
 # 전역 스케줄러 인스턴스
 scheduler = AsyncIOScheduler()
 
+# 골든 데이터셋 저장 경로 (PathConfig 기반 SSOT, 하드코딩 배제)
+GOLDEN_DATASET_DIR: Path = PathConfig.DATA_DIR / "golden_dataset"
+
+# 골든 데이터셋 기본 시스템 프롬프트 상수
+_DEFAULT_SYSTEM_PROMPT: str = (
+    "You are a highly helpful and accurate AI assistant. "
+    "This is an automatically extracted golden dataset."
+)
+_FALLBACK_ANSWER_TEXT: str = "Positive AI response"
+
+
+async def _resolve_qa_context(
+    fb: FeedbackDataPoint,
+    chat_history_service: Optional[ChatHistoryService] = None,
+    session_cache: Optional[dict[str, list[ChatMessage]]] = None,
+) -> tuple[str, str, bool]:
+    """
+    피드백 데이터포인트(session_id, message_id)를 기반으로
+    ChatHistory와 조인하여 실제 사용자 질문(Q)과 AI 응답(A)을 복원합니다.
+
+    조인 전략:
+        1. chat_history_service를 통해 세션 대화 내역 조회 (세션 캐시로 N+1 방지)
+        2. message_id 일치하는 assistant 메시지 검색 (1순위 정확 매칭)
+        3. 일치 항목 부재 시 가장 최신 assistant 메시지 매칭 (2순위 fallback)
+        4. assistant 메시지 직전의 user 메시지를 질문(Q)으로 복원
+        5. 조인 실패 또는 기록 부재 시 기존 피드백 텍스트 기반 fallback 적용
+
+    Returns:
+        tuple[question, answer, was_joined]:
+            - question: 복원된 사용자 질문 또는 피드백 텍스트
+            - answer: 복원된 AI 응답 또는 기본 응답
+            - was_joined: 실제 ChatHistory 조인 성공 여부 (True/False)
+    """
+    default_q = f"Feedback: {fb.feedback_text or 'No text'}"
+    default_a = _FALLBACK_ANSWER_TEXT
+
+    if not fb or not fb.session_id or not fb.session_id.strip():
+        return default_q, default_a, False
+
+    # ChatHistoryService 인스턴스 확보
+    history_service = chat_history_service or get_chat_history_service()
+
+    # 세션 히스토리 조회 (배치 내 세션 캐시 활용)
+    history: list[ChatMessage] = []
+    if session_cache is not None and fb.session_id in session_cache:
+        history = session_cache[fb.session_id]
+    else:
+        try:
+            history = await history_service.get_history(fb.session_id, limit=50)
+            if session_cache is not None:
+                session_cache[fb.session_id] = history
+        except Exception as exc:
+            logger.debug(
+                "[OBS] Failed to retrieve chat history for session %s: %s",
+                mask_pii_id(fb.session_id),
+                str(exc),
+            )
+            return default_q, default_a, False
+
+    if not history:
+        return default_q, default_a, False
+
+    matched_idx: Optional[int] = None
+
+    # 1순위: message_id 정확 매칭
+    if fb.message_id and fb.message_id.strip():
+        for idx, msg in enumerate(history):
+            if (
+                getattr(msg, "role", None) == "assistant"
+                and getattr(msg, "message_id", None) == fb.message_id
+            ):
+                matched_idx = idx
+                break
+
+    # 2순위: 정확 매칭 실패 시 가장 최신 assistant 메시지로 fallback
+    if matched_idx is None:
+        for idx in reversed(range(len(history))):
+            if getattr(history[idx], "role", None) == "assistant":
+                matched_idx = idx
+                break
+
+    if matched_idx is None:
+        return default_q, default_a, False
+
+    matched_assistant = history[matched_idx]
+    ans_content = getattr(matched_assistant, "content", None)
+    if not ans_content or not str(ans_content).strip():
+        return default_q, default_a, False
+
+    resolved_a = str(ans_content).strip()
+
+    # assistant 직전의 user 메시지 탐색 (질문 복원)
+    resolved_q: Optional[str] = None
+    for idx in reversed(range(0, matched_idx)):
+        if getattr(history[idx], "role", None) == "user":
+            q_candidate = getattr(history[idx], "content", None)
+            if q_candidate and str(q_candidate).strip():
+                resolved_q = str(q_candidate).strip()
+                break
+
+    if resolved_q:
+        return resolved_q, resolved_a, True
+    else:
+        # assistant 응답은 복원했으나 직전 질문이 없는 경우
+        return default_q, resolved_a, True
+
 
 async def extract_and_serialize_golden_dataset():
     """
     일 1회 빈도로 실행되는 자동 추출 작업(배치).
-    Redis에서 '좋아요(Thumbs Up)' 피드백을 모아 OpenAI Fine-tuning 포맷으로 변환한 뒤,
-    날짜별 jsonl 파일로 저장합니다.
+    Redis에서 '좋아요(Thumbs Up)' 피드백을 수집하고 실제 ChatHistory와 조인하여
+    OpenAI Fine-tuning 포맷으로 변환한 뒤, 날짜별 jsonl 파일로 저장합니다.
     """
     logger.info("[OBS] Starting daily golden dataset extraction job...")
 
@@ -45,46 +161,48 @@ async def extract_and_serialize_golden_dataset():
             )
             return
 
-        # 2. OpenAI Chat Fine-tuning 포맷으로 구조화
+        # 2. OpenAI Chat Fine-tuning 포맷으로 구조화 (ChatHistory 조인 적용)
         dataset = []
-        # system_prompt는 루프 내 반복 생성을 피하기 위해 루프 외부에서 상수로 정의
-        system_prompt_text = "You are a highly helpful and accurate AI assistant. This is an automatically extracted golden dataset."
-        # a_text도 고정값이므로 루프 외부에서 한 번만 정의
-        a_text = "Positive AI response"
-        for fb in feedbacks:
-            # TODO: 차후에 session_id와 message_id를 통해 실제 ChatHistory와 조인하여
-            # 정확한 Question(Q)과 Answer(A) 컨텍스트를 구성해야 합니다.
-            # 지금은 아키텍처 관점에서 스케줄러와 직렬화 파이프라인의 연결을 최우선으로 합니다.
+        session_cache: dict[str, list[ChatMessage]] = {}
+        joined_count = 0
+        fallback_count = 0
 
-            # PII 마스킹 시스템이 정상 작동하도록 민감한 식별자들을 자유 형식 텍스트(q_text, a_text)에
-            # 하드코딩하지 않고, 별도의 구조화된 필드로 분리합니다.
-            q_text = f"Feedback: {fb.feedback_text or 'No text'}"
+        for fb in feedbacks:
+            if not fb:
+                continue
+
+            # ChatHistory 조인 및 컨텍스트 복원
+            q_text, a_text, was_joined = await _resolve_qa_context(
+                fb, session_cache=session_cache
+            )
+            if was_joined:
+                joined_count += 1
+            else:
+                fallback_count += 1
 
             messages = format_finetune_message(
                 question=q_text,
                 answer=a_text,
-                system_prompt=system_prompt_text,
+                system_prompt=_DEFAULT_SYSTEM_PROMPT,
             )
-            # 메타데이터 분리 추가: format_finetune_message 반환 타입이 Dict[str, List[...]] 이므로
-            # pii_fields 필터링 대상 필드는 별도 Dict[str, Any]로 래핑하여 타입 충돌 방지
+
+            # 메타데이터 분리 (PII 마스킹 대상 필드는 별도 관리)
             entry: dict = {
                 **messages,
                 "session_id": fb.session_id,
                 "message_id": fb.message_id,
             }
+            if fb.feedback_text:
+                entry["feedback_text"] = fb.feedback_text
+
             dataset.append(entry)
 
-        # 프로젝트 최상단 디렉토리 구조 파악 (pathlib 활용)
-        project_root = Path(__file__).resolve().parent.parent.parent
-        output_dir = project_root / "data" / "golden_dataset"
-
-        # 디렉토리가 존재하지 않을 경우 안전하게 생성 (parents=True)
+        # 3. 저장 디렉토리 및 파일 경로 구성 (PathConfig 기반 SSOT)
+        output_dir = GOLDEN_DATASET_DIR
         output_dir.mkdir(parents=True, exist_ok=True)
-
         output_filepath = str(output_dir / f"{date_str}.jsonl")
 
         # 4. JSONL 파일로 직렬화 (finetune_parser 모듈 활용)
-        # strict_alert=True를 주어 변환 중 실패 타입이 생기면 운영 알람을 보내도록 함
         saved_path = serialize_to_jsonl(
             dataset=dataset,
             output_filepath=output_filepath,
@@ -97,6 +215,8 @@ async def extract_and_serialize_golden_dataset():
             extra={
                 "filename": Path(saved_path).name,
                 "dataset_size": len(dataset),
+                "joined_count": joined_count,
+                "fallback_count": fallback_count,
                 "date": date_str,
             },
         )
@@ -137,6 +257,9 @@ def _log_env_fallback(
 
 def parse_env_int(key: str, default: int, min_val: int, max_val: int) -> int:
     """환경 변수에서 정수값을 안전하게 추출하고, 실패 시 기본값으로 폴백합니다."""
+    if not key or not isinstance(key, str):
+        return default
+
     val = os.environ.get(key)
 
     # 환경 변수가 아예 설정되지 않은 경우는 조용히 기본값 사용
@@ -174,8 +297,10 @@ def start_scheduler():
 
     # 타임존 문자열을 검증/정규화하고, 실패 시 기본값(UTC)으로 폴백
     try:
-        cron_timezone = ZoneInfo(cron_timezone_name)
-    except ZoneInfoNotFoundError:
+        cron_timezone = ZoneInfo(
+            cron_timezone_name.strip() if cron_timezone_name else "UTC"
+        )
+    except (ZoneInfoNotFoundError, ValueError):
         logger.warning(
             "[OBS] Timezone '%s' is invalid. Falling back to UTC.", cron_timezone_name
         )

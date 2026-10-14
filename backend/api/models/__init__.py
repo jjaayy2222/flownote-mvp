@@ -5,7 +5,6 @@ API Models Package
 """
 
 from enum import Enum
-from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, cast
 
 from pydantic import BaseModel, Field, field_validator  # type: ignore[import]
@@ -33,8 +32,8 @@ from backend.models.classification import (  # type: ignore[import]
 )
 
 # Core Models - Conflict
+from backend.models.conflict import ConflictDetail  # type: ignore[import]
 from backend.models.conflict import (
-    ConflictDetail,  # type: ignore[import]
     ConflictDetectResponse,
     ConflictRecord,
     ConflictReport,
@@ -63,8 +62,6 @@ class BaseResponse(BaseModel):
 class HealthCheckResponse(BaseResponse):
     """헬스체크 응답"""
 
-    pass
-
 
 class FileProcessingResponse(BaseResponse):
     """파일 처리 응답"""
@@ -82,8 +79,6 @@ class SearchResponse(BaseResponse):
 
 class MetadataResponse(BaseResponse):
     """메타데이터 조회/업데이트 응답"""
-
-    pass
 
 
 # ---------------------------------------------------------
@@ -229,6 +224,7 @@ class ChatMessage(BaseModel):
     role: str = Field(..., description="메시지 발신자 역할 (user, assistant, system)")
     content: str = Field(..., description="메시지 내용")
     timestamp: Optional[str] = Field(None, description="ISO 형식의 타임스탬프")
+    message_id: Optional[str] = Field(None, description="메시지 식별자 (선택)")
 
 
 class ChatHistoryResponse(BaseModel):
