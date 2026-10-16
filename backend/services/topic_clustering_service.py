@@ -28,13 +28,28 @@ import os
 import re
 import typing
 from functools import lru_cache
-from typing import Any, Callable, Dict, List, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, TypeVar
 
 import numpy as np
 from fastapi.concurrency import run_in_threadpool  # type: ignore[import]
 from redis.exceptions import RedisError  # 연결/타임아웃/명령 실패 포괄
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
+
+if TYPE_CHECKING:
+    from sklearn.cluster import KMeans
+    from sklearn.metrics import silhouette_score
+else:
+    try:
+        from sklearn.cluster import KMeans
+        from sklearn.metrics import silhouette_score
+    except ImportError:
+
+        class KMeans:  # type: ignore[no-redef]
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                raise RuntimeError(
+                    "scikit-learn(sklearn) 패키지가 설치되지 않았습니다."
+                )
+
+        silhouette_score = None
 
 from backend.agent.error_utils import is_system_error
 from backend.embedding import EmbeddingGenerator  # type: ignore[import]

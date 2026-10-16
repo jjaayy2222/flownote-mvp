@@ -22,6 +22,7 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         "search_results": "{count}개의 검색 결과를 찾았습니다",
         "metadata_updated": "메타데이터가 업데이트되었습니다",
         "metadata_fetched": "메타데이터를 조회했습니다",
+        "metadata_not_found": "파일 메타데이터를 찾을 수 없습니다: {file_id}",
         # Error Messages
         "bad_request": "잘못된 요청입니다",
         "forbidden": "접근 권한이 없습니다",
@@ -44,6 +45,7 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         "search_results": "Found {count} search results",
         "metadata_updated": "Metadata updated",
         "metadata_fetched": "Metadata fetched",
+        "metadata_not_found": "Metadata not found for file: {file_id}",
         # Error Messages
         "bad_request": "Bad request",
         "forbidden": "Access forbidden",

@@ -7,6 +7,8 @@ from .common import (
     INVALID_PII_SENTINEL,
     MAX_ERROR_LOG_LENGTH,
     check_metadata_match,
+    count_tokens,
+    estimate_cost,
     format_error_msg,
     mask_pii_id,
     safe_parse_env_float,
@@ -21,4 +23,6 @@ __all__ = [
     "safe_parse_env_float",
     "mask_pii_id",
     "INVALID_PII_SENTINEL",
+    "count_tokens",
+    "estimate_cost",
 ]
