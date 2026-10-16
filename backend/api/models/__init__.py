@@ -77,8 +77,41 @@ class SearchResponse(BaseResponse):
     count: int = 0
 
 
+class MetadataUpdateRequest(BaseModel):
+    """메타데이터 업데이트 요청 모델
+
+    Attributes:
+        updates: 갱신할 키-값 딕셔너리 (빈 객체 불가)
+    """
+
+    updates: Dict[str, Any] = Field(
+        ...,
+        description="갱신할 메타데이터 필드 딕셔너리",
+    )
+
+    @field_validator("updates")
+    @classmethod
+    def validate_updates(cls, v: Dict[str, Any]) -> Dict[str, Any]:
+        """업데이트할 데이터가 비어있지 않은 딕셔너리인지 검증합니다."""
+        if not isinstance(v, dict) or not v:
+            raise ValueError("updates는 비어있지 않은 딕셔너리여야 합니다.")
+        return v
+
+
 class MetadataResponse(BaseResponse):
-    """메타데이터 조회/업데이트 응답"""
+    """메타데이터 조회/업데이트 응답
+
+    Attributes:
+        status: 응답 상태 ("success", "error")
+        message: 상태 메시지 (다국어 지원)
+        file_id: 대상 파일 식별자
+        metadata: 파일 메타데이터 상세 정보
+    """
+
+    file_id: Optional[str] = Field(None, description="파일 고유 식별자")
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="파일 메타데이터 상세 딕셔너리"
+    )
 
 
 # ---------------------------------------------------------
@@ -386,6 +419,7 @@ __all__ = [
     "FileProcessingResponse",
     "SearchResponse",
     "MetadataResponse",
+    "MetadataUpdateRequest",
     # Hybrid Search (Step 6)
     "PARACategory",
     "PARA_CATEGORIES",

@@ -46,12 +46,12 @@
 
 - [ ] **Dashboard Stats (`backend/api/endpoints/automation.py`)**
   - `get_dashboard_summary`, `get_watchdog_events` 함수: 임시 수치 대신 실제 로그와 시스템 지표 집계 로직 반영.
-- [ ] **Metadata API (`backend/api/endpoints/metadata.py`)**
-  - `get_metadata`, `update_metadata` 함수: 파일 메타데이터의 실제 조회 및 업데이트 기능 연동.
+- [x] **Metadata API (`backend/api/endpoints/metadata.py`)**
+  - `get_metadata`, `update_metadata` 함수: 파일 메타데이터의 실제 조회 및 업데이트 기능 연동 (FileMetadata 및 PathConfig SSOT 결합, 미존재 시 404 오류 처리, 영속화 실패 시 롤백 및 PII 안전 로깅 적용).
 - [ ] **Reporting Task (`backend/celery_app/tasks/reporting.py`)**
   - 파일 파싱 등 메모리 위주의 작업을 추후 DB 쿼리 기반으로 성능 개선(최적화).
 
 ---
 *💡 관리 가이드: 해결된 항목은 본 문서에서 체크표시(`[x]`) 처리하고, 실제 소스 코드 상의 주석을 제거하여 단일 진실 공급원(SSOT)을 유지합니다.*
-- **✅ 코드베이스 싱크 상태**: `# TODO` 주석과 본 문서의 항목이 정확히 일치함을 확인했습니다. (마지막 점검일: 2026-10-12)
+- **✅ 코드베이스 싱크 상태**: `# TODO` 주석과 본 문서의 항목이 정확히 일치함을 확인했습니다. (마지막 점검일: 2026-10-17)
 - **💡 변동성(Drift) 주의**: TODO 항목의 개수나 내용은 개발 과정에 따라 수시로 변동될 수 있으므로, 주기적인 정합성 점검을 권장합니다.

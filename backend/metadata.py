@@ -19,9 +19,10 @@ upon upload, and persists it to a local JSON file.
 import json
 import logging
 import os
+import threading
 import uuid
 from datetime import datetime
-from typing import Callable, Dict, List, Optional, TypedDict
+from typing import Any, Callable, Dict, List, Optional, TypedDict
 
 from backend.utils.common import format_error_msg
 
@@ -389,6 +390,84 @@ class FileMetadata:
             "total_size_mb": round(total_size / (1024 * 1024), 2),
             "models_used": models,
         }
+
+    def update_file(
+        self,
+        file_id: str,
+        updates: Dict[str, Any],
+    ) -> bool:
+        """
+        [KO]
+        특정 파일 ID에 해당하는 메타데이터 레코드를 부분 갱신합니다.
+        영속화 실패 시 메모리에서도 롤백되고 False를 반환합니다.
+
+        Args:
+            file_id: 갱신할 파일의 고유 ID
+            updates: 갱신할 필드 딕셔너리
+
+        Returns:
+            갱신 및 영속화 성공 시 True, 파일 ID가 없거나 저장 실패 시 False
+        """
+        if not file_id or file_id not in self.metadata:
+            return False
+
+        if not isinstance(updates, dict) or not updates:
+            return False
+
+        old_record = dict(self.metadata[file_id])
+        # 새 레코드 생성 (기존 내용 복사 후 업데이트 적용)
+        new_record = dict(old_record)
+        for key, value in updates.items():
+            new_record[key] = value
+
+        # 업데이트 타임스탬프 기록
+        new_record["updated_at"] = datetime.now().isoformat()
+
+        # file_size 변경 시 file_size_mb 자동 재계산
+        if "file_size" in updates and isinstance(updates["file_size"], (int, float)):
+            new_record["file_size_mb"] = round(updates["file_size"] / (1024 * 1024), 2)
+
+        return self._apply_with_persistence(
+            mutate=lambda: self.metadata.update({file_id: new_record}),  # type: ignore[arg-type]
+            rollback=lambda: self.metadata.update({file_id: old_record}),  # type: ignore[arg-type]
+            action="update_file_rollback",
+        )
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 싱글톤 팩토리 함수
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+_DEFAULT_METADATA_INSTANCE: Optional[FileMetadata] = None
+_INSTANCE_LOCK = threading.Lock()
+
+
+def get_file_metadata(storage_path: Optional[str] = None) -> FileMetadata:
+    """
+    [KO]
+    FileMetadata 싱글톤 인스턴스를 반환하는 팩토리 함수입니다.
+    PathConfig.DATA_DIR를 기본 경로로 사용하여 단일 진실 공급원(SSOT)을 유지합니다.
+
+    Args:
+        storage_path: 선택적 저장 경로 (미지정 시 PathConfig.DATA_DIR / "metadata.json")
+
+    Returns:
+        FileMetadata 인스턴스
+    """
+    global _DEFAULT_METADATA_INSTANCE
+
+    if storage_path is not None:
+        return FileMetadata(storage_path=storage_path)
+
+    if _DEFAULT_METADATA_INSTANCE is None:
+        with _INSTANCE_LOCK:
+            if _DEFAULT_METADATA_INSTANCE is None:
+                from backend.config import PathConfig
+
+                default_path = str(PathConfig.DATA_DIR / "metadata.json")
+                _DEFAULT_METADATA_INSTANCE = FileMetadata(storage_path=default_path)
+
+    return _DEFAULT_METADATA_INSTANCE
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
