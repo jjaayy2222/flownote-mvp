@@ -274,19 +274,36 @@ async def test_metadata_i18n_messages(temp_metadata_storage: Path):
 
 
 def test_metadata_router_registered_in_main_app():
-    """backend.main:app 애플리케이션에 metadata 라우터가 올바르게 등록되어 있는지 검증 (Comment 1)."""
+    """backend.main:app 애플리케이션에 metadata 라우터가 /api/metadata로 올바르게 등록되어 있는지 검증."""
     from backend.main import app
 
     routes = [getattr(route, "path", "") for route in app.routes]
 
-    # /api/metadata/{file_id} 및 /metadata/{file_id} 경로가 모두 라우팅 테이블에 포함되어야 함
+    # /api/metadata/{file_id} 경로가 라우팅 테이블에 포함되어야 함
     assert any(
-        "/metadata/{file_id}" in r for r in routes
-    ), f"metadata 라우터가 main app에 등록되지 않았습니다. 현재 등록된 라우트: {routes}"
+        "/api/metadata/{file_id}" == r for r in routes
+    ), f"metadata 라우터가 /api/metadata/{{file_id}}로 등록되지 않았습니다. 등록된 라우트: {routes}"
+    # 루트 /{file_id}로는 마운트되지 않아 루트 경로 충돌이 방지되었는지 확인
+    assert not any(
+        "/{file_id}" == r for r in routes
+    ), f"metadata 라우터가 루트 /{{file_id}}에 등록되어 다른 라우트를 가로챌 위험이 있습니다."
+
+
+def test_health_endpoint_not_intercepted_by_metadata():
+    """헬스 체크(/health) 요청이 metadata /{file_id}로 가로채지지 않고 200 OK를 반환하는지 검증 (Review #2)."""
+    from fastapi.testclient import TestClient
+
+    from backend.main import app
+
+    client = TestClient(app)
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "healthy"
 
 
 def test_compute_silhouette_safe_fallback_when_sklearn_missing():
-    """scikit-learn 부재(silhouette_score is None) 시 TypeError 없이 -1.0 대체값을 반환하는지 검증 (Comment 3)."""
+    """scikit-learn 부재(silhouette_score is None) 시 TypeError 없이 -1.0 대체값을 반환하는지 검증."""
     import numpy as np
 
     from backend.services.topic_clustering_service import _compute_silhouette_safe
@@ -297,3 +314,26 @@ def test_compute_silhouette_safe_fallback_when_sklearn_missing():
     with patch("backend.services.topic_clustering_service.silhouette_score", None):
         score = _compute_silhouette_safe(dummy_embeddings, dummy_labels)
         assert score == -1.0
+
+
+def test_fallback_clustering_without_sklearn_returns_valid_topics():
+    """scikit-learn 부재 시 KMeans 대신 규칙 기반 대체 클러스터링이 유효한 토픽을 반환하는지 검증 (Review #1)."""
+    from backend.services.topic_clustering_service import (
+        _fallback_clustering_without_sklearn,
+    )
+
+    history = [
+        "python tutorial",
+        "fastapi guide",
+        "python tutorial",
+        "docker setup",
+    ]
+
+    clusters = _fallback_clustering_without_sklearn(history)
+
+    assert len(clusters) == 3
+    # 가장 빈도가 높은 'python tutorial'이 첫 번째 대표 토픽으로 선정
+    assert clusters[0]["label"] == "python tutorial"
+    assert clusters[0]["size"] == 2
+    assert clusters[0]["weight"] == 0.5
+    assert all("label" in c and "weight" in c and "size" in c for c in clusters)
