@@ -18,6 +18,9 @@ from backend.api.endpoints.automation import (
 )
 from backend.api.endpoints.chat import router as chat_router  # type: ignore[import]
 from backend.api.endpoints.graph import router as graph_router  # type: ignore[import]
+from backend.api.endpoints.metadata import (
+    router as metadata_router,  # type: ignore[import]
+)
 from backend.api.endpoints.search import router as search_router  # type: ignore[import]
 from backend.api.endpoints.sync import router as sync_router  # type: ignore[import]
 from backend.api.endpoints.websocket import (
@@ -253,6 +256,11 @@ logger.info("✅ chat_router 등록 완료 (RAG Streaming Chat)")
 app.include_router(auth_router, prefix="/api")
 app.include_router(auth_router)
 logger.info("✅ auth_router 등록 완료 (JWT Token Issuance)")
+
+# metadata_router (File Metadata Management)
+app.include_router(metadata_router, prefix="/api")
+app.include_router(metadata_router)
+logger.info("✅ metadata_router 등록 완료 (File Metadata Management)")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

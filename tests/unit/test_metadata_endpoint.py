@@ -271,3 +271,29 @@ async def test_metadata_i18n_messages(temp_metadata_storage: Path):
         with pytest.raises(HTTPException) as exc_info:
             await get_metadata(file_id="unknown_file", locale="en")
         assert "Metadata not found for file" in exc_info.value.detail
+
+
+def test_metadata_router_registered_in_main_app():
+    """backend.main:app 애플리케이션에 metadata 라우터가 올바르게 등록되어 있는지 검증 (Comment 1)."""
+    from backend.main import app
+
+    routes = [getattr(route, "path", "") for route in app.routes]
+
+    # /api/metadata/{file_id} 및 /metadata/{file_id} 경로가 모두 라우팅 테이블에 포함되어야 함
+    assert any(
+        "/metadata/{file_id}" in r for r in routes
+    ), f"metadata 라우터가 main app에 등록되지 않았습니다. 현재 등록된 라우트: {routes}"
+
+
+def test_compute_silhouette_safe_fallback_when_sklearn_missing():
+    """scikit-learn 부재(silhouette_score is None) 시 TypeError 없이 -1.0 대체값을 반환하는지 검증 (Comment 3)."""
+    import numpy as np
+
+    from backend.services.topic_clustering_service import _compute_silhouette_safe
+
+    dummy_embeddings = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+    dummy_labels = np.array([0, 1, 0])
+
+    with patch("backend.services.topic_clustering_service.silhouette_score", None):
+        score = _compute_silhouette_safe(dummy_embeddings, dummy_labels)
+        assert score == -1.0

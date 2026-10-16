@@ -8,6 +8,7 @@ Metadata Endpoint
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.concurrency import run_in_threadpool
 
 from backend.agent.error_utils import log_agent_error
 from backend.api.deps import get_locale
@@ -29,6 +30,7 @@ async def get_metadata(
 
     - file_id로 영속화된 파일 메타데이터 레코드 조회
     - 대상 파일 부재 시 404 오류 반환
+    - 이벤트 루프 블로킹 방지를 위해 디스크 I/O를 스레드 풀에서 실행
     """
     effective_file_id = (file_id and file_id.strip()) or ""
     if not effective_file_id:
@@ -38,8 +40,8 @@ async def get_metadata(
         )
 
     try:
-        metadata_mgr = get_file_metadata()
-        record = metadata_mgr.get_file(effective_file_id)
+        metadata_mgr = await run_in_threadpool(get_file_metadata)
+        record = await run_in_threadpool(metadata_mgr.get_file, effective_file_id)
 
         if record is None:
             masked_id = mask_pii_id(effective_file_id)
@@ -88,6 +90,7 @@ async def update_metadata(
     - file_id에 해당하는 파일 메타데이터 필드 부분 갱신
     - 대상 파일 부재 시 404 오류 반환
     - 영속화 실패 시 롤백 및 500 오류 반환
+    - 이벤트 루프 블로킹 방지를 위해 디스크 직렬화/쓰기 I/O를 스레드 풀에서 실행
     """
     effective_file_id = (file_id and file_id.strip()) or ""
     if not effective_file_id:
@@ -97,8 +100,8 @@ async def update_metadata(
         )
 
     try:
-        metadata_mgr = get_file_metadata()
-        existing = metadata_mgr.get_file(effective_file_id)
+        metadata_mgr = await run_in_threadpool(get_file_metadata)
+        existing = await run_in_threadpool(metadata_mgr.get_file, effective_file_id)
 
         if existing is None:
             masked_id = mask_pii_id(effective_file_id)
@@ -111,7 +114,9 @@ async def update_metadata(
                 detail=get_message("metadata_not_found", locale, file_id=masked_id),
             )
 
-        success = metadata_mgr.update_file(effective_file_id, body.updates)
+        success = await run_in_threadpool(
+            metadata_mgr.update_file, effective_file_id, body.updates
+        )
         if not success:
             logger.error(
                 "[METADATA] Persistence failed during metadata update",
@@ -122,7 +127,8 @@ async def update_metadata(
                 detail="메타데이터 저장에 실패했습니다. 잠시 후 다시 시도해주세요.",
             )
 
-        updated_record = metadata_mgr.get_file(effective_file_id) or {}
+        raw_updated = await run_in_threadpool(metadata_mgr.get_file, effective_file_id)
+        updated_record = raw_updated or {}
 
         return MetadataResponse(
             status="success",

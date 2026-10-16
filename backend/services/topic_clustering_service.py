@@ -958,8 +958,16 @@ import typing
 def _compute_silhouette_safe(embeddings: np.ndarray, labels: np.ndarray) -> float:
     """
     [리뷰반영] 실루엣 점수 계산을 안전하게 수행하는 헬퍼 함수.
-    단일 클러스터 붕괴 시 예외를 방지하고 다운샘플링을 적용한다.
+    - scikit-learn 미설치 시: 안전한 대체값(-1.0, 최소 점수)을 반환하여 TypeError 및 크래시 방지
+    - 단일 클러스터 붕괴 시: 계산 불가하므로 -1.0 반환
+    - 다운샘플링 적용: 대규모 데이터셋에서 계산 성능 최적화
     """
+    if silhouette_score is None:
+        logger.warning(
+            "[TOPIC_CLUSTERING] scikit-learn is not installed; returning fallback silhouette score -1.0."
+        )
+        return -1.0
+
     if len(np.unique(labels)) <= 1:
         return -1.0
 
