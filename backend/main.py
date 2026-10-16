@@ -209,62 +209,8 @@ async def redis_unavailable_handler(
 logger.info("✅ 전역 예외 처리기 등록 완료 (i18n 지원 + Redis 503)")
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 라우터 등록
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-# 라우터 등록
-logger.info("✅ 기본_router 등록 완료")
-
-# classifier_router
-app.include_router(classifier_router, prefix="/classifier", tags=["classifier"])
-logger.info("✅ classifier_router 등록 완료")
-
-# onboarding_router
-app.include_router(onboarding_router, prefix="/onboarding", tags=["onboarding"])
-logger.info("✅ onboarding_router 등록 완료")
-
-# conflict_router
-app.include_router(conflict_router, prefix="/conflict", tags=["conflict"])
-logger.info("✅ conflict_router 등록 완료 (resolve 전용)")
-
-# sync_router (Phase 3: MCP Integration)
-app.include_router(sync_router)
-
-# websocket_router (Phase 1: Real-time Updates)
-app.include_router(websocket_router)
-logger.info("✅ sync_router 등록 완료 (MCP Sync & Conflict Resolution)")
-
-# search_router (Phase 2-②: RAG API Integration)
-app.include_router(search_router)
-logger.info("✅ search_router 등록 완료 (Hybrid RAG Search)")
-
-# automation_router (Phase 4: Celery Automation)
-
-
-app.include_router(automation_router, prefix="/api")
-logger.info("✅ automation_router 등록 완료 (Celery Automation)")
-
-app.include_router(graph_router, prefix="/api")
-logger.info("✅ graph_router 등록 완료 (Visualization)")
-
-# chat_router (Issue #614: RAG 스트리밍 채팅)
-app.include_router(chat_router, prefix="/api")
-logger.info("✅ chat_router 등록 완료 (RAG Streaming Chat)")
-
-# auth_router (JWT Token Issuance)
-app.include_router(auth_router, prefix="/api")
-app.include_router(auth_router)
-logger.info("✅ auth_router 등록 완료 (JWT Token Issuance)")
-
-# metadata_router (File Metadata Management)
-app.include_router(metadata_router, prefix="/api")
-app.include_router(metadata_router)
-logger.info("✅ metadata_router 등록 완료 (File Metadata Management)")
-
-
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Health Check & Root
+# Health Check & Root (최우선 등록: 라우터 파라미터 선점 방지)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
@@ -273,12 +219,14 @@ async def health():
     """
     [KO]
     서버 상태를 확인합니다.
+    어떠한 하위 라우터보다 먼저 등록되어 최우선 매칭을 보장합니다.
 
     Returns:
         서버 상태 정보 (HealthCheckResponse)
 
     [EN]
     Checks the server health status.
+    Registered before all sub-routers to guarantee priority matching.
 
     Returns:
         Server health information (HealthCheckResponse)
@@ -316,6 +264,56 @@ async def root():
             "onboarding": "/onboarding",
         },
     }
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 라우터 등록
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+logger.info("✅ 기본_router 등록 완료")
+
+# classifier_router
+app.include_router(classifier_router, prefix="/classifier", tags=["classifier"])
+logger.info("✅ classifier_router 등록 완료")
+
+# onboarding_router
+app.include_router(onboarding_router, prefix="/onboarding", tags=["onboarding"])
+logger.info("✅ onboarding_router 등록 완료")
+
+# conflict_router
+app.include_router(conflict_router, prefix="/conflict", tags=["conflict"])
+logger.info("✅ conflict_router 등록 완료 (resolve 전용)")
+
+# sync_router (Phase 3: MCP Integration)
+app.include_router(sync_router)
+
+# websocket_router (Phase 1: Real-time Updates)
+app.include_router(websocket_router)
+logger.info("✅ sync_router 등록 완료 (MCP Sync & Conflict Resolution)")
+
+# search_router (Phase 2-②: RAG API Integration)
+app.include_router(search_router)
+logger.info("✅ search_router 등록 완료 (Hybrid RAG Search)")
+
+# automation_router (Phase 4: Celery Automation)
+app.include_router(automation_router, prefix="/api")
+logger.info("✅ automation_router 등록 완료 (Celery Automation)")
+
+app.include_router(graph_router, prefix="/api")
+logger.info("✅ graph_router 등록 완료 (Visualization)")
+
+# chat_router (Issue #614: RAG 스트리밍 채팅)
+app.include_router(chat_router, prefix="/api")
+logger.info("✅ chat_router 등록 완료 (RAG Streaming Chat)")
+
+# auth_router (JWT Token Issuance)
+app.include_router(auth_router, prefix="/api")
+app.include_router(auth_router)
+logger.info("✅ auth_router 등록 완료 (JWT Token Issuance)")
+
+# metadata_router (File Metadata Management - /api/metadata)
+app.include_router(metadata_router, prefix="/api")
+logger.info("✅ metadata_router 등록 완료 (File Metadata Management)")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

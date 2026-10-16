@@ -27,6 +27,7 @@ import math
 import os
 import re
 import typing
+from collections import Counter
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, TypeVar
 
@@ -37,10 +38,14 @@ from redis.exceptions import RedisError  # 연결/타임아웃/명령 실패 포
 if TYPE_CHECKING:
     from sklearn.cluster import KMeans
     from sklearn.metrics import silhouette_score
+
+    SKLEARN_AVAILABLE = True
 else:
     try:
         from sklearn.cluster import KMeans
         from sklearn.metrics import silhouette_score
+
+        SKLEARN_AVAILABLE = True
     except ImportError:
 
         class KMeans:  # type: ignore[no-redef]
@@ -50,6 +55,7 @@ else:
                 )
 
         silhouette_score = None
+        SKLEARN_AVAILABLE = False
 
 from backend.agent.error_utils import is_system_error
 from backend.embedding import EmbeddingGenerator  # type: ignore[import]
@@ -1037,6 +1043,34 @@ def _maybe_update_inertia_flatten_state(
     )
 
 
+def _fallback_clustering_without_sklearn(
+    history: List[str],
+) -> List[Dict[str, Any]]:
+    """
+    [리뷰반영] scikit-learn이 설치되지 않은 환경에서 KMeans 대신 동작하는 가벼운 규칙 기반 대체 클러스터링.
+    - 쿼리 빈도(Frequency)를 집계하여 상위 대표 쿼리들을 클러스터 토픽으로 선정
+    - 파이프라인 크래시 없이 유효한 대표 토픽 목록(label, weight, size)을 정상 반환
+    """
+    n_samples = len(history)
+    if n_samples == 0:
+        return []
+
+    counts = Counter(history)
+    max_k = min(_MAX_CLUSTERS_LIMIT, len(counts))
+    top_items = counts.most_common(max_k)
+
+    clusters_info = []
+    for label, count in top_items:
+        clusters_info.append(
+            {
+                "label": label,
+                "weight": round(count / n_samples, 4),
+                "size": count,
+            }
+        )
+    return clusters_info
+
+
 def _determine_optimal_k(
     embeddings: np.ndarray, max_k: int = _MAX_CLUSTERS_LIMIT
 ) -> int:
@@ -1046,6 +1080,12 @@ def _determine_optimal_k(
     n_samples = embeddings.shape[0]
     if n_samples < _MIN_SAMPLES_FOR_CLUSTERING:
         return 1 if n_samples > 0 else 0
+
+    if not SKLEARN_AVAILABLE or KMeans is None:
+        logger.warning(
+            "[TOPIC_CLUSTERING] scikit-learn is not installed; returning fallback optimal K=1."
+        )
+        return 1
 
     limit_k = min(n_samples - 1, max_k)
     if limit_k < 2:
@@ -1249,6 +1289,14 @@ async def cluster_user_topics(hashed_user_id: str) -> List[Dict[str, Any]]:
         if n_samples < _MIN_SAMPLES_FOR_CLUSTERING:
             # 쿼리가 매우 적은 경우 첫 번째 쿼리를 대표 토픽으로 간주
             return [{"label": history[0], "weight": 1.0, "size": n_samples}]
+
+        # [리뷰반영] scikit-learn 미설치 시 KMeans를 호출하지 않고 안전한 빈도 기반 대체 클러스터링 적용
+        if not SKLEARN_AVAILABLE or KMeans is None:
+            logger.warning(
+                "[TOPIC_CLUSTERING] scikit-learn이 설치되지 않아 빈도 기반 대체 클러스터링을 적용합니다. (queries=%d)",
+                n_samples,
+            )
+            return _fallback_clustering_without_sklearn(history)
 
         # 최대 클러스터 개수는 샘플 수에 비례하되 전역 상한으로 제한
         optimal_k = _determine_optimal_k(
