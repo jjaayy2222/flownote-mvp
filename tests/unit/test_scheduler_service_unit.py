@@ -461,17 +461,28 @@ def test_sanitize_content_pii_extended_credentials():
     Comment 1 & Comment 4:
     - GitLab `glpat-` 토큰, GitHub, Slack, HuggingFace 등 확장 토큰 마스킹 검증
     - 한국어 유니코드 단어 경계(한글 인접) 호환성 검증
+
+    [Security] 테스트용 토큰 문자열은 정적 분석 도구(betterleaks 등) 오탐 방지를 위해
+    런타임에 접두사·본문을 결합하는 방식으로 생성합니다.
+    실제 인증 정보를 소스 코드에 하드코딩하지 않습니다.
     """
     from backend.agent.error_utils import sanitize_content_pii
 
     # GitLab Personal Access Token (20자 이상)
+    # 접두사와 본문을 분리하여 정적 분석 오탐 방지
+    _glpat_prefix = "glpat"
+    _glpat_body = "abcdefghijklmnopqrst12345"
+    fake_glpat = f"{_glpat_prefix}-{_glpat_body}"
     assert (
-        sanitize_content_pii("GitLab 토큰은 glpat-abcdefghijklmnopqrst12345입니다")
+        sanitize_content_pii(f"GitLab 토큰은 {fake_glpat}입니다")
         == "GitLab 토큰은 [REDACTED_KEY]입니다"
     )
     # GitLab CI/Deploy 토큰
+    _glcbt_prefix = "glcbt"
+    _glcbt_body = "0123456789abcdefghij"
+    fake_glcbt = f"{_glcbt_prefix}-{_glcbt_body}"
     assert (
-        sanitize_content_pii("CI 토큰: glcbt-0123456789abcdefghij입니다")
+        sanitize_content_pii(f"CI 토큰: {fake_glcbt}입니다")
         == "CI 토큰: [REDACTED_KEY]입니다"
     )
     # GitHub OAuth 토큰
@@ -626,3 +637,114 @@ async def test_save_chat_history_idempotency_retry():
     # 중복 저장 건너뜀 검증 (False 반환 및 add_message 호출 없음)
     assert second_save is False
     assert mock_history_service.add_message.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_process_stream_events_no_partial_commit_on_error():
+    """
+    Comment 1 (3차 개선):
+    - 스트림 도중 예외 발생 시 부분 누적 콘텐츠가 히스토리에 커밋되지 않아야 함
+    - stream_completed=False인 경우 _save_chat_history를 호출하지 않음을 검증
+    - 재시도(동일 stable_turn_id)에서는 완전한 답변이 정상 저장됨을 검증
+    """
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from backend.services.chat_service import ChatService
+
+    mock_history_service = MagicMock()
+    mock_history_service.add_message = AsyncMock()
+    mock_history_service.get_history = AsyncMock(return_value=[])
+
+    chat_service = ChatService(
+        hybrid_search_service=MagicMock(),
+        onboarding_service=MagicMock(),
+        chat_history_service=mock_history_service,
+    )
+
+    # --- 1차 시도: 토큰 2개 발행 후 예외 발생 (부분 스트림) ---
+    async def _failing_graph():
+        """토큰 2개를 emit 한 후 예외를 발생시키는 가짜 astream_events"""
+        fake_chunk = MagicMock()
+        fake_chunk.content = "안녕"
+        yield {
+            "event": "on_chat_model_stream",
+            "name": None,
+            "data": {"chunk": fake_chunk},
+        }
+        fake_chunk2 = MagicMock()
+        fake_chunk2.content = "하세요"
+        yield {
+            "event": "on_chat_model_stream",
+            "name": None,
+            "data": {"chunk": fake_chunk2},
+        }
+        raise RuntimeError("LLM upstream timeout")
+
+    mock_agent_graph = MagicMock()
+    mock_agent_graph.astream_events = MagicMock(return_value=_failing_graph())
+
+    collected_events = []
+    with patch.object(
+        chat_service, "_save_chat_history", new_callable=AsyncMock
+    ) as mock_save:
+        async for sse in chat_service._process_stream_events(
+            agent_graph=mock_agent_graph,
+            initial_state={},
+            start_time=0.0,
+            setup_duration=0.0,
+            user_id="test-user",
+            session_id="session-partial-test",
+            query="테스트 질문입니다",
+            turn_id="turn-retry-001",
+            request_id=None,
+            message_id=None,
+        ):
+            collected_events.append(sse)
+
+        # 부분 답변은 커밋되지 않아야 함
+        mock_save.assert_not_called()
+
+    # error SSE가 클라이언트에 전달되었는지 확인
+    assert any("error" in e for e in collected_events), "error SSE가 발행되어야 합니다"
+    # done SSE는 발행되지 않아야 함 (stream_completed=False)
+    assert not any(
+        '"done"' in e for e in collected_events
+    ), "실패한 스트림에서 done SSE는 발행되지 않아야 합니다"
+
+    # --- 2차 시도 (재시도): 완전한 스트림 성공 → 히스토리 저장 ---
+    async def _success_graph():
+        """완전한 스트림 (예외 없음)"""
+        fake_chunk = MagicMock()
+        fake_chunk.content = "안녕하세요, 플로우노트입니다."
+        yield {
+            "event": "on_chat_model_stream",
+            "name": None,
+            "data": {"chunk": fake_chunk},
+        }
+
+    mock_agent_graph2 = MagicMock()
+    mock_agent_graph2.astream_events = MagicMock(return_value=_success_graph())
+    mock_history_service.get_history = AsyncMock(return_value=[])
+
+    collected_events2 = []
+    async for sse in chat_service._process_stream_events(
+        agent_graph=mock_agent_graph2,
+        initial_state={},
+        start_time=0.0,
+        setup_duration=0.0,
+        user_id="test-user",
+        session_id="session-partial-test",
+        query="테스트 질문입니다",
+        turn_id="turn-retry-001",
+        request_id=None,
+        message_id=None,
+    ):
+        collected_events2.append(sse)
+
+    # 재시도에서는 완전한 답변이 저장되어야 함
+    assert (
+        mock_history_service.add_message.call_count == 2
+    ), "재시도 성공 시 user + assistant 메시지가 각 1회씩 저장되어야 합니다"
+    assert any(
+        "done" in e for e in collected_events2
+    ), "성공한 스트림에서 done SSE가 발행되어야 합니다"

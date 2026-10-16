@@ -620,6 +620,10 @@ Standalone Question:"""
         is_cancelled = False
         full_content_list: List[str] = []
         ttft_recorded = False
+        # [StreamIntegrity] 스트림 정상 완료 여부 추적 플래그.
+        # 예외 발생 후 부분 누적 콘텐츠가 히스토리에 커밋되는 것을 방지합니다.
+        # astream_events for 루프를 예외 없이 완전히 소진했을 때만 True로 설정됩니다.
+        stream_completed = False
 
         try:
             async for event in agent_graph.astream_events(initial_state, version="v2"):
@@ -645,6 +649,9 @@ Standalone Question:"""
                         full_content_list.append(content_chunk)
                         yield self._format_sse_event("token", data=content_chunk)
 
+            # 예외 없이 for 루프를 완전히 소진한 경우에만 완료로 간주
+            stream_completed = True
+
         except asyncio.CancelledError:
             is_cancelled = True
             logger.warning("[OBS] Chat stream locally cancelled by user disconnect.")
@@ -661,12 +668,25 @@ Standalone Question:"""
                 },
                 include_traceback=True,
             )
+            # stream_completed는 False로 유지 — 부분 답변을 커밋하지 않음
+            if full_content_list:
+                # 재시도 시 동일 stable_turn_id로 완전한 답변을 저장할 수 있도록
+                # 부분 턴은 커밋하지 않고 경고 로그만 기록합니다.
+                logger.warning(
+                    "[STREAM_INTEGRITY] Stream failed after partial content (%d tokens). "
+                    "Discarding partial turn to allow clean retry commit.",
+                    len(full_content_list),
+                    extra={
+                        "session_id_hash": mask_pii_id(session_id),
+                        "partial_token_count": len(full_content_list),
+                    },
+                )
             yield self._format_sse_event(
                 "error",
                 message="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
             )
 
-        if not is_cancelled:
+        if not is_cancelled and stream_completed:
             if session_id and full_content_list:
                 full_content = "".join(full_content_list)
                 # 안정적인 요청 식별자(turn_id 또는 request_id)가 제공되면 이를 우선 사용하고,
