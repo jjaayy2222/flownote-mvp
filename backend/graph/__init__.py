@@ -34,11 +34,24 @@ __all__ = [
     "send_link_recommendations",
 ]
 
-from contextlib import suppress
-
-# NetworkXGraphRepository는 networkx 패키지가 설치된 경우에만 로드
-# (requirements.txt에 networkx가 없는 환경에서도 나머지 모듈이 정상 동작하도록 보호)
-with suppress(ImportError):
+# NetworkXGraphRepository는 networkx 패키지가 설치된 경우에만 실제 로드
+# (networkx가 없는 환경에서도 chat_stream 등 의존 모듈이 정상 동작하도록 Fallback 제공)
+try:
     from backend.graph.networkx_repository import NetworkXGraphRepository
+except ImportError:
+    from contextlib import nullcontext
 
-    __all__.append("NetworkXGraphRepository")
+    class NetworkXGraphRepository:  # type: ignore[no-redef]
+        """networkx 미설치 환경을 위한 Fallback Placeholder"""
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def stateless_load(self, *args, **kwargs):
+            return nullcontext(self)
+
+        def node_count(self, *args, **kwargs) -> int:
+            return 0
+
+
+__all__.append("NetworkXGraphRepository")

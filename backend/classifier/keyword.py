@@ -8,9 +8,8 @@ import asyncio
 import logging
 from typing import Any, Dict
 
-from classifier.base_classifier import BaseClassifier
-
 from backend.agent.error_utils import log_agent_error
+from backend.classifier.base_classifier import BaseClassifier
 
 logger = logging.getLogger(__name__)
 

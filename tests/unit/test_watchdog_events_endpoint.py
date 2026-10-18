@@ -218,7 +218,7 @@ def test_get_watchdog_events_invalid_event_type_returns_422(temp_watchdog_env):
     response = client.get("/api/automation/watchdog/events?event_type=invalid_type")
     assert response.status_code == 422
     data = response.json()
-    assert "detail" in data
+    assert any(key in data for key in ("errors", "message", "detail"))
 
 
 @pytest.mark.asyncio

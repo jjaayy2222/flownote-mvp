@@ -10,6 +10,7 @@ from .common import (
     count_tokens,
     estimate_cost,
     format_error_msg,
+    get_chat_log_extra,
     mask_pii_id,
     safe_parse_env_float,
     safe_parse_env_int,
@@ -25,4 +26,5 @@ __all__ = [
     "INVALID_PII_SENTINEL",
     "count_tokens",
     "estimate_cost",
+    "get_chat_log_extra",
 ]
