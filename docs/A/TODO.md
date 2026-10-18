@@ -39,6 +39,7 @@
   - [x] `get_conflict_diff` 1차 개선: 로컬/원격 파일 사용 불가 시 빈 문자열 대신 422 오류 반환 — 유효한 빈 파일과 사용 불가 상태를 명확히 구분. `test_diff_viewer_flow.py`도 함께 수정.
   - [x] `get_conflict_diff` 2차 개선: `UnicodeDecodeError` 처리 추가 — 잘못된 UTF-8 파일을 500 대신 422로 반환. `ObsidianSyncService.pull_file()`도 동일하게 일관성 확보.
   - [x] `get_conflicts` 실연동: `detected_conflicts.jsonl` JSONL 파일 기반 실제 충돌 이력 반환으로 Mock 제거 — 최신순 정렬, status 필터링, 파싱 에러 카운터 집계 로그 적용.
+  - [x] `get_sync_status` `last_sync` 실연동: `SyncMapManager.get_latest_sync_time(tool_type=OBSIDIAN)` 연동으로 `None` 하드코딩 해소 — Lock 보호, timezone-aware/naive 혼합 안전 비교, tool_type 필터링 지원. 파일 I/O 에러 방어 로직 보강.
 
 
 ## 🟢 [P4] 기타: Dashboard & Metadata (MVP 이후)
@@ -49,6 +50,7 @@
   - [x] `get_watchdog_events` 실연동: `events.jsonl` 파일 기반 실제 Watchdog 이벤트 이력 반환으로 하드코딩 더미 제거 — 최신순 정렬, `event_type` 필터링, 파싱 에러 집계 및 PII 안전 처리.
   - [x] `get_watchdog_events` 1차 개선: `event_type` 쿼리 파라미터 `Literal` 유효성 검사(422) 및 동일 타임스탬프 발생 시 파일 추가 순서 기반 2차 보조 정렬(`line_num` 내림차순) 적용.
   - [x] `get_watchdog_events` 2차 개선: Sourcery 리팩토링 반영 — `_parse_watchdog_event_line` 서브 헬퍼 분리(복잡도 해소), 규칙 CRUD 예외 체이닝(`raise ... from exc`) 및 집계 표현식 단순화.
+  - [x] `get_dashboard_summary` `last_sync` 실연동: `SyncMapManager.get_latest_sync_time()` 연동으로 `None` 하드코딩 해소 — Vault 파일 I/O 에러 방어 로직 보강 (`OSError` 캐치 후 `logger.warning`).
 - [x] **Metadata API (`backend/api/endpoints/metadata.py`)**
   - `get_metadata`, `update_metadata` 함수: 파일 메타데이터의 실제 조회 및 업데이트 기능 연동 (FileMetadata 및 PathConfig SSOT 결합, 미존재 시 404 오류 처리, 영속화 실패 시 롤백 및 PII 안전 로깅 적용).
 - [ ] **Reporting Task (`backend/celery_app/tasks/reporting.py`)**
@@ -56,5 +58,5 @@
 
 ---
 *💡 관리 가이드: 해결된 항목은 본 문서에서 체크표시(`[x]`) 처리하고, 실제 소스 코드 상의 주석을 제거하여 단일 진실 공급원(SSOT)을 유지합니다.*
-- **✅ 코드베이스 싱크 상태**: `# TODO` 주석과 본 문서의 항목이 정확히 일치함을 확인했습니다. (마지막 점검일: 2026-10-18)
+- **✅ 코드베이스 싱크 상태**: `# TODO` 주석과 본 문서의 항목이 정확히 일치함을 확인했습니다. (마지막 점검일: 2026-10-19)
 - **💡 변동성(Drift) 주의**: TODO 항목의 개수나 내용은 개발 과정에 따라 수시로 변동될 수 있으므로, 주기적인 정합성 점검을 권장합니다.
