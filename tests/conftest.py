@@ -9,8 +9,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-# 프로젝트 루트를 Python Path에 추가
-sys.path.append(str(Path(__file__).parent.parent))
+# 프로젝트 루트 및 backend 디렉토리를 Python Path에 추가
+project_root = Path(__file__).parent.parent
+sys.path.append(str(project_root))
+sys.path.append(str(project_root / "backend"))
 
 # 테스트 환경 변수 설정
 os.environ["TESTING"] = "true"
@@ -18,6 +20,8 @@ os.environ["GPT4O_MINI_API_KEY"] = "test-key"  # Mocking용
 os.environ["JWT_SECRET_KEY"] = (
     "flownote-test-session-secret-key-32chars-min-secure-test-only"
 )
+os.environ.setdefault("STORAGE_BASE_PATH", "/tmp/flownote_test_storage")
+os.environ.setdefault("PBKDF2_ITERATIONS", "600000")
 
 # ────────────────────────────────────────────────────────
 # 공용 테스트 설정 (Centralized Test Config)

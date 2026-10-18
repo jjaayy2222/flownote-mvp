@@ -296,7 +296,9 @@ def _parse_watchdog_event_line(line_str: str, line_num: int) -> Optional[Watchdo
             event_id=str(data.get("event_id") or f"evt_{line_num}"),
             timestamp=ts,
             event_type=event_type_raw,  # type: ignore[arg-type]
-            file_path=str(data.get("file_path") or data.get("path") or ""),
+            file_path=str(
+                data.get("file_path") or data.get("src_path") or data.get("path") or ""
+            ),
             action=str(action_raw),
             status=status_raw,  # type: ignore[arg-type]
         )
