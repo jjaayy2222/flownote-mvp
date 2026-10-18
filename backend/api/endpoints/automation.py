@@ -5,15 +5,20 @@ Automation API Endpoints
 자동화 작업 로그, 규칙, 이력 조회 및 관리 API
 """
 
+import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException
 from fastapi import Path as PathParam
 from fastapi import Query
-from pydantic import BaseModel, Field
+from fastapi.concurrency import run_in_threadpool
+from pydantic import BaseModel, Field, ValidationError
 
+from backend.agent.error_utils import log_agent_error
+from backend.config import PathConfig
 from backend.models.automation import (
     ArchivingRecord,
     AutomationLog,
@@ -233,42 +238,148 @@ class WatchdogEventListResponse(BaseModel):
     events: List[WatchdogEvent] = Field(..., description="이벤트 목록")
 
 
+def _read_watchdog_events(
+    log_file: Path,
+    event_type_filter: Optional[str] = None,
+) -> List[WatchdogEvent]:
+    """
+    Watchdog 이벤트 로그 파일(JSONL)을 읽어 파싱, 필터링 및 최신순 정렬된 목록을 반환합니다.
+
+    - 파일 미존재 시 빈 목록을 안전하게 반환합니다.
+    - 손상된 JSON 또는 모델 유효성 검증 실패 라인은 스킵하고 요약 경고 로그를 남깁니다.
+    - timestamp를 UTC 기준으로 안전하게 정규화하여 aware/naive 혼합 정렬 예외를 원천 방어합니다.
+    - event_type 필터링(대소문자 무관) 및 timestamp 역순(최신순) 정렬을 수행합니다.
+    """
+    if not log_file.exists():
+        logger.debug(
+            "Watchdog event log file not found; returning empty list. path_exists=False"
+        )
+        return []
+
+    events: List[WatchdogEvent] = []
+    parse_error_count = 0
+
+    with open(log_file, "r", encoding="utf-8") as f:
+        for line_num, line in enumerate(f, start=1):
+            line_str = line.strip()
+            if not line_str:
+                continue
+
+            try:
+                data = json.loads(line_str)
+                if not isinstance(data, dict):
+                    parse_error_count += 1
+                    continue
+
+                # 타임스탬프 파싱 (ISO 8601 및 aware 정규화)
+                ts_raw = data.get("timestamp")
+                if not ts_raw:
+                    parse_error_count += 1
+                    continue
+
+                ts_str = str(ts_raw).replace("Z", "+00:00")
+                ts = datetime.fromisoformat(ts_str)
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                else:
+                    ts = ts.astimezone(timezone.utc)
+
+                # event_type 정규화 및 검증
+                event_type_raw = str(data.get("event_type", "")).strip().lower()
+                if event_type_raw not in ("created", "modified", "moved", "deleted"):
+                    parse_error_count += 1
+                    continue
+
+                # status 정규화 및 검증
+                status_raw = str(data.get("status", "completed")).strip().lower()
+                if status_raw not in ("pending", "completed", "failed"):
+                    status_raw = "completed"
+
+                # action 기본값 결정
+                action_raw = data.get("action")
+                if not action_raw:
+                    if event_type_raw == "created":
+                        action_raw = "Triggered Reclassification"
+                    elif event_type_raw in ("modified", "moved"):
+                        action_raw = "Updated Embedding"
+                    elif event_type_raw == "deleted":
+                        action_raw = "Removed Index"
+                    else:
+                        action_raw = "Processed"
+
+                event = WatchdogEvent(
+                    event_id=str(data.get("event_id") or f"evt_{line_num}"),
+                    timestamp=ts,
+                    event_type=event_type_raw,  # type: ignore[arg-type]
+                    file_path=str(data.get("file_path") or data.get("path") or ""),
+                    action=str(action_raw),
+                    status=status_raw,  # type: ignore[arg-type]
+                )
+                events.append(event)
+            except (
+                json.JSONDecodeError,
+                ValidationError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ):
+                parse_error_count += 1
+                continue
+
+    if parse_error_count > 0:
+        logger.warning(
+            "Watchdog log parsing: %d line(s) skipped due to invalid format.",
+            parse_error_count,
+            extra={"skipped_lines": parse_error_count},
+        )
+
+    # event_type 필터링 (대소문자 무관)
+    if event_type_filter and event_type_filter.strip():
+        normalized_filter = event_type_filter.strip().lower()
+        events = [e for e in events if e.event_type == normalized_filter]
+
+    # 최신순 정렬 (timestamp 기준 내림차순)
+    events.sort(key=lambda e: e.timestamp, reverse=True)
+
+    return events
+
+
 @router.get("/watchdog/events", response_model=WatchdogEventListResponse)
-def get_watchdog_events(
+async def get_watchdog_events(
     limit: int = Query(50, ge=1, le=500, description="최대 반환 개수"),
-    event_type: Optional[str] = Query(None, description="이벤트 유형 필터"),
-):
+    event_type: Optional[str] = Query(
+        None, description="이벤트 유형 필터 (created, modified, moved, deleted)"
+    ),
+) -> WatchdogEventListResponse:
     """
     Watchdog 이벤트 로그 조회
 
-    - Obsidian Vault의 파일 변경 이벤트 로그
-    - 예: [Obsidian] File Created: "Idea.md" -> Triggered Reclassification
+    - Obsidian Vault의 파일 변경 이벤트 로그 조회 (JSONL 실연동)
+    - 최신순 정렬, event_type 필터링 및 limit 제한 지원
+    - 대규모 파일 I/O 블로킹 방지를 위해 run_in_threadpool 사용
     """
-    # TODO: 실제로는 파일 시스템 또는 DB에서 조회
-    # 현재는 Placeholder 데이터 반환
-    events = [
-        WatchdogEvent(
-            event_id="evt_001",
-            timestamp=datetime.fromisoformat("2025-12-25T19:00:00"),
-            event_type="created",
-            file_path="Idea.md",
-            action="Triggered Reclassification",
-            status="completed",
-        ),
-        WatchdogEvent(
-            event_id="evt_002",
-            timestamp=datetime.fromisoformat("2025-12-25T18:55:00"),
-            event_type="modified",
-            file_path="Project_Plan.md",
-            action="Updated Embedding",
-            status="completed",
-        ),
-    ]
+    log_file = PathConfig.DATA_DIR / "watchdog" / "events.jsonl"
 
-    if event_type:
-        events = [e for e in events if e.event_type == event_type]
+    try:
+        events = await run_in_threadpool(_read_watchdog_events, log_file, event_type)
+    except OSError as exc:
+        log_agent_error(logger, "Failed to read watchdog event log file", exc)
+        raise HTTPException(
+            status_code=500,
+            detail="Watchdog 이벤트 로그를 읽는 중 오류가 발생했습니다.",
+        ) from exc
 
-    return WatchdogEventListResponse(total=len(events), events=events[:limit])
+    total = len(events)
+    sliced = events[:limit]
+
+    logger.debug(
+        "Watchdog events query: total=%d, event_type_filter=%s, returning=%d",
+        total,
+        event_type or "all",
+        len(sliced),
+    )
+
+    return WatchdogEventListResponse(total=total, events=sliced)
 
 
 # ============================================================================
@@ -327,8 +438,6 @@ def get_dashboard_summary():
     total_classifications = len(reclass_records)
 
     # 충돌 수: archiving 이력 기반 집계 (충돌 로그 JSONL 파일이 연동될 때까지는 0)
-    from backend.config import PathConfig
-
     conflict_log = PathConfig.DATA_DIR / "sync_logs" / "detected_conflicts.jsonl"
     total_conflicts = 0
     if conflict_log.exists():
