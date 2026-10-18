@@ -8,7 +8,9 @@ Covers:
   - 파일 미존재 시 빈 목록 반환 (200 OK, total=0, events=[])
   - 정상 JSONL 로그 읽기 및 필드 정합성 검증 (200 OK)
   - timestamp 역순(최신순) 정렬 검증 (naive/aware 혼합 정렬 안전성 포함)
-  - event_type 필터링 검증 (대소문자 무관)
+  - 동일 타임스탬프 시 파일 추가 순서 기반 2차 보조 정렬(line_num 내림차순) 검증
+  - event_type 유효 필터링 동작 검증
+  - 지원되지 않는 event_type 입력 시 422 Unprocessable Entity 반환 검증
   - limit 페이징 슬라이싱 동작 검증 (total vs len(events))
   - 손상된 라인(비-dict, JSON 파싱 오류, 필수 필드 누락, 유효하지 않은 event_type) 자동 스킵 복원력 검증
   - action 및 status 누락 시 안전한 기본값 부여 검증
@@ -131,7 +133,7 @@ async def test_get_watchdog_events_sorting_mixed_timezones(temp_watchdog_env):
 
 @pytest.mark.asyncio
 async def test_get_watchdog_events_filter_by_type(temp_watchdog_env):
-    """event_type 필터링(대소문자 무관) 및 total 일관성 검증."""
+    """event_type 필터링 정상 동작 및 total 일관성 검증."""
     events_file = temp_watchdog_env["file"]
     records = [
         {
@@ -163,15 +165,60 @@ async def test_get_watchdog_events_filter_by_type(temp_watchdog_env):
         for r in records:
             f.write(json.dumps(r) + "\n")
 
-    # 대문자 필터 테스트
-    res_created = await get_watchdog_events(limit=50, event_type="CREATED")
+    # created 유형 필터링
+    res_created = await get_watchdog_events(limit=50, event_type="created")
     assert res_created.total == 2
     assert all(e.event_type == "created" for e in res_created.events)
 
-    # 존재하지 않는 유형 필터 테스트
-    res_none = await get_watchdog_events(limit=50, event_type="unknown_type")
-    assert res_none.total == 0
-    assert res_none.events == []
+    # deleted 유형 필터링
+    res_deleted = await get_watchdog_events(limit=50, event_type="deleted")
+    assert res_deleted.total == 1
+    assert res_deleted.events[0].event_id == "e4"
+
+
+@pytest.mark.asyncio
+async def test_get_watchdog_events_secondary_sort_same_timestamp(temp_watchdog_env):
+    """동일한 타임스탬프를 가진 레코드의 경우 나중에 추가된 레코드가 먼저 정렬되는지 검증."""
+    events_file = temp_watchdog_env["file"]
+    records = [
+        {
+            "event_id": "evt_first",
+            "timestamp": "2026-10-18T10:00:00+00:00",
+            "event_type": "created",
+            "file_path": "first.md",
+        },
+        {
+            "event_id": "evt_second",
+            "timestamp": "2026-10-18T10:00:00+00:00",
+            "event_type": "modified",
+            "file_path": "second.md",
+        },
+        {
+            "event_id": "evt_third",
+            "timestamp": "2026-10-18T10:00:00+00:00",
+            "event_type": "deleted",
+            "file_path": "third.md",
+        },
+    ]
+    with open(events_file, "w", encoding="utf-8") as f:
+        for r in records:
+            f.write(json.dumps(r) + "\n")
+
+    # limit=2로 조회 시 가장 최신에 추가된 evt_third, evt_second가 반환되어야 함
+    response = await get_watchdog_events(limit=2, event_type=None)
+    assert response.total == 3
+    assert len(response.events) == 2
+    assert response.events[0].event_id == "evt_third"
+    assert response.events[1].event_id == "evt_second"
+
+
+def test_get_watchdog_events_invalid_event_type_returns_422(temp_watchdog_env):
+    """지원되지 않는 event_type 쿼리 전달 시 422 유효성 검사 에러를 반환하는지 검증."""
+    client = TestClient(app)
+    response = client.get("/api/automation/watchdog/events?event_type=invalid_type")
+    assert response.status_code == 422
+    data = response.json()
+    assert "detail" in data
 
 
 @pytest.mark.asyncio
