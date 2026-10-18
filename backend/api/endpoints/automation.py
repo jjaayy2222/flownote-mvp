@@ -126,10 +126,14 @@ def create_automation_rule(rule: AutomationRule):
     """
     try:
         return automation_manager.create_automation_rule(rule)
-    except ValueError:
-        raise HTTPException(status_code=409, detail="Rule with this ID already exists.")
-    except OSError:
-        raise HTTPException(status_code=500, detail="Failed to save automation rule.")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409, detail="Rule with this ID already exists."
+        ) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail="Failed to save automation rule."
+        ) from exc
 
 
 @router.put("/rules/{rule_id}", response_model=AutomationRule)
@@ -146,8 +150,10 @@ def update_automation_rule(
         if result is None:
             raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
         return result
-    except OSError:
-        raise HTTPException(status_code=500, detail="Failed to update automation rule.")
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail="Failed to update automation rule."
+        ) from exc
 
 
 @router.delete("/rules/{rule_id}", status_code=204)
@@ -161,8 +167,10 @@ def delete_automation_rule(rule_id: str = PathParam(..., description="규칙 ID"
         success = automation_manager.delete_automation_rule(rule_id)
         if not success:
             raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
-    except OSError:
-        raise HTTPException(status_code=500, detail="Failed to delete automation rule.")
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail="Failed to delete automation rule."
+        ) from exc
 
 
 @router.get("/reclassifications", response_model=ReclassificationHistoryResponse)
@@ -238,6 +246,64 @@ class WatchdogEventListResponse(BaseModel):
     events: List[WatchdogEvent] = Field(..., description="이벤트 목록")
 
 
+ACTION_DEFAULTS = {
+    "created": "Triggered Reclassification",
+    "modified": "Updated Embedding",
+    "moved": "Updated Embedding",
+    "deleted": "Removed Index",
+}
+
+
+def _parse_watchdog_event_line(line_str: str, line_num: int) -> Optional[WatchdogEvent]:
+    """
+    단일 JSONL 라인을 파싱 및 정규화하여 WatchdogEvent 객체로 반환합니다.
+    형식이 올바르지 않거나 검증 실패 시 None을 반환합니다.
+    """
+    try:
+        data = json.loads(line_str)
+        if not isinstance(data, dict):
+            return None
+
+        # 필수 타임스탬프 파싱 (ISO 8601 및 aware UTC 정규화)
+        ts_raw = data.get("timestamp")
+        if not ts_raw:
+            return None
+
+        ts_str = str(ts_raw).replace("Z", "+00:00")
+        ts = datetime.fromisoformat(ts_str)
+        ts = (
+            ts.replace(tzinfo=timezone.utc)
+            if ts.tzinfo is None
+            else ts.astimezone(timezone.utc)
+        )
+
+        # event_type 정규화 및 검증
+        event_type_raw = str(data.get("event_type", "")).strip().lower()
+        if event_type_raw not in ("created", "modified", "moved", "deleted"):
+            return None
+
+        # status 정규화 및 검증
+        status_raw = str(data.get("status", "completed")).strip().lower()
+        if status_raw not in ("pending", "completed", "failed"):
+            status_raw = "completed"
+
+        # action 기본값 결정
+        action_raw = data.get("action") or ACTION_DEFAULTS.get(
+            event_type_raw, "Processed"
+        )
+
+        return WatchdogEvent(
+            event_id=str(data.get("event_id") or f"evt_{line_num}"),
+            timestamp=ts,
+            event_type=event_type_raw,  # type: ignore[arg-type]
+            file_path=str(data.get("file_path") or data.get("path") or ""),
+            action=str(action_raw),
+            status=status_raw,  # type: ignore[arg-type]
+        )
+    except (json.JSONDecodeError, ValidationError, KeyError, TypeError, ValueError):
+        return None
+
+
 def _read_watchdog_events(
     log_file: Path,
     event_type_filter: Optional[str] = None,
@@ -267,66 +333,11 @@ def _read_watchdog_events(
             if not line_str:
                 continue
 
-            try:
-                data = json.loads(line_str)
-                if not isinstance(data, dict):
-                    parse_error_count += 1
-                    continue
-
-                # 타임스탬프 파싱 (ISO 8601 및 aware 정규화)
-                ts_raw = data.get("timestamp")
-                if not ts_raw:
-                    parse_error_count += 1
-                    continue
-
-                ts_str = str(ts_raw).replace("Z", "+00:00")
-                ts = datetime.fromisoformat(ts_str)
-                if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=timezone.utc)
-                else:
-                    ts = ts.astimezone(timezone.utc)
-
-                # event_type 정규화 및 검증
-                event_type_raw = str(data.get("event_type", "")).strip().lower()
-                if event_type_raw not in ("created", "modified", "moved", "deleted"):
-                    parse_error_count += 1
-                    continue
-
-                # status 정규화 및 검증
-                status_raw = str(data.get("status", "completed")).strip().lower()
-                if status_raw not in ("pending", "completed", "failed"):
-                    status_raw = "completed"
-
-                # action 기본값 결정
-                action_raw = data.get("action")
-                if not action_raw:
-                    if event_type_raw == "created":
-                        action_raw = "Triggered Reclassification"
-                    elif event_type_raw in ("modified", "moved"):
-                        action_raw = "Updated Embedding"
-                    elif event_type_raw == "deleted":
-                        action_raw = "Removed Index"
-                    else:
-                        action_raw = "Processed"
-
-                event = WatchdogEvent(
-                    event_id=str(data.get("event_id") or f"evt_{line_num}"),
-                    timestamp=ts,
-                    event_type=event_type_raw,  # type: ignore[arg-type]
-                    file_path=str(data.get("file_path") or data.get("path") or ""),
-                    action=str(action_raw),
-                    status=status_raw,  # type: ignore[arg-type]
-                )
-                raw_events.append((event, line_num))
-            except (
-                json.JSONDecodeError,
-                ValidationError,
-                KeyError,
-                TypeError,
-                ValueError,
-            ):
+            event = _parse_watchdog_event_line(line_str, line_num)
+            if event is None:
                 parse_error_count += 1
-                continue
+            else:
+                raw_events.append((event, line_num))
 
     if parse_error_count > 0:
         logger.warning(
@@ -344,9 +355,7 @@ def _read_watchdog_events(
 
     # 최신순 정렬: 1차 timestamp 내림차순, 2차 line_num 내림차순 (나중에 추가된 항목 우선)
     raw_events.sort(key=lambda item: (item[0].timestamp, item[1]), reverse=True)
-    events = [item[0] for item in raw_events]
-
-    return events
+    return [item[0] for item in raw_events]
 
 
 @router.get("/watchdog/events", response_model=WatchdogEventListResponse)
@@ -420,9 +429,8 @@ def get_dashboard_summary():
     today = date.today()
     all_logs = automation_manager.get_automation_logs(limit=1000)
     tasks_today = sum(
-        1
+        log.started_at.date() == today and log.status == AutomationStatus.COMPLETED
         for log in all_logs
-        if log.started_at.date() == today and log.status == AutomationStatus.COMPLETED
     )
 
     # Vault 파일 수: mcp_config 기반 실제 카운트
@@ -449,7 +457,7 @@ def get_dashboard_summary():
     if conflict_log.exists():
         try:
             with open(conflict_log, "r", encoding="utf-8") as f:
-                total_conflicts = sum(1 for line in f if line.strip())
+                total_conflicts = sum(bool(line.strip()) for line in f)
         except OSError:
             total_conflicts = 0
 
