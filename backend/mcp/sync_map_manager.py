@@ -8,7 +8,7 @@ Sync Map Manager (Option 2) for Scalable MCP Integration
 import json
 import logging
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from backend.agent.error_utils import (  # type: ignore[import]
@@ -205,3 +205,65 @@ class SyncMapManager:
             return True
 
         return False
+
+    def get_latest_sync_time(
+        self, tool_type: Optional[ExternalToolType] = None
+    ) -> Optional[datetime]:
+        """
+        가장 최신의 동기화 시각을 반환합니다. (Thread-safe)
+
+        - 매핑이 없거나 유효한 동기화 기록이 없으면 None 반환
+        - tool_type 필터링 지원 (지정 시 해당 도구의 매핑만 대상)
+        - timezone aware/naive 비교 시 오류를 방지하기 위해 안전하게 비교
+
+        Args:
+            tool_type: 특정 도구(예: ExternalToolType.OBSIDIAN) 필터 (기본값: None, 전체 대상)
+
+        Returns:
+            Optional[datetime]: 가장 최근의 last_synced_at 또는 기록이 없을 경우 None
+        """
+        with self._lock:
+            mappings = list(self._mappings.values())
+            if tool_type is not None:
+                mappings = [m for m in mappings if m.tool_type == tool_type]
+
+            sync_times = [
+                m.last_synced_at for m in mappings if m.last_synced_at is not None
+            ]
+            if not sync_times:
+                return None
+
+            return max(
+                sync_times,
+                key=lambda t: (
+                    t.replace(tzinfo=timezone.utc)
+                    if t.tzinfo is None
+                    else t.astimezone(timezone.utc)
+                ),
+            )
+
+
+# ============================================================================
+# Singleton Factory
+# ============================================================================
+
+_DEFAULT_SYNC_MAP_INSTANCE: Optional[SyncMapManager] = None
+_SYNC_MAP_LOCK = threading.Lock()
+
+
+def get_sync_map_manager() -> SyncMapManager:
+    """
+    SyncMapManager 싱글톤 인스턴스를 반환합니다. (Thread-safe)
+    """
+    global _DEFAULT_SYNC_MAP_INSTANCE
+    with _SYNC_MAP_LOCK:
+        if _DEFAULT_SYNC_MAP_INSTANCE is None:
+            _DEFAULT_SYNC_MAP_INSTANCE = SyncMapManager()
+        return _DEFAULT_SYNC_MAP_INSTANCE
+
+
+def reset_sync_map_manager() -> None:
+    """테스트 격리를 위해 싱글톤 인스턴스를 초기화합니다."""
+    global _DEFAULT_SYNC_MAP_INSTANCE
+    with _SYNC_MAP_LOCK:
+        _DEFAULT_SYNC_MAP_INSTANCE = None

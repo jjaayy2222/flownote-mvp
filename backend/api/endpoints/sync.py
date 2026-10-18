@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from backend.agent.error_utils import log_agent_error
 from backend.config import PathConfig
 from backend.config.mcp_config import mcp_config
-from backend.mcp.sync_map_manager import SyncMapManager
+from backend.mcp.sync_map_manager import SyncMapManager, get_sync_map_manager
 from backend.models.conflict import ResolutionMethod
 from backend.models.conflict import ResolutionStrategy as DomainResolutionStrategy
 from backend.models.conflict import SyncConflict
@@ -119,17 +119,28 @@ async def get_sync_status():
             vault_path is not None and vault_path.exists() and vault_path.is_dir()
         )
 
-        # 파일 개수 계산
+        # 파일 개수 계산 (파일 I/O 에러 안전 방어)
         file_count = 0
-        if connected:
-            file_count = len(list(vault_path.rglob("*.md")))
+        if connected and vault_path is not None:
+            try:
+                file_count = len(list(vault_path.rglob("*.md")))
+            except OSError as exc:
+                logger.warning(
+                    "Failed to count markdown files in vault due to I/O error: %s",
+                    exc,
+                )
+                file_count = 0
 
-        # last_sync: 향후 SyncMapManager에서 조회될 시점까지 None 반환
-        # (프론트엔드는 None일 때 "-" 또는 "연결 대기 중" 등으로 표시 권장)
+        # last_sync: SyncMapManager에서 Obsidian 도구 기준 최신 동기화 시각 실연동
+        map_manager = get_sync_map_manager()
+        last_sync = map_manager.get_latest_sync_time(
+            tool_type=ExternalToolType.OBSIDIAN
+        )
+
         return SyncStatusResponse(
             connected=connected,
             vault_path=str(vault_path) if vault_path else None,
-            last_sync=None,
+            last_sync=last_sync,
             sync_interval=config.obsidian.sync_interval,
             enabled=config.obsidian.enabled,
             file_count=file_count,

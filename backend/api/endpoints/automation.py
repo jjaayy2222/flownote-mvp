@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from backend.agent.error_utils import log_agent_error
 from backend.config import PathConfig
+from backend.mcp.sync_map_manager import get_sync_map_manager
 from backend.models.automation import (
     ArchivingRecord,
     AutomationLog,
@@ -435,7 +436,7 @@ def get_dashboard_summary():
         for log in all_logs
     )
 
-    # Vault 파일 수: mcp_config 기반 실제 카운트
+    # Vault 파일 수: mcp_config 기반 실제 카운트 (파일 I/O 에러 안전 방어)
     from pathlib import Path as _Path
 
     from backend.config.mcp_config import mcp_config
@@ -445,15 +446,20 @@ def get_dashboard_summary():
         if mcp_config.obsidian.vault_path
         else None
     )
-    total_files = (
-        len(list(vault_path.rglob("*.md"))) if vault_path and vault_path.exists() else 0
-    )
+    total_files = 0
+    if vault_path and vault_path.exists():
+        try:
+            total_files = len(list(vault_path.rglob("*.md")))
+        except OSError as exc:
+            logger.warning(
+                "Failed to count markdown files in vault due to I/O error: %s", exc
+            )
 
     # 분류 수: reclassification 이력 사용
     reclass_records = automation_manager.get_reclassification_history(limit=10000)
     total_classifications = len(reclass_records)
 
-    # 충돌 수: archiving 이력 기반 집계 (충돌 로그 JSONL 파일이 연동될 때까지는 0)
+    # 충돌 수: 충돌 로그 JSONL 파일 실집계
     conflict_log = PathConfig.DATA_DIR / "sync_logs" / "detected_conflicts.jsonl"
     total_conflicts = 0
     if conflict_log.exists():
@@ -468,8 +474,10 @@ def get_dashboard_summary():
         "Connected" if (vault_path and vault_path.exists()) else "Disconnected"
     )
 
-    # last_sync: SyncMapManager 연동 전까지 None
-    last_sync = None
+    # last_sync: SyncMapManager에서 전체 매핑 기준 최신 동기화 시각 실연동
+    map_manager = get_sync_map_manager()
+    latest_sync_dt = map_manager.get_latest_sync_time()
+    last_sync = latest_sync_dt.isoformat() if latest_sync_dt is not None else None
 
     return DashboardSummary(
         total_files=total_files,
