@@ -48,6 +48,7 @@
   - `get_dashboard_summary`, `get_watchdog_events` 함수: 임시 수치 대신 실제 로그와 시스템 지표 집계 로직 반영.
   - [x] `get_watchdog_events` 실연동: `events.jsonl` 파일 기반 실제 Watchdog 이벤트 이력 반환으로 하드코딩 더미 제거 — 최신순 정렬, `event_type` 필터링, 파싱 에러 집계 및 PII 안전 처리.
   - [x] `get_watchdog_events` 1차 개선: `event_type` 쿼리 파라미터 `Literal` 유효성 검사(422) 및 동일 타임스탬프 발생 시 파일 추가 순서 기반 2차 보조 정렬(`line_num` 내림차순) 적용.
+  - [x] `get_watchdog_events` 2차 개선: Sourcery 리팩토링 반영 — `_parse_watchdog_event_line` 서브 헬퍼 분리(복잡도 해소), 규칙 CRUD 예외 체이닝(`raise ... from exc`) 및 집계 표현식 단순화.
 - [x] **Metadata API (`backend/api/endpoints/metadata.py`)**
   - `get_metadata`, `update_metadata` 함수: 파일 메타데이터의 실제 조회 및 업데이트 기능 연동 (FileMetadata 및 PathConfig SSOT 결합, 미존재 시 404 오류 처리, 영속화 실패 시 롤백 및 PII 안전 로깅 적용).
 - [ ] **Reporting Task (`backend/celery_app/tasks/reporting.py`)**
