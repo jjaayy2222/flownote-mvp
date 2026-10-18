@@ -9,7 +9,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException
 from fastapi import Path as PathParam
@@ -216,19 +216,19 @@ def trigger_automation_task(
 # ============================================================================
 
 
+WatchdogEventType = Literal["created", "modified", "moved", "deleted"]
+WatchdogEventStatus = Literal["pending", "completed", "failed"]
+
+
 class WatchdogEvent(BaseModel):
     """Watchdog 이벤트 모델"""
 
     event_id: str = Field(..., description="이벤트 ID")
     timestamp: datetime = Field(..., description="발생 시각")
-    event_type: Literal["created", "modified", "moved", "deleted"] = Field(
-        ..., description="이벤트 유형"
-    )
+    event_type: WatchdogEventType = Field(..., description="이벤트 유형")
     file_path: str = Field(..., description="파일 경로")
     action: str = Field(..., description="트리거된 액션")
-    status: Literal["pending", "completed", "failed"] = Field(
-        ..., description="처리 상태"
-    )
+    status: WatchdogEventStatus = Field(..., description="처리 상태")
 
 
 class WatchdogEventListResponse(BaseModel):
@@ -248,7 +248,9 @@ def _read_watchdog_events(
     - 파일 미존재 시 빈 목록을 안전하게 반환합니다.
     - 손상된 JSON 또는 모델 유효성 검증 실패 라인은 스킵하고 요약 경고 로그를 남깁니다.
     - timestamp를 UTC 기준으로 안전하게 정규화하여 aware/naive 혼합 정렬 예외를 원천 방어합니다.
-    - event_type 필터링(대소문자 무관) 및 timestamp 역순(최신순) 정렬을 수행합니다.
+    - event_type 필터링(대소문자 무관)을 지원합니다.
+    - 최신순 정렬 시 timestamp 내림차순(1차) 및 line_num 내림차순(2차)을 적용하여,
+      타임스탬프가 동일한 경우 나중에 파일에 추가된 최신 레코드가 먼저 정렬되도록 보장합니다.
     """
     if not log_file.exists():
         logger.debug(
@@ -256,7 +258,7 @@ def _read_watchdog_events(
         )
         return []
 
-    events: List[WatchdogEvent] = []
+    raw_events: List[Tuple[WatchdogEvent, int]] = []
     parse_error_count = 0
 
     with open(log_file, "r", encoding="utf-8") as f:
@@ -315,7 +317,7 @@ def _read_watchdog_events(
                     action=str(action_raw),
                     status=status_raw,  # type: ignore[arg-type]
                 )
-                events.append(event)
+                raw_events.append((event, line_num))
             except (
                 json.JSONDecodeError,
                 ValidationError,
@@ -336,10 +338,13 @@ def _read_watchdog_events(
     # event_type 필터링 (대소문자 무관)
     if event_type_filter and event_type_filter.strip():
         normalized_filter = event_type_filter.strip().lower()
-        events = [e for e in events if e.event_type == normalized_filter]
+        raw_events = [
+            item for item in raw_events if item[0].event_type == normalized_filter
+        ]
 
-    # 최신순 정렬 (timestamp 기준 내림차순)
-    events.sort(key=lambda e: e.timestamp, reverse=True)
+    # 최신순 정렬: 1차 timestamp 내림차순, 2차 line_num 내림차순 (나중에 추가된 항목 우선)
+    raw_events.sort(key=lambda item: (item[0].timestamp, item[1]), reverse=True)
+    events = [item[0] for item in raw_events]
 
     return events
 
@@ -347,7 +352,7 @@ def _read_watchdog_events(
 @router.get("/watchdog/events", response_model=WatchdogEventListResponse)
 async def get_watchdog_events(
     limit: int = Query(50, ge=1, le=500, description="최대 반환 개수"),
-    event_type: Optional[str] = Query(
+    event_type: Optional[WatchdogEventType] = Query(
         None, description="이벤트 유형 필터 (created, modified, moved, deleted)"
     ),
 ) -> WatchdogEventListResponse:
@@ -355,7 +360,8 @@ async def get_watchdog_events(
     Watchdog 이벤트 로그 조회
 
     - Obsidian Vault의 파일 변경 이벤트 로그 조회 (JSONL 실연동)
-    - 최신순 정렬, event_type 필터링 및 limit 제한 지원
+    - 최신순 정렬(동일 타임스탬프 시 추가 순서 보조 정렬), event_type 필터링 및 limit 제한 지원
+    - 유효하지 않은 event_type 입력 시 422 유효성 검사 에러 반환
     - 대규모 파일 I/O 블로킹 방지를 위해 run_in_threadpool 사용
     """
     log_file = PathConfig.DATA_DIR / "watchdog" / "events.jsonl"
