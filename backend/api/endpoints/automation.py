@@ -18,7 +18,10 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, ValidationError
 
 from backend.agent.error_utils import build_meta, log_agent_error
-from backend.celery_app.tasks.archiving import archive_inactive_files
+from backend.celery_app.tasks.archiving import (
+    archive_inactive_files,
+    auto_archive_tasks,
+)
 from backend.celery_app.tasks.maintenance import (
     backup_automation_data,
     cleanup_old_logs,
@@ -240,7 +243,8 @@ TASK_REGISTRY = {
     AutomationTaskType.ARCHIVING: {
         "default": (archive_inactive_files, "archive-inactive-files"),
         "archive-inactive-files": (archive_inactive_files, "archive-inactive-files"),
-        "auto_archive": (archive_inactive_files, "archive-inactive-files"),
+        "auto_archive": (auto_archive_tasks, "auto_archive_tasks"),
+        "auto-archive": (auto_archive_tasks, "auto_archive_tasks"),
         "archive": (archive_inactive_files, "archive-inactive-files"),
     },
     AutomationTaskType.REPORTING: {
@@ -273,6 +277,10 @@ def resolve_celery_task(
     """
     작업 유형(task_type)과 세부 작업명(task_name)을 매핑하여
     실행할 Celery 태스크 객체와 표준 세부 작업명을 반환합니다.
+
+    - task_name is None: 기본 작업 반환 (파라미터 생략 시)
+    - task_name이 명시되었으나 빈 문자열("") 또는 공백인 경우:
+      의도치 않은 기본 작업(파괴적일 수 있는 아카이빙/로그삭제 등) 실행 방지를 위해 400 Bad Request 반환
     """
     type_tasks = TASK_REGISTRY.get(task_type)
     if not type_tasks:
@@ -281,10 +289,24 @@ def resolve_celery_task(
             detail=f"Unsupported automation task type: {task_type}",
         )
 
-    if not task_name:
+    # 1. task_name이 생략된 경우(None)에만 안전하게 기본 작업 반환
+    if task_name is None:
         return type_tasks["default"]
 
-    normalized = task_name.strip().lower()
+    # 2. 명시적으로 전달되었으나 빈 문자열 또는 공백만 있는 경우 400 거부
+    stripped = task_name.strip()
+    if not stripped:
+        available = sorted({name for name in type_tasks.keys() if name != "default"})
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"task_name cannot be empty if specified. "
+                f"Available task names for '{task_type.value}': {', '.join(available)}"
+            ),
+        )
+
+    # 3. 대소문자 무관 정규화 매핑
+    normalized = stripped.lower()
     if normalized in type_tasks:
         return type_tasks[normalized]
 

@@ -318,10 +318,9 @@ def _archive_single_file(path_obj: Path, log_id: str) -> ArchivingResult:
         return ArchivingResult(is_error=True)
 
 
-@app.task(bind=True)
-def archive_inactive_files(self):
+def _execute_archiving(celery_task_id: str) -> str:
     """
-    [자동 아카이브 작업]
+    [자동 아카이브 핵심 실행 로직]
     - 30일 이상 미접근 및 미수정 파일 탐색
     - Archives 폴더로 이동
     """
@@ -334,7 +333,7 @@ def archive_inactive_files(self):
         log_id=log_id,
         task_type=AutomationTaskType.ARCHIVING,
         task_name=task_name,
-        celery_task_id=self.request.id,
+        celery_task_id=celery_task_id,
         status=AutomationStatus.RUNNING,
         started_at=start_time,
     )
@@ -408,5 +407,20 @@ def archive_inactive_files(self):
         raise
 
 
-# Celery Beat schedule 호환성을 위한 alias 등록 (Silent Failure 방지)
-auto_archive_tasks = archive_inactive_files
+@app.task(bind=True, name="backend.celery_app.tasks.archiving.archive_inactive_files")
+def archive_inactive_files(self):
+    """
+    [자동 아카이브 작업]
+    - 30일 이상 미접근 및 미수정 파일 탐색
+    - Archives 폴더로 이동
+    """
+    return _execute_archiving(self.request.id)
+
+
+@app.task(bind=True, name="backend.celery_app.tasks.archiving.auto_archive_tasks")
+def auto_archive_tasks(self):
+    """
+    [Celery Beat 호환용 태스크]
+    - beat_schedule 이전 등록명 호환성을 위한 정식 등록 태스크 (Silent Failure 및 Unregistered Task 거부 방지)
+    """
+    return _execute_archiving(self.request.id)

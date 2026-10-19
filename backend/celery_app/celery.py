@@ -46,7 +46,7 @@ app.conf.beat_schedule = {
     },
     # 3. 자동 아카이브 (매일 새벽 3시) / Auto Archiving (Daily at 3 AM)
     "daily-archiving": {
-        "task": "backend.celery_app.tasks.archiving.auto_archive_tasks",
+        "task": "backend.celery_app.tasks.archiving.archive_inactive_files",
         "schedule": crontab(hour=3, minute=0),
     },
     # 4. 주간 리포트 생성 (매주 월요일 아침 9시) / Weekly Report Generation (Weekly on Monday at 9 AM)
