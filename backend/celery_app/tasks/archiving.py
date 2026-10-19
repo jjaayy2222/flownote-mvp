@@ -406,3 +406,7 @@ def archive_inactive_files(self):
 
         _save_automation_log(log)
         raise
+
+
+# Celery Beat schedule 호환성을 위한 alias 등록 (Silent Failure 방지)
+auto_archive_tasks = archive_inactive_files

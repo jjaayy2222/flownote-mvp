@@ -20,8 +20,8 @@
 
 - [ ] **Automation Rules DB 연동 (`backend/services/automation_manager.py`)**
   - `get_automation_rules`, `create_automation_rule` 등 규칙 CRUD 전체 메서드: 파일/Mock 기반에서 DB 연동으로 전환 (현재 JSONL은 임시 스토리지로, 재배포/다중 인스턴스 환경을 위해 DB 마이그레이션 필수).
-- [ ] **Celery 연동 (`backend/api/endpoints/automation.py`)**
-  - `trigger_automation_task` 엔드포인트: 실제 Celery 태스크 지연 실행(`task.delay()`) 트리거 활성화.
+- [x] **Celery 연동 (`backend/api/endpoints/automation.py`)**
+  - `trigger_automation_task` 엔드포인트: 실제 Celery 태스크 지연 실행(`task.delay()`) 트리거 활성화 (501 Mock 해소, 브로커 오류 시 503 반환, `automation_manager` 트리거 이력 연동).
 - [x] **Golden Dataset 조인 (`backend/services/scheduler_service.py`)**
   - `extract_and_serialize_golden_dataset` 함수: 피드백 텍스트뿐만 아니라 `session_id`, `message_id`를 활용해 실제 `ChatHistory`와 조인하여 컨텍스트 보강 (1차 연동 및 세션 캐시, PathConfig 기반 SSOT 적용).
 
@@ -58,5 +58,5 @@
 
 ---
 *💡 관리 가이드: 해결된 항목은 본 문서에서 체크표시(`[x]`) 처리하고, 실제 소스 코드 상의 주석을 제거하여 단일 진실 공급원(SSOT)을 유지합니다.*
-- **✅ 코드베이스 싱크 상태**: `# TODO` 주석과 본 문서의 항목이 정확히 일치함을 확인했습니다. (마지막 점검일: 2026-10-19)
+- **✅ 코드베이스 싱크 상태**: `# TODO` 주석과 본 문서의 항목이 정확히 일치함을 확인했습니다. (마지막 점검일: 2026-10-20)
 - **💡 변동성(Drift) 주의**: TODO 항목의 개수나 내용은 개발 과정에 따라 수시로 변동될 수 있으므로, 주기적인 정합성 점검을 권장합니다.
