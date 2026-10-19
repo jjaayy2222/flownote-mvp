@@ -385,3 +385,78 @@ def test_get_reclassification_and_archiving_history_corrupted(
     ]
     assert any("get_reclassification_history:" in msg for msg in warning_msgs)
     assert any("get_archiving_history:" in msg for msg in warning_msgs)
+
+
+def test_record_automation_log_success(mock_automation_env):
+    """record_automation_log가 AUTO_LOG_FILE에 안전하게 추가 기록하는지 검증"""
+    manager = mock_automation_env["manager"]
+    auto_log = mock_automation_env["auto_log"]
+
+    log = AutomationLog(
+        log_id="log-trigger-1",
+        task_type=AutomationTaskType.RECLASSIFICATION,
+        task_name="daily-reclassify",
+        celery_task_id="celery-12345",
+        status=AutomationStatus.PENDING,
+    )
+
+    success = manager.record_automation_log(log)
+    assert success is True
+    assert auto_log.exists()
+
+    logs = manager.get_automation_logs(limit=10)
+    assert len(logs) == 1
+    assert logs[0].log_id == "log-trigger-1"
+    assert logs[0].celery_task_id == "celery-12345"
+    assert logs[0].status == AutomationStatus.PENDING
+
+
+def test_record_automation_log_none_raises(mock_automation_env):
+    """record_automation_log에 None 전달 시 ValueError 발생 검증"""
+    manager = mock_automation_env["manager"]
+    with pytest.raises(ValueError, match="log cannot be None"):
+        manager.record_automation_log(None)
+
+
+def test_record_automation_log_oserror_handling(mock_automation_env, monkeypatch):
+    """record_automation_log 파일 I/O 오류 시 False 반환 및 안전 로깅 검증"""
+    manager = mock_automation_env["manager"]
+
+    def mock_open(*args, **kwargs):
+        raise OSError("Permission denied")
+
+    monkeypatch.setattr("builtins.open", mock_open)
+
+    log = AutomationLog(
+        log_id="log-err-1",
+        task_type=AutomationTaskType.ARCHIVING,
+        task_name="archive-inactive-files",
+        celery_task_id="celery-err-1",
+    )
+
+    success = manager.record_automation_log(log)
+    assert success is False
+
+
+def test_record_task_trigger(mock_automation_env):
+    """record_task_trigger가 유효한 PENDING 로그를 생성 및 저장하는지 검증"""
+    manager = mock_automation_env["manager"]
+
+    created_log = manager.record_task_trigger(
+        task_type=AutomationTaskType.REPORTING,
+        task_name="generate-weekly-report",
+        celery_task_id="celery-report-999",
+        details={"trigger": "manual_api", "custom": "value"},
+    )
+
+    assert created_log.log_id is not None
+    assert created_log.task_type == AutomationTaskType.REPORTING
+    assert created_log.task_name == "generate-weekly-report"
+    assert created_log.celery_task_id == "celery-report-999"
+    assert created_log.status == AutomationStatus.PENDING
+    assert created_log.details.get("custom") == "value"
+
+    # get_automation_logs로 저장 여부 재확인
+    fetched = manager.get_automation_logs(limit=10)
+    assert len(fetched) == 1
+    assert fetched[0].celery_task_id == "celery-report-999"

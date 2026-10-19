@@ -8,11 +8,11 @@ Automation Manager Service
 import json
 import logging
 import threading
+import uuid
+from datetime import datetime, timezone
 from itertools import islice
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
-from pydantic import ValidationError
 
 from backend.agent.error_utils import (  # type: ignore[import]
     build_meta,
@@ -53,6 +53,8 @@ class AutomationManager:
             log_agent_error(logger, "Failed to create log directory", exc, meta)
         # 규칙 CRUD 작업을 직렬화하기 위한 락
         self._rule_lock = threading.Lock()
+        # 로그 파일 쓰기 동시성 제어를 위한 락
+        self._log_lock = threading.Lock()
 
     # ========================================================================
     # 로그 조회
@@ -99,7 +101,7 @@ class AutomationManager:
                 continue
             try:
                 logs.append(AutomationLog(**data))
-            except (ValueError, TypeError, ValidationError):
+            except (ValueError, TypeError):
                 invalid_count += 1
                 continue
 
@@ -137,7 +139,7 @@ class AutomationManager:
             if data.get("log_id") == log_id:
                 try:
                     return AutomationLog(**data)
-                except (ValueError, TypeError, ValidationError) as exc:
+                except (ValueError, TypeError) as exc:
                     meta = build_meta(
                         {"action": "get_automation_log_by_id", "log_id": log_id}
                     )
@@ -145,6 +147,74 @@ class AutomationManager:
                     return None
 
         return None
+
+    # ========================================================================
+    # 로그 기록 및 태스크 트리거 이력
+    # ========================================================================
+
+    def record_automation_log(self, log: AutomationLog) -> bool:
+        """
+        AutomationLog를 AUTO_LOG_FILE에 안전하게 추가 기록합니다 (Thread-safe append).
+
+        Args:
+            log: 기록할 AutomationLog 객체
+
+        Returns:
+            성공 시 True, I/O 에러 발생 시 False
+        """
+        if log is None:
+            raise ValueError("log cannot be None")
+
+        with self._log_lock:
+            try:
+                with open(AUTO_LOG_FILE, "a", encoding="utf-8") as f:
+                    f.write(log.model_dump_json() + "\n")
+                    f.flush()
+                return True
+            except OSError as exc:
+                meta = build_meta(
+                    {
+                        "action": "record_automation_log",
+                        "file_name": AUTO_LOG_FILE.name,
+                    },
+                    log_id=getattr(log, "log_id", None),
+                    task_type=str(getattr(log, "task_type", None)),
+                )
+                log_agent_error(logger, "Failed to append automation log", exc, meta)
+                return False
+
+    def record_task_trigger(
+        self,
+        task_type: AutomationTaskType,
+        task_name: str,
+        celery_task_id: str,
+        status: AutomationStatus = AutomationStatus.PENDING,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> AutomationLog:
+        """
+        수동/외부 자동화 태스크 트리거 이력을 기록합니다.
+
+        Args:
+            task_type: 자동화 작업 유형
+            task_name: 세부 작업명
+            celery_task_id: Celery 비동기 작업 ID
+            status: 초기 작업 상태 (기본값: PENDING)
+            details: 부가 상세 정보
+
+        Returns:
+            생성 및 기록된 AutomationLog 객체
+        """
+        log = AutomationLog(
+            log_id=str(uuid.uuid4()),
+            task_type=task_type,
+            task_name=task_name,
+            celery_task_id=celery_task_id,
+            status=status,
+            started_at=datetime.now(timezone.utc),
+            details=details or {"trigger": "manual_api"},
+        )
+        self.record_automation_log(log)
+        return log
 
     # ========================================================================
     # 규칙 관리 (MVP: JSONL 파일 기반 경량 영속성. 향후 DB 연동 시 이 섹션 전체를 교체)
@@ -176,7 +246,6 @@ class AutomationManager:
                         json.JSONDecodeError,
                         ValueError,
                         TypeError,
-                        ValidationError,
                     ):
                         malformed_count += 1
                         continue
@@ -361,7 +430,7 @@ class AutomationManager:
                 continue
             try:
                 records.append(ReclassificationRecord(**data))
-            except (ValueError, TypeError, ValidationError):
+            except (ValueError, TypeError):
                 invalid_count += 1
                 continue
 
@@ -400,7 +469,7 @@ class AutomationManager:
                 continue
             try:
                 records.append(ArchivingRecord(**data))
-            except (ValueError, TypeError, ValidationError):
+            except (ValueError, TypeError):
                 invalid_count += 1
                 continue
 

@@ -9,7 +9,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Literal, Optional, Tuple
+from typing import Any, List, Literal, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException
 from fastapi import Path as PathParam
@@ -17,7 +17,21 @@ from fastapi import Query
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, ValidationError
 
-from backend.agent.error_utils import log_agent_error
+from backend.agent.error_utils import build_meta, log_agent_error
+from backend.celery_app.tasks.archiving import archive_inactive_files
+from backend.celery_app.tasks.maintenance import (
+    backup_automation_data,
+    cleanup_old_logs,
+)
+from backend.celery_app.tasks.monitoring import check_sync_status, check_task_health
+from backend.celery_app.tasks.reclassification import (
+    daily_reclassify_tasks,
+    weekly_reclassify_tasks,
+)
+from backend.celery_app.tasks.reporting import (
+    generate_monthly_report,
+    generate_weekly_report,
+)
 from backend.config import PathConfig
 from backend.mcp.sync_map_manager import get_sync_map_manager
 from backend.models.automation import (
@@ -65,6 +79,17 @@ class ArchivingHistoryResponse(BaseModel):
 
     total: int = Field(..., description="전체 아카이브 수")
     records: List[ArchivingRecord] = Field(..., description="아카이브 기록")
+
+
+class TaskTriggerResponse(BaseModel):
+    """수동 태스크 트리거 응답"""
+
+    task_id: str = Field(..., description="Celery 비동기 작업 ID")
+    task_type: AutomationTaskType = Field(..., description="트리거된 작업 유형")
+    task_name: str = Field(..., description="트리거된 세부 작업명")
+    status: str = Field("queued", description="태스크 상태")
+    message: str = Field(..., description="안내 메시지")
+    triggered_at: datetime = Field(..., description="트리거 요청 시각 (UTC)")
 
 
 # ============================================================================
@@ -200,23 +225,161 @@ def get_archiving_history(
     return ArchivingHistoryResponse(total=len(records), records=records)
 
 
-@router.post("/tasks/trigger", status_code=202)
+# ============================================================================
+# Celery Manual Task Registry
+# ============================================================================
+
+TASK_REGISTRY = {
+    AutomationTaskType.RECLASSIFICATION: {
+        "default": (daily_reclassify_tasks, "daily-reclassify"),
+        "daily-reclassify": (daily_reclassify_tasks, "daily-reclassify"),
+        "daily": (daily_reclassify_tasks, "daily-reclassify"),
+        "weekly-reclassify": (weekly_reclassify_tasks, "weekly-reclassify"),
+        "weekly": (weekly_reclassify_tasks, "weekly-reclassify"),
+    },
+    AutomationTaskType.ARCHIVING: {
+        "default": (archive_inactive_files, "archive-inactive-files"),
+        "archive-inactive-files": (archive_inactive_files, "archive-inactive-files"),
+        "auto_archive": (archive_inactive_files, "archive-inactive-files"),
+        "archive": (archive_inactive_files, "archive-inactive-files"),
+    },
+    AutomationTaskType.REPORTING: {
+        "default": (generate_weekly_report, "generate-weekly-report"),
+        "generate-weekly-report": (generate_weekly_report, "generate-weekly-report"),
+        "weekly": (generate_weekly_report, "generate-weekly-report"),
+        "generate-monthly-report": (generate_monthly_report, "generate-monthly-report"),
+        "monthly": (generate_monthly_report, "generate-monthly-report"),
+    },
+    AutomationTaskType.MONITORING: {
+        "default": (check_sync_status, "check_sync_status"),
+        "check_sync_status": (check_sync_status, "check_sync_status"),
+        "sync": (check_sync_status, "check_sync_status"),
+        "check_task_health": (check_task_health, "check_task_health"),
+        "health": (check_task_health, "check_task_health"),
+    },
+    AutomationTaskType.MAINTENANCE: {
+        "default": (cleanup_old_logs, "cleanup_old_logs"),
+        "cleanup_old_logs": (cleanup_old_logs, "cleanup_old_logs"),
+        "cleanup": (cleanup_old_logs, "cleanup_old_logs"),
+        "backup_automation_data": (backup_automation_data, "backup_automation_data"),
+        "backup": (backup_automation_data, "backup_automation_data"),
+    },
+}
+
+
+def resolve_celery_task(
+    task_type: AutomationTaskType, task_name: Optional[str] = None
+) -> Tuple[Any, str]:
+    """
+    작업 유형(task_type)과 세부 작업명(task_name)을 매핑하여
+    실행할 Celery 태스크 객체와 표준 세부 작업명을 반환합니다.
+    """
+    type_tasks = TASK_REGISTRY.get(task_type)
+    if not type_tasks:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported automation task type: {task_type}",
+        )
+
+    if not task_name:
+        return type_tasks["default"]
+
+    normalized = task_name.strip().lower()
+    if normalized in type_tasks:
+        return type_tasks[normalized]
+
+    available = sorted({name for name in type_tasks.keys() if name != "default"})
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f"Unknown task_name '{task_name}' for task_type '{task_type.value}'. "
+            f"Available task names: {', '.join(available)}"
+        ),
+    )
+
+
+@router.post(
+    "/tasks/trigger",
+    response_model=TaskTriggerResponse,
+    status_code=202,
+    summary="수동 자동화 작업 트리거",
+)
 def trigger_automation_task(
-    task_type: AutomationTaskType = Query(..., description="작업 유형")
+    task_type: AutomationTaskType = Query(..., description="작업 유형"),
+    task_name: Optional[str] = Query(
+        None, description="세부 작업명 (선택, 미지정 시 기본 태스크 실행)"
+    ),
 ):
     """
     수동 자동화 작업 트리거
 
-    - Celery 태스크를 수동으로 실행
-    - 현재는 미구현 (Celery 연동 필요)
+    - Celery 태스크를 수동으로 비동기 지연 실행(.delay())
+    - task_name 생략 시 각 task_type별 기본 태스크 자동 선택
+    - 브로커 연결 실패 시 503 Service Unavailable 반환
+    - 트리거 성공 시 202 Accepted 및 Celery task_id 반환, automation_manager에 이력 기록
     """
-    # TODO: Celery 태스크 트리거 구현
-    # from backend.celery_app.tasks import ...
-    # task.delay()
+    celery_task, resolved_task_name = resolve_celery_task(task_type, task_name)
 
-    raise HTTPException(
-        status_code=501,
-        detail=f"Manual task triggering not implemented yet for {task_type.value}",
+    try:
+        async_result = celery_task.delay()
+        task_id = str(async_result.id)
+    except Exception as exc:
+        meta = build_meta(
+            {
+                "action": "trigger_automation_task",
+                "task_type": task_type.value,
+                "task_name": resolved_task_name,
+            }
+        )
+        log_agent_error(logger, "Failed to dispatch Celery task to broker", exc, meta)
+        raise HTTPException(
+            status_code=503,
+            detail="Celery task broker is unavailable or connection failed. Please ensure Redis/Celery worker is running.",
+        ) from exc
+
+    triggered_at = datetime.now(timezone.utc)
+
+    # automation_manager에 트리거 이력 기록 (Pending 상태)
+    try:
+        automation_manager.record_task_trigger(
+            task_type=task_type,
+            task_name=resolved_task_name,
+            celery_task_id=task_id,
+            status=AutomationStatus.PENDING,
+            details={
+                "trigger": "manual_api",
+                "triggered_at": triggered_at.isoformat(),
+            },
+        )
+    except Exception as exc:
+        meta = build_meta(
+            {
+                "action": "record_task_trigger_fallback",
+                "task_id": task_id,
+                "task_type": task_type.value,
+            }
+        )
+        log_agent_error(
+            logger,
+            "Failed to record task trigger history to automation_manager",
+            exc,
+            meta,
+        )
+
+    logger.info(
+        "Automation task successfully triggered: type=%s, name=%s, task_id=%s",
+        task_type.value,
+        resolved_task_name,
+        task_id,
+    )
+
+    return TaskTriggerResponse(
+        task_id=task_id,
+        task_type=task_type,
+        task_name=resolved_task_name,
+        status="queued",
+        message=f"Automation task '{resolved_task_name}' successfully triggered and queued.",
+        triggered_at=triggered_at,
     )
 
 

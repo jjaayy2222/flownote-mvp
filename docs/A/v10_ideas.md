@@ -67,7 +67,7 @@ v10:  보안 강화 → 멀티유저 → 배포/확장 (프로덕션)
 
 ### 아이디어 (세부 Tasks - 미확정)
 - [ ] Automation Rules DB 연동 전환 (파일 기반 → DB)
-- [ ] Celery `trigger_automation_task` 실제 지연 실행 활성화
+- [x] Celery `trigger_automation_task` 실제 지연 실행 활성화
 - [ ] Golden Dataset 조인: `session_id`, `message_id` 활용 컨텍스트 보강
 - [ ] 사용자별 자동화 규칙 격리 및 권한 체계 설계
 
