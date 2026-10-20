@@ -310,7 +310,10 @@ class AutomationManager:
         Returns:
             저장된 AutomationRule 리스트. 파일이 없으면 빈 리스트.
         """
-        return self._load_all_rules()
+        # Reads share the same lock as rewrites so no caller observes a
+        # partially replaced or concurrently modified rules snapshot.
+        with self._rule_lock:
+            return self._load_all_rules()
 
     def create_automation_rule(self, rule: AutomationRule) -> AutomationRule:
         """

@@ -135,26 +135,26 @@ def get_automation_log_detail(log_id: str = PathParam(..., description="로그 I
 
 
 @router.get("/rules", response_model=AutomationRuleListResponse)
-def get_automation_rules():
+async def get_automation_rules():
     """
     자동화 규칙 목록 조회
 
     - JSONL 기반 임시 저장소에서 조회
     - 향후 DB 연동 시 교체 예정
     """
-    rules = automation_manager.get_automation_rules()
+    rules = await run_in_threadpool(automation_manager.get_automation_rules)
     return AutomationRuleListResponse(total=len(rules), rules=rules)
 
 
 @router.post("/rules", response_model=AutomationRule, status_code=201)
-def create_automation_rule(rule: AutomationRule):
+async def create_automation_rule(rule: AutomationRule):
     """
     자동화 규칙 생성
 
     - 새로운 자동화 규칙 생성 (JSONL 저장소에 추가)
     """
     try:
-        return automation_manager.create_automation_rule(rule)
+        return await run_in_threadpool(automation_manager.create_automation_rule, rule)
     except ValueError as exc:
         raise HTTPException(
             status_code=409, detail="Rule with this ID already exists."
@@ -166,7 +166,7 @@ def create_automation_rule(rule: AutomationRule):
 
 
 @router.put("/rules/{rule_id}", response_model=AutomationRule)
-def update_automation_rule(
+async def update_automation_rule(
     rule: AutomationRule, rule_id: str = PathParam(..., description="규칙 ID")
 ):
     """
@@ -175,7 +175,9 @@ def update_automation_rule(
     - 기존 규칙 수정 (JSONL 저장소 갱신)
     """
     try:
-        result = automation_manager.update_automation_rule(rule_id, rule)
+        result = await run_in_threadpool(
+            automation_manager.update_automation_rule, rule_id, rule
+        )
         if result is None:
             raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
         return result
@@ -186,14 +188,16 @@ def update_automation_rule(
 
 
 @router.delete("/rules/{rule_id}", status_code=204)
-def delete_automation_rule(rule_id: str = PathParam(..., description="규칙 ID")):
+async def delete_automation_rule(rule_id: str = PathParam(..., description="규칙 ID")):
     """
     자동화 규칙 삭제
 
     - 기존 규칙 삭제 (JSONL 저장소 갱신)
     """
     try:
-        success = automation_manager.delete_automation_rule(rule_id)
+        success = await run_in_threadpool(
+            automation_manager.delete_automation_rule, rule_id
+        )
         if not success:
             raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
     except OSError as exc:
