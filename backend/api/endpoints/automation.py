@@ -597,6 +597,8 @@ class DashboardSummary(BaseModel):
     total_classifications: int = Field(..., description="전체 분류 수")
     total_conflicts: int = Field(..., description="전체 충돌 수")
     automation_tasks_today: int = Field(..., description="오늘 실행된 자동화 작업 수")
+    active_rules: int = Field(..., description="활성화된 자동화 규칙 수")
+    pending_tasks: int = Field(..., description="실행 중이거나 대기 중인 작업 수")
     sync_status: str = Field(..., description="동기화 상태")
     last_sync: Optional[str] = Field(None, description="마지막 동기화 시각")
 
@@ -606,8 +608,8 @@ def get_dashboard_summary():
     """
     대시보드 요약 정보 조회
 
-    - 전체 파일 수, 분류 수, 충돌 수 등
-    - AutomationManager 로그 실데이터를 기반으로 집계
+    - 전체 파일 수, 분류 수, 충돌 수, 활성 규칙 수, 대기 작업 수 등
+    - AutomationManager 실데이터를 기반으로 모든 지표 집계
     """
     from datetime import date
 
@@ -620,6 +622,31 @@ def get_dashboard_summary():
         log.started_at.date() == today and log.status == AutomationStatus.COMPLETED
         for log in all_logs
     )
+
+    # 활성 자동화 규칙 수: AutomationManager JSONL 기반 실집계 (I/O 에러 안전 방어)
+    try:
+        all_rules = automation_manager.get_automation_rules()
+        active_rules = sum(rule.is_active for rule in all_rules)
+    except OSError as exc:
+        logger.warning(
+            "Failed to count active automation rules due to I/O error: %s", exc
+        )
+        active_rules = 0
+
+    # 실행 중(RUNNING) 또는 대기 중(PENDING) 작업 수: AutomationManager 로그 실집계
+    try:
+        running_logs = automation_manager.get_automation_logs(
+            limit=500, status=AutomationStatus.RUNNING
+        )
+        pending_logs = automation_manager.get_automation_logs(
+            limit=500, status=AutomationStatus.PENDING
+        )
+        pending_tasks = len(running_logs) + len(pending_logs)
+    except OSError as exc:
+        logger.warning(
+            "Failed to count pending/running tasks due to I/O error: %s", exc
+        )
+        pending_tasks = 0
 
     # Vault 파일 수: mcp_config 기반 실제 카운트 (파일 I/O 에러 안전 방어)
     from pathlib import Path as _Path
@@ -669,6 +696,8 @@ def get_dashboard_summary():
         total_classifications=total_classifications,
         total_conflicts=total_conflicts,
         automation_tasks_today=tasks_today,
+        active_rules=active_rules,
+        pending_tasks=pending_tasks,
         sync_status=sync_status,
         last_sync=last_sync,
     )
