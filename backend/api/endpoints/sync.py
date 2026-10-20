@@ -57,14 +57,14 @@ class SyncStatusResponse(BaseModel):
 class MCPStatusResponse(BaseModel):
     """MCP 서버 상태 응답.
 
-    The current MCP server uses a separate stdio process, so this API process
-    cannot observe that process's live state or connected client sessions.
+    Runtime and registrations are unavailable until the stdio server publishes
+    its state through a channel shared with this API process.
     """
 
     running: Optional[bool] = None
     active_clients: Optional[List[str]] = None
-    tools_registered: List[str]
-    resources_registered: List[str]
+    tools_registered: Optional[List[str]] = None
+    resources_registered: Optional[List[str]] = None
 
 
 class ConflictLogResponse(BaseModel):
@@ -165,28 +165,14 @@ async def get_mcp_status():
     MCP 서버 상태 조회
 
     Returns:
-        MCPStatusResponse: MCP 서버에 실제 등록된 도구 및 리소스 정보.
-        stdio 런타임은 별도 프로세스이며 현재 연결 세션 계측은 제공하지 않는다.
+        MCPStatusResponse: stdio 서버와 상태 공유가 구성되지 않은 경우
+        런타임 및 등록 목록 필드는 None으로 반환한다.
     """
-    try:
-        # Read registrations from the FastMCP instance so this response follows
-        # the actual @tool/@resource declarations instead of a duplicate list.
-        from backend.mcp.server import mcp
-
-        tools, resources = await asyncio.gather(mcp.list_tools(), mcp.list_resources())
-
-        return MCPStatusResponse(
-            tools_registered=[tool.name for tool in tools],
-            resources_registered=[str(resource.uri) for resource in resources],
-        )
-    except Exception as e:
-        log_agent_error(
-            logger, f"Failed to get MCP status: {e}", e, include_traceback=True
-        )
-        raise HTTPException(
-            status_code=500,
-            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
-        ) from e
+    # The MCP server is launched over stdio as a separate process. Reading a
+    # FastMCP instance imported into this API would report this process's
+    # registry, not the registry visible to that stdio client's session.
+    # Keep these fields unavailable until the runtime exposes shared state.
+    return MCPStatusResponse()
 
 
 @router.get("/conflicts", response_model=List[ConflictLogResponse])

@@ -1,4 +1,4 @@
-// web_ui/src/components/dashboard/sync-monitor.tsx 
+// web_ui/src/components/dashboard/sync-monitor.tsx
 
 "use client"
 
@@ -28,10 +28,10 @@ interface SyncStatus {
 }
 
 interface MCPStatus {
-  running: boolean;
-  active_clients: string[];
-  tools_registered: string[];
-  resources_registered: string[];
+  running: boolean | null;
+  active_clients: string[] | null;
+  tools_registered: string[] | null;
+  resources_registered: string[] | null;
 }
 
 interface Conflict {
@@ -56,7 +56,7 @@ export function SyncMonitor() {
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   // State for Conflict Resolution
   const [selectedConflictId, setSelectedConflictId] = useState<string | null>(null);
 
@@ -68,7 +68,7 @@ export function SyncMonitor() {
         fetchAPI<MCPStatus>(`${API_BASE}/api/sync/mcp/status`),
         fetchAPI<Conflict[]>(`${API_BASE}/api/sync/conflicts?limit=10`)
       ]);
-      
+
       setSyncStatus(syncData);
       setMcpStatus(mcpData);
       setConflicts(conflictData);
@@ -123,7 +123,7 @@ export function SyncMonitor() {
         // 이 컴포넌트에서는 모니터링하지 않는 이벤트
         break;
       default:
-        // Exhaustiveness Check (Dead Code in Runtime): 
+        // Exhaustiveness Check (Dead Code in Runtime):
         // 모든 케이스가 처리되지 않으면 여기서 컴파일 에러가 발생합니다.
         // 런타임에는 이 분기에 도달할 수 없습니다 (isWebSocketEvent 가드가 보장).
         const _exhaustiveCheck: never = event;
@@ -145,7 +145,7 @@ export function SyncMonitor() {
         await fetchAPI(`${API_BASE}/api/sync/conflicts/${selectedConflictId}/resolve?${params.toString()}`, {
             method: 'POST',
         });
-        
+
         let decisionLabel: string = strategy;
         switch (strategy) {
           case CONFLICT_RESOLUTION_STRATEGIES.KEEP_LOCAL:
@@ -162,7 +162,7 @@ export function SyncMonitor() {
         toast.success(t('conflicts.resolved_toast', { decision: decisionLabel }), {
             description: `${t('conflicts.file')}: ${selectedConflictId}`
         });
-        
+
         setSelectedConflictId(null);
         // Refresh list
         fetchData();
@@ -218,8 +218,8 @@ export function SyncMonitor() {
                 <FileText className="h-5 w-5 text-muted-foreground" />
                 {t('connection.title')}
               </span>
-              {syncStatus?.connected ? 
-                <Badge className="bg-green-500 hover:bg-green-600">{t('connection.connected')}</Badge> : 
+              {syncStatus?.connected ?
+                <Badge className="bg-green-500 hover:bg-green-600">{t('connection.connected')}</Badge> :
                 <Badge variant="destructive">{t('connection.disconnected')}</Badge>
               }
             </CardTitle>
@@ -235,7 +235,7 @@ export function SyncMonitor() {
               <div className="flex justify-between items-center border-b pb-2">
                 <span className="text-sm font-medium text-muted-foreground">{t('connection.last_sync')}</span>
                 <span className="text-sm">
-                  {syncStatus?.last_sync 
+                  {syncStatus?.last_sync
                     ? new Intl.DateTimeFormat(locale, {
                         dateStyle: 'medium',
                         timeStyle: 'short',
@@ -259,9 +259,11 @@ export function SyncMonitor() {
                 <Server className="h-5 w-5 text-muted-foreground" />
                 {t('mcp.title')}
               </span>
-              {mcpStatus?.running ? 
-                <Badge className="bg-blue-500 hover:bg-blue-600">{t('mcp.running')}</Badge> : 
-                <Badge variant="destructive">{t('mcp.stopped')}</Badge>
+              {mcpStatus?.running === true ?
+                <Badge className="bg-blue-500 hover:bg-blue-600">{t('mcp.running')}</Badge> :
+                mcpStatus?.running === false ?
+                  <Badge variant="destructive">{t('mcp.stopped')}</Badge> :
+                  <Badge variant="outline">{t('mcp.status_unavailable')}</Badge>
               }
             </CardTitle>
           </CardHeader>
@@ -270,7 +272,9 @@ export function SyncMonitor() {
                <div>
                   <h4 className="text-sm font-medium text-muted-foreground mb-2">{t('mcp.active_clients')}</h4>
                   <div className="flex flex-wrap gap-2">
-                    {mcpStatus?.active_clients?.length ? (
+                    {mcpStatus?.active_clients === null || mcpStatus === null ? (
+                      <span className="text-xs text-muted-foreground italic">{t('mcp.clients_unavailable')}</span>
+                    ) : mcpStatus.active_clients.length ? (
                       mcpStatus.active_clients.map((client, i) => (
                         <Badge key={i} variant="secondary">{client}</Badge>
                       ))
@@ -280,11 +284,13 @@ export function SyncMonitor() {
                <div>
                   <h4 className="text-sm font-medium text-muted-foreground mb-2">{t('mcp.registered_tools')}</h4>
                   <div className="flex flex-wrap gap-2">
-                    {mcpStatus?.tools_registered?.map((tool, i) => (
-                      <Badge key={i} variant="outline" className="border-purple-200 text-purple-700 bg-purple-50">
-                        {tool}
-                      </Badge>
-                    ))}
+                    {mcpStatus?.tools_registered === null || mcpStatus === null ? (
+                      <span className="text-xs text-muted-foreground italic">{t('mcp.registrations_unavailable')}</span>
+                    ) : mcpStatus.tools_registered.map((tool, i) => (
+                        <Badge key={i} variant="outline" className="border-purple-200 text-purple-700 bg-purple-50">
+                          {tool}
+                        </Badge>
+                      ))}
                   </div>
                </div>
              </div>
@@ -311,7 +317,7 @@ export function SyncMonitor() {
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold">{conflict.file_path}</span>
-                      <Badge variant={conflict.status === CONFLICT_STATUS.RESOLVED ? 'default' : 'destructive'} 
+                      <Badge variant={conflict.status === CONFLICT_STATUS.RESOLVED ? 'default' : 'destructive'}
                              className={conflict.status === CONFLICT_STATUS.RESOLVED ? 'bg-green-500' : ''}>
                         {conflict.status}
                       </Badge>
@@ -328,7 +334,7 @@ export function SyncMonitor() {
                        </div>
                     )}
                   </div>
-                  
+
                   <div className="flex items-center gap-4">
                     <div className="text-xs font-mono text-muted-foreground text-right hidden md:block">
                         <div>L: {conflict.local_hash.substring(0, 7)}</div>
@@ -354,8 +360,8 @@ export function SyncMonitor() {
                 </SheetHeader>
                 <div className="flex-1 overflow-hidden">
                     {selectedConflictId && (
-                        <ConflictDiffViewer 
-                            conflictId={selectedConflictId} 
+                        <ConflictDiffViewer
+                            conflictId={selectedConflictId}
                             onResolve={handleResolution}
                         />
                     )}

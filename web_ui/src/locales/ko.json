@@ -62,9 +62,12 @@
       "title": "MCP 서버",
       "running": "실행 중",
       "stopped": "중지됨",
+      "status_unavailable": "상태 확인 불가",
       "active_clients": "활성 클라이언트",
       "no_clients": "연결된 클라이언트 없음",
-      "registered_tools": "등록된 도구"
+      "clients_unavailable": "클라이언트 정보 확인 불가",
+      "registered_tools": "등록된 도구",
+      "registrations_unavailable": "등록 정보 확인 불가"
     },
     "conflicts": {
       "title": "충돌 내역",
@@ -76,7 +79,7 @@
       "file": "파일",
       "strategies": {
         "keep_local": "로컬 유지",
-        "keep_remote": "원격 유지", 
+        "keep_remote": "원격 유지",
         "keep_both": "둘 다 유지",
         "unknown": "알 수 없는 전략"
       }
@@ -208,4 +211,3 @@
     }
   }
 }
-

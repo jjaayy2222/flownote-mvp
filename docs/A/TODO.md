@@ -36,8 +36,8 @@
   - 분류 결과 기반 임베딩 업데이트 로직 추가 구현 필요.
 - [ ] **Sync Status API (`backend/api/endpoints/sync.py`)**
   - `get_sync_status`, `get_mcp_status`, `get_conflicts` 등: 상태 응답을 `SyncMapManager`, `ExternalSyncLog` 등의 실제 매니저/DB에서 동적으로 조회하도록 연결.
-  - [x] `get_mcp_status` 등록 목록 실연동: 중복 하드코딩 목록을 제거하고 FastMCP의 실제 도구/리소스 등록에서 응답 생성.
-  - [ ] MCP 별도 stdio 프로세스의 실행 상태 및 연결 세션 계측: API 프로세스와 공유되는 런타임 상태 채널이 마련되면 `running` 및 `active_clients`를 연동.
+  - [x] `get_mcp_status` 오보고 방지: API 프로세스의 MCP 레지스트리가 stdio 클라이언트의 등록 상태인 것처럼 표시되지 않도록 런타임 공유 채널이 없을 때 상태·등록 정보를 확인 불가로 반환.
+  - [ ] MCP 별도 stdio 프로세스의 등록 목록, 실행 상태 및 연결 세션 계측: API 프로세스와 공유되는 런타임 상태 채널이 마련되면 응답 필드를 실연동.
   - [x] `get_conflict_diff`, `resolve_conflict`: Mock 데이터를 제거하고 데이터베이스에서 diff 경로를 조회 및 실제 ConflictResolutionService를 연동하여 충돌 해결을 트리거 (JSONL 로그 연동 완료).
   - [x] `get_conflict_diff` 1차 개선: 로컬/원격 파일 사용 불가 시 빈 문자열 대신 422 오류 반환 — 유효한 빈 파일과 사용 불가 상태를 명확히 구분. `test_diff_viewer_flow.py`도 함께 수정.
   - [x] `get_conflict_diff` 2차 개선: `UnicodeDecodeError` 처리 추가 — 잘못된 UTF-8 파일을 500 대신 422로 반환. `ObsidianSyncService.pull_file()`도 동일하게 일관성 확보.
