@@ -55,10 +55,14 @@ class SyncStatusResponse(BaseModel):
 
 
 class MCPStatusResponse(BaseModel):
-    """MCP 서버 상태 응답"""
+    """MCP 서버 상태 응답.
 
-    running: bool
-    active_clients: List[str]
+    The current MCP server uses a separate stdio process, so this API process
+    cannot observe that process's live state or connected client sessions.
+    """
+
+    running: Optional[bool] = None
+    active_clients: Optional[List[str]] = None
     tools_registered: List[str]
     resources_registered: List[str]
 
@@ -161,45 +165,19 @@ async def get_mcp_status():
     MCP 서버 상태 조회
 
     Returns:
-        MCPStatusResponse: MCP 서버 상태 정보.
-        실제 연결된 클라이언트 목록은 향후 MCP 런타임 연동 시 제공된다.
+        MCPStatusResponse: MCP 서버에 실제 등록된 도구 및 리소스 정보.
+        stdio 런타임은 별도 프로세스이며 현재 연결 세션 계측은 제공하지 않는다.
     """
     try:
-        config = mcp_config
+        # Read registrations from the FastMCP instance so this response follows
+        # the actual @tool/@resource declarations instead of a duplicate list.
+        from backend.mcp.server import mcp
 
-        # 등록된 툴리스트는 설정 기반으로 구성함 (하드코딩 제거)
-        configured_tools = getattr(config, "registered_tools", None)
-        registered_tools = (
-            configured_tools
-            if configured_tools is not None
-            else [
-                "classify_content",
-                "search_notes",
-                "get_automation_stats",
-            ]
-        )
-
-        configured_resources = getattr(config, "registered_resources", None)
-        registered_resources = (
-            configured_resources
-            if configured_resources is not None
-            else [
-                "flownote://para/projects",
-                "flownote://dashboard/summary",
-            ]
-        )
-
-        # 연결된 클라이언트 목록: 향후 MCP 런타임에서 주입될 때까지 빈 리스트
-        configured_clients = getattr(config, "active_clients", None)
-        active_clients: list = (
-            configured_clients if configured_clients is not None else []
-        )
+        tools, resources = await asyncio.gather(mcp.list_tools(), mcp.list_resources())
 
         return MCPStatusResponse(
-            running=getattr(config, "server_running", False),
-            active_clients=active_clients,
-            tools_registered=registered_tools,
-            resources_registered=registered_resources,
+            tools_registered=[tool.name for tool in tools],
+            resources_registered=[str(resource.uri) for resource in resources],
         )
     except Exception as e:
         log_agent_error(
