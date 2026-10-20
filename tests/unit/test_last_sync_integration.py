@@ -12,8 +12,8 @@ Covers:
   - timezone-aware / naive 혼합 시 안전한 비교
   - tool_type 필터링 적용 시 해당 도구 기준 최신 시각 반환
   - tool_type 필터링 — 해당 도구 매핑이 없을 때 None 반환
-- GET /sync/status: last_sync 실연동 검증 (SyncMapManager mock)
-- GET /automation/dashboard/summary: last_sync 실연동 검증 (SyncMapManager mock)
+- GET /api/sync/status: last_sync 실연동 검증 (SyncMapManager mock)
+- GET /api/automation/dashboard/summary: last_sync 실연동 검증 (SyncMapManager mock)
 """
 
 from datetime import datetime, timezone
@@ -184,7 +184,7 @@ class TestSyncStatusLastSync:
             "backend.api.endpoints.sync.get_sync_map_manager",
             return_value=mock_manager,
         ):
-            response = client.get("/sync/status")
+            response = client.get("/api/sync/status")
 
         assert response.status_code == 200
         assert response.json()["last_sync"] is None
@@ -199,7 +199,7 @@ class TestSyncStatusLastSync:
             "backend.api.endpoints.sync.get_sync_map_manager",
             return_value=mock_manager,
         ):
-            response = client.get("/sync/status")
+            response = client.get("/api/sync/status")
 
         assert response.status_code == 200
         last_sync_val = response.json()["last_sync"]
@@ -230,7 +230,7 @@ class TestDashboardSummaryLastSync:
             "backend.api.endpoints.automation.get_sync_map_manager",
             return_value=mock_manager,
         ):
-            response = client.get("/automation/dashboard/summary")
+            response = client.get("/api/automation/dashboard/summary")
 
         assert response.status_code == 200
         assert response.json()["last_sync"] is None
@@ -245,7 +245,7 @@ class TestDashboardSummaryLastSync:
             "backend.api.endpoints.automation.get_sync_map_manager",
             return_value=mock_manager,
         ):
-            response = client.get("/automation/dashboard/summary")
+            response = client.get("/api/automation/dashboard/summary")
 
         assert response.status_code == 200
         last_sync_val = response.json()["last_sync"]
@@ -253,3 +253,134 @@ class TestDashboardSummaryLastSync:
         parsed = datetime.fromisoformat(last_sync_val)
         assert parsed.hour == 7
         assert parsed.minute == 30
+
+
+# ============================================================================
+# GET /automation/dashboard/summary — active_rules / pending_tasks 집계 검증
+# ============================================================================
+
+
+class TestDashboardSummaryActiveRulesAndPendingTasks:
+    """DashboardSummary.active_rules 및 pending_tasks 실연동 검증."""
+
+    @pytest.fixture
+    def client(self):
+        from backend.main import app
+
+        return TestClient(app)
+
+    def _make_mock_rule(self, *, is_active: bool):
+        """AutomationRule mock 헬퍼."""
+        rule = MagicMock()
+        rule.is_active = is_active
+        return rule
+
+    def _make_mock_log(self, status: str):
+        """AutomationLog mock 헬퍼."""
+        log = MagicMock()
+        log.status = status
+        return log
+
+    def test_active_rules_counts_only_active(self, client):
+        """is_active=True인 규칙만 active_rules에 반영되어야 한다."""
+        rules = [
+            self._make_mock_rule(is_active=True),
+            self._make_mock_rule(is_active=False),
+            self._make_mock_rule(is_active=True),
+        ]
+        mock_map_manager = MagicMock(spec=SyncMapManager)
+        mock_map_manager.get_latest_sync_time.return_value = None
+
+        with (
+            patch(
+                "backend.api.endpoints.automation.automation_manager.get_automation_rules",
+                return_value=rules,
+            ),
+            patch(
+                "backend.api.endpoints.automation.automation_manager.get_automation_logs",
+                return_value=[],
+            ),
+            patch(
+                "backend.api.endpoints.automation.automation_manager.get_reclassification_history",
+                return_value=[],
+            ),
+            patch(
+                "backend.api.endpoints.automation.get_sync_map_manager",
+                return_value=mock_map_manager,
+            ),
+        ):
+            response = client.get("/api/automation/dashboard/summary")
+
+        assert response.status_code == 200
+        assert response.json()["active_rules"] == 2
+
+    def test_pending_tasks_sums_running_and_pending_logs(self, client):
+        """RUNNING + PENDING 로그 합산이 pending_tasks에 반영되어야 한다."""
+        from backend.models.automation import AutomationStatus
+
+        mock_map_manager = MagicMock(spec=SyncMapManager)
+        mock_map_manager.get_latest_sync_time.return_value = None
+
+        def _get_logs_by_status(limit=100, task_type=None, status=None):
+            if status == AutomationStatus.RUNNING:
+                return [self._make_mock_log("running")] * 2
+            if status == AutomationStatus.PENDING:
+                return [self._make_mock_log("pending")] * 3
+            # COMPLETED 등 나머지: 빈 리스트
+            return []
+
+        with (
+            patch(
+                "backend.api.endpoints.automation.automation_manager.get_automation_rules",
+                return_value=[],
+            ),
+            patch(
+                "backend.api.endpoints.automation.automation_manager.get_automation_logs",
+                side_effect=_get_logs_by_status,
+            ),
+            patch(
+                "backend.api.endpoints.automation.automation_manager.get_reclassification_history",
+                return_value=[],
+            ),
+            patch(
+                "backend.api.endpoints.automation.get_sync_map_manager",
+                return_value=mock_map_manager,
+            ),
+        ):
+            response = client.get("/api/automation/dashboard/summary")
+
+        assert response.status_code == 200
+        assert response.json()["pending_tasks"] == 5  # 2 running + 3 pending
+
+    def test_zero_active_rules_when_all_inactive(self, client):
+        """모든 규칙이 비활성화일 때 active_rules가 0이어야 한다."""
+        rules = [
+            self._make_mock_rule(is_active=False),
+            self._make_mock_rule(is_active=False),
+        ]
+        mock_map_manager = MagicMock(spec=SyncMapManager)
+        mock_map_manager.get_latest_sync_time.return_value = None
+
+        with (
+            patch(
+                "backend.api.endpoints.automation.automation_manager.get_automation_rules",
+                return_value=rules,
+            ),
+            patch(
+                "backend.api.endpoints.automation.automation_manager.get_automation_logs",
+                return_value=[],
+            ),
+            patch(
+                "backend.api.endpoints.automation.automation_manager.get_reclassification_history",
+                return_value=[],
+            ),
+            patch(
+                "backend.api.endpoints.automation.get_sync_map_manager",
+                return_value=mock_map_manager,
+            ),
+        ):
+            response = client.get("/api/automation/dashboard/summary")
+
+        assert response.status_code == 200
+        assert response.json()["active_rules"] == 0
+        assert response.json()["pending_tasks"] == 0
