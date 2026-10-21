@@ -20,6 +20,7 @@
 
 - [ ] **Automation Rules DB 연동 (`backend/services/automation_manager.py`)**
   - `get_automation_rules`, `create_automation_rule` 등 규칙 CRUD 전체 메서드: 파일/Mock 기반에서 DB 연동으로 전환 (현재 JSONL은 임시 스토리지로, 재배포/다중 인스턴스 환경을 위해 DB 마이그레이션 필수).
+  - [x] 1단계 마이그레이션 준비: JSONL 규칙 CRUD의 동기 파일 I/O를 API 스레드 풀로 오프로드하고, 목록 읽기에도 CRUD 잠금을 적용해 단일 프로세스 내 동시 접근을 직렬화.
 - [x] **Celery 연동 (`backend/api/endpoints/automation.py`)**
   - `trigger_automation_task` 엔드포인트: 실제 Celery 태스크 지연 실행(`task.delay()`) 트리거 활성화 (501 Mock 해소, 브로커 오류 시 503 반환, `automation_manager` 트리거 이력 연동).
 - [x] **Golden Dataset 조인 (`backend/services/scheduler_service.py`)**
