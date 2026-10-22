@@ -62,9 +62,12 @@
       "title": "MCP Server",
       "running": "Running",
       "stopped": "Stopped",
+      "status_unavailable": "Status unavailable",
       "active_clients": "Active Clients",
       "no_clients": "No clients connected",
-      "registered_tools": "Registered Tools"
+      "clients_unavailable": "Client information unavailable",
+      "registered_tools": "Registered Tools",
+      "registrations_unavailable": "Registration information unavailable"
     },
     "conflicts": {
       "title": "Conflict History",
@@ -76,7 +79,7 @@
       "file": "File",
       "strategies": {
         "keep_local": "Keep Local",
-        "keep_remote": "Keep Remote", 
+        "keep_remote": "Keep Remote",
         "keep_both": "Keep Both",
         "unknown": "Unknown Strategy"
       }
@@ -208,5 +211,3 @@
     }
   }
 }
-
-

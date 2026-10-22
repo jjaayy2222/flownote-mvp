@@ -1,11 +1,13 @@
 // web_ui/src/components/dashboard/__tests__/sync-monitor.test.tsx
 
 import { render, screen, waitFor, act, within } from '@testing-library/react';
+import { NextIntlClientProvider } from 'next-intl';
 import { SyncMonitor } from '../sync-monitor';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as useWebSocketHook from '@/hooks/useWebSocket';
 import * as apiLib from '@/lib/api';
 import { WebSocketStatus } from '@/types/websocket';
+import messages from '@/locales/en.json';
 
 // --- Mocks Setup ---
 
@@ -34,18 +36,18 @@ global.ResizeObserver = class ResizeObserver {
 // [Helper] Encapsulate DOM traversal for cleaner tests
 // Changed name to accurately reflect usage of getByText
 const getContainerByText = (
-  text: string | RegExp, 
+  text: string | RegExp,
   selector: string = 'div'
 ): HTMLElement => {
   const element = screen.getByText(text);
   const container = element.closest(selector);
-  
+
   if (!container) {
     throw new Error(
       `[Test Helper] Could not find parent container matching "${selector}" for element with text: "${text}"`
     );
   }
-  
+
   return container as HTMLElement;
 };
 
@@ -74,7 +76,7 @@ const MOCK_SYNC_STATUS = {
 
 const MOCK_MCP_STATUS = {
   running: true,
-  active_clients: ['obsidian-client'], 
+  active_clients: ['obsidian-client'],
   tools_registered: ['read_file'],
   resources_registered: ['notes'],
 };
@@ -82,14 +84,22 @@ const MOCK_MCP_STATUS = {
 // Mutable variables for test state
 let mockConflicts: Conflict[] = [];
 let mockSyncStatus = { ...MOCK_SYNC_STATUS };
+let mockMcpStatus = { ...MOCK_MCP_STATUS };
+
+const renderSyncMonitor = () => render(
+  <NextIntlClientProvider locale="en" messages={messages}>
+    <SyncMonitor />
+  </NextIntlClientProvider>
+);
 
 describe('SyncMonitor Integration Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    
+
     // Reset mutable mock data
     mockConflicts = [];
     mockSyncStatus = { ...MOCK_SYNC_STATUS };
+    mockMcpStatus = { ...MOCK_MCP_STATUS };
 
     // Dynamic Mock Implementation with Type Safety Check
     vi.mocked(apiLib.fetchAPI).mockImplementation(async (url) => {
@@ -97,9 +107,9 @@ describe('SyncMonitor Integration Tests', () => {
         if (typeof url !== 'string') {
             throw new Error(`[fetchAPI Mock] Invalid URL argument: ${JSON.stringify(url)}`);
         }
-        
+
         if (url.includes('/status') && !url.includes('/mcp')) return mockSyncStatus;
-        if (url.includes('/mcp')) return MOCK_MCP_STATUS;
+        if (url.includes('/mcp')) return mockMcpStatus;
         if (url.includes('/conflicts')) return mockConflicts;
         return {};
     });
@@ -122,10 +132,10 @@ describe('SyncMonitor Integration Tests', () => {
   it('renders loading state initially', async () => {
     let rejectApi: (reason: Error) => void = () => {};
     const pendingPromise = new Promise<unknown>((_, reject) => { rejectApi = reject; });
-    
+
     vi.mocked(apiLib.fetchAPI).mockReturnValue(pendingPromise as Promise<never>);
 
-    render(<SyncMonitor />);
+    renderSyncMonitor();
 
     // getByText implies assertion (throws if not found)
     screen.getByText(/loading sync status/i);
@@ -136,7 +146,7 @@ describe('SyncMonitor Integration Tests', () => {
   });
 
   it('renders dashboard with fetched data including details', async () => {
-    render(<SyncMonitor />);
+    renderSyncMonitor();
 
     await waitFor(() => {
         expect(screen.queryByText(/loading sync status/i)).toBeNull();
@@ -144,7 +154,7 @@ describe('SyncMonitor Integration Tests', () => {
 
     // 1. High-level sections
     screen.getByText('Sync Monitor');
-    
+
     // 2. Validate Obsidian Connection Card Details
     const vaultPathContainer = getContainerByText('Vault Path');
     within(vaultPathContainer).getByText('/tmp/vault');
@@ -153,7 +163,7 @@ describe('SyncMonitor Integration Tests', () => {
     within(fileCountContainer).getByText('100');
 
     // 3. MCP Status Details
-    const mcpCard = getContainerByText('MCP Server', 'div[class*="bg-card"]'); 
+    const mcpCard = getContainerByText('MCP Server', 'div[class*="bg-card"]');
     within(mcpCard).getByText('Running');
     within(mcpCard).getByText('obsidian-client');
   });
@@ -169,7 +179,7 @@ describe('SyncMonitor Integration Tests', () => {
         remote_hash: 'def5678'
     }];
 
-    render(<SyncMonitor />);
+    renderSyncMonitor();
 
     await waitFor(() => {
         expect(screen.queryByText(/loading sync status/i)).toBeNull();
@@ -182,7 +192,7 @@ describe('SyncMonitor Integration Tests', () => {
   });
 
   it('shows "Live" badge when WebSocket is connected', async () => {
-    render(<SyncMonitor />);
+    renderSyncMonitor();
 
     await waitFor(() => {
         expect(screen.queryByText(/loading sync status/i)).toBeNull();
@@ -202,8 +212,8 @@ describe('SyncMonitor Integration Tests', () => {
         reconnectCount: 0,
     });
 
-    render(<SyncMonitor />);
-    
+    renderSyncMonitor();
+
     await waitFor(() => {
         expect(screen.queryByText(/loading sync status/i)).toBeNull();
     });
@@ -212,22 +222,22 @@ describe('SyncMonitor Integration Tests', () => {
   });
 
   it('updates UI when "sync_status_changed" event is received', async () => {
-    const { rerender } = render(<SyncMonitor />);
+    const { rerender } = renderSyncMonitor();
 
     await waitFor(() => {
         expect(screen.queryByText(/loading sync status/i)).toBeNull();
     });
-    
+
     // Initial verification
     const fileCountContainer = getContainerByText('Total Files');
     within(fileCountContainer).getByText('100');
 
     // Prepare Update
     mockSyncStatus = { ...MOCK_SYNC_STATUS, file_count: 999 };
-    
+
     const eventMessage = {
         type: 'sync_status_changed',
-        data: mockSyncStatus 
+        data: mockSyncStatus
     };
 
     vi.mocked(useWebSocketHook.useWebSocket).mockReturnValue({
@@ -240,12 +250,37 @@ describe('SyncMonitor Integration Tests', () => {
         reconnectCount: 0,
     });
 
-    rerender(<SyncMonitor />);
+    rerender(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <SyncMonitor />
+      </NextIntlClientProvider>
+    );
 
     await waitFor(() => {
         // Verify UI Update specifically in the Total Files section
         const updatedContainer = getContainerByText('Total Files');
         within(updatedContainer).getByText('999');
     });
+  });
+
+  it('shows unavailable when stdio MCP runtime telemetry is unknown', async () => {
+    mockMcpStatus = {
+      running: null,
+      active_clients: null,
+      tools_registered: null,
+      resources_registered: null,
+    };
+
+    renderSyncMonitor();
+
+    await waitFor(() => {
+      expect(screen.queryByText(/loading sync status/i)).toBeNull();
+    });
+
+    screen.getByText('Status unavailable');
+    screen.getByText('Client information unavailable');
+    screen.getByText('Registration information unavailable');
+    expect(screen.queryByText('No clients connected')).toBeNull();
+    expect(screen.queryByText('Stopped')).toBeNull();
   });
 });
