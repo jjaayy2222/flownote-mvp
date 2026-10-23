@@ -11,7 +11,7 @@ from __future__ import annotations
 - API Models: DetectConflictRequest, ResolveConflictRequest, etc.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -371,7 +371,9 @@ class SyncConflict(BaseModel):
     conflict_type: SyncConflictType = Field(..., description="충돌 유형 (Enum)")
     local_hash: Optional[str] = Field(None, description="로컬 파일 해시")
     remote_hash: Optional[str] = Field(None, description="원격 파일 해시")
-    detected_at: datetime = Field(default_factory=datetime.now, description="감지 시각")
+    detected_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), description="감지 시각"
+    )
     status: ResolutionStatus = Field(
         default=ResolutionStatus.PENDING, description="해결 상태"
     )
