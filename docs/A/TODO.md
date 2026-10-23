@@ -10,8 +10,10 @@
   - 전역 의존성을 `backend.config.AppConfig` 및 `AuthConfig`를 통해 라우팅하도록 개선.
   - [x] `deps.py` 1차 개선: JWT 시크릿 강도 검증(최소 32자/취약값 거부), WebSocket URL 쿼리 토큰 노출 차단(헤더 전용 인증), 토큰 발급 엔드포인트(`/api/auth/token`, `/token`) 추가 및 WebSocket 로그 PII 마스킹.
   - [x] `deps.py` 2차 개선: JWT 시크릿 플레이스홀더 대소문자 무관 검사, RFC 7518 §3.2 기반 HMAC 알고리즘별 최소 키 길이(HS256: 32자, HS384: 48자, HS512: 64자) 동적 검증 및 'none' 알고리즘 차단, WebSocket 연결 종료 사유(reason) 정제(CWE-117 로그 인젝션 및 PII 차단).
-- [ ] **Sync DB (`backend/services/sync_service.py`)**
-  - `_handle_conflict` 메서드: 충돌 발생 시 DB에 충돌 레코드를 영구 저장하는 로직.
+- [x] **Sync DB (`backend/services/sync_service.py`)**
+  - `_handle_conflict` 메서드: 충돌 레코드를 `PathConfig.DATA_DIR` 기반 JSONL에 영구 저장하고, 파일 I/O 실패를 격리하며 파일 ID와 해시를 로그 안전 형식으로 기록.
+  - [x] `SyncConflict.detected_at` UTC aware 기본값 및 JSONL 저장 시 naive/aware 시각 UTC 정규화 적용.
+  - [x] `_handle_conflict` 저장, append, 오류 격리, 개인정보 마스킹, 해시 축약 및 UTC 타임스탬프 단위 테스트 추가.
 - [x] **Conflict Resolution (`backend/services/conflict_resolution_service.py`)**
   - 파일 시스템(JSONL) 안전 기록 및 `PathConfig` 활용 보완.
 
@@ -62,5 +64,5 @@
 
 ---
 *💡 관리 가이드: 해결된 항목은 본 문서에서 체크표시(`[x]`) 처리하고, 실제 소스 코드 상의 주석을 제거하여 단일 진실 공급원(SSOT)을 유지합니다.*
-- **✅ 코드베이스 싱크 상태**: `# TODO` 주석과 본 문서의 항목이 정확히 일치함을 확인했습니다. (마지막 점검일: 2026-10-20)
+- **✅ 코드베이스 싱크 상태**: `# TODO` 주석과 본 문서의 항목이 정확히 일치함을 확인했습니다. (마지막 점검일: 2026-10-23)
 - **💡 변동성(Drift) 주의**: TODO 항목의 개수나 내용은 개발 과정에 따라 수시로 변동될 수 있으므로, 주기적인 정합성 점검을 권장합니다.

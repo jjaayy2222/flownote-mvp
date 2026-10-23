@@ -9,7 +9,7 @@ import hashlib
 import json
 import logging
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
@@ -179,11 +179,14 @@ class SyncServiceBase(ABC):
                 if hasattr(conflict.status, "value")
                 else str(conflict.status)
             )
-            detected_at_iso = (
-                conflict.detected_at.isoformat()
-                if hasattr(conflict, "detected_at") and conflict.detected_at
-                else datetime.now().isoformat()
+            detected_at = getattr(conflict, "detected_at", None) or datetime.now(
+                timezone.utc
             )
+            if detected_at.tzinfo is None:
+                detected_at = detected_at.replace(tzinfo=timezone.utc)
+            else:
+                detected_at = detected_at.astimezone(timezone.utc)
+            detected_at_iso = detected_at.isoformat()
             record = {
                 "conflict_id": conflict.conflict_id,
                 "file_id": get_safe_file_id(conflict.file_id),
