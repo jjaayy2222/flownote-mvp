@@ -17,9 +17,11 @@ from watchdog.observers.api import BaseObserver
 
 from backend.agent.error_utils import (  # type: ignore[import]
     build_meta,
+    get_safe_file_id,
     log_agent_error,
 )
 from backend.config.mcp_config import ObsidianConfig
+from backend.mcp.sync_map_manager import get_sync_map_manager
 from backend.models.conflict import SyncConflict
 from backend.models.external_sync import ExternalToolConnection, ExternalToolType
 from backend.services.sync_service import SyncServiceBase
@@ -144,23 +146,126 @@ class ObsidianSyncService(SyncServiceBase):
             logger.warning("⚠️ Event loop not available, cannot schedule sync task")
 
     async def _process_file_change(self, file_path: str, event_type: str):
-        """파일 변경 이벤트 처리 (비동기)"""
-        # TODO: 실제 동기화(sync) 및 충돌 감지 로직 구현 필요 (DB 연동 기반)
-        logger.debug("Processing %s for %s", event_type, Path(file_path).name)
-        raise NotImplementedError(
-            "File change event processing requires DB-backed sync logic"
+        """변경된 Vault 파일을 매핑된 로컬 파일과 비교한다."""
+        path = self._get_vault_markdown_path(file_path)
+        if path is None or event_type == "deleted":
+            return
+
+        conflict = await self._sync_mapped_file(path)
+        if conflict:
+            logger.info(
+                "Obsidian conflict detected (file_id=%s)",
+                get_safe_file_id(conflict.file_id),
+            )
+
+    def _get_vault_markdown_path(self, file_path: str) -> Optional[Path]:
+        """Vault 내부의 기존 Markdown 파일만 반환해 경로 이탈을 차단한다."""
+        try:
+            vault_root = self.vault_path.resolve()
+            path = Path(file_path).resolve()
+            path.relative_to(vault_root)
+            if path.suffix.lower() != ".md" or not path.is_file():
+                return None
+            return path
+        except (OSError, ValueError):
+            return None
+
+    async def _sync_mapped_file(self, external_path: Path) -> Optional[SyncConflict]:
+        """매핑된 파일을 3-way 비교하고 단일 측 변경을 반대편에 반영한다."""
+        manager = get_sync_map_manager()
+        mapping = manager.get_mapping_by_external_path(str(external_path))
+        if mapping is None or not mapping.last_synced_hash:
+            return None
+
+        local_path = Path(mapping.internal_file_id)
+        try:
+            async with aiofiles.open(external_path, mode="r", encoding="utf-8") as file:
+                remote_content = await file.read()
+            local_content = await asyncio.to_thread(
+                local_path.read_text, encoding="utf-8"
+            )
+        except (OSError, UnicodeDecodeError) as exc:
+            meta = build_meta(
+                {
+                    "action": "compare_mapped_file",
+                    "file_id": get_safe_file_id(mapping.internal_file_id),
+                }
+            )
+            log_agent_error(
+                logger, "Failed to read files for sync comparison", exc, meta
+            )
+            return None
+
+        local_hash = self.calculate_file_hash(local_content)
+        remote_hash = self.calculate_file_hash(remote_content)
+        last_synced_hash = mapping.last_synced_hash
+        local_changed = local_hash != last_synced_hash
+        remote_changed = remote_hash != last_synced_hash
+
+        if not local_changed and not remote_changed:
+            return None
+        if local_changed and remote_changed and local_hash != remote_hash:
+            return self.detect_conflict_3way(
+                file_id=mapping.internal_file_id,
+                external_path=str(external_path),
+                local_hash=local_hash,
+                remote_hash=remote_hash,
+                last_synced_hash=last_synced_hash,
+            )
+
+        if local_hash != remote_hash:
+            if local_changed:
+                synced = await self.push_file(str(external_path), local_content)
+            else:
+                try:
+                    async with aiofiles.open(
+                        local_path, mode="w", encoding="utf-8"
+                    ) as file:
+                        await file.write(remote_content)
+                    synced = True
+                except (OSError, UnicodeEncodeError) as exc:
+                    meta = build_meta(
+                        {
+                            "action": "pull_file_to_local",
+                            "file_id": get_safe_file_id(mapping.internal_file_id),
+                        }
+                    )
+                    log_agent_error(
+                        logger, "Failed to apply remote file change", exc, meta
+                    )
+                    synced = False
+            if not synced:
+                return None
+
+        await asyncio.to_thread(
+            manager.update_mapping,
+            internal_id=mapping.internal_file_id,
+            external_path=str(external_path),
+            tool_type=self.tool_type,
+            current_hash=remote_hash,
         )
+        return None
 
     async def sync_all(self) -> List[SyncConflict]:
-        """전체 파일 스캔 및 동기화 (MVP: 단순 스캔)"""
-        if not self.vault_path.exists():
+        """Vault의 매핑된 Markdown 파일을 스캔해 양쪽 변경 충돌을 수집한다."""
+        if not self.vault_path.exists() or not self.vault_path.is_dir():
             return []
 
-        # 재귀적으로 md 파일 탐색
-        conflicts = []
-        for _ in self.vault_path.rglob("*.md"):
-            # TODO: DB의 내부 해시와 원격 파일 해시 비교, 충돌 감지 로직 구현
-            pass
+        try:
+            files = await asyncio.to_thread(lambda: list(self.vault_path.rglob("*.md")))
+        except OSError as exc:
+            meta = build_meta({"action": "scan_vault"})
+            log_agent_error(logger, "Failed to scan Obsidian Vault", exc, meta)
+            return []
+
+        conflicts: List[SyncConflict] = []
+        for candidate in files:
+            path = self._get_vault_markdown_path(str(candidate))
+            if path is None:
+                continue
+            conflict = await self._sync_mapped_file(path)
+            if conflict:
+                conflicts.append(conflict)
 
         return conflicts
 

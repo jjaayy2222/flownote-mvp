@@ -31,8 +31,10 @@
 ## 🟡 [P3] Phase 4: MCP & Obsidian Sync 실시간 연동
 외부 에이전트 및 로컬 에디터와의 동기화 완결성을 위한 작업입니다.
 
-- [ ] **Obsidian Sync Logic (`backend/mcp/obsidian_server.py`)**
-  - 실제 파일 동기화(Sync) 로직 및 내부 DB 해시와 대조(Match)하는 핵심 비교 엔진 구현.
+- [x] **Obsidian Sync Logic (`backend/mcp/obsidian_server.py`)**
+  - SyncMapManager 매핑 파일의 로컬/원격 내용을 마지막 동기화 해시와 비교하고, 단일 측 변경은 반대편에 반영하며 양쪽 변경 충돌은 JSONL에 기록.
+  - [x] Vault 경로 이탈 및 미매핑 파일 제외, Watchdog 변경 이벤트 연동, 파일 읽기/쓰기 오류 격리 및 개인정보 안전 로깅 적용.
+  - [x] 양방향 단일 변경 반영, 동시 수정 충돌 기록 및 미매핑 파일 무시 단위 테스트 추가.
 - [ ] **Persistent Embeddings (`backend/mcp/server.py`, `backend/celery_app/tasks/graph.py`, `backend/celery_app/tasks/classification.py`)**
   - 임베딩 메모리 로드 방식을 DB/Cache 기반 영구 로딩(Persistent loading) 로직으로 교체 (`FAISSRetriever` 활용).
   - 분류 결과 기반 임베딩 업데이트 로직 추가 구현 필요.
@@ -64,5 +66,5 @@
 
 ---
 *💡 관리 가이드: 해결된 항목은 본 문서에서 체크표시(`[x]`) 처리하고, 실제 소스 코드 상의 주석을 제거하여 단일 진실 공급원(SSOT)을 유지합니다.*
-- **✅ 코드베이스 싱크 상태**: `# TODO` 주석과 본 문서의 항목이 정확히 일치함을 확인했습니다. (마지막 점검일: 2026-10-23)
+- **✅ 코드베이스 싱크 상태**: `# TODO` 주석과 본 문서의 항목이 정확히 일치함을 확인했습니다. (마지막 점검일: 2026-10-25)
 - **💡 변동성(Drift) 주의**: TODO 항목의 개수나 내용은 개발 과정에 따라 수시로 변동될 수 있으므로, 주기적인 정합성 점검을 권장합니다.
