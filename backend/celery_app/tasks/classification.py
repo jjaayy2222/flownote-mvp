@@ -288,48 +288,39 @@ def update_embedding_task(self, file_path: str):
         return {"status": "error", "message": "Invalid file path provided"}
 
     try:
-        path = Path(file_path)
+        path = Path(file_path).resolve()
+        user_id_hash = mask_pii_id(LOCAL_OBSIDIAN_USER)
+        retriever = get_persistent_retriever(refresh=True)
+        document_id, para_category = _resolve_embedding_document(path)
+        source_path_hash = mask_pii_id(str(path), truncate_len=0)
+        scoped_path = {
+            "user_id_hash": user_id_hash,
+            "source_path_hash": source_path_hash,
+        }
+
         if not path.is_file():
-            return {"status": "skipped", "message": "File not found"}
+            retriever.delete_documents(scoped_path)
+            return {"status": "deleted", "message": "File not found"}
         content = path.read_text(encoding="utf-8")
         if not content.strip():
-            return {"status": "skipped", "message": "Empty file"}
+            retriever.delete_documents(scoped_path)
+            return {"status": "deleted", "message": "Empty file"}
 
-        retriever = get_persistent_retriever(refresh=True)
         generated = retriever.embedding_generator.generate_embeddings([content])
         embeddings = generated.get("embeddings", [])
         if len(embeddings) != 1:
             raise ValueError("Embedding provider returned an unexpected result.")
 
-        user_id_hash = mask_pii_id(LOCAL_OBSIDIAN_USER)
-        document_id = mask_pii_id(str(path.resolve()), truncate_len=0)
         metadata: dict[str, str] = {
             "user_id_hash": user_id_hash,
-            "source_path_hash": document_id,
+            "source_path_hash": source_path_hash,
         }
-        try:
-            with DatabaseConnection() as database:
-                matching_file = next(
-                    (
-                        item
-                        for item in database.get_files_with_para()
-                        if item.get("filename") == path.name
-                    ),
-                    None,
-                )
-            if matching_file is not None:
-                document_id = f"file-{matching_file['id']}"
-                if matching_file.get("para_category"):
-                    metadata["para_category"] = matching_file["para_category"]
-        except Exception as database_error:
-            log_agent_error(
-                logger,
-                "Unable to resolve graph document identifier",
-                database_error,
-                build_meta({"action": "resolve_embedding_document_id"}),
-                level="warning",
-            )
+        if para_category:
+            metadata["para_category"] = para_category
 
+        # Remove an older ID for this exact path before replacing it. This also
+        # cleans entries created when a basename was previously used for lookup.
+        retriever.delete_documents(scoped_path)
         retriever.upsert_document(
             document_id=document_id,
             embedding=embeddings[0],
@@ -341,3 +332,31 @@ def update_embedding_task(self, file_path: str):
         if is_system_error(exc):
             raise
         _handle_classify_error(self, exc, file_path)
+
+
+def _resolve_embedding_document(path: Path) -> tuple[str, Optional[str]]:
+    """Resolve a graph ID only from an exact stored path, never a basename."""
+    path_id = mask_pii_id(str(path), truncate_len=0)
+    try:
+        with DatabaseConnection() as database:
+            matches = [
+                item
+                for item in database.get_files_with_para()
+                if item.get("path")
+                and Path(item["path"]).expanduser().resolve() == path
+            ]
+        if len(matches) == 1:
+            matched = matches[0]
+            return f"file-{matched['id']}", matched.get("para_category")
+        if len(matches) > 1:
+            logger.warning("Ambiguous exact-path database match; using path-based ID")
+    except Exception as database_error:
+        log_agent_error(
+            logger,
+            "Unable to resolve graph document identifier",
+            database_error,
+            build_meta({"action": "resolve_embedding_document_id"}),
+            level="warning",
+            include_traceback=True,
+        )
+    return path_id, None

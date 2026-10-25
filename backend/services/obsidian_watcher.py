@@ -71,16 +71,22 @@ class ObsidianFileEventHandler(FileSystemEventHandler):
         # Trigger Celery Task (Async)
         update_embedding_task.delay(event.src_path)
 
+    def on_deleted(self, event):
+        if not self._should_process(event, event.src_path, "deleted"):
+            return
+
+        logger.info("Deleted note detected; scheduling index cleanup")
+        # The task resolves the same path scope and removes its indexed document.
+        update_embedding_task.delay(event.src_path)
+
     def on_moved(self, event):
-        # We process the destination path for updates
+        # Remove the old path entry, then index the destination path.
+        if self._should_process(event, event.src_path, "moved"):
+            update_embedding_task.delay(event.src_path)
         if not self._should_process(event, event.dest_path, "moved"):
             return
 
-        logger.info(
-            "📦 File moved: %s -> %s",
-            Path(event.src_path).name,
-            Path(event.dest_path).name,
-        )
+        logger.info("Moved note detected; scheduling index cleanup and update")
         # Treat move/rename as update
         update_embedding_task.delay(event.dest_path)
 
