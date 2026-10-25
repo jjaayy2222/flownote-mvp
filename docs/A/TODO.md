@@ -35,9 +35,10 @@
   - SyncMapManager 매핑 파일의 로컬/원격 내용을 마지막 동기화 해시와 비교하고, 단일 측 변경은 반대편에 반영하며 양쪽 변경 충돌은 JSONL에 기록.
   - [x] Vault 경로 이탈 및 미매핑 파일 제외, Watchdog 변경 이벤트 연동, 파일 읽기/쓰기 오류 격리 및 개인정보 안전 로깅 적용.
   - [x] 양방향 단일 변경 반영, 동시 수정 충돌 기록 및 미매핑 파일 무시 단위 테스트 추가.
-- [ ] **Persistent Embeddings (`backend/mcp/server.py`, `backend/celery_app/tasks/graph.py`, `backend/celery_app/tasks/classification.py`)**
-  - 임베딩 메모리 로드 방식을 DB/Cache 기반 영구 로딩(Persistent loading) 로직으로 교체 (`FAISSRetriever` 활용).
-  - 분류 결과 기반 임베딩 업데이트 로직 추가 구현 필요.
+- [x] **Persistent Embeddings (`backend/mcp/server.py`, `backend/celery_app/tasks/graph.py`, `backend/celery_app/tasks/classification.py`)**
+  - `PathConfig.FAISS_INDEX_DIR`의 FAISS 인덱스/문서 메타데이터 자동 복원 및 문서 ID 기반 upsert 적용.
+  - 사용자 해시 필터를 적용한 그래프 벡터 로딩과 분류 완료·파일 수정 시 영속 임베딩 갱신 연결.
+  - [x] 재시작 복원, 문서 갱신, ID별 벡터 조회 및 사용자 경계 필터 테스트 추가.
 - [ ] **Sync Status API (`backend/api/endpoints/sync.py`)**
   - `get_sync_status`, `get_mcp_status`, `get_conflicts` 등: 상태 응답을 `SyncMapManager`, `ExternalSyncLog` 등의 실제 매니저/DB에서 동적으로 조회하도록 연결.
   - [x] `get_mcp_status` 오보고 방지: API 프로세스의 MCP 레지스트리가 stdio 클라이언트의 등록 상태인 것처럼 표시되지 않도록 런타임 공유 채널이 없을 때 상태·등록 정보를 확인 불가로 반환.

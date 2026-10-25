@@ -339,8 +339,19 @@ def check_metadata_match(
         filter_raw = filter_value if isinstance(filter_value, list) else [filter_value]
         doc_raw = doc_value if isinstance(doc_value, list) else [doc_value]
 
-        # OR 세만틱: 문서 값 중 하나라도 필터 후보군에 포함되는지 확인
-        if set(doc_raw).isdisjoint(filter_raw):
+        # OR semantics: equality comparison also supports dict/list metadata values.
+        matched = False
+        for document_value in doc_raw:
+            for filter_candidate in filter_raw:
+                try:
+                    if bool(document_value == filter_candidate):
+                        matched = True
+                        break
+                except (TypeError, ValueError):
+                    continue
+            if matched:
+                break
+        if not matched:
             return False
 
     return True

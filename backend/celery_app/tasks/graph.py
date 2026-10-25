@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from backend.celery_app.celery import app
+from backend.faiss_search import get_persistent_retriever
 from backend.graph.analysis import find_orphan_nodes, get_orphan_degree_threshold
 from backend.graph.builder import build_graph_data
 from backend.graph.notifications import send_link_recommendations
@@ -84,14 +85,23 @@ def _filter_user_edges(
     ]
 
 
-def _load_embeddings_for_nodes(node_ids: list[str]) -> dict[str, list[float]]:
-    """Return {node_id: embedding_vector} for given IDs.
-
-    현재는 임베딩 컬럼/테이블이 없어 빈 딕셔너리를 반환합니다.
-    추후 DB/캐시에서 임베딩을 조회하도록 교체합니다.
-    """
-    # TODO: DB/캐시에서 임베딩 로드 로직으로 교체
-    return {}
+def _load_embeddings_for_nodes(
+    node_ids: list[str], user_id_hash: str
+) -> dict[str, list[float]]:
+    """영속 FAISS 인덱스에서 사용자 범위에 맞는 노드 벡터를 읽는다."""
+    if not node_ids or not user_id_hash:
+        return {}
+    try:
+        return get_persistent_retriever(refresh=True).get_embeddings(
+            node_ids, metadata_filter={"user_id_hash": user_id_hash}
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        logger.warning(
+            "[%s] 임베딩 캐시 조회 실패 (error_type=%s)",
+            "detect-orphan-notes",
+            type(exc).__name__,
+        )
+        return {}
 
 
 def _run_recommendation_pipeline(
@@ -114,8 +124,10 @@ def _run_recommendation_pipeline(
     orphan_ids = {o.id for o in orphans}
     candidate_nodes = [n for n in user_nodes if n.id not in orphan_ids]
 
-    orphan_embeddings = _load_embeddings_for_nodes([o.id for o in orphans])
-    candidate_embeddings = _load_embeddings_for_nodes([n.id for n in candidate_nodes])
+    orphan_embeddings = _load_embeddings_for_nodes([o.id for o in orphans], uid)
+    candidate_embeddings = _load_embeddings_for_nodes(
+        [n.id for n in candidate_nodes], uid
+    )
 
     if not orphan_embeddings or not candidate_embeddings:
         logger.debug(

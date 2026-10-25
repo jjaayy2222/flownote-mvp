@@ -15,6 +15,8 @@ from backend.celery_app.celery import app
 
 # Sync & Config Imports
 from backend.config.mcp_config import mcp_config
+from backend.database.connection import DatabaseConnection
+from backend.faiss_search import get_persistent_retriever
 from backend.models.external_sync import (
     ConnectionConfig,
     ExternalToolConnection,
@@ -22,6 +24,7 @@ from backend.models.external_sync import (
 )
 from backend.services.classification_service import ClassificationService
 from backend.services.obsidian_sync import ObsidianSyncService
+from backend.utils.common import mask_pii_id
 
 logger = logging.getLogger(__name__)
 
@@ -254,6 +257,17 @@ def classify_new_file_task(self, file_path: str):
                     file_path, result.category, file_id, sync_service
                 )
 
+        try:
+            update_embedding_task.delay(new_path or file_path)
+        except Exception as embedding_error:
+            log_agent_error(
+                logger,
+                "Failed to schedule embedding update",
+                embedding_error,
+                build_meta({"action": "schedule_embedding_update"}),
+                level="warning",
+            )
+
         return {
             "status": "success",
             "category": result.category,
@@ -267,9 +281,63 @@ def classify_new_file_task(self, file_path: str):
 
 @app.task(bind=True)
 def update_embedding_task(self, file_path: str):
-    """
-    파일 수정 시 호출되는 Task (임베딩 업데이트)
-    """
-    logger.info("Updating embedding for: %s", _safe_path(file_path))
-    # TODO: 임베딩 업데이트 로직 구현 (DB 연동 필요)
-    raise NotImplementedError("Embedding update requires database integration")
+    """파일 내용을 임베딩해 사용자 범위가 지정된 영속 FAISS 인덱스에 upsert한다."""
+    safe_path = _safe_path(file_path)
+    logger.info("Updating embedding for: %s", safe_path)
+    if safe_path == INVALID_PATH_SENTINEL:
+        return {"status": "error", "message": "Invalid file path provided"}
+
+    try:
+        path = Path(file_path)
+        if not path.is_file():
+            return {"status": "skipped", "message": "File not found"}
+        content = path.read_text(encoding="utf-8")
+        if not content.strip():
+            return {"status": "skipped", "message": "Empty file"}
+
+        retriever = get_persistent_retriever(refresh=True)
+        generated = retriever.embedding_generator.generate_embeddings([content])
+        embeddings = generated.get("embeddings", [])
+        if len(embeddings) != 1:
+            raise ValueError("Embedding provider returned an unexpected result.")
+
+        user_id_hash = mask_pii_id(LOCAL_OBSIDIAN_USER)
+        document_id = mask_pii_id(str(path.resolve()), truncate_len=0)
+        metadata: dict[str, str] = {
+            "user_id_hash": user_id_hash,
+            "source_path_hash": document_id,
+        }
+        try:
+            with DatabaseConnection() as database:
+                matching_file = next(
+                    (
+                        item
+                        for item in database.get_files_with_para()
+                        if item.get("filename") == path.name
+                    ),
+                    None,
+                )
+            if matching_file is not None:
+                document_id = f"file-{matching_file['id']}"
+                if matching_file.get("para_category"):
+                    metadata["para_category"] = matching_file["para_category"]
+        except Exception as database_error:
+            log_agent_error(
+                logger,
+                "Unable to resolve graph document identifier",
+                database_error,
+                build_meta({"action": "resolve_embedding_document_id"}),
+                level="warning",
+            )
+
+        retriever.upsert_document(
+            document_id=document_id,
+            embedding=embeddings[0],
+            content=content,
+            metadata=metadata,
+        )
+        return {"status": "success", "document_id": document_id}
+    except Exception as exc:
+        if is_system_error(exc):
+            raise
+        _handle_classify_error(self, exc, file_path)
