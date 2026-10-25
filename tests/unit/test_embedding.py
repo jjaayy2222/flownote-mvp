@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from backend.config import ModelConfig
 from backend.embedding import EmbeddingGenerator
 
 
@@ -56,6 +57,11 @@ def test_generate_embeddings_success(mock_embedding_client):
             assert result["tokens"] == 20  # 10 tokens * 2 texts
             assert result["cost"] > 0
             assert len(result["embeddings"][0]) == 1536
+            mock_embedding_client.embeddings.create.assert_called_once_with(
+                model=generator.model_name,
+                input=texts,
+                dimensions=ModelConfig.EMBEDDING_DIMENSION,
+            )
 
 
 def test_generate_embeddings_cost_calculation(mock_embedding_client):

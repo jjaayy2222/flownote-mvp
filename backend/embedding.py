@@ -132,7 +132,11 @@ class EmbeddingGenerator:
             # 임베딩 생성 API 호출
             # [NOTE] 이곳에서 통신 실패, Rate Limit 초과 등 외부 API 장애가 발생할 수 있습니다.
             # OpenAI SDK 전용 예외(APIError 계열)만 래핑하여, 내부 코드 버그(TypeError 등)가 마스킹되지 않도록 합니다.
-            response = self.client.embeddings.create(model=self.model_name, input=texts)
+            response = self.client.embeddings.create(
+                model=self.model_name,
+                input=texts,
+                dimensions=ModelConfig.EMBEDDING_DIMENSION,
+            )
         except (APITimeoutError, APIConnectionError, RateLimitError, APIError) as e:
             msg_prefix, err_type = _get_error_mapping(e)
 

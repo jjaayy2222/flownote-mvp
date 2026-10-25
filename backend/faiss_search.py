@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import faiss
 import numpy as np
 
+from backend.config import ModelConfig
 from backend.embedding import EmbeddingGenerator
 from backend.utils import check_metadata_match
 
@@ -124,7 +125,7 @@ class FAISSRetriever:
 
     def __init__(
         self,
-        dimension: int = 1536,
+        dimension: Optional[int] = None,
         filter_expansion_factor: int = DEFAULT_FILTER_EXPANSION_FACTOR,
         persist_directory: Optional[Union[str, Path]] = None,
         load_on_init: bool = False,
@@ -134,11 +135,13 @@ class FAISSRetriever:
         [EN] Initializes the FAISSRetriever instance.
 
         Args:
-            dimension: [KO] 임베딩 벡터 차원 (기본값: 1536) / [EN] Embedding vector dimension (default: 1536)
+            dimension: [KO] 임베딩 벡터 차원 (기본값: ModelConfig 설정값) / [EN] Embedding vector dimension (defaults to ModelConfig)
             filter_expansion_factor: [KO] 메타데이터 필터링 시 FAISS에서 초기 추출할 후보군 배수 / [EN] Candidate expansion factor for metadata filtering
         """
-        self.dimension = dimension
-        self.index = faiss.IndexFlatL2(dimension)
+        self.dimension = (
+            ModelConfig.EMBEDDING_DIMENSION if dimension is None else dimension
+        )
+        self.index = faiss.IndexFlatL2(self.dimension)
         self.documents = []  # dict 객체 저장
         self.embedding_generator = EmbeddingGenerator()
         self.persist_directory = (
@@ -247,6 +250,29 @@ class FAISSRetriever:
                 result[document_id] = self.index.reconstruct(index).tolist()
             return result
 
+    def delete_documents(self, metadata_filter: Dict[str, Any]) -> int:
+        """Remove all documents matching the complete metadata scope."""
+        if not isinstance(metadata_filter, dict) or not metadata_filter:
+            raise ValueError("A metadata filter is required for scoped deletion.")
+        with self._lock:
+            retained_documents = []
+            retained_vectors = []
+            removed_count = 0
+            for index, document in enumerate(self.documents):
+                metadata = document.get("metadata") or {}
+                if check_metadata_match(metadata, metadata_filter):
+                    removed_count += 1
+                    continue
+                retained_documents.append(document)
+                retained_vectors.append(self.index.reconstruct(index))
+            if removed_count:
+                self.index = faiss.IndexFlatL2(self.dimension)
+                self.documents = retained_documents
+                if retained_vectors:
+                    self.index.add(np.asarray(retained_vectors, dtype=np.float32))
+                self._persist_if_configured()
+            return removed_count
+
     def load_if_available(self) -> bool:
         """영속 인덱스가 있으면 로드하고, 최초 실행이면 False를 반환한다."""
         if self.persist_directory is None:
@@ -295,52 +321,60 @@ class FAISSRetriever:
             # 필터링을 사용하지 않는 경우 확장이 필요 없으므로 1로 고정
             expansion = 1
 
-        if self.index.ntotal == 0:
-            return []
+        with self._lock:
+            if self.index.ntotal == 0:
+                return []
 
         # 쿼리 임베딩 생성
         result = self.embedding_generator.generate_embeddings([query])
-        query_embedding = result["embeddings"][0]
+        embeddings = result.get("embeddings")
+        if not isinstance(embeddings, list) or len(embeddings) != 1:
+            raise ValueError("Embedding provider returned an unexpected query vector.")
 
         # NumPy 배열로 변환
-        query_vector = np.array([query_embedding], dtype=np.float32)
-
-        search_k = min(self.index.ntotal, k * expansion if metadata_filter else k)
-        # [KO] FAISS mypy 스텁(누락된 인자 경고) 오류 무시 (런타임은 정상 동작)
-        # [EN] Ignore FAISS mypy stub error for missing args
-        distances, indices = self.index.search(query_vector, search_k)  # type: ignore[call-arg]
-
-        # 결과 반환 및 필터링
-        results = []
-        for dist, idx in zip(distances[0], indices[0]):
-            if idx < 0 or idx >= len(self.documents):
-                continue
-
-            doc = self.documents[idx]
-
-            # 메타데이터 필터 체크
-            if metadata_filter and not check_metadata_match(
-                doc.get("metadata", {}), metadata_filter
-            ):
-                continue
-
-            # 유사도 계산
-            similarity = 1 / (1 + float(dist))
-
-            results.append(
-                {
-                    "content": doc.get("content", ""),
-                    "metadata": doc.get("metadata", {}),
-                    "score": similarity,
-                    "distance": float(dist),
-                }
+        query_vector = np.asarray(embeddings, dtype=np.float32)
+        if query_vector.shape != (1, self.dimension):
+            raise ValueError(
+                "Query embedding does not match the configured embedding dimension."
             )
 
-            # k개 채워지면 중단
-            if len(results) >= k:
-                break
-
-        return results
+        with self._lock:
+            total = self.index.ntotal
+            if total == 0:
+                return []
+            search_k = min(total, max(k, k * expansion if metadata_filter else k))
+            results = []
+            while search_k:
+                # FAISS index and its position-aligned document list are read atomically.
+                distances, indices = self.index.search(query_vector, search_k)  # type: ignore[call-arg]
+                results = []
+                for dist, idx in zip(distances[0], indices[0]):
+                    if idx < 0 or idx >= len(self.documents):
+                        continue
+                    doc = self.documents[idx]
+                    metadata = doc.get("metadata", {})
+                    if metadata_filter and not check_metadata_match(
+                        metadata, metadata_filter
+                    ):
+                        continue
+                    results.append(
+                        {
+                            "content": doc.get("content", ""),
+                            "metadata": (
+                                dict(metadata)
+                                if isinstance(metadata, dict)
+                                else metadata
+                            ),
+                            "score": 1 / (1 + float(dist)),
+                            "distance": float(dist),
+                        }
+                    )
+                    if len(results) >= k:
+                        return results
+                if search_k >= total:
+                    break
+                search_k = min(total, search_k * 2)
+            return results
 
     def clear(self):
         """
@@ -405,17 +439,12 @@ class FAISSRetriever:
                 or loaded_index.ntotal != len(loaded_documents)
             ):
                 raise ValueError("FAISS index and document metadata are inconsistent.")
+            if loaded_index.d != self.dimension:
+                raise ValueError(
+                    "Persisted FAISS index dimension does not match the configured embedding dimension."
+                )
             self.index = loaded_index
             self.documents = loaded_documents
-
-        # 차원 검증 (불일치 시 경고만 남기고, self.dimension(명시적 설정값)은 유지)
-        if self.index.d != self.dimension:
-            logger.warning(
-                "Loaded index dimension (%d) differs from configured dimension (%d). "
-                "Keeping configured dimension. Ensure the saved index matches your embedding model.",
-                self.index.d,
-                self.dimension,
-            )
 
         logger.info(
             "FAISS 인덱스 및 메타데이터 로드 완료: %d개 문서", len(self.documents)

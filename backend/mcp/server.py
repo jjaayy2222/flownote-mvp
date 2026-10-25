@@ -8,11 +8,10 @@ External AI agents can use FlowNote capabilities as Tools and access Resources.
 import asyncio
 import json
 import logging
-import re
 import threading
 from typing import Any, Dict, Optional
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 
 # FlowNote Internal Services
 from backend.agent.error_utils import (  # type: ignore[import]
@@ -22,10 +21,10 @@ from backend.agent.error_utils import (  # type: ignore[import]
 from backend.classifier.hybrid_classifier import HybridClassifier
 from backend.dashboard.dashboard_core import MetadataAggregator
 from backend.faiss_search import FAISSRetriever, get_persistent_retriever
+from backend.mcp.auth_scope import authenticated_user_hash
 
 # Initialize Logger
 logger = logging.getLogger(__name__)
-_USER_HASH_PATTERN = re.compile(r"(?:[0-9a-f]{12}|[0-9a-f]{64})")
 
 # Initialize FastMCP
 mcp = FastMCP("FlowNote MCP Server")
@@ -115,13 +114,13 @@ async def classify_content(text: str) -> Dict[str, Any]:
 
 
 @mcp.tool()
-async def search_notes(query: str, user_id_hash: str) -> Dict[str, Any]:
+async def search_notes(query: str, ctx: Context) -> Dict[str, Any]:
     """
     Search for notes using vector similarity search.
 
     Args:
         query: The search query.
-        user_id_hash: SHA-256 기반 사용자 식별자. 다른 사용자 문서가 섞이지 않도록 필수로 전달합니다.
+        ctx: MCP 요청 컨텍스트. 인증 미들웨어가 제공한 사용자만 검색할 수 있습니다.
     """
     if not query:
         return {
@@ -129,13 +128,12 @@ async def search_notes(query: str, user_id_hash: str) -> Dict[str, Any]:
             "error": None,
             "metadata": {"reason": "empty_query"},
         }
-    if not isinstance(user_id_hash, str) or not _USER_HASH_PATTERN.fullmatch(
-        user_id_hash
-    ):
+    user_id_hash = authenticated_user_hash(ctx)
+    if user_id_hash is None:
         return {
             "results": [],
-            "error": "invalid_user_scope",
-            "metadata": {"reason": "invalid_user_scope"},
+            "error": "authentication_required",
+            "metadata": {"reason": "authentication_required"},
         }
 
     try:
@@ -152,7 +150,11 @@ async def search_notes(query: str, user_id_hash: str) -> Dict[str, Any]:
         for item in result:
             metadata = item.get("metadata")
             if isinstance(metadata, dict):
-                metadata.pop("user_id_hash", None)
+                item["metadata"] = {
+                    key: value
+                    for key, value in metadata.items()
+                    if key != "user_id_hash"
+                }
 
         return {
             "results": result,

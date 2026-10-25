@@ -398,7 +398,7 @@ class DatabaseConnection:
         """
         rows = self._execute_query(
             """
-            SELECT f.id, f.filename, m.para_category
+            SELECT f.id, f.filename, f.path, m.para_category
             FROM files f
             LEFT JOIN metadata m ON f.id = m.file_id
             """,
