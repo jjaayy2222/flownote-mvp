@@ -9,6 +9,7 @@ FlowNote MVP - FAISS 검색
 import json
 import logging
 import sys
+import threading
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -125,6 +126,8 @@ class FAISSRetriever:
         self,
         dimension: int = 1536,
         filter_expansion_factor: int = DEFAULT_FILTER_EXPANSION_FACTOR,
+        persist_directory: Optional[Union[str, Path]] = None,
+        load_on_init: bool = False,
     ):
         """
         [KO] FAISSRetriever 인스턴스를 초기화합니다.
@@ -138,9 +141,15 @@ class FAISSRetriever:
         self.index = faiss.IndexFlatL2(dimension)
         self.documents = []  # dict 객체 저장
         self.embedding_generator = EmbeddingGenerator()
+        self.persist_directory = (
+            Path(persist_directory) if persist_directory is not None else None
+        )
+        self._lock = threading.RLock()
         self.filter_expansion_factor = self._normalize_expansion_factor(
             filter_expansion_factor
         )
+        if load_on_init and self.persist_directory is not None:
+            self.load_if_available()
 
     def add_documents(
         self,
@@ -163,19 +172,96 @@ class FAISSRetriever:
                 f"문서 수({len(documents)})와 임베딩 수({len(embeddings)})가 일치하지 않습니다!"
             )
 
-        # NumPy 배열로 변환
-        if not isinstance(embeddings, np.ndarray):
-            embeddings_np = np.array(embeddings, dtype=np.float32)
-        else:
-            embeddings_np = embeddings.astype(np.float32)
+        embeddings_np = np.asarray(embeddings, dtype=np.float32)
+        if embeddings_np.ndim != 2 or embeddings_np.shape[1] != self.dimension:
+            raise ValueError("Embedding vectors do not match the configured dimension.")
 
-        # [KO] FAISS mypy 스텁(x 인자 매칭) 오류 무시 (런타임은 정상 동작)
-        # [EN] Ignore FAISS mypy stub error for arg matching
-        self.index.add(embeddings_np)  # type: ignore[call-arg]
+        with self._lock:
+            self.index.add(embeddings_np)  # type: ignore[call-arg]
+            self.documents.extend(documents)
+            self._persist_if_configured()
 
-        # 문서 dict 그대로 저장
-        self.documents.extend(documents)
-        print(f"✅ FAISS에 {len(documents)}개 문서 추가 완료")
+    def upsert_document(
+        self,
+        document_id: str,
+        embedding: List[float],
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """문서 ID 기준으로 벡터를 추가하거나 교체하고 영속 저장한다."""
+        if not document_id:
+            raise ValueError("document_id is required.")
+        vector = np.asarray([embedding], dtype=np.float32)
+        if vector.shape != (1, self.dimension):
+            raise ValueError(
+                "Embedding vector does not match the configured dimension."
+            )
+
+        with self._lock:
+            retained_documents = []
+            retained_vectors = []
+            for index, document in enumerate(self.documents):
+                current_id = document.get("document_id") or (
+                    document.get("metadata") or {}
+                ).get("document_id")
+                if current_id == document_id:
+                    continue
+                retained_documents.append(document)
+                retained_vectors.append(self.index.reconstruct(index))
+
+            self.index = faiss.IndexFlatL2(self.dimension)
+            self.documents = retained_documents
+            if retained_vectors:
+                self.index.add(np.asarray(retained_vectors, dtype=np.float32))
+
+            document = {
+                "document_id": document_id,
+                "content": content,
+                "metadata": {**(metadata or {}), "document_id": document_id},
+            }
+            self.index.add(vector)
+            self.documents.append(document)
+            self._persist_if_configured()
+
+    def get_embeddings(
+        self,
+        document_ids: List[str],
+        metadata_filter: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, List[float]]:
+        """저장된 문서 ID의 벡터를 반환하며 선택적으로 메타데이터를 필터링한다."""
+        requested = set(document_ids)
+        if not requested:
+            return {}
+
+        with self._lock:
+            result: Dict[str, List[float]] = {}
+            for index, document in enumerate(self.documents):
+                metadata = document.get("metadata") or {}
+                document_id = document.get("document_id") or metadata.get("document_id")
+                if not isinstance(document_id, str) or document_id not in requested:
+                    continue
+                if metadata_filter and any(
+                    metadata.get(key) != value for key, value in metadata_filter.items()
+                ):
+                    continue
+                result[document_id] = self.index.reconstruct(index).tolist()
+            return result
+
+    def load_if_available(self) -> bool:
+        """영속 인덱스가 있으면 로드하고, 최초 실행이면 False를 반환한다."""
+        if self.persist_directory is None:
+            return False
+        if (
+            not (self.persist_directory / "faiss.index").is_file()
+            or not (self.persist_directory / "documents.json").is_file()
+        ):
+            return False
+        self.load(self.persist_directory)
+        return True
+
+    def _persist_if_configured(self) -> None:
+        if self.persist_directory is not None:
+            self.save(self.persist_directory)
 
     def search(
         self,
@@ -261,8 +347,10 @@ class FAISSRetriever:
         [KO] FAISS 인덱스와 저장된 문서를 모두 초기화합니다.
         [EN] Clears the FAISS index and all stored documents.
         """
-        self.index = faiss.IndexFlatL2(self.dimension)
-        self.documents = []
+        with self._lock:
+            self.index = faiss.IndexFlatL2(self.dimension)
+            self.documents = []
+            self._persist_if_configured()
 
     def size(self) -> int:
         """
@@ -285,14 +373,12 @@ class FAISSRetriever:
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
 
-        # FAISS 인덱스 저장
-        faiss.write_index(self.index, str(directory / "faiss.index"))
+        with self._lock:
+            faiss.write_index(self.index, str(directory / "faiss.index"))
+            with open(directory / "documents.json", "w", encoding="utf-8") as f:
+                json.dump(self.documents, f, ensure_ascii=False, indent=2)
 
-        # 문서 메타데이터 저장
-        with open(directory / "documents.json", "w", encoding="utf-8") as f:
-            json.dump(self.documents, f, ensure_ascii=False, indent=2)
-
-        logger.info("FAISS 인덱스 및 메타데이터 저장 완료: %s", directory)
+        logger.info("FAISS 인덱스 및 메타데이터 저장 완료")
 
     def load(self, directory: Union[str, Path]) -> None:
         """
@@ -309,12 +395,18 @@ class FAISSRetriever:
         if not index_path.exists() or not docs_path.exists():
             raise FileNotFoundError(f"FAISS index files not found in {directory}")
 
-        # FAISS 인덱스 로드
-        self.index = faiss.read_index(str(index_path))
-
-        # 문서 메타데이터 로드
-        with open(docs_path, "r", encoding="utf-8") as f:
-            self.documents = json.load(f)
+        with self._lock:
+            loaded_index = faiss.read_index(str(index_path))
+            with open(docs_path, "r", encoding="utf-8") as f:
+                loaded_documents = json.load(f)
+            if (
+                not isinstance(loaded_documents, list)
+                or any(not isinstance(document, dict) for document in loaded_documents)
+                or loaded_index.ntotal != len(loaded_documents)
+            ):
+                raise ValueError("FAISS index and document metadata are inconsistent.")
+            self.index = loaded_index
+            self.documents = loaded_documents
 
         # 차원 검증 (불일치 시 경고만 남기고, self.dimension(명시적 설정값)은 유지)
         if self.index.d != self.dimension:
@@ -328,6 +420,32 @@ class FAISSRetriever:
         logger.info(
             "FAISS 인덱스 및 메타데이터 로드 완료: %d개 문서", len(self.documents)
         )
+
+
+_PERSISTENT_RETRIEVER: Optional[FAISSRetriever] = None
+_PERSISTENT_RETRIEVER_LOCK = threading.Lock()
+
+
+def get_persistent_retriever(refresh: bool = False) -> FAISSRetriever:
+    """PathConfig의 공유 인덱스를 복원해 반환한다.
+
+    별도 Celery/MCP 프로세스가 쓴 최신 데이터가 필요한 호출자는 refresh를 지정한다.
+    """
+    global _PERSISTENT_RETRIEVER
+    if _PERSISTENT_RETRIEVER is None:
+        with _PERSISTENT_RETRIEVER_LOCK:
+            if _PERSISTENT_RETRIEVER is None:
+                from backend.config import ModelConfig, PathConfig
+
+                _PERSISTENT_RETRIEVER = FAISSRetriever(
+                    dimension=ModelConfig.EMBEDDING_DIMENSION,
+                    persist_directory=PathConfig.FAISS_INDEX_DIR,
+                    load_on_init=True,
+                )
+    if refresh and _PERSISTENT_RETRIEVER.persist_directory is not None:
+        with _PERSISTENT_RETRIEVER_LOCK:
+            _PERSISTENT_RETRIEVER.load_if_available()
+    return _PERSISTENT_RETRIEVER
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -8,6 +8,7 @@ External AI agents can use FlowNote capabilities as Tools and access Resources.
 import asyncio
 import json
 import logging
+import re
 import threading
 from typing import Any, Dict, Optional
 
@@ -20,10 +21,11 @@ from backend.agent.error_utils import (  # type: ignore[import]
 )
 from backend.classifier.hybrid_classifier import HybridClassifier
 from backend.dashboard.dashboard_core import MetadataAggregator
-from backend.faiss_search import FAISSRetriever
+from backend.faiss_search import FAISSRetriever, get_persistent_retriever
 
 # Initialize Logger
 logger = logging.getLogger(__name__)
+_USER_HASH_PATTERN = re.compile(r"(?:[0-9a-f]{12}|[0-9a-f]{64})")
 
 # Initialize FastMCP
 mcp = FastMCP("FlowNote MCP Server")
@@ -57,9 +59,10 @@ def get_classifier() -> HybridClassifier:
 
 
 def get_retriever() -> FAISSRetriever:
-    """Thread-safe lazy initialization of FAISSRetriever"""
-    # TODO: Persistent loading of embeddings should be implemented here or in FAISSRetriever
-    return _lazy_init(_retriever_ref, FAISSRetriever)
+    """프로세스 재시작 후에도 저장된 FAISS 인덱스를 복원한다."""
+    retriever = get_persistent_retriever(refresh=True)
+    _retriever_ref["value"] = retriever
+    return retriever
 
 
 def get_aggregator() -> MetadataAggregator:
@@ -112,12 +115,13 @@ async def classify_content(text: str) -> Dict[str, Any]:
 
 
 @mcp.tool()
-async def search_notes(query: str) -> Dict[str, Any]:
+async def search_notes(query: str, user_id_hash: str) -> Dict[str, Any]:
     """
     Search for notes using vector similarity search.
 
     Args:
         query: The search query.
+        user_id_hash: SHA-256 기반 사용자 식별자. 다른 사용자 문서가 섞이지 않도록 필수로 전달합니다.
     """
     if not query:
         return {
@@ -125,13 +129,30 @@ async def search_notes(query: str) -> Dict[str, Any]:
             "error": None,
             "metadata": {"reason": "empty_query"},
         }
+    if not isinstance(user_id_hash, str) or not _USER_HASH_PATTERN.fullmatch(
+        user_id_hash
+    ):
+        return {
+            "results": [],
+            "error": "invalid_user_scope",
+            "metadata": {"reason": "invalid_user_scope"},
+        }
 
     try:
         # Wrap getter in lambda to catch init errors in _run_blocking if desired,
         # or simply rely on _run_blocking wrapping the call.
         # Here we get the retriever first. If it fails, it's caught by local try/except.
         retriever = get_retriever()
-        result = await _run_blocking(retriever.search, query, k=5)
+        result = await _run_blocking(
+            retriever.search,
+            query,
+            k=5,
+            metadata_filter={"user_id_hash": user_id_hash},
+        )
+        for item in result:
+            metadata = item.get("metadata")
+            if isinstance(metadata, dict):
+                metadata.pop("user_id_hash", None)
 
         return {
             "results": result,

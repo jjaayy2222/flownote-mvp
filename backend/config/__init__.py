@@ -60,6 +60,7 @@ try:
             "EMBEDDING_API_KEY",
             "EMBEDDING_BASE_URL",
             "EMBEDDING_MODEL",
+            "EMBEDDING_DIMENSION",
             "EMBEDDING_LARGE_API_KEY",
             "EMBEDDING_LARGE_BASE_URL",
             "EMBEDDING_LARGE_MODEL",
@@ -107,6 +108,15 @@ class ModelConfig:
     EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY")
     EMBEDDING_BASE_URL = os.getenv("EMBEDDING_BASE_URL")
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    try:
+        EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "1536"))
+        if EMBEDDING_DIMENSION < 1:
+            raise ValueError
+    except ValueError:
+        logger.warning(
+            "Invalid EMBEDDING_DIMENSION; using the default embedding dimension."
+        )
+        EMBEDDING_DIMENSION = 1536
 
     # ===== Text-Embedding-3-Large =====
     EMBEDDING_LARGE_API_KEY = os.getenv("EMBEDDING_LARGE_API_KEY")
