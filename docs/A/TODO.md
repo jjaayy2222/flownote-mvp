@@ -20,8 +20,8 @@
 ## 🟠 [P2] Phase 3: Automation & Scheduler 구현
 자동화 작업의 실질적인 동작과 데이터 신뢰성을 보장하는 항목입니다.
 
-- [ ] **Automation Rules DB 연동 (`backend/services/automation_manager.py`)**
-  - `get_automation_rules`, `create_automation_rule` 등 규칙 CRUD 전체 메서드: 파일/Mock 기반에서 DB 연동으로 전환 (현재 JSONL은 임시 스토리지로, 재배포/다중 인스턴스 환경을 위해 DB 마이그레이션 필수).
+- [x] **Automation Rules DB 연동 (`backend/services/automation_manager.py`)**
+  - `get_automation_rules`, `create_automation_rule` 등 규칙 CRUD 전체 메서드: JSONL에서 SQLite 저장소로 전환하고, 기존 JSONL 규칙은 최초 실행 시 DB로 이관한 뒤 백업 파일로 보존.
   - [x] 1단계 마이그레이션 준비: JSONL 규칙 CRUD의 동기 파일 I/O를 API 스레드 풀로 오프로드하고, 목록 읽기에도 CRUD 잠금을 적용해 단일 프로세스 내 동시 접근을 직렬화.
 - [x] **Celery 연동 (`backend/api/endpoints/automation.py`)**
   - `trigger_automation_task` 엔드포인트: 실제 Celery 태스크 지연 실행(`task.delay()`) 트리거 활성화 (501 Mock 해소, 브로커 오류 시 503 반환, `automation_manager` 트리거 이력 연동).

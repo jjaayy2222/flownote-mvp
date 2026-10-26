@@ -7,6 +7,7 @@ Automation API Endpoints
 
 import json
 import logging
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, List, Literal, Optional, Tuple
@@ -139,10 +140,21 @@ async def get_automation_rules():
     """
     자동화 규칙 목록 조회
 
-    - JSONL 기반 임시 저장소에서 조회
-    - 향후 DB 연동 시 교체 예정
+    - SQLite 영속 저장소에서 조회
     """
-    rules = await run_in_threadpool(automation_manager.get_automation_rules)
+    try:
+        rules = await run_in_threadpool(automation_manager.get_automation_rules)
+    except sqlite3.Error as exc:
+        log_agent_error(
+            logger,
+            "Failed to read automation rules",
+            exc,
+            build_meta({"action": "get_automation_rules"}),
+            include_traceback=True,
+        )
+        raise HTTPException(
+            status_code=500, detail="Failed to load automation rules."
+        ) from exc
     return AutomationRuleListResponse(total=len(rules), rules=rules)
 
 
@@ -151,7 +163,7 @@ async def create_automation_rule(rule: AutomationRule):
     """
     자동화 규칙 생성
 
-    - 새로운 자동화 규칙 생성 (JSONL 저장소에 추가)
+    - 새로운 자동화 규칙 생성 (SQLite 저장소에 추가)
     """
     try:
         return await run_in_threadpool(automation_manager.create_automation_rule, rule)
@@ -159,7 +171,7 @@ async def create_automation_rule(rule: AutomationRule):
         raise HTTPException(
             status_code=409, detail="Rule with this ID already exists."
         ) from exc
-    except OSError as exc:
+    except (OSError, sqlite3.Error) as exc:
         raise HTTPException(
             status_code=500, detail="Failed to save automation rule."
         ) from exc
@@ -172,7 +184,7 @@ async def update_automation_rule(
     """
     자동화 규칙 수정
 
-    - 기존 규칙 수정 (JSONL 저장소 갱신)
+    - 기존 규칙 수정 (SQLite 저장소 갱신)
     """
     try:
         result = await run_in_threadpool(
@@ -181,7 +193,7 @@ async def update_automation_rule(
         if result is None:
             raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
         return result
-    except OSError as exc:
+    except (OSError, sqlite3.Error) as exc:
         raise HTTPException(
             status_code=500, detail="Failed to update automation rule."
         ) from exc
@@ -192,7 +204,7 @@ async def delete_automation_rule(rule_id: str = PathParam(..., description="규�
     """
     자동화 규칙 삭제
 
-    - 기존 규칙 삭제 (JSONL 저장소 갱신)
+    - 기존 규칙 삭제 (SQLite 저장소 갱신)
     """
     try:
         success = await run_in_threadpool(
@@ -200,7 +212,7 @@ async def delete_automation_rule(rule_id: str = PathParam(..., description="규�
         )
         if not success:
             raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
-    except OSError as exc:
+    except (OSError, sqlite3.Error) as exc:
         raise HTTPException(
             status_code=500, detail="Failed to delete automation rule."
         ) from exc
@@ -627,13 +639,18 @@ def get_dashboard_summary():
         for log in all_logs
     )
 
-    # 활성 자동화 규칙 수: AutomationManager JSONL 기반 실집계 (I/O 에러 안전 방어)
+    # 활성 자동화 규칙 수: AutomationManager SQLite 실집계
     try:
         all_rules = automation_manager.get_automation_rules()
         active_rules = sum(rule.is_active for rule in all_rules)
-    except OSError as exc:
-        logger.warning(
-            "Failed to count active automation rules due to I/O error: %s", exc
+    except (OSError, sqlite3.Error) as exc:
+        log_agent_error(
+            logger,
+            "Failed to count active automation rules",
+            exc,
+            build_meta({"action": "count_active_automation_rules"}),
+            level="warning",
+            include_traceback=True,
         )
         active_rules = 0
 
