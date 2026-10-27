@@ -41,8 +41,8 @@
   - [x] 재시작 복원, 문서 갱신, ID별 벡터 조회 및 사용자 경계 필터 테스트 추가.
 - [ ] **Sync Status API (`backend/api/endpoints/sync.py`)**
   - `get_sync_status`, `get_mcp_status`, `get_conflicts` 등: 상태 응답을 `SyncMapManager`, `ExternalSyncLog` 등의 실제 매니저/DB에서 동적으로 조회하도록 연결.
-  - [x] `get_mcp_status` 오보고 방지: API 프로세스의 MCP 레지스트리가 stdio 클라이언트의 등록 상태인 것처럼 표시되지 않도록 런타임 공유 채널이 없을 때 상태·등록 정보를 확인 불가로 반환.
-  - [ ] MCP 별도 stdio 프로세스의 등록 목록, 실행 상태 및 연결 세션 계측: API 프로세스와 공유되는 런타임 상태 채널이 마련되면 응답 필드를 실연동.
+  - [x] `get_mcp_status` 오보고 방지: API 프로세스의 MCP 레지스트리를 stdio 상태로 오인하지 않으며, 런타임 상태 채널을 사용할 수 없을 때 상태·등록 정보를 확인 불가로 반환.
+  - [x] MCP 별도 stdio 프로세스의 등록 목록, 실행 상태 및 연결 세션 계측: Redis TTL heartbeat 공유 채널로 실제 MCP 프로세스 상태를 집계하고, 세션 종료·프로세스 종료 시 stale 상태가 남지 않도록 처리.
   - [x] `get_conflict_diff`, `resolve_conflict`: Mock 데이터를 제거하고 데이터베이스에서 diff 경로를 조회 및 실제 ConflictResolutionService를 연동하여 충돌 해결을 트리거 (JSONL 로그 연동 완료).
   - [x] `get_conflict_diff` 1차 개선: 로컬/원격 파일 사용 불가 시 빈 문자열 대신 422 오류 반환 — 유효한 빈 파일과 사용 불가 상태를 명확히 구분. `test_diff_viewer_flow.py`도 함께 수정.
   - [x] `get_conflict_diff` 2차 개선: `UnicodeDecodeError` 처리 추가 — 잘못된 UTF-8 파일을 500 대신 422로 반환. `ObsidianSyncService.pull_file()`도 동일하게 일관성 확보.
