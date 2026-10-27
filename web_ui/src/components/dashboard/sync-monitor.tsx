@@ -32,6 +32,7 @@ interface MCPStatus {
   active_clients: string[] | null;
   tools_registered: string[] | null;
   resources_registered: string[] | null;
+  active_sessions: number | null;
 }
 
 interface Conflict {
@@ -270,7 +271,14 @@ export function SyncMonitor() {
           <CardContent>
              <div className="space-y-4">
                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-2">{t('mcp.active_clients')}</h4>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium text-muted-foreground">{t('mcp.active_clients')}</h4>
+                    {typeof mcpStatus?.active_sessions === 'number' && (
+                      <span className="text-xs text-muted-foreground">
+                        {t('mcp.active_sessions')}: {mcpStatus.active_sessions}
+                      </span>
+                    )}
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     {mcpStatus?.active_clients === null || mcpStatus === null ? (
                       <span className="text-xs text-muted-foreground italic">{t('mcp.clients_unavailable')}</span>

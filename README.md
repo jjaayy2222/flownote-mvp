@@ -450,6 +450,8 @@ cd ..
 # 6. 환경변수 설정
 cp .env.example .env
 # .env 파일에 OpenAI API 키 및 REDIS_URL 설정
+# MCP 상태 공유를 사용할 경우 MCP_RUNTIME_NAMESPACE에 설치별 고유 값을 지정하고,
+# stdio 클라이언트에도 API와 동일한 REDIS_URL 및 MCP_RUNTIME_NAMESPACE를 전달하세요.
 ```
 
 ### 6.3 전체 서비스 실행 가이드

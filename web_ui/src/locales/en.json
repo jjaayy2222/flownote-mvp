@@ -64,6 +64,7 @@
       "stopped": "Stopped",
       "status_unavailable": "Status unavailable",
       "active_clients": "Active Clients",
+      "active_sessions": "Active sessions",
       "no_clients": "No clients connected",
       "clients_unavailable": "Client information unavailable",
       "registered_tools": "Registered Tools",

@@ -64,6 +64,7 @@
       "stopped": "중지됨",
       "status_unavailable": "상태 확인 불가",
       "active_clients": "활성 클라이언트",
+      "active_sessions": "활성 세션",
       "no_clients": "연결된 클라이언트 없음",
       "clients_unavailable": "클라이언트 정보 확인 불가",
       "registered_tools": "등록된 도구",
