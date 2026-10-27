@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from backend.agent.error_utils import log_agent_error
 from backend.config import PathConfig
 from backend.config.mcp_config import mcp_config
+from backend.mcp.runtime_status import read_mcp_runtime_status
 from backend.mcp.sync_map_manager import SyncMapManager, get_sync_map_manager
 from backend.models.conflict import ResolutionMethod
 from backend.models.conflict import ResolutionStrategy as DomainResolutionStrategy
@@ -65,6 +66,7 @@ class MCPStatusResponse(BaseModel):
     active_clients: Optional[List[str]] = None
     tools_registered: Optional[List[str]] = None
     resources_registered: Optional[List[str]] = None
+    active_sessions: Optional[int] = None
 
 
 class ConflictLogResponse(BaseModel):
@@ -165,14 +167,11 @@ async def get_mcp_status():
     MCP 서버 상태 조회
 
     Returns:
-        MCPStatusResponse: stdio 서버와 상태 공유가 구성되지 않은 경우
-        런타임 및 등록 목록 필드는 None으로 반환한다.
+        MCPStatusResponse: Redis heartbeat로 확인한 MCP stdio 프로세스와 세션 상태.
+        Redis를 사용할 수 없는 경우 런타임 필드는 None으로 반환한다.
     """
-    # The MCP server is launched over stdio as a separate process. Reading a
-    # FastMCP instance imported into this API would report this process's
-    # registry, not the registry visible to that stdio client's session.
-    # Keep these fields unavailable until the runtime exposes shared state.
-    return MCPStatusResponse()
+    status = await read_mcp_runtime_status()
+    return MCPStatusResponse(**status) if status is not None else MCPStatusResponse()
 
 
 @router.get("/conflicts", response_model=List[ConflictLogResponse])

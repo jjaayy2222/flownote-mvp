@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import threading
+from contextlib import suppress
 from typing import Any, Dict, Optional
 
 from mcp.server.fastmcp import Context, FastMCP
@@ -22,6 +23,7 @@ from backend.classifier.hybrid_classifier import HybridClassifier
 from backend.dashboard.dashboard_core import MetadataAggregator
 from backend.faiss_search import FAISSRetriever, get_persistent_retriever
 from backend.mcp.auth_scope import authenticated_user_hash
+from backend.mcp.runtime_status import MCPRuntimeStatusPublisher
 
 # Initialize Logger
 logger = logging.getLogger(__name__)
@@ -217,4 +219,30 @@ async def get_dashboard_summary() -> str:
 if __name__ == "__main__":
     # Basic logging config for standalone execution
     logging.basicConfig(level=logging.INFO)
-    mcp.run()
+
+    async def _run_stdio_with_status() -> None:
+        publisher = MCPRuntimeStatusPublisher()
+        tools = [tool.name for tool in await mcp.list_tools()]
+        resources = [str(resource.uri) for resource in await mcp.list_resources()]
+        await publisher.publish(tools, resources)
+        heartbeat = asyncio.create_task(
+            _publish_runtime_heartbeat(publisher, tools, resources)
+        )
+        try:
+            await mcp.run_stdio_async()
+        finally:
+            heartbeat.cancel()
+            with suppress(asyncio.CancelledError):
+                await heartbeat
+            await publisher.close()
+
+    async def _publish_runtime_heartbeat(
+        publisher: MCPRuntimeStatusPublisher,
+        tools: list[str],
+        resources: list[str],
+    ) -> None:
+        while True:
+            await asyncio.sleep(10)
+            await publisher.publish(tools, resources)
+
+    asyncio.run(_run_stdio_with_status())
