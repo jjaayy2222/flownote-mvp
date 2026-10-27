@@ -248,6 +248,9 @@ class RedisConfig:
     """Redis 설정"""
 
     REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+    # Shared only by API and stdio processes from the same installation.
+    # Empty disables MCP status telemetry to prevent cross-deployment mixing.
+    MCP_RUNTIME_NAMESPACE = os.getenv("MCP_RUNTIME_NAMESPACE", "").strip()
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━

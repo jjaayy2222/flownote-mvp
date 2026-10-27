@@ -64,6 +64,14 @@ interface Conflict {
   remote_hash: string;
 }
 
+interface MockMCPStatus {
+  running: boolean | null;
+  active_clients: string[] | null;
+  tools_registered: string[] | null;
+  resources_registered: string[] | null;
+  active_sessions: number | null;
+}
+
 // Default Mock Data
 const MOCK_SYNC_STATUS = {
   connected: true,
@@ -74,17 +82,18 @@ const MOCK_SYNC_STATUS = {
   enabled: true,
 };
 
-const MOCK_MCP_STATUS = {
+const MOCK_MCP_STATUS: MockMCPStatus = {
   running: true,
   active_clients: ['obsidian-client'],
   tools_registered: ['read_file'],
   resources_registered: ['notes'],
+  active_sessions: 1,
 };
 
 // Mutable variables for test state
 let mockConflicts: Conflict[] = [];
 let mockSyncStatus = { ...MOCK_SYNC_STATUS };
-let mockMcpStatus = { ...MOCK_MCP_STATUS };
+let mockMcpStatus: MockMCPStatus = { ...MOCK_MCP_STATUS };
 
 const renderSyncMonitor = () => render(
   <NextIntlClientProvider locale="en" messages={messages}>
@@ -166,6 +175,7 @@ describe('SyncMonitor Integration Tests', () => {
     const mcpCard = getContainerByText('MCP Server', 'div[class*="bg-card"]');
     within(mcpCard).getByText('Running');
     within(mcpCard).getByText('obsidian-client');
+    within(mcpCard).getByText('Active sessions: 1');
   });
 
   it('renders conflicts correctly when they exist', async () => {
@@ -269,6 +279,7 @@ describe('SyncMonitor Integration Tests', () => {
       active_clients: null,
       tools_registered: null,
       resources_registered: null,
+      active_sessions: null,
     };
 
     renderSyncMonitor();

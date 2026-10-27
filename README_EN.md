@@ -447,6 +447,8 @@ cd ..
 # 6. Configure environment variables
 cp .env.example .env
 # Set OpenAI API key and REDIS_URL in .env file
+# For MCP status sharing, set a unique per-installation MCP_RUNTIME_NAMESPACE and pass
+# the same REDIS_URL and MCP_RUNTIME_NAMESPACE to the stdio client.
 ```
 
 ### 6.3 Running All Services
