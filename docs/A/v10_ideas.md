@@ -115,7 +115,7 @@ v10:  보안 강화 → 멀티유저 → 배포/확장 (프로덕션)
 ### 아이디어 (세부 Tasks - 미확정)
 - [ ] Dashboard 실제 로그·지표 집계 연동 (`get_dashboard_summary`, `get_watchdog_events`)
 - [ ] Metadata API 실제 조회·업데이트 기능 연동
-- [ ] Reporting Task DB 쿼리 기반 성능 최적화
+- [x] Reporting Task DB 쿼리 기반 성능 최적화 — 자동화 로그 증분 색인 및 SQLite 기간별 집계 적용
 - [ ] Prometheus + Grafana 기반 메트릭 모니터링 도입
 - [ ] GitHub Actions 기반 자동 배포(CD) 파이프라인 강화
 

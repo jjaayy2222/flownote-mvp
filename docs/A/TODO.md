@@ -62,10 +62,10 @@
   - [x] `get_dashboard_summary` 지표 실연동: `active_rules` (활성 규칙 수) 및 `pending_tasks` (RUNNING+PENDING 작업 수) AutomationManager 연동 — I/O 예외 방어 및 단위 테스트 검증.
 - [x] **Metadata API (`backend/api/endpoints/metadata.py`)**
   - `get_metadata`, `update_metadata` 함수: 파일 메타데이터의 실제 조회 및 업데이트 기능 연동 (FileMetadata 및 PathConfig SSOT 결합, 미존재 시 404 오류 처리, 영속화 실패 시 롤백 및 PII 안전 로깅 적용).
-- [ ] **Reporting Task (`backend/celery_app/tasks/reporting.py`)**
-  - 파일 파싱 등 메모리 위주의 작업을 추후 DB 쿼리 기반으로 성능 개선(최적화).
+- [x] **Reporting Task (`backend/celery_app/tasks/reporting.py`)**
+  - 자동화 JSONL을 최초·증분 구간만 스트리밍해 SQLite 지표 테이블로 색인하고, 기간별 합계를 인덱스 기반 SQL 집계로 전환.
 
 ---
 *💡 관리 가이드: 해결된 항목은 본 문서에서 체크표시(`[x]`) 처리하고, 실제 소스 코드 상의 주석을 제거하여 단일 진실 공급원(SSOT)을 유지합니다.*
-- **✅ 코드베이스 싱크 상태**: `# TODO` 주석과 본 문서의 항목이 정확히 일치함을 확인했습니다. (마지막 점검일: 2026-10-25)
+- **✅ 코드베이스 싱크 상태**: `# TODO` 주석과 본 문서의 항목이 정확히 일치함을 확인했습니다. (마지막 점검일: 2026-10-29)
 - **💡 변동성(Drift) 주의**: TODO 항목의 개수나 내용은 개발 과정에 따라 수시로 변동될 수 있으므로, 주기적인 정합성 점검을 권장합니다.

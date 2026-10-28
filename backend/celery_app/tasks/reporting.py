@@ -3,10 +3,15 @@
 import hashlib
 import json
 import logging
+import os
+import sqlite3
 import uuid
-from datetime import datetime, timedelta
+from contextlib import closing
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
+
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, ValidationError
 
 from backend.agent.error_utils import (  # type: ignore[import]
     build_meta,
@@ -30,6 +35,191 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 AUTO_LOG_FILE = LOG_DIR / "automation.jsonl"
 REPORT_DIR = LOG_DIR / "reports"
 REPORT_DIR.mkdir(parents=True, exist_ok=True)
+_REPORTING_DB_NAME = "reporting_metrics.sqlite3"
+_REPORTING_DB_TIMEOUT_SECONDS = 10
+_REPORTING_IMPORT_BATCH_SIZE = 500
+
+
+class _AutomationMetricLog(BaseModel):
+    """Only validated, non-detail fields needed for report aggregation."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    log_id: StrictStr = Field(min_length=1)
+    task_type: AutomationTaskType
+    started_at: datetime
+    files_updated: StrictInt = 0
+    files_archived: StrictInt = 0
+    errors_count: StrictInt = 0
+
+
+_METRIC_UPSERT_SQL = """
+    INSERT INTO reporting_automation_metrics (
+        log_hash, started_at_epoch, task_type, files_updated,
+        files_archived, errors_count
+    ) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(log_hash) DO UPDATE SET
+        started_at_epoch = excluded.started_at_epoch,
+        task_type = excluded.task_type,
+        files_updated = excluded.files_updated,
+        files_archived = excluded.files_archived,
+        errors_count = excluded.errors_count
+"""
+
+
+def _reporting_db_path() -> Path:
+    """Place the reporting index under the configured application data directory."""
+    return Path(PathConfig.DATA_DIR) / "db" / _REPORTING_DB_NAME
+
+
+def _open_reporting_db() -> sqlite3.Connection:
+    db_path = _reporting_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(db_path, timeout=_REPORTING_DB_TIMEOUT_SECONDS)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA journal_mode = WAL")
+    return connection
+
+
+def _initialize_reporting_schema(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS reporting_automation_metrics (
+            log_hash TEXT PRIMARY KEY NOT NULL,
+            started_at_epoch REAL NOT NULL,
+            task_type TEXT NOT NULL,
+            files_updated INTEGER NOT NULL,
+            files_archived INTEGER NOT NULL,
+            errors_count INTEGER NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_reporting_automation_metrics_period
+        ON reporting_automation_metrics (started_at_epoch, task_type)
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS reporting_source_checkpoints (
+            source_id TEXT PRIMARY KEY NOT NULL,
+            source_device INTEGER NOT NULL,
+            source_inode INTEGER NOT NULL,
+            byte_offset INTEGER NOT NULL
+        )
+        """
+    )
+    connection.commit()
+
+
+def _metric_row(line: bytes) -> Tuple[str, float, str, int, int, int]:
+    """Validate one JSONL record and return its privacy-reduced DB representation."""
+    decoded = line.decode("utf-8")
+    payload = json.loads(decoded)
+    if not isinstance(payload, dict):
+        raise ValueError("Automation log record must be a JSON object.")
+    started_at_raw = payload.get("started_at")
+    if not isinstance(started_at_raw, str):
+        raise ValueError("Automation log record has no ISO timestamp.")
+
+    record = _AutomationMetricLog.model_validate(payload)
+    timestamp = record.started_at
+    if timestamp.tzinfo is None:
+        # Match the prior naive datetime comparison against local datetime.now().
+        timestamp = timestamp.astimezone()
+    timestamp = timestamp.astimezone(timezone.utc)
+    log_hash = hashlib.sha256(record.log_id.encode("utf-8")).hexdigest()
+    return (
+        log_hash,
+        timestamp.timestamp(),
+        record.task_type.value,
+        record.files_updated,
+        record.files_archived,
+        record.errors_count,
+    )
+
+
+def _import_new_automation_logs(connection: sqlite3.Connection) -> int:
+    """Incrementally index complete JSONL records, using bounded memory."""
+    if not AUTO_LOG_FILE.is_file():
+        return 0
+
+    malformed_count = 0
+    with open(AUTO_LOG_FILE, "rb") as source:
+        source_stat = os.fstat(source.fileno())
+        checkpoint = connection.execute(
+            """
+            SELECT source_device, source_inode, byte_offset
+            FROM reporting_source_checkpoints
+            WHERE source_id = ?
+            """,
+            (AUTO_LOG_FILE.name,),
+        ).fetchone()
+
+        offset = 0
+        if checkpoint is not None:
+            same_file = (
+                checkpoint["source_device"] == source_stat.st_dev
+                and checkpoint["source_inode"] == source_stat.st_ino
+            )
+            if same_file and checkpoint["byte_offset"] <= source_stat.st_size:
+                offset = checkpoint["byte_offset"]
+
+        source.seek(offset)
+        pending_rows: List[Tuple[str, float, str, int, int, int]] = []
+        committed_offset = offset
+        while True:
+            line_start = source.tell()
+            line = source.readline()
+            if not line:
+                break
+            if not line.endswith(b"\n"):
+                # Leave incomplete appends for the next run instead of losing them.
+                source.seek(line_start)
+                break
+
+            committed_offset = source.tell()
+            if not line.strip():
+                continue
+            try:
+                pending_rows.append(_metric_row(line))
+            except (
+                UnicodeDecodeError,
+                json.JSONDecodeError,
+                ValidationError,
+                ValueError,
+                TypeError,
+                OverflowError,
+            ):
+                malformed_count += 1
+                continue
+
+            if len(pending_rows) >= _REPORTING_IMPORT_BATCH_SIZE:
+                connection.executemany(_METRIC_UPSERT_SQL, pending_rows)
+                pending_rows.clear()
+
+        if pending_rows:
+            connection.executemany(_METRIC_UPSERT_SQL, pending_rows)
+
+        connection.execute(
+            """
+            INSERT INTO reporting_source_checkpoints (
+                source_id, source_device, source_inode, byte_offset
+            ) VALUES (?, ?, ?, ?)
+            ON CONFLICT(source_id) DO UPDATE SET
+                source_device = excluded.source_device,
+                source_inode = excluded.source_inode,
+                byte_offset = excluded.byte_offset
+            """,
+            (
+                AUTO_LOG_FILE.name,
+                source_stat.st_dev,
+                source_stat.st_ino,
+                committed_offset,
+            ),
+        )
+    return malformed_count
 
 
 def _save_automation_log(log: AutomationLog):
@@ -64,130 +254,86 @@ def _save_report(report: Report):
 
 
 def _collect_metrics(days: int) -> Dict[str, ReportMetric]:
-    # sourcery skip: low-code-quality
     """
-    지정된 기간(일) 동안의 메트릭 수집
-    - 파일 접근 통계
-    - 자동화 작업(재분류, 아카이브) 통계
-    """
-    metrics = {}
-    total_processed = 0
-    total_errors = 0
+    지정 기간의 자동화 지표를 SQLite 집계 쿼리로 수집한다.
 
-    # 1. 자동화 로그 분석 (AutomationLog)
-    # 실제로는 DB나 JSONL을 쿼리해야 함. 여기서는 파일 직접 읽기 방식(간이 구현)
-    # TODO: 추후 DB 쿼리로 개선 권장
+    JSONL은 첫 조회 및 새로 추가된 구간만 스트리밍으로 DB에 색인하며,
+    과거 전체 로그를 메모리에 적재하지 않는다.
+    """
+    if isinstance(days, bool) or not isinstance(days, int) or days < 1:
+        raise ValueError("days must be a positive integer")
+
+    now = datetime.now(timezone.utc)
+    start_epoch = (now - timedelta(days=days)).timestamp()
+    end_epoch = now.timestamp()
     try:
-        start_date = datetime.now() - timedelta(days=days)
-        reclassify_count = 0
-        archive_count = 0
+        with closing(_open_reporting_db()) as connection:
+            _initialize_reporting_schema(connection)
+            with connection:
+                connection.execute("BEGIN IMMEDIATE")
+                malformed_count = _import_new_automation_logs(connection)
 
-        if AUTO_LOG_FILE.exists():
-            malformed_log_lines = 0
-
-            with open(AUTO_LOG_FILE, "r", encoding="utf-8") as f:
-                for line in f:
-                    safe_line = line.strip()[:200]
-
-                    # 1. JSON 파싱
-                    try:
-                        data = json.loads(line)
-                    except json.JSONDecodeError:
-                        malformed_log_lines += 1
-                        continue
-
-                    # 2. 데이터 구조 검증
-                    if not isinstance(data, dict):
-                        malformed_log_lines += 1
-                        continue
-
-                    started_at_str = data.get("started_at")
-                    if not started_at_str:
-                        malformed_log_lines += 1
-                        continue
-
-                    # 3. 날짜 파싱 및 로직 처리
-                    try:
-                        log_time = datetime.fromisoformat(started_at_str)
-
-                        if log_time >= start_date:
-                            task_type = data.get("task_type")
-
-                            if task_type == AutomationTaskType.RECLASSIFICATION.value:
-                                reclassify_count += data.get("files_updated", 0)
-                            elif task_type == AutomationTaskType.ARCHIVING.value:
-                                archive_count += data.get("files_archived", 0)
-
-                            total_processed += data.get("files_processed", 0)
-                            total_errors += data.get("errors_count", 0)
-
-                    except (ValueError, TypeError):
-                        # 날짜 포맷 에러 또는 타입 에러
-                        malformed_log_lines += 1
-                        continue
-                    except (KeyError, AttributeError, RuntimeError) as e:
-                        # 기타 에러는 스택 트레이스 포함하여 로깅
-                        # 방어적 코딩: safe_line이 None이거나 문자열이 아닐 경우 대비
-                        safe_content = safe_line if safe_line is not None else ""
-
-                        # 민감 정보 마스킹을 위한 해시 생성
-                        content_sha256 = hashlib.sha256(
-                            safe_content.encode("utf-8", "ignore")
-                        ).hexdigest()
-
-                        # 디버깅을 위한 비민감 메타데이터 수집
-                        meta_info = build_meta(
-                            {
-                                "action": "parse_log_line",
-                                "content_sha256": content_sha256,
-                                "content_length": len(safe_content),
-                                "is_empty": not bool(safe_content),
-                            }
-                        )
-
-                        log_agent_error(
-                            logger,
-                            "Unexpected error processing log line",
-                            e,
-                            meta_info,
-                            include_traceback=True,
-                        )
-                        continue
-
-            # 루프 종료 후 요약 로그
-            if malformed_log_lines > 0:
-                logger.warning(
-                    "Skipped %d malformed log line(s) while parsing %s",
-                    malformed_log_lines,
-                    AUTO_LOG_FILE,
+                retention_days = max(days, max(REPORT_PERIOD_DAYS.values()))
+                retention_epoch = (now - timedelta(days=retention_days)).timestamp()
+                connection.execute(
+                    "DELETE FROM reporting_automation_metrics WHERE started_at_epoch < ?",
+                    (retention_epoch,),
                 )
+                aggregate = connection.execute(
+                    """
+                    SELECT
+                        COALESCE(SUM(CASE WHEN task_type = ? THEN files_updated ELSE 0 END), 0),
+                        COALESCE(SUM(CASE WHEN task_type = ? THEN files_archived ELSE 0 END), 0),
+                        COALESCE(SUM(errors_count), 0)
+                    FROM reporting_automation_metrics
+                    WHERE started_at_epoch >= ? AND started_at_epoch <= ?
+                    """,
+                    (
+                        AutomationTaskType.RECLASSIFICATION.value,
+                        AutomationTaskType.ARCHIVING.value,
+                        start_epoch,
+                        end_epoch,
+                    ),
+                ).fetchone()
 
-        metrics["reclassified_files"] = ReportMetric(
-            metric_name="Reclassified Files",
-            value=reclassify_count,
-            unit="files",
-            description=f"Last {days} days",
+        if malformed_count:
+            logger.warning(
+                "Skipped malformed automation log records during SQLite indexing.",
+                extra={"malformed_count": malformed_count},
+            )
+        reclassified, archived, errors = aggregate
+        return {
+            "reclassified_files": ReportMetric(
+                metric_name="Reclassified Files",
+                value=reclassified,
+                unit="files",
+                description=f"Last {days} days",
+            ),
+            "archived_files": ReportMetric(
+                metric_name="Archived Files",
+                value=archived,
+                unit="files",
+                description=f"Last {days} days",
+            ),
+            "automation_errors": ReportMetric(
+                metric_name="Automation Errors",
+                value=errors,
+                unit="count",
+                description="Total errors in period",
+            ),
+        }
+    except (OSError, sqlite3.Error, RuntimeError) as exc:
+        meta = build_meta(
+            {"action": "collect_metrics", "error_type": type(exc).__name__}
         )
-
-        metrics["archived_files"] = ReportMetric(
-            metric_name="Archived Files",
-            value=archive_count,
-            unit="files",
-            description=f"Last {days} days",
+        log_agent_error(
+            logger,
+            "Error collecting reporting metrics from SQLite",
+            exc,
+            meta,
+            include_traceback=True,
         )
-
-        metrics["automation_errors"] = ReportMetric(
-            metric_name="Automation Errors",
-            value=total_errors,
-            unit="count",
-            description="Total errors in period",
-        )
-
-    except (OSError, RuntimeError) as e:
-        meta = build_meta({"action": "collect_metrics"})
-        log_agent_error(logger, "Error collecting metrics", e, meta)
-
-    return metrics
+        raise
 
 
 def _generate_insights(metrics: Dict[str, ReportMetric]) -> List[str]:
@@ -307,7 +453,7 @@ def _execute_report_task(
 
         return f"{report_type.value.title()} Report generated: {report.report_id}"
 
-    except (ValueError, TypeError, OSError, RuntimeError) as exc:
+    except (ValueError, TypeError, OSError, RuntimeError, sqlite3.Error) as exc:
         # 방어적 코딩 및 보안 로깅
         # 민감 정보 유출 방지를 위해 구체적인 에러 메시지 대신 에러 타입만 기록
         error_type = type(exc).__name__
