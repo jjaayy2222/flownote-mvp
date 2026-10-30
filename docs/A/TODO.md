@@ -39,7 +39,7 @@
   - `PathConfig.FAISS_INDEX_DIR`의 FAISS 인덱스/문서 메타데이터 자동 복원 및 문서 ID 기반 upsert 적용.
   - 사용자 해시 필터를 적용한 그래프 벡터 로딩과 분류 완료·파일 수정 시 영속 임베딩 갱신 연결.
   - [x] 재시작 복원, 문서 갱신, ID별 벡터 조회 및 사용자 경계 필터 테스트 추가.
-- [ ] **Sync Status API (`backend/api/endpoints/sync.py`)**
+- [x] **Sync Status API (`backend/api/endpoints/sync.py`)**
   - `get_sync_status`, `get_mcp_status`, `get_conflicts` 등: 상태 응답을 `SyncMapManager`, `ExternalSyncLog` 등의 실제 매니저/DB에서 동적으로 조회하도록 연결.
   - [x] `get_mcp_status` 오보고 방지: API 프로세스의 MCP 레지스트리를 stdio 상태로 오인하지 않으며, 런타임 상태 채널을 사용할 수 없을 때 상태·등록 정보를 확인 불가로 반환.
   - [x] MCP 별도 stdio 프로세스의 등록 목록, 실행 상태 및 연결 세션 계측: Redis TTL heartbeat 공유 채널로 실제 MCP 프로세스 상태를 집계하고, 세션 종료·프로세스 종료 시 stale 상태가 남지 않도록 처리.
@@ -67,5 +67,5 @@
 
 ---
 *💡 관리 가이드: 해결된 항목은 본 문서에서 체크표시(`[x]`) 처리하고, 실제 소스 코드 상의 주석을 제거하여 단일 진실 공급원(SSOT)을 유지합니다.*
-- **✅ 코드베이스 싱크 상태**: `# TODO` 주석과 본 문서의 항목이 정확히 일치함을 확인했습니다. (마지막 점검일: 2026-10-29)
+- **✅ 코드베이스 싱크 상태**: `# TODO` 주석과 본 문서의 항목이 정확히 일치함을 확인했습니다. (마지막 점검일: 2026-10-31)
 - **💡 변동성(Drift) 주의**: TODO 항목의 개수나 내용은 개발 과정에 따라 수시로 변동될 수 있으므로, 주기적인 정합성 점검을 권장합니다.
