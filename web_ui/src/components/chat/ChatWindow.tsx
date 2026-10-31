@@ -191,14 +191,15 @@ export function ChatWindow({
     }
   }, [autoScrollEnabled, getOrInitViewport]);
 
-  const handleScrollManual = useCallback(() => {
+  const handleScrollPositionChange = useCallback(() => {
     const viewport = getOrInitViewport();
     if (!viewport) return;
 
     const { scrollTop, scrollHeight, clientHeight } = viewport;
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
 
-    // [Refinement] UI_CONFIG.SCROLL_THRESHOLD 직접 사용 (중복 제거)
+    // Wheel/touch can fire without a scroll event at the boundary, so derive
+    // auto-scroll state from the viewport position for every interaction.
     const isNowAtBottom = distanceFromBottom < UI_CONFIG.SCROLL_THRESHOLD;
 
     if (isNowAtBottom) {
@@ -210,13 +211,6 @@ export function ChatWindow({
       if (!showScrollButton) setShowScrollButton(true);
     }
   }, [autoScrollEnabled, showScrollButton, hasUnreadMessages, getOrInitViewport]);
-
-  const handleUserInteraction = useCallback(() => {
-    if (autoScrollEnabled) {
-      setAutoScrollEnabled(false);
-      setShowScrollButton(true);
-    }
-  }, [autoScrollEnabled]);
 
   const chatOptions = useMemo(() => ({
     messages: [WELCOME_MESSAGE],
@@ -471,9 +465,9 @@ export function ChatWindow({
         <ScrollArea
           className="h-full w-full"
           ref={scrollContainerRef}
-          onScrollCapture={handleScrollManual}
-          onWheel={handleUserInteraction}
-          onTouchStart={handleUserInteraction}
+          onScrollCapture={handleScrollPositionChange}
+          onWheel={handleScrollPositionChange}
+          onTouchStart={handleScrollPositionChange}
         >
           <div className="flex flex-col gap-0 w-full max-w-4xl mx-auto p-4 py-8">
             {messages.map((m: UIMessage, idx: number) => (
