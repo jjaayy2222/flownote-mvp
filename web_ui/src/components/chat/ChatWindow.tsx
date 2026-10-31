@@ -50,16 +50,16 @@ const TYPING_ANIMATION_DELAYS = ['[animation-delay:-0.3s]', '[animation-delay:-0
 function TypingIndicator({ className = '' }: { className?: string }) {
   return (
     <div className={`flex justify-start px-1 py-2 ${className}`}>
-      <div 
+      <div
         className="max-w-[80%] rounded-2xl rounded-tl-sm bg-slate-50 border border-slate-100 px-4 py-4 flex items-center gap-1.5"
         role="status"
         aria-live="polite"
       >
         {TYPING_ANIMATION_DELAYS.map((delayClass, index) => (
-          <div 
+          <div
             key={index}
-            className={`w-2 h-2 bg-slate-400 rounded-full animate-bounce ${delayClass}`} 
-            aria-hidden="true" 
+            className={`w-2 h-2 bg-slate-400 rounded-full animate-bounce ${delayClass}`}
+            aria-hidden="true"
           />
         ))}
         <span className="sr-only">응답 작성 중...</span>
@@ -126,8 +126,8 @@ interface ChatWindowProps {
   headerLeftSlot?: React.ReactNode;
 }
 
-export function ChatWindow({ 
-  externalSessionId, 
+export function ChatWindow({
+  externalSessionId,
   externalUserId,
   onSessionChange,
   headerLeftSlot
@@ -141,11 +141,11 @@ export function ChatWindow({
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
 
   // 계층화된 세션 상태 관리 (Prop 우선 -> Storage)
-  const [sessionId, setSessionId] = useState<string>(() => 
+  const [sessionId, setSessionId] = useState<string>(() =>
     externalSessionId || getOrCreateStoredId(STORAGE_KEYS.CHAT_SESSION_ID, 'sess')
   );
 
-  const [userId] = useState<string>(() => 
+  const [userId] = useState<string>(() =>
     externalUserId || getOrCreateStoredId(STORAGE_KEYS.USER_ID, 'user')
   );
 
@@ -163,8 +163,8 @@ export function ChatWindow({
     const container = scrollContainerRef.current;
     if (!container) return null;
 
-    if (viewportRef.current && 
-        viewportRef.current.isConnected && 
+    if (viewportRef.current &&
+        viewportRef.current.isConnected &&
         container.contains(viewportRef.current)) {
       return viewportRef.current;
     }
@@ -182,7 +182,7 @@ export function ChatWindow({
         top: viewport.scrollHeight,
         behavior: behavior
       });
-      
+
       if (behavior === 'smooth') {
         setAutoScrollEnabled(true);
         setShowScrollButton(false);
@@ -197,10 +197,10 @@ export function ChatWindow({
 
     const { scrollTop, scrollHeight, clientHeight } = viewport;
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-    
+
     // [Refinement] UI_CONFIG.SCROLL_THRESHOLD 직접 사용 (중복 제거)
     const isNowAtBottom = distanceFromBottom < UI_CONFIG.SCROLL_THRESHOLD;
-    
+
     if (isNowAtBottom) {
       if (!autoScrollEnabled) setAutoScrollEnabled(true);
       if (showScrollButton) setShowScrollButton(false);
@@ -267,7 +267,7 @@ export function ChatWindow({
       });
     },
     onFinish: (content) => {
-      // 스트리밍이 끝나면 영구적인 messages 배열에 추가하여 
+      // 스트리밍이 끝나면 영구적인 messages 배열에 추가하여
       // 리렌더링이나 히스토리에서 일관되게 보이도록 합니다.
       if (!content) return;
       setMessages((prev) => [
@@ -348,10 +348,10 @@ export function ChatWindow({
       if (!res.ok) throw new Error('Failed to clear history');
 
       const newSid = generateId('sess');
-      
+
       // [Review 반영] 저장소 쓰기 성공 시에만 메모리 상태 업데이트
       localStorage.setItem(STORAGE_KEYS.CHAT_SESSION_ID, newSid);
-      
+
       setSessionId(newSid);
       onSessionChange?.(newSid);
       setMessages([WELCOME_MESSAGE]);
@@ -375,7 +375,7 @@ export function ChatWindow({
     } else if (isLoading) {
       setHasUnreadMessages(true);
     }
-  }, [messages, isLoading, autoScrollEnabled, scrollToBottom]);
+  }, [messages, streamTokens, streamSources, isLoading, autoScrollEnabled, scrollToBottom]);
 
   const handleSubmit = useCallback((e?: React.FormEvent) => {
     e?.preventDefault();
@@ -402,11 +402,11 @@ export function ChatWindow({
 
   const handleRetry = useCallback(() => {
     if (isLoading) return;
-    
+
     // 마지막 사용자 메시지를 찾아 다시 전송 시도
     const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
     const content = lastUserMessage?.parts?.[0]?.type === 'text' ? lastUserMessage.parts[0].text : '';
-    
+
     if (content) {
       sendMessage({ role: 'user', parts: [{ type: 'text', text: content }] });
     } else {
@@ -426,7 +426,7 @@ export function ChatWindow({
   const shouldShowStreamingTokens = isStreamingMode && isStreaming && streamTokens != null && streamTokens !== '';
 
   return (
-    <div 
+    <div
       className="flex flex-col w-full border-none shadow-none bg-transparent overflow-hidden relative h-full"
     >
       <div className="bg-white/80 backdrop-blur-md border-b px-4 md:px-6 py-3 md:py-4 flex items-center justify-between shadow-sm z-10 sticky top-0">
@@ -440,8 +440,8 @@ export function ChatWindow({
         <div className="flex items-center gap-3">
           <div className="hidden md:flex flex-col items-end mr-2">
             <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Alpha (Dense/FAISS)</span>
-            <select 
-              value={alpha} 
+            <select
+              value={alpha}
               aria-label="Alpha weighting for hybrid search"
               onChange={(e) => setAlpha(parseFloat(e.target.value))}
               className="text-xs bg-transparent border-none focus:ring-0 text-slate-600 font-medium cursor-pointer"
@@ -468,8 +468,8 @@ export function ChatWindow({
       </div>
 
       <div className="flex-1 overflow-hidden relative group">
-        <ScrollArea 
-          className="h-full w-full" 
+        <ScrollArea
+          className="h-full w-full"
           ref={scrollContainerRef}
           onScrollCapture={handleScrollManual}
           onWheel={handleUserInteraction}
@@ -477,10 +477,10 @@ export function ChatWindow({
         >
           <div className="flex flex-col gap-0 w-full max-w-4xl mx-auto p-4 py-8">
             {messages.map((m: UIMessage, idx: number) => (
-              <MessageBubble 
-                key={m.id} 
-                message={m} 
-                isLast={idx === messages.length - 1} 
+              <MessageBubble
+                key={m.id}
+                message={m}
+                isLast={idx === messages.length - 1}
                 isStreaming={status === 'streaming'}
                 sessionId={sessionId}
               />
@@ -540,9 +540,9 @@ export function ChatWindow({
             onClick={() => scrollToBottom('smooth')}
             aria-label="최근 메시지로 이동"
             className={`
-              absolute bottom-6 right-8 rounded-full shadow-lg border border-slate-200 
-              bg-white/90 backdrop-blur-sm hover:bg-slate-50 text-slate-600 z-20 
-              flex items-center gap-2 px-4 h-10 transition-all 
+              absolute bottom-6 right-8 rounded-full shadow-lg border border-slate-200
+              bg-white/90 backdrop-blur-sm hover:bg-slate-50 text-slate-600 z-20
+              flex items-center gap-2 px-4 h-10 transition-all
               animate-in fade-in zoom-in duration-300
               ${hasUnreadMessages ? 'ring-2 ring-blue-500 ring-offset-2' : ''}
             `}
