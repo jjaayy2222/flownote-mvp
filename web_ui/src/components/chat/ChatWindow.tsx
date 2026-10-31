@@ -198,8 +198,8 @@ export function ChatWindow({
     const { scrollTop, scrollHeight, clientHeight } = viewport;
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
 
-    // Wheel/touch can fire without a scroll event at the boundary, so derive
-    // auto-scroll state from the viewport position for every interaction.
+    // Use the post-scroll position; wheel/touch intent can arrive before the
+    // browser applies movement and would otherwise make this decision stale.
     const isNowAtBottom = distanceFromBottom < UI_CONFIG.SCROLL_THRESHOLD;
 
     if (isNowAtBottom) {
@@ -466,8 +466,6 @@ export function ChatWindow({
           className="h-full w-full"
           ref={scrollContainerRef}
           onScrollCapture={handleScrollPositionChange}
-          onWheel={handleScrollPositionChange}
-          onTouchStart={handleScrollPositionChange}
         >
           <div className="flex flex-col gap-0 w-full max-w-4xl mx-auto p-4 py-8">
             {messages.map((m: UIMessage, idx: number) => (
