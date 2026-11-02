@@ -29,6 +29,14 @@ async function* streamOf(...chunks: StreamChunk[]): AsyncGenerator<StreamChunk> 
   yield* chunks;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 function abortError(): Error {
   return Object.assign(new Error('Aborted'), { name: 'AbortError' });
 }
@@ -96,15 +104,22 @@ describe('useStreamingChat', () => {
     expect(onFinish).toHaveBeenCalledExactlyOnceWith('partial answer...', [], true);
   });
 
-  it('aborts the replaced stream and ignores its late results', async () => {
+  it('ignores a late result from a replaced concurrent stream', async () => {
     let firstSignal: AbortSignal | undefined;
+    const releaseFirstStream = deferred<void>();
+    const firstStreamSettled = deferred<void>();
     const onFinish = vi.fn();
     mockFetchChatStream
       .mockImplementationOnce(async function* (_payload, signal) {
         firstSignal = signal;
-        yield { type: 'token', data: 'old' };
-        await waitForAbort(signal);
-        yield { type: 'token', data: ' stale' };
+        try {
+          yield { type: 'token', data: 'old' };
+          // Simulate a transport that delivers a buffered chunk after abort.
+          await releaseFirstStream.promise;
+          yield { type: 'token', data: ' stale' };
+        } finally {
+          firstStreamSettled.resolve();
+        }
       })
       .mockReturnValueOnce(
         streamOf({ type: 'token', data: 'new' }, { type: 'done' }),
@@ -119,6 +134,15 @@ describe('useStreamingChat', () => {
     await waitFor(() => expect(result.current.isStreaming).toBe(false));
     expect(firstSignal?.aborted).toBe(true);
     expect(result.current.tokens).toBe('new');
+    expect(onFinish).toHaveBeenCalledExactlyOnceWith('new', [], false);
+
+    await act(async () => {
+      releaseFirstStream.resolve();
+      await firstStreamSettled.promise;
+    });
+
+    expect(result.current.tokens).toBe('new');
+    expect(result.current.error).toBeNull();
     expect(onFinish).toHaveBeenCalledExactlyOnceWith('new', [], false);
   });
 
@@ -168,6 +192,26 @@ describe('useStreamingChat', () => {
       message: 'stream transport failed',
     });
     expect(onError).toHaveBeenCalledExactlyOnceWith(result.current.error, ioError);
+  });
+
+  it('normalizes a network timeout and always clears the active stream state', async () => {
+    const onError = vi.fn();
+    const timeoutError = new DOMException('The operation timed out', 'TimeoutError');
+    mockFetchChatStream.mockImplementationOnce(async function* () {
+      yield { type: 'token', data: 'partial response' };
+      throw timeoutError;
+    });
+
+    const { result } = renderHook(() => useStreamingChat({ onError }));
+    act(() => result.current.startStream(request));
+
+    await waitFor(() => expect(result.current.isStreaming).toBe(false));
+
+    expect(result.current.tokens).toBe('partial response');
+    expect(result.current.error?.errorCode).toBe('STREAM_ERROR');
+    expect(result.current.error?.message).toBeTruthy();
+    expect(result.current.error?.message).not.toBe(timeoutError.message);
+    expect(onError).toHaveBeenCalledExactlyOnceWith(result.current.error, timeoutError);
   });
 
   it('stores an error chunk and aborts without treating it as a transport failure', async () => {
