@@ -108,6 +108,7 @@ describe('useStreamingChat', () => {
     let firstSignal: AbortSignal | undefined;
     const releaseFirstStream = deferred<void>();
     const firstStreamSettled = deferred<void>();
+    const releaseReplacementStream = deferred<void>();
     const onFinish = vi.fn();
     mockFetchChatStream
       .mockImplementationOnce(async function* (_payload, signal) {
@@ -121,9 +122,11 @@ describe('useStreamingChat', () => {
           firstStreamSettled.resolve();
         }
       })
-      .mockReturnValueOnce(
-        streamOf({ type: 'token', data: 'new' }, { type: 'done' }),
-      );
+      .mockImplementationOnce(async function* () {
+        yield { type: 'token', data: 'new' };
+        await releaseReplacementStream.promise;
+        yield { type: 'done' };
+      });
 
     const { result } = renderHook(() => useStreamingChat({ onFinish }));
     act(() => result.current.startStream(request));
@@ -131,16 +134,28 @@ describe('useStreamingChat', () => {
 
     act(() => result.current.startStream({ ...request, query: 'replacement' }));
 
-    await waitFor(() => expect(result.current.isStreaming).toBe(false));
     expect(firstSignal?.aborted).toBe(true);
-    expect(result.current.tokens).toBe('new');
-    expect(onFinish).toHaveBeenCalledExactlyOnceWith('new', [], false);
+    await waitFor(() => expect(result.current.tokens).toBe('new'));
+    expect(result.current.isStreaming).toBe(true);
+    expect(onFinish).not.toHaveBeenCalled();
 
+    // Resolve the replaced stream while its replacement is still active.
+    // The stale stream must not clear the replacement's loading state.
     await act(async () => {
       releaseFirstStream.resolve();
       await firstStreamSettled.promise;
     });
 
+    expect(result.current.isStreaming).toBe(true);
+    expect(result.current.tokens).toBe('new');
+    expect(result.current.error).toBeNull();
+    expect(onFinish).not.toHaveBeenCalled();
+
+    await act(async () => {
+      releaseReplacementStream.resolve();
+    });
+
+    await waitFor(() => expect(result.current.isStreaming).toBe(false));
     expect(result.current.tokens).toBe('new');
     expect(result.current.error).toBeNull();
     expect(onFinish).toHaveBeenCalledExactlyOnceWith('new', [], false);
