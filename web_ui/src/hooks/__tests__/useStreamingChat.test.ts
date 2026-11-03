@@ -286,4 +286,39 @@ describe('useStreamingChat', () => {
 
     expect(streamSignal?.aborted).toBe(true);
   });
+
+  it('ignores a transport error that races with unmount cleanup', async () => {
+    let streamSignal: AbortSignal | undefined;
+    const streamSettled = deferred<void>();
+    const onError = vi.fn();
+    const onFinish = vi.fn();
+    const lateTransportError = new Error('stream failed while unmounting');
+    mockFetchChatStream.mockImplementationOnce(async function* (_payload, signal) {
+      streamSignal = signal;
+      try {
+        yield { type: 'token', data: 'partial response' };
+        await waitForAbort(signal);
+      } catch {
+        // Simulate a transport error racing with abort during component cleanup.
+        throw lateTransportError;
+      } finally {
+        streamSettled.resolve();
+      }
+    });
+
+    const { result, unmount } = renderHook(() =>
+      useStreamingChat({ onError, onFinish }),
+    );
+    act(() => result.current.startStream(request));
+    await waitFor(() => expect(result.current.tokens).toBe('partial response'));
+
+    unmount();
+    await streamSettled.promise;
+    // Flush the consumer's rejection handler after the async generator settles.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(streamSignal?.aborted).toBe(true);
+    expect(onError).not.toHaveBeenCalled();
+    expect(onFinish).not.toHaveBeenCalled();
+  });
 });
