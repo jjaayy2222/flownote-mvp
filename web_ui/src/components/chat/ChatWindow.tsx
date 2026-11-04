@@ -134,6 +134,7 @@ export function ChatWindow({
 }: ChatWindowProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const skipNextAutoScrollEffectRef = useRef(false);
 
   const [input, setInput] = useState('');
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
@@ -178,6 +179,10 @@ export function ChatWindow({
   const scrollToBottom = useCallback((behavior: 'auto' | 'smooth' = 'auto') => {
     const viewport = getOrInitViewport();
     if (viewport && (autoScrollEnabled || behavior === 'smooth')) {
+      if (behavior === 'smooth' && !autoScrollEnabled) {
+        skipNextAutoScrollEffectRef.current = true;
+      }
+
       viewport.scrollTo({
         top: viewport.scrollHeight,
         behavior: behavior
@@ -365,6 +370,10 @@ export function ChatWindow({
 
   useEffect(() => {
     if (autoScrollEnabled) {
+      if (skipNextAutoScrollEffectRef.current) {
+        skipNextAutoScrollEffectRef.current = false;
+        return;
+      }
       scrollToBottom();
     } else if (isLoading) {
       setHasUnreadMessages(true);
