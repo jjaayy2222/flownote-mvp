@@ -13,11 +13,12 @@ const mocks = vi.hoisted(() => ({
   startStream: vi.fn(),
   cancelStream: vi.fn(),
   streamState: {
-    tokens: '',
+    tokens: '' as string,
     isStreaming: false,
-    sources: [],
-    error: null,
+    sources: [] as Array<{ title?: string; url?: string; [key: string]: unknown }>,
+    error: null as { errorCode: string; message: string } | null,
   },
+  chatError: null as Error | null,
   scrollTo: vi.fn(),
 }));
 
@@ -27,7 +28,7 @@ vi.mock('@ai-sdk/react', () => ({
     sendMessage: mocks.sendMessage,
     status: 'ready',
     setMessages: mocks.setMessages,
-    error: null,
+    error: mocks.chatError,
   }),
 }));
 
@@ -114,12 +115,12 @@ vi.mock('sonner', () => ({
 
 const chatMessages = [
   {
-    id: 'user-message',
+    id: 'hist-0-session-test',
     role: 'user' as const,
     parts: [{ type: 'text' as const, text: 'A saved question' }],
   },
   {
-    id: 'assistant-message',
+    id: 'hist-1-session-test',
     role: 'assistant' as const,
     parts: [{ type: 'text' as const, text: 'A saved answer' }],
   },
@@ -145,6 +146,7 @@ beforeEach(() => {
     sources: [],
     error: null,
   };
+  mocks.chatError = null;
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue({
@@ -161,14 +163,32 @@ afterEach(() => {
 
 describe('ChatWindow', () => {
   it('renders saved messages and keeps sending disabled until text is entered', async () => {
-    await renderChatWindow();
+    const { rerender } = await renderChatWindow();
 
-    expect(screen.getByTestId('message-user-message').textContent).toContain('A saved question');
-    expect(screen.getByTestId('message-assistant-message').textContent).toContain('A saved answer');
+    const savedQuestion = screen.getByTestId('message-hist-0-session-test');
+    const savedAnswer = screen.getByTestId('message-hist-1-session-test');
+    expect(savedQuestion.textContent).toContain('A saved question');
+    expect(savedAnswer.textContent).toContain('A saved answer');
     const conversationLog = screen.getByRole('log');
     expect(conversationLog.getAttribute('aria-live')).toBe('polite');
     expect(conversationLog.getAttribute('aria-relevant')).toBe('additions');
+    expect(conversationLog.contains(savedQuestion)).toBe(false);
+    expect(conversationLog.contains(savedAnswer)).toBe(false);
     expect(screen.getByRole('button', { name: '메시지 전송' }).hasAttribute('disabled')).toBe(true);
+
+    mocks.messages = [
+      ...chatMessages,
+      {
+        id: 'current-user-message',
+        role: 'user',
+        parts: [{ type: 'text', text: 'A new question' }],
+      },
+    ];
+    rerender(<ChatWindow {...chatProps} />);
+
+    const currentMessage = screen.getByTestId('message-current-user-message');
+    expect(currentMessage.textContent).toContain('A new question');
+    expect(conversationLog.contains(currentMessage)).toBe(true);
   });
 
   it('starts a stream with the entered query and configured session identity', async () => {
@@ -203,6 +223,23 @@ describe('ChatWindow', () => {
     expect(stopButton.getAttribute('aria-label')).toBe('응답 중지');
     fireEvent.click(stopButton);
     expect(mocks.cancelStream).toHaveBeenCalledOnce();
+  });
+
+  it('keeps chat errors in one assertive region outside the polite conversation log', async () => {
+    mocks.streamState = {
+      ...mocks.streamState,
+      error: { errorCode: 'STREAM_FAILED', message: 'The response could not be completed.' },
+    };
+
+    await renderChatWindow();
+
+    const conversationLog = screen.getByRole('log');
+    const errorBanner = screen.getByText('The response could not be completed.');
+    const assertiveRegion = errorBanner.closest('[aria-live="assertive"]');
+
+    expect(assertiveRegion).not.toBeNull();
+    expect(conversationLog.contains(errorBanner)).toBe(false);
+    expect(document.querySelectorAll('[aria-live="assertive"]')).toHaveLength(1);
   });
 
   it('pauses following when the user scrolls up and resumes from the recent-messages button', async () => {
