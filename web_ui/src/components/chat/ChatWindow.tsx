@@ -476,7 +476,13 @@ export function ChatWindow({
           ref={scrollContainerRef}
           onScrollCapture={handleScrollPositionChange}
         >
-          <div className="flex flex-col gap-0 w-full max-w-4xl mx-auto p-4 py-8">
+          <div
+            className="flex flex-col gap-0 w-full max-w-4xl mx-auto p-4 py-8"
+            role="log"
+            aria-live="polite"
+            aria-relevant="additions"
+            aria-atomic="false"
+          >
             {messages.map((m: UIMessage, idx: number) => (
               <MessageBubble
                 key={m.id}
