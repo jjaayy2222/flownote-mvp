@@ -165,6 +165,9 @@ describe('ChatWindow', () => {
 
     expect(screen.getByTestId('message-user-message').textContent).toContain('A saved question');
     expect(screen.getByTestId('message-assistant-message').textContent).toContain('A saved answer');
+    const conversationLog = screen.getByRole('log');
+    expect(conversationLog.getAttribute('aria-live')).toBe('polite');
+    expect(conversationLog.getAttribute('aria-relevant')).toBe('additions');
     expect(screen.getByRole('button', { name: '메시지 전송' }).hasAttribute('disabled')).toBe(true);
   });
 
@@ -196,7 +199,9 @@ describe('ChatWindow', () => {
     await renderChatWindow();
 
     expect(screen.getByText('Streaming response')).not.toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '응답 중지' }));
+    const stopButton = screen.getByRole('button', { name: '응답 중지' });
+    expect(stopButton.getAttribute('aria-label')).toBe('응답 중지');
+    fireEvent.click(stopButton);
     expect(mocks.cancelStream).toHaveBeenCalledOnce();
   });
 

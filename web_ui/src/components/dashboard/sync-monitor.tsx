@@ -195,12 +195,12 @@ export function SyncMonitor() {
         <div className="flex items-center gap-4">
           <h2 className="text-3xl font-bold tracking-tight">{t('title')}</h2>
           {isConnected ? (
-            <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">
+            <Badge role="status" aria-live="polite" aria-atomic="true" variant="outline" className="text-green-600 border-green-200 bg-green-50">
               <div className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse" />
               Live
             </Badge>
           ) : (
-            <Badge variant="outline" className="text-gray-500">
+            <Badge role="status" aria-live="polite" aria-atomic="true" variant="outline" className="text-gray-500">
               Connecting...
             </Badge>
           )}
@@ -261,10 +261,10 @@ export function SyncMonitor() {
                 {t('mcp.title')}
               </span>
               {mcpStatus?.running === true ?
-                <Badge className="bg-blue-500 hover:bg-blue-600">{t('mcp.running')}</Badge> :
+                <Badge role="status" aria-live="polite" aria-atomic="true" className="bg-blue-500 hover:bg-blue-600">{t('mcp.running')}</Badge> :
                 mcpStatus?.running === false ?
-                  <Badge variant="destructive">{t('mcp.stopped')}</Badge> :
-                  <Badge variant="outline">{t('mcp.status_unavailable')}</Badge>
+                  <Badge role="status" aria-live="polite" aria-atomic="true" variant="destructive">{t('mcp.stopped')}</Badge> :
+                  <Badge role="status" aria-live="polite" aria-atomic="true" variant="outline">{t('mcp.status_unavailable')}</Badge>
               }
             </CardTitle>
           </CardHeader>

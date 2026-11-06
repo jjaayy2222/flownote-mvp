@@ -208,7 +208,11 @@ describe('SyncMonitor Integration Tests', () => {
         expect(screen.queryByText(/loading sync status/i)).toBeNull();
     });
 
-    screen.getByText('Live');
+    const liveStatus = screen.getAllByRole('status').find((status) =>
+      status.textContent?.includes('Live'),
+    );
+    expect(liveStatus?.textContent).toContain('Live');
+    expect(liveStatus?.getAttribute('aria-live')).toBe('polite');
   });
 
   it('shows "Connecting..." badge when WebSocket is disconnected', async () => {
@@ -228,7 +232,11 @@ describe('SyncMonitor Integration Tests', () => {
         expect(screen.queryByText(/loading sync status/i)).toBeNull();
     });
 
-    screen.getByText('Connecting...');
+    const connectionStatus = screen.getAllByRole('status').find((status) =>
+      status.textContent?.includes('Connecting...'),
+    );
+    expect(connectionStatus?.textContent).toContain('Connecting...');
+    expect(connectionStatus?.getAttribute('aria-live')).toBe('polite');
   });
 
   it('updates UI when "sync_status_changed" event is received', async () => {
