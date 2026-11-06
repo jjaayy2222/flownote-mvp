@@ -119,6 +119,10 @@ function getOrCreateStoredId(storageKey: string, prefix: string): string {
   return id;
 }
 
+function isLoadedHistoryMessage(message: UIMessage): boolean {
+  return message.id === WELCOME_MESSAGE.id || message.id.startsWith('hist-');
+}
+
 interface ChatWindowProps {
   externalSessionId?: string;
   externalUserId?: string;
@@ -427,6 +431,8 @@ export function ChatWindow({
 
   const shouldShowTypingIndicator = isStreamingMode && isStreaming && (streamTokens == null || streamTokens === '');
   const shouldShowStreamingTokens = isStreamingMode && isStreaming && streamTokens != null && streamTokens !== '';
+  const historyMessages = messages.filter(isLoadedHistoryMessage);
+  const conversationMessages = messages.filter((message) => !isLoadedHistoryMessage(message));
 
   return (
     <div
@@ -476,55 +482,62 @@ export function ChatWindow({
           ref={scrollContainerRef}
           onScrollCapture={handleScrollPositionChange}
         >
-          <div
-            className="flex flex-col gap-0 w-full max-w-4xl mx-auto p-4 py-8"
-            role="log"
-            aria-live="polite"
-            aria-relevant="additions"
-            aria-atomic="false"
-          >
-            {messages.map((m: UIMessage, idx: number) => (
+          <div className="flex flex-col gap-0 w-full max-w-4xl mx-auto p-4 py-8">
+            {historyMessages.map((m: UIMessage) => (
               <MessageBubble
                 key={m.id}
                 message={m}
-                isLast={idx === messages.length - 1}
+                isLast={m.id === messages[messages.length - 1]?.id}
                 isStreaming={status === 'streaming'}
                 sessionId={sessionId}
               />
             ))}
-            {/* [스트리밍 모드] 첫 토큰 도착 전 타이핑 인디케이터 */}
-            {shouldShowTypingIndicator && (
-              <TypingIndicator />
-            )}
+            <div
+              className="flex flex-col gap-0 w-full"
+              role="log"
+              aria-live="polite"
+              aria-relevant="additions"
+              aria-atomic="false"
+            >
+              {conversationMessages.map((m: UIMessage) => (
+                <MessageBubble
+                  key={m.id}
+                  message={m}
+                  isLast={m.id === messages[messages.length - 1]?.id}
+                  isStreaming={status === 'streaming'}
+                  sessionId={sessionId}
+                />
+              ))}
+              {/* [스트리밍 모드] 첫 토큰 도착 전 타이핑 인디케이터 */}
+              {shouldShowTypingIndicator && <TypingIndicator />}
 
-            {/* [스트리밍 모드] 누적 토큰을 실시간으로 렌더링 */}
-            {shouldShowStreamingTokens && (
-              <div className="flex gap-3 w-full justify-start mb-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                {/* 아바타 */}
-                <Avatar className="w-8 h-8 shrink-0 mt-1 shadow-sm border border-slate-100">
-                  <AvatarFallback className="bg-blue-100 text-blue-700 text-xs font-bold">AI</AvatarFallback>
-                </Avatar>
+              {/* [스트리밍 모드] 누적 토큰을 실시간으로 렌더링 */}
+              {shouldShowStreamingTokens && (
+                <div className="flex gap-3 w-full justify-start mb-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  {/* 아바타 */}
+                  <Avatar className="w-8 h-8 shrink-0 mt-1 shadow-sm border border-slate-100">
+                    <AvatarFallback className="bg-blue-100 text-blue-700 text-xs font-bold">AI</AvatarFallback>
+                  </Avatar>
 
-                <div className="flex flex-col gap-2 max-w-[85%] items-start w-full">
-                  <div
-                    className="px-4 py-3 rounded-2xl text-sm leading-relaxed bg-white text-slate-800 rounded-bl-sm shadow-sm border border-slate-100 w-full"
-                  >
-                    <ReactMarkdown
-                      remarkPlugins={REMARK_PLUGINS}
-                      rehypePlugins={REHYPE_PLUGINS}
-                      components={markdownComponents}
-                    >
-                      {stabilizeIncompleteMarkdown(streamTokens)}
-                    </ReactMarkdown>
-                    {isStreaming && (
-                      <span className="inline-block w-1.5 h-4 bg-slate-400 rounded-sm ml-0.5 animate-pulse align-middle" aria-hidden="true" />
-                    )}
+                  <div className="flex flex-col gap-2 max-w-[85%] items-start w-full">
+                    <div className="px-4 py-3 rounded-2xl text-sm leading-relaxed bg-white text-slate-800 rounded-bl-sm shadow-sm border border-slate-100 w-full">
+                      <ReactMarkdown
+                        remarkPlugins={REMARK_PLUGINS}
+                        rehypePlugins={REHYPE_PLUGINS}
+                        components={markdownComponents}
+                      >
+                        {stabilizeIncompleteMarkdown(streamTokens)}
+                      </ReactMarkdown>
+                      {isStreaming && (
+                        <span className="inline-block w-1.5 h-4 bg-slate-400 rounded-sm ml-0.5 animate-pulse align-middle" aria-hidden="true" />
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
-            {/* 에러 UI: 스크린 리더가 DOM 삽입을 항상 감지할 수 있도록 라이브 리전 컨테이너를 상시 렌더링합니다. */}
+            {/* Errors use a single assertive live region outside the polite conversation log. */}
             <div aria-live="assertive" aria-atomic="true">
               {isStreamingMode ? (
                 streamError && <ErrorBanner message={streamError.message} />
