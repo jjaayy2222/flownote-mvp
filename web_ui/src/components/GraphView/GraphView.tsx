@@ -152,7 +152,7 @@ export function GraphView({ data, width, height = 600, onNodeClick, onLinkClick 
         target,
         relationship_type: link.relationship_type,
         weight: link.weight,
-        properties: link.properties,
+        properties: link.properties ?? {},
       };
       onLinkClick(clickedLink);
     },
