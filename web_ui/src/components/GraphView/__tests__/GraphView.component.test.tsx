@@ -6,6 +6,7 @@ import type { GraphEdge, GraphNode } from '@/types/websocket';
 import { GraphContainer } from '../GraphContainer';
 import { GraphView } from '../GraphView';
 import type { GraphViewData } from '../types';
+import type { OnLinkClickCallback } from '..';
 
 const mocks = vi.hoisted(() => ({
   graphData: null as GraphViewData | null,
@@ -167,8 +168,14 @@ describe('GraphView component', () => {
   });
 
   it('passes a normalized edge to the edge-click callback', () => {
-    const onLinkClick = vi.fn();
-    render(<GraphView data={graphData} onLinkClick={onLinkClick} />);
+    const onLinkClick: OnLinkClickCallback = vi.fn();
+    const edgeWithoutProperties = { ...edges[0] };
+    Reflect.deleteProperty(edgeWithoutProperties, 'properties');
+    const dataWithApiEdge = {
+      nodes,
+      edges: [edgeWithoutProperties as unknown as GraphEdge],
+    };
+    render(<GraphView data={dataWithApiEdge} onLinkClick={onLinkClick} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Simulate edge click' }));
 

@@ -58,8 +58,8 @@ export function getLinkId(endpoint: unknown): string | null {
   if (typeof endpoint === "object") {
     const { id } = endpoint as { id?: unknown };
     if (id == null) return null;
-    
-    // [Confirm] 왕복 변환(Round-trip)이 불가능한 symbol/bigint 및 객체/함수 등은 모두 거부하고, 
+
+    // [Confirm] 왕복 변환(Round-trip)이 불가능한 symbol/bigint 및 객체/함수 등은 모두 거부하고,
     // 오직 직렬화 가능한 string, number, boolean 만 허용
     if (isSerializablePrimitive(id)) {
       return String(id);
@@ -142,8 +142,8 @@ export function adaptGraphData(data: GraphViewData): {
   // 제한된 노드 ID Set
   const allowedNodeIds = new Set(allowedNodes.map((n) => n.id));
 
-  // [Confirm] allowedNodeIds를 기반으로 양 끝단(Source/Target)을 검사하므로, 
-  // 사전 필터링(불량 노드 제거)으로 인해 삭제된 노드를 참조하는 고아 엣지(Orphan edges)는 
+  // [Confirm] allowedNodeIds를 기반으로 양 끝단(Source/Target)을 검사하므로,
+  // 사전 필터링(불량 노드 제거)으로 인해 삭제된 노드를 참조하는 고아 엣지(Orphan edges)는
   // 렌더링되지 않고 안전하게 함께 소거(Cascade)됩니다.
   const links: ForceGraphLink[] = data.edges
     .filter((e) => {
@@ -152,11 +152,11 @@ export function adaptGraphData(data: GraphViewData): {
         devWarn("Dropped invalid edge missing source or target", { edge: e });
         return false;
       }
-      
+
       // 2. 헬퍼를 사용한 엄격한 식별자 추출
       const sourceId = getLinkId(e.source);
       const targetId = getLinkId(e.target);
-      
+
       // 3. 조기 종료(Short-circuit): 식별자를 추출할 수 없는 구조적 결함이 있으면 명시적 드롭
       if (sourceId === null || targetId === null) {
         devWarn("Dropped edge due to unresolvable or malformed source/target IDs", { edge: e });
@@ -166,7 +166,7 @@ export function adaptGraphData(data: GraphViewData): {
       // 4. 고아 엣지 방어
       return allowedNodeIds.has(sourceId) && allowedNodeIds.has(targetId);
     })
-    .map((e) => ({ ...e }));
+    .map((e) => ({ ...e, properties: e.properties ?? {} }));
 
   return {
     nodes: allowedNodes.map((n) => ({ ...n })),
