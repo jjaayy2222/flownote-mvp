@@ -72,3 +72,6 @@ export interface GraphViewData {
  * 클릭된 노드의 SSOT 타입(GraphNode) 을 그대로 전달합니다.
  */
 export type OnNodeClickCallback = (node: GraphNode) => void;
+
+/** 링크(엣지) 클릭 시 호출되는 콜백 타입. */
+export type OnLinkClickCallback = (link: GraphEdge) => void;
