@@ -5,7 +5,7 @@ import { EdgeRelationshipType, NodeType } from '@/types/websocket';
 import type { GraphEdge, GraphNode } from '@/types/websocket';
 import { GraphContainer } from '../GraphContainer';
 import { GraphView } from '../GraphView';
-import type { GraphViewData } from '../types';
+import type { GraphViewData, GraphViewEdge } from '../types';
 import type { OnLinkClickCallback } from '..';
 
 const mocks = vi.hoisted(() => ({
@@ -169,11 +169,16 @@ describe('GraphView component', () => {
 
   it('passes a normalized edge to the edge-click callback', () => {
     const onLinkClick: OnLinkClickCallback = vi.fn();
-    const edgeWithoutProperties = { ...edges[0] };
-    Reflect.deleteProperty(edgeWithoutProperties, 'properties');
-    const dataWithApiEdge = {
+    const edgeWithoutProperties: GraphViewEdge = {
+      id: 'edge-a-b',
+      source: 'node-a',
+      target: 'node-b',
+      relationship_type: EdgeRelationshipType.RELATED_TO,
+      weight: 0.75,
+    };
+    const dataWithApiEdge: GraphViewData = {
       nodes,
-      edges: [edgeWithoutProperties as unknown as GraphEdge],
+      edges: [edgeWithoutProperties],
     };
     render(<GraphView data={dataWithApiEdge} onLinkClick={onLinkClick} />);
 
