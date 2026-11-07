@@ -41,6 +41,14 @@ export type ForceGraphNode = GraphNode & {
 };
 
 /**
+ * Backend graph edge input. The current API response may omit `properties`;
+ * the adapter fills it before passing the edge to the renderer or callbacks.
+ */
+export type GraphViewEdge = Omit<GraphEdge, "properties"> & {
+  properties?: GraphEdge["properties"];
+};
+
+/**
  * react-force-graph 의 `LinkObject` 로 사용할 어댑터 타입.
  *
  * react-force-graph 는 `source` / `target` 을 초기에 string 으로 받고,
@@ -60,7 +68,7 @@ export type ForceGraphLink = Omit<GraphEdge, "source" | "target"> & {
  */
 export interface GraphViewData {
   nodes: GraphNode[];
-  edges: GraphEdge[];
+  edges: GraphViewEdge[];
 }
 
 // ─────────────────────────────────────────

@@ -2,7 +2,7 @@
 
 import type { GraphNode } from "@/types/websocket";
 import { MAX_GRAPH_NODES } from "@/config/graph";
-import type { ForceGraphNode, ForceGraphLink, GraphViewData } from "./types";
+import type { ForceGraphNode, ForceGraphLink, GraphViewData, GraphViewEdge } from "./types";
 
 // ─────────────────────────────────────────
 // 헬퍼: 구조화된 개발 환경 전용 로깅 (DRY 패턴 & 민감정보 보호)
@@ -25,9 +25,9 @@ export function isValidGraphNode(node: Partial<GraphNode>): node is GraphNode {
   return typeof node.id === "string" && typeof node.node_type === "string";
 }
 
-export function isValidGraphLink(link: unknown): link is ForceGraphLink {
+export function isValidGraphLink(link: unknown): link is GraphViewEdge {
   if (typeof link !== "object" || link === null) return false;
-  const l = link as Partial<ForceGraphLink>;
+  const l = link as Partial<GraphViewEdge>;
   // [Confirm] null과 undefined를 모두 차단 (nullish check)
   return l.source != null && l.target != null;
 }
