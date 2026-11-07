@@ -26,7 +26,7 @@ import ForceGraph2D, {
   type LinkObject,
 } from "react-force-graph-2d";
 
-import type { GraphNode } from "@/types/websocket";
+import type { GraphEdge, GraphNode } from "@/types/websocket";
 import { NodeType } from "@/types/websocket";
 import {
   GRAPH_BG_COLOR,
@@ -45,8 +45,9 @@ import type {
   ForceGraphLink,
   GraphViewData,
   OnNodeClickCallback,
+  OnLinkClickCallback,
 } from "./types";
-import { adaptGraphData, devWarn } from "./graphViewAdapter";
+import { adaptGraphData, devWarn, getLinkId } from "./graphViewAdapter";
 
 // ─────────────────────────────────────────
 // 로컬 타입 별칭 (가독성 향상 및 런타임 캐스팅 방지)
@@ -95,6 +96,8 @@ export interface GraphViewProps {
   height?: number;
   /** 노드 클릭 시 호출되는 콜백 */
   onNodeClick?: OnNodeClickCallback;
+  /** 엣지 클릭 시 호출되는 콜백 */
+  onLinkClick?: OnLinkClickCallback;
 }
 
 // ─────────────────────────────────────────
@@ -111,7 +114,7 @@ export interface GraphViewProps {
  * <GraphViewLoader data={graphData} onNodeClick={handleClick} />
  * ```
  */
-export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewProps) {
+export function GraphView({ data, width, height = 600, onNodeClick, onLinkClick }: GraphViewProps) {
   const graphRef = useRef<FGMethods | undefined>(undefined);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [hoverNodeId, setHoverNodeId] = useState<string | null>(null);
@@ -132,6 +135,30 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
     [onNodeClick]
   );
 
+  const handleLinkClick = useCallback(
+    (link: LinkObj) => {
+      if (!onLinkClick) return;
+
+      const source = getLinkId(link.source);
+      const target = getLinkId(link.target);
+      if (source === null || target === null) {
+        devWarn("Ignored link click with an invalid endpoint");
+        return;
+      }
+
+      const clickedLink: GraphEdge = {
+        id: link.id,
+        source,
+        target,
+        relationship_type: link.relationship_type,
+        weight: link.weight,
+        properties: link.properties,
+      };
+      onLinkClick(clickedLink);
+    },
+    [onLinkClick]
+  );
+
   // ── 노드 호버 핸들러 ──────────────────────────────────────
   const handleNodeHover = useCallback((node: NodeObj | null) => {
     setHoverNodeId(node ? String(node.id) : null);
@@ -143,12 +170,12 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
       const ny = node.y ?? 0;
       const isSelected = node.id === selectedNodeId;
       const isHovered = node.id === hoverNodeId;
-      
+
       // 스케일 계산 (선택되었거나 호버되었을 때 확대)
       let scale = 1;
       if (isSelected) scale = GRAPH_NODE_SELECTED_SCALE;
       else if (isHovered) scale = GRAPH_NODE_SELECTED_SCALE * 0.8; // 약간만 확대
-      
+
       const radius = GRAPH_NODE_RADIUS * scale;
       const color = resolveNodeColor(node.node_type);
 
@@ -215,6 +242,7 @@ export function GraphView({ data, width, height = 600, onNodeClick }: GraphViewP
       }}
       // 이벤트
       onNodeClick={handleNodeClick}
+      onLinkClick={handleLinkClick}
       onNodeHover={handleNodeHover}
       // 물리 시뮬레이션 설정
       cooldownTicks={GRAPH_COOLDOWN_TICKS}
