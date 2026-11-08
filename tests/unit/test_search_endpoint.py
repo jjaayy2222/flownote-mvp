@@ -10,7 +10,7 @@ Step 6: /search/hybrid 엔드포인트 단위 테스트 (리팩토링 최종 반
 """
 
 from typing import Any, Dict
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -22,6 +22,7 @@ from backend.services.hybrid_search_service import (
     HybridSearchService,
     get_hybrid_search_service,
 )
+from backend.utils import check_metadata_match
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 픽스처 (Fixtures)
@@ -34,6 +35,7 @@ def _make_mock_doc(
     score: float = 0.05,
 ) -> Dict[str, Any]:
     return {
+        "id": "test-document-id",
         "content": content,
         "metadata": {"category": category, "source": "test.md"},
         "score": score,
@@ -80,6 +82,86 @@ def client(hybrid_service):
     app.dependency_overrides.clear()
 
 
+class MetadataFilteringRetriever:
+    """검색 API 통합 테스트용 메타데이터 필터링 리트리버."""
+
+    def __init__(self, documents):
+        self.documents = documents
+        self.calls = []
+
+    def search(self, query, k, metadata_filter=None):
+        self.calls.append({"query": query, "k": k, "metadata_filter": metadata_filter})
+        matching_documents = [
+            document
+            for document in self.documents
+            if check_metadata_match(document.get("metadata"), metadata_filter)
+        ]
+        return matching_documents[:k]
+
+
+@pytest.fixture
+def integrated_search_client(monkeypatch):
+    """캐시와 인증 외에는 실제 검색 서비스·하이브리드 필터를 통과하는 클라이언트."""
+    documents = [
+        {
+            "content": "Matching project document",
+            "metadata": {
+                "id": "doc-project-match",
+                "category": "Projects",
+                "source": "approved-note",
+            },
+            "score": 1.0,
+        },
+        {
+            "content": "Other project document",
+            "metadata": {
+                "id": "doc-project-other",
+                "category": "Projects",
+                "source": "other-note",
+            },
+            "score": 0.9,
+        },
+        {
+            "content": "Matching area document",
+            "metadata": {
+                "id": "doc-area-match",
+                "category": "Areas",
+                "source": "approved-note",
+            },
+            "score": 0.8,
+        },
+    ]
+    faiss_retriever = MetadataFilteringRetriever(documents)
+    bm25_retriever = MetadataFilteringRetriever(documents)
+    service = HybridSearchService(
+        faiss_retriever=faiss_retriever,
+        bm25_retriever=bm25_retriever,
+    )
+
+    from backend.services import hybrid_search_service as service_module
+
+    monkeypatch.setattr(
+        service_module.search_cache_service,
+        "get_results",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        service_module.search_cache_service,
+        "set_results",
+        AsyncMock(return_value=None),
+    )
+
+    previous_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[get_hybrid_search_service] = lambda: service
+    app.dependency_overrides[get_current_user] = lambda: {}
+    try:
+        with TestClient(app) as test_client:
+            yield test_client, faiss_retriever, bm25_retriever
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(previous_overrides)
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 엔드포인트 테스트 (API Routing & Schema)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -107,6 +189,58 @@ def test_hybrid_search_post_basic(client: TestClient, hybrid_service):
     assert data["status"] == "success"
     assert len(data["results"]) == 1
     assert data["results"][0]["content"] == "테스트 문서 내용"
+
+
+def test_hybrid_search_endpoint_applies_category_and_metadata_filters(
+    integrated_search_client,
+):
+    """POST 요청의 필터가 서비스·리트리버까지 전달되어 결과와 응답에 반영된다."""
+    client, faiss_retriever, bm25_retriever = integrated_search_client
+
+    response = client.post(
+        "/search/hybrid",
+        json={
+            "query": "project notes",
+            "category": "Projects",
+            "metadata_filter": {"source": "approved-note"},
+            "k": 5,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    expected_filter = {"source": "approved-note", "category": "Projects"}
+    assert data["applied_filter"] == expected_filter
+    assert data["count"] == 1
+    assert data["results"][0]["content"] == "Matching project document"
+    assert data["results"][0]["metadata"]["id"] == "doc-project-match"
+    assert faiss_retriever.calls[0]["metadata_filter"] == expected_filter
+    assert bm25_retriever.calls[0]["metadata_filter"] == expected_filter
+
+
+def test_hybrid_search_endpoint_rejects_empty_query_and_conflicting_filters(
+    integrated_search_client,
+):
+    """빈 질의와 PARA 카테고리 충돌은 검색기 호출 전에 422로 거부된다."""
+    client, faiss_retriever, bm25_retriever = integrated_search_client
+
+    empty_query_response = client.post(
+        "/search/hybrid",
+        json={"query": "", "metadata_filter": {"source": "approved-note"}},
+    )
+    conflicting_filter_response = client.post(
+        "/search/hybrid",
+        json={
+            "query": "project notes",
+            "category": "Projects",
+            "metadata_filter": {"category": "Areas"},
+        },
+    )
+
+    assert empty_query_response.status_code == 422
+    assert conflicting_filter_response.status_code == 422
+    assert faiss_retriever.calls == []
+    assert bm25_retriever.calls == []
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
