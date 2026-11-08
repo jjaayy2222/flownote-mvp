@@ -251,6 +251,27 @@ def test_hybrid_search_endpoint_rejects_blank_queries_and_conflicting_filters(
     assert bm25_retriever.calls == []
 
 
+def test_hybrid_search_get_normalizes_padded_query_and_rejects_whitespace(
+    integrated_search_client,
+):
+    """GET 쿼리도 POST와 동일하게 정규화하며 공백 질의를 검색기에 전달하지 않는다."""
+    client, faiss_retriever, bm25_retriever = integrated_search_client
+
+    padded_query_response = client.get(
+        "/search/hybrid",
+        params={"q": "  project notes \t", "category": "Projects"},
+    )
+    whitespace_query_response = client.get("/search/hybrid", params={"q": " \t  "})
+
+    assert padded_query_response.status_code == 200
+    assert padded_query_response.json()["query"] == "project notes"
+    assert faiss_retriever.calls[0]["query"] == "project notes"
+    assert bm25_retriever.calls[0]["query"] == "project notes"
+    assert whitespace_query_response.status_code == 422
+    assert len(faiss_retriever.calls) == 1
+    assert len(bm25_retriever.calls) == 1
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 생성자 초기화 테스트 (Initialization Paths)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
