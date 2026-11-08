@@ -12,12 +12,14 @@ import logging
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import TypeAdapter, ValidationError
 
 from backend.agent.error_utils import log_agent_error
 from backend.api.deps import get_current_user, get_locale
 from backend.api.models import (
     HybridSearchRequest,
     HybridSearchResponse,
+    NonEmptySearchQuery,
     PARACategory,
     SearchResponse,
     SearchResultItem,
@@ -29,6 +31,7 @@ from backend.services.hybrid_search_service import (
 from backend.services.i18n_service import get_message
 
 logger = logging.getLogger(__name__)
+_SEARCH_QUERY_ADAPTER = TypeAdapter(NonEmptySearchQuery)
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -118,12 +121,13 @@ async def hybrid_search_get(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> HybridSearchResponse:
     """쿼리 파라미터를 사용하는 간편 하이브리드 RAG 검색."""
-    normalized_query = q.strip()
-    if not normalized_query:
+    try:
+        normalized_query = _SEARCH_QUERY_ADAPTER.validate_python(q)
+    except ValidationError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="검색 질의는 공백만으로 구성될 수 없습니다.",
-        )
+            detail="검색 질의는 공백 제거 후 비어 있을 수 없습니다.",
+        ) from exc
 
     return await _run_hybrid_search(
         service=service,
