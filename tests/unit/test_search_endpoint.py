@@ -200,7 +200,7 @@ def test_hybrid_search_endpoint_applies_category_and_metadata_filters(
     response = client.post(
         "/search/hybrid",
         json={
-            "query": "project notes",
+            "query": "  project notes \t",
             "category": "Projects",
             "metadata_filter": {"source": "approved-note"},
             "k": 5,
@@ -210,23 +210,30 @@ def test_hybrid_search_endpoint_applies_category_and_metadata_filters(
     assert response.status_code == 200
     data = response.json()
     expected_filter = {"source": "approved-note", "category": "Projects"}
+    assert data["query"] == "project notes"
     assert data["applied_filter"] == expected_filter
     assert data["count"] == 1
     assert data["results"][0]["content"] == "Matching project document"
     assert data["results"][0]["metadata"]["id"] == "doc-project-match"
     assert faiss_retriever.calls[0]["metadata_filter"] == expected_filter
     assert bm25_retriever.calls[0]["metadata_filter"] == expected_filter
+    assert faiss_retriever.calls[0]["query"] == "project notes"
+    assert bm25_retriever.calls[0]["query"] == "project notes"
 
 
-def test_hybrid_search_endpoint_rejects_empty_query_and_conflicting_filters(
+def test_hybrid_search_endpoint_rejects_blank_queries_and_conflicting_filters(
     integrated_search_client,
 ):
-    """빈 질의와 PARA 카테고리 충돌은 검색기 호출 전에 422로 거부된다."""
+    """빈/공백 질의와 PARA 카테고리 충돌은 검색기 호출 전에 422로 거부된다."""
     client, faiss_retriever, bm25_retriever = integrated_search_client
 
     empty_query_response = client.post(
         "/search/hybrid",
         json={"query": "", "metadata_filter": {"source": "approved-note"}},
+    )
+    whitespace_query_response = client.post(
+        "/search/hybrid",
+        json={"query": " \t  ", "metadata_filter": {"source": "approved-note"}},
     )
     conflicting_filter_response = client.post(
         "/search/hybrid",
@@ -238,6 +245,7 @@ def test_hybrid_search_endpoint_rejects_empty_query_and_conflicting_filters(
     )
 
     assert empty_query_response.status_code == 422
+    assert whitespace_query_response.status_code == 422
     assert conflicting_filter_response.status_code == 422
     assert faiss_retriever.calls == []
     assert bm25_retriever.calls == []

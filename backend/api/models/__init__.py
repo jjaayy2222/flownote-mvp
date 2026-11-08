@@ -5,9 +5,14 @@ API Models Package
 """
 
 from enum import Enum
-from typing import Any, Dict, Iterable, List, Optional, cast
+from typing import Annotated, Any, Dict, Iterable, List, Optional, cast
 
-from pydantic import BaseModel, Field, field_validator  # type: ignore[import]
+from pydantic import (  # type: ignore[import]
+    BaseModel,
+    Field,
+    StringConstraints,
+    field_validator,
+)
 
 from backend.api.models.shared import (  # type: ignore[import]
     API_MESSAGE_DESC,
@@ -154,7 +159,10 @@ class HybridSearchRequest(BaseModel):
         metadata_filter: 추가 메타데이터 필터 조건 (카테고리 외 필드 필터링)
     """
 
-    query: str = Field(..., min_length=1, description="검색 질의")
+    query: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1),
+    ] = Field(..., description="검색 질의 (공백 제거 후 비어 있으면 거부)")
     k: int = Field(default=5, ge=1, le=50, description="반환할 결과 수 (1~50)")
     alpha: float = Field(
         default=0.5,
