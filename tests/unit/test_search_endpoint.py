@@ -272,6 +272,27 @@ def test_hybrid_search_get_normalizes_padded_query_and_rejects_whitespace(
     assert len(bm25_retriever.calls) == 1
 
 
+def test_hybrid_search_get_matches_post_pydantic_whitespace_trimming(
+    integrated_search_client,
+):
+    """GET은 Pydantic Core 기준으로 POST와 같은 문자열 트리밍을 적용한다."""
+    client, faiss_retriever, bm25_retriever = integrated_search_client
+    edge_controls = "\x1c\x1d\x1e\x1f"
+    queries = [edge_controls + "project notes" + edge_controls, edge_controls]
+
+    for query in queries:
+        post_response = client.post("/search/hybrid", json={"query": query})
+        get_response = client.get("/search/hybrid", params={"q": query})
+
+        assert post_response.status_code == 200
+        assert get_response.status_code == 200
+        assert post_response.json()["query"] == get_response.json()["query"]
+        assert post_response.json()["query"] == query
+
+    assert len(faiss_retriever.calls) == 4
+    assert len(bm25_retriever.calls) == 4
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 생성자 초기화 테스트 (Initialization Paths)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
