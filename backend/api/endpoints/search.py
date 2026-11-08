@@ -100,7 +100,9 @@ async def hybrid_search_post(
     ),
 )
 async def hybrid_search_get(
-    q: str = Query(..., min_length=1, description="검색 질의"),
+    q: str = Query(
+        ..., min_length=1, description="검색 질의 (공백 제거 후 비어 있으면 거부)"
+    ),
     k: int = Query(default=5, ge=1, le=50, description="반환할 결과 수 (1~50)"),
     alpha: float = Query(
         default=0.5,
@@ -116,9 +118,16 @@ async def hybrid_search_get(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> HybridSearchResponse:
     """쿼리 파라미터를 사용하는 간편 하이브리드 RAG 검색."""
+    normalized_query = q.strip()
+    if not normalized_query:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="검색 질의는 공백만으로 구성될 수 없습니다.",
+        )
+
     return await _run_hybrid_search(
         service=service,
-        query=q,
+        query=normalized_query,
         k=k,
         alpha=alpha,
         category=category,

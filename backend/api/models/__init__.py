@@ -147,6 +147,11 @@ PARA_CATEGORIES: List[str] = [
     cat.value for cat in cast(Iterable[PARACategory], list(PARACategory))
 ]
 
+NonEmptySearchQuery = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1),
+]
+
 
 class HybridSearchRequest(BaseModel):
     """하이브리드 검색 요청 스키마
@@ -159,10 +164,9 @@ class HybridSearchRequest(BaseModel):
         metadata_filter: 추가 메타데이터 필터 조건 (카테고리 외 필드 필터링)
     """
 
-    query: Annotated[
-        str,
-        StringConstraints(strip_whitespace=True, min_length=1),
-    ] = Field(..., description="검색 질의 (공백 제거 후 비어 있으면 거부)")
+    query: NonEmptySearchQuery = Field(
+        ..., description="검색 질의 (공백 제거 후 비어 있으면 거부)"
+    )
     k: int = Field(default=5, ge=1, le=50, description="반환할 결과 수 (1~50)")
     alpha: float = Field(
         default=0.5,
@@ -431,6 +435,7 @@ __all__ = [
     # Hybrid Search (Step 6)
     "PARACategory",
     "PARA_CATEGORIES",
+    "NonEmptySearchQuery",
     "HybridSearchRequest",
     "SearchResultItem",
     "HybridSearchResponse",
