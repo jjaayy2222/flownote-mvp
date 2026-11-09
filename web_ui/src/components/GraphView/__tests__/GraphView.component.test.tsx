@@ -11,6 +11,7 @@ import type { OnLinkClickCallback } from '..';
 const mocks = vi.hoisted(() => ({
   graphData: null as GraphViewData | null,
   loading: true,
+  forceGraphRender: vi.fn(),
   reload: vi.fn(),
   isConnected: false,
   context: {
@@ -34,12 +35,14 @@ vi.mock('react-force-graph-2d', async () => {
   const React = await import('react');
 
   const ForceGraph2D = (props: Record<string, unknown>) => {
+    mocks.forceGraphRender(props.graphData);
     const graphData = props.graphData as {
       nodes: Array<{ id: string; label: string }>;
       links: Array<{ id: string; source: string | { id: string }; target: string | { id: string } }>;
     };
     const onNodeClick = props.onNodeClick as ((node: unknown) => void) | undefined;
     const onLinkClick = props.onLinkClick as ((link: unknown) => void) | undefined;
+    const onNodeHover = props.onNodeHover as ((node: unknown | null) => void) | undefined;
     const nodeCanvasObject = props.nodeCanvasObject as (
       node: unknown,
       context: CanvasRenderingContext2D,
@@ -69,6 +72,11 @@ vi.mock('react-force-graph-2d', async () => {
         {graphData.nodes[0] && (
           <button type="button" onClick={() => onNodeClick?.(graphData.nodes[0])}>
             Simulate node click
+          </button>
+        )}
+        {graphData.nodes[0] && (
+          <button type="button" onClick={() => onNodeHover?.(graphData.nodes[0])}>
+            Simulate node hover
           </button>
         )}
         {graphData.links[0] && (
@@ -149,6 +157,31 @@ describe('GraphView component', () => {
     expect(screen.getByRole('list', { name: 'Graph nodes' }).textContent).toContain('First note');
     expect(screen.getByRole('list', { name: 'Graph nodes' }).textContent).toContain('Related keyword');
     expect(screen.getByTestId('graph-links').textContent).toBe('edge-a-b:node-a->node-b');
+  });
+
+  it('memoizes graph input and skips rerenders when parent props are unchanged', () => {
+    const onNodeClick = vi.fn();
+    const { rerender } = render(
+      <div data-testid="parent-state" data-state="initial">
+        <GraphView data={graphData} onNodeClick={onNodeClick} />
+      </div>,
+    );
+
+    expect(mocks.forceGraphRender).toHaveBeenCalledTimes(1);
+    const initialGraphData = mocks.forceGraphRender.mock.calls[0][0];
+
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate node hover' }));
+
+    expect(mocks.forceGraphRender).toHaveBeenCalledTimes(2);
+    expect(mocks.forceGraphRender.mock.calls[1][0]).toBe(initialGraphData);
+
+    rerender(
+      <div data-testid="parent-state" data-state="updated">
+        <GraphView data={graphData} onNodeClick={onNodeClick} />
+      </div>,
+    );
+
+    expect(mocks.forceGraphRender).toHaveBeenCalledTimes(2);
   });
 
   it('sends the selected node to the callback and highlights it', () => {
