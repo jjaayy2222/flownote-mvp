@@ -114,13 +114,20 @@ export interface GraphViewProps {
  * <GraphViewLoader data={graphData} onNodeClick={handleClick} />
  * ```
  */
-export function GraphView({ data, width, height = 600, onNodeClick, onLinkClick }: GraphViewProps) {
+export const GraphView = React.memo(function GraphView({
+  data,
+  width,
+  height = 600,
+  onNodeClick,
+  onLinkClick,
+}: GraphViewProps) {
   const graphRef = useRef<FGMethods | undefined>(undefined);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [hoverNodeId, setHoverNodeId] = useState<string | null>(null);
 
   // SSOT 에서 변환한 데이터 (재계산 방지를 위해 메모이제이션)
   const { nodes, links } = useMemo(() => adaptGraphData(data), [data]);
+  const graphData = useMemo(() => ({ nodes, links }), [nodes, links]);
 
   const handleNodeClick = useCallback(
     (node: NodeObj) => {
@@ -217,7 +224,7 @@ export function GraphView({ data, width, height = 600, onNodeClick, onLinkClick 
   return (
     <ForceGraph2D<ForceGraphNode, ForceGraphLink>
       ref={graphRef}
-      graphData={{ nodes, links }}
+      graphData={graphData}
       width={width}
       height={height}
       backgroundColor={GRAPH_BG_COLOR}
@@ -252,4 +259,4 @@ export function GraphView({ data, width, height = 600, onNodeClick, onLinkClick 
       enablePanInteraction
     />
   );
-}
+});
