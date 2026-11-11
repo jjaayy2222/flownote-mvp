@@ -139,6 +139,10 @@ export function ChatWindow({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const skipNextAutoScrollEffectRef = useRef(false);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
+  const focusCancelButtonAfterSubmitRef = useRef(false);
+  const returnFocusToInputAfterCancelRef = useRef(false);
 
   const [input, setInput] = useState('');
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
@@ -373,6 +377,19 @@ export function ChatWindow({
     : status === 'streaming' || status === 'submitted';
 
   useEffect(() => {
+    if (isLoading && focusCancelButtonAfterSubmitRef.current) {
+      focusCancelButtonAfterSubmitRef.current = false;
+      cancelButtonRef.current?.focus();
+      return;
+    }
+
+    if (!isLoading && returnFocusToInputAfterCancelRef.current) {
+      returnFocusToInputAfterCancelRef.current = false;
+      inputRef.current?.focus();
+    }
+  }, [isLoading]);
+
+  useEffect(() => {
     if (autoScrollEnabled) {
       if (skipNextAutoScrollEffectRef.current) {
         skipNextAutoScrollEffectRef.current = false;
@@ -391,6 +408,7 @@ export function ChatWindow({
 
     if (isStreamingMode) {
       // 스트리밍 훅 방식: useStreamingChat.startStream() 호출
+      focusCancelButtonAfterSubmitRef.current = true;
       const payload: StreamChatRequest = {
         query: trimmed,
         user_id: userId || CHAT_CONFIG.DEFAULT_USER_ID || '',
@@ -421,6 +439,18 @@ export function ChatWindow({
       handleSubmit();
     }
   }, [messages, isLoading, sendMessage, handleSubmit]);
+
+  const handleCancelStream = useCallback(() => {
+    returnFocusToInputAfterCancelRef.current = true;
+    cancelStream();
+  }, [cancelStream]);
+
+  const handleCancelKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      handleCancelStream();
+    }
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -579,7 +609,10 @@ export function ChatWindow({
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto flex gap-4 items-end">
           <div className="relative w-full shadow-sm rounded-xl">
             <Textarea
+              ref={inputRef}
               id="chat-input"
+              aria-label="메시지 입력"
+              aria-keyshortcuts="Enter"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -593,7 +626,10 @@ export function ChatWindow({
                 type="button"
                 size="icon"
                 aria-label="응답 중지"
-                onClick={cancelStream}
+                aria-keyshortcuts="Escape"
+                ref={cancelButtonRef}
+                onClick={handleCancelStream}
+                onKeyDown={handleCancelKeyDown}
                 className="absolute right-3 bottom-3 h-8 w-8 rounded-lg bg-red-500 hover:bg-red-600 text-white transition-colors flex items-center justify-center shadow-md animate-in zoom-in-50 duration-200"
               >
                 <div className="w-2.5 h-2.5 bg-white rounded-[2px]" />

@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  createEvent,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatWindow } from '../ChatWindow';
 
@@ -206,6 +212,48 @@ describe('ChatWindow', () => {
       k: expect.any(Number),
       alpha: expect.any(Number),
     });
+  });
+
+  it('supports Enter/Escape controls and returns focus after cancelling a stream', async () => {
+    const { rerender } = await renderChatWindow();
+    const input = screen.getByRole('textbox', { name: '메시지 입력' });
+    fireEvent.change(input, { target: { value: 'Keyboard question' } });
+
+    const sendButton = screen.getByRole('button', { name: '메시지 전송' });
+    expect(input.tabIndex).toBe(0);
+    expect(sendButton.tabIndex).toBe(0);
+    expect(
+      input.compareDocumentPosition(sendButton) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+
+    const shiftEnterEvent = createEvent.keyDown(input, {
+      key: 'Enter',
+      shiftKey: true,
+    });
+    fireEvent(input, shiftEnterEvent);
+    expect(mocks.startStream).not.toHaveBeenCalled();
+    expect(shiftEnterEvent.defaultPrevented).toBe(false);
+
+    const enterEvent = createEvent.keyDown(input, {
+      key: 'Enter',
+      shiftKey: false,
+    });
+    fireEvent(input, enterEvent);
+    expect(mocks.startStream).toHaveBeenCalledOnce();
+    expect(enterEvent.defaultPrevented).toBe(true);
+
+    mocks.streamState = { ...mocks.streamState, isStreaming: true };
+    rerender(<ChatWindow {...chatProps} />);
+    const stopButton = screen.getByRole('button', { name: '응답 중지' });
+    expect(stopButton.getAttribute('aria-keyshortcuts')).toBe('Escape');
+    expect(document.activeElement).toBe(stopButton);
+
+    fireEvent.keyDown(stopButton, { key: 'Escape' });
+    expect(mocks.cancelStream).toHaveBeenCalledOnce();
+
+    mocks.streamState = { ...mocks.streamState, isStreaming: false };
+    rerender(<ChatWindow {...chatProps} />);
+    expect(document.activeElement).toBe(input);
   });
 
   it('renders streaming tokens and cancels the active response on request', async () => {
