@@ -106,10 +106,9 @@ export function GraphContainer() {
         )}
       </div>
 
-      {data && (
+      {preparedData && (
         <GraphView
-          data={data}
-          preparedData={preparedData ?? undefined}
+          data={preparedData}
           onNodeClick={handleNodeClick}
           selectedNodeId={selectedNodeId}
         />

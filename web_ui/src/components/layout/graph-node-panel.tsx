@@ -33,7 +33,11 @@ type NodeTypeTranslationKey =
   | 'nodeTypes.unknown';
 
 function getNodeTypeTranslationKey(nodeType: NodeType): NodeTypeTranslationKey {
-  return NODE_TYPE_TRANSLATION_KEYS[nodeType] ?? 'nodeTypes.unknown';
+  if (!Object.prototype.hasOwnProperty.call(NODE_TYPE_TRANSLATION_KEYS, nodeType)) {
+    return 'nodeTypes.unknown';
+  }
+
+  return NODE_TYPE_TRANSLATION_KEYS[nodeType];
 }
 
 export function GraphNodePanel({
