@@ -41,6 +41,7 @@ import {
   GRAPH_COOLDOWN_TICKS,
 } from "@/config/graph";
 import type {
+  AdaptedGraphData,
   ForceGraphNode,
   ForceGraphLink,
   GraphViewData,
@@ -75,7 +76,8 @@ function resolveNodeColor(nodeType: NodeType): string {
       return GRAPH_NODE_COLOR_CATEGORY;
     default: {
       const _exhaustiveCheck: never = nodeType;
-      devWarn(`Unknown nodeType: ${_exhaustiveCheck}`);
+      void _exhaustiveCheck;
+      devWarn("Unknown node type; using the fallback color");
       return GRAPH_NODE_COLOR_NOTE;
     }
   }
@@ -96,6 +98,8 @@ export interface GraphViewProps {
   height?: number;
   /** 노드 클릭 시 호출되는 콜백 */
   onNodeClick?: OnNodeClickCallback;
+  /** 컨테이너에서 이미 검증·제한한 그래프 데이터 */
+  preparedData?: AdaptedGraphData;
   /** 선택 상태를 외부에서 관리할 때 사용할 노드 ID. `null`은 선택 해제 상태. */
   selectedNodeId?: string | null;
   /** 엣지 클릭 시 호출되는 콜백 */
@@ -121,6 +125,7 @@ export const GraphView = React.memo(function GraphView({
   width,
   height = 600,
   onNodeClick,
+  preparedData,
   selectedNodeId: selectedNodeIdProp,
   onLinkClick,
 }: GraphViewProps) {
@@ -133,7 +138,10 @@ export const GraphView = React.memo(function GraphView({
     : internalSelectedNodeId;
 
   // SSOT 에서 변환한 데이터 (재계산 방지를 위해 메모이제이션)
-  const { nodes, links } = useMemo(() => adaptGraphData(data), [data]);
+  const { nodes, links } = useMemo(
+    () => preparedData ?? adaptGraphData(data),
+    [data, preparedData],
+  );
   const graphData = useMemo(() => ({ nodes, links }), [nodes, links]);
 
   const handleNodeClick = useCallback(

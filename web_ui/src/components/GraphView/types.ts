@@ -62,6 +62,12 @@ export type ForceGraphLink = Omit<GraphEdge, "source" | "target"> & {
   target: string | ForceGraphNode;
 };
 
+/** Validated and size-limited graph data passed to the canvas. */
+export interface AdaptedGraphData {
+  nodes: ForceGraphNode[];
+  links: ForceGraphLink[];
+}
+
 /**
  * GraphView 컴포넌트에 전달되는 그래프 데이터.
  * 백엔드 GraphDataResponse 와 1:1 대응합니다.
