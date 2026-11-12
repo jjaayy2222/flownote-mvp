@@ -1,4 +1,4 @@
-// web_ui/src/components/ui/sheet.tsx 
+// web_ui/src/components/ui/sheet.tsx
 
 "use client"
 
@@ -50,9 +50,11 @@ function SheetContent({
   className,
   children,
   side = "right",
+  closeLabel = "Close",
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left"
+  closeLabel?: string
 }) {
   return (
     <SheetPortal>
@@ -76,7 +78,7 @@ function SheetContent({
         {children}
         <SheetPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:pointer-events-none">
           <XIcon className="size-4" />
-          <span className="sr-only">Close</span>
+          <span className="sr-only">{closeLabel}</span>
         </SheetPrimitive.Close>
       </SheetPrimitive.Content>
     </SheetPortal>

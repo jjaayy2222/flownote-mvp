@@ -33,7 +33,20 @@
     "complete": "다국어 인프라 설정 완료! ✅"
   },
   "graph": {
-    "title": "PARA 그래프 뷰"
+    "title": "PARA 그래프 뷰",
+    "nodePanel": {
+      "description": "그래프 노드 상세 정보",
+      "relatedNodes": "연결된 노드",
+      "noRelatedNodes": "연결된 노드가 없습니다.",
+      "close": "닫기",
+      "unknownCategory": "기타",
+      "nodeTypes": {
+        "category": "카테고리",
+        "note": "노트",
+        "keyword": "키워드",
+        "tag": "태그"
+      }
+    }
   },
   "stats": {
     "title": "통계",
@@ -108,6 +121,7 @@
         "Projects": "프로젝트 (Projects)",
         "Areas": "영역 (Areas)",
         "Resources": "자원 (Resources)",
+        "Archive": "보관소 (Archives)",
         "Archives": "보관소 (Archives)"
       }
     },

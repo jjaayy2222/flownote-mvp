@@ -96,6 +96,8 @@ export interface GraphViewProps {
   height?: number;
   /** 노드 클릭 시 호출되는 콜백 */
   onNodeClick?: OnNodeClickCallback;
+  /** 선택 상태를 외부에서 관리할 때 사용할 노드 ID. `null`은 선택 해제 상태. */
+  selectedNodeId?: string | null;
   /** 엣지 클릭 시 호출되는 콜백 */
   onLinkClick?: OnLinkClickCallback;
 }
@@ -119,11 +121,16 @@ export const GraphView = React.memo(function GraphView({
   width,
   height = 600,
   onNodeClick,
+  selectedNodeId: selectedNodeIdProp,
   onLinkClick,
 }: GraphViewProps) {
   const graphRef = useRef<FGMethods | undefined>(undefined);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [internalSelectedNodeId, setInternalSelectedNodeId] = useState<string | null>(null);
   const [hoverNodeId, setHoverNodeId] = useState<string | null>(null);
+  const selectionIsControlled = selectedNodeIdProp !== undefined;
+  const selectedNodeId = selectionIsControlled
+    ? selectedNodeIdProp
+    : internalSelectedNodeId;
 
   // SSOT 에서 변환한 데이터 (재계산 방지를 위해 메모이제이션)
   const { nodes, links } = useMemo(() => adaptGraphData(data), [data]);
@@ -131,7 +138,9 @@ export const GraphView = React.memo(function GraphView({
 
   const handleNodeClick = useCallback(
     (node: NodeObj) => {
-      setSelectedNodeId((prev) => (prev === node.id ? null : node.id));
+      if (!selectionIsControlled) {
+        setInternalSelectedNodeId((prev) => (prev === node.id ? null : node.id));
+      }
 
       if (onNodeClick) {
         // [Confirm] adaptGraphData 에서 불량 데이터를 사전 차단(Pre-filter)하므로,
@@ -139,7 +148,7 @@ export const GraphView = React.memo(function GraphView({
         onNodeClick(node as GraphNode);
       }
     },
-    [onNodeClick]
+    [onNodeClick, selectionIsControlled]
   );
 
   const handleLinkClick = useCallback(

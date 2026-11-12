@@ -33,7 +33,20 @@
     "complete": "i18n infrastructure setup complete! ✅"
   },
   "graph": {
-    "title": "PARA Graph View"
+    "title": "PARA Graph View",
+    "nodePanel": {
+      "description": "Graph node details",
+      "relatedNodes": "Related nodes",
+      "noRelatedNodes": "No connected nodes.",
+      "close": "Close",
+      "unknownCategory": "Other",
+      "nodeTypes": {
+        "category": "Category",
+        "note": "Note",
+        "keyword": "Keyword",
+        "tag": "Tag"
+      }
+    }
   },
   "stats": {
     "title": "Statistics",
@@ -108,6 +121,7 @@
         "Projects": "Projects",
         "Areas": "Areas",
         "Resources": "Resources",
+        "Archive": "Archives",
         "Archives": "Archives"
       }
     },

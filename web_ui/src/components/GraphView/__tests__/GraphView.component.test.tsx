@@ -1,8 +1,11 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { NextIntlClientProvider } from 'next-intl';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GRAPH_HIGHLIGHT_COLOR } from '@/config/graph';
 import { EdgeRelationshipType, NodeType } from '@/types/websocket';
 import type { GraphEdge, GraphNode } from '@/types/websocket';
+import enMessages from '@/locales/en.json';
+import koMessages from '@/locales/ko.json';
 import { GraphContainer } from '../GraphContainer';
 import { GraphView } from '../GraphView';
 import type { GraphViewData, GraphViewEdge } from '../types';
@@ -107,11 +110,14 @@ vi.mock('../useGraphLiveUpdates', () => ({
 vi.mock('../GraphViewLoader', () => ({
   GraphViewLoader: ({
     onNodeClick,
+    selectedNodeId,
   }: {
     onNodeClick?: (node: GraphNode) => void;
+    selectedNodeId?: string | null;
   }) => (
     <button
       type="button"
+      data-selected-node-id={selectedNodeId ?? ''}
       onClick={() => {
         const firstNode = mocks.graphData?.nodes[0];
         if (firstNode) onNodeClick?.(firstNode);
@@ -154,6 +160,17 @@ const edges: GraphEdge[] = [
 ];
 
 const graphData: GraphViewData = { nodes, edges };
+
+function renderGraphContainer(locale: 'en' | 'ko' = 'ko') {
+  return render(
+    <NextIntlClientProvider
+      locale={locale}
+      messages={locale === 'en' ? enMessages : koMessages}
+    >
+      <GraphContainer />
+    </NextIntlClientProvider>,
+  );
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -213,6 +230,36 @@ describe('GraphView component', () => {
     expect(screen.getByTestId('painted-node-color').textContent).toBe(GRAPH_HIGHLIGHT_COLOR);
   });
 
+  it('uses an externally controlled selection without changing it on canvas clicks', () => {
+    const onNodeClick = vi.fn();
+    const { rerender } = render(
+      <GraphView
+        data={graphData}
+        onNodeClick={onNodeClick}
+        selectedNodeId={null}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate node click' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate node paint' }));
+    expect(onNodeClick).toHaveBeenCalledOnce();
+    expect(screen.getByTestId('painted-node-color').textContent).not.toBe(
+      GRAPH_HIGHLIGHT_COLOR,
+    );
+
+    rerender(
+      <GraphView
+        data={graphData}
+        onNodeClick={onNodeClick}
+        selectedNodeId="node-a"
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate node paint' }));
+    expect(screen.getByTestId('painted-node-color').textContent).toBe(
+      GRAPH_HIGHLIGHT_COLOR,
+    );
+  });
+
   it('passes a normalized edge to the edge-click callback', () => {
     const onLinkClick: OnLinkClickCallback = vi.fn();
     const edgeWithoutProperties: GraphViewEdge = {
@@ -253,7 +300,7 @@ describe('GraphContainer loading state', () => {
     mocks.loading = true;
     mocks.graphData = null;
 
-    render(<GraphContainer />);
+    renderGraphContainer();
 
     expect(screen.getByText('Loading Graph...')).not.toBeNull();
   });
@@ -262,28 +309,113 @@ describe('GraphContainer loading state', () => {
     mocks.loading = false;
     mocks.graphData = null;
 
-    render(<GraphContainer />);
+    renderGraphContainer();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
 
     expect(mocks.reload).toHaveBeenCalledOnce();
   });
 
-  it('opens a node side panel and lets the user inspect a connected node', async () => {
+  it('keeps the canvas selection and node panel synchronized', async () => {
     mocks.graphData = graphData;
     mocks.loading = false;
 
-    render(<GraphContainer />);
-    fireEvent.click(screen.getByRole('button', { name: 'Simulate graph node click' }));
+    renderGraphContainer();
+    const graphCanvas = screen.getByRole('button', {
+      name: 'Simulate graph node click',
+    });
+
+    fireEvent.click(graphCanvas);
 
     expect(screen.getByRole('dialog')).not.toBeNull();
     expect(screen.getByRole('heading', { name: 'First note' })).not.toBeNull();
-    expect(screen.getByText('Projects')).not.toBeNull();
+    expect(screen.getByText('프로젝트 (Projects)')).not.toBeNull();
+    expect(graphCanvas.getAttribute('data-selected-node-id')).toBe('node-a');
     expect(screen.getByRole('button', { name: /Related keyword/ })).not.toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: /Related keyword/ }));
     expect(screen.getByRole('heading', { name: 'Related keyword' })).not.toBeNull();
+    expect(graphCanvas.getAttribute('data-selected-node-id')).toBe('node-b');
 
-    fireEvent.click(screen.getByRole('button', { name: '닫기' }));
+    fireEvent.click(
+      screen
+        .getAllByRole('button', { name: '닫기' })
+        .find((button) => button.textContent === '닫기')!,
+    );
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(graphCanvas.getAttribute('data-selected-node-id')).toBe('');
+
+    fireEvent.click(graphCanvas);
+    expect(graphCanvas.getAttribute('data-selected-node-id')).toBe('node-a');
+    fireEvent.click(graphCanvas);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(graphCanvas.getAttribute('data-selected-node-id')).toBe('');
+  });
+
+  it('does not reopen a panel if refreshed graph data later restores a removed node', async () => {
+    mocks.graphData = graphData;
+    mocks.loading = false;
+
+    const { rerender } = renderGraphContainer('en');
+    const renderUpdatedGraph = () =>
+      rerender(
+        <NextIntlClientProvider locale="en" messages={enMessages}>
+          <GraphContainer />
+        </NextIntlClientProvider>,
+      );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate graph node click' }));
+    expect(screen.getByRole('dialog')).not.toBeNull();
+
+    mocks.graphData = { nodes: [nodes[1]], edges: [] };
+    renderUpdatedGraph();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    mocks.graphData = graphData;
+    renderUpdatedGraph();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(
+      screen
+        .getByRole('button', { name: 'Simulate graph node click' })
+        .getAttribute('data-selected-node-id'),
+    ).toBe('');
+  });
+
+  it.each([null, undefined])(
+    'renders the node panel in the active locale and tolerates properties=%s',
+    (properties) => {
+      const nodeWithoutProperties = {
+        ...nodes[0],
+        ...(properties === undefined ? {} : { properties }),
+      } as unknown as GraphNode;
+      mocks.graphData = { nodes: [nodeWithoutProperties], edges: [] };
+      mocks.loading = false;
+
+      renderGraphContainer('en');
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Simulate graph node click' }),
+      );
+
+      expect(screen.getByRole('heading', { name: 'First note' })).not.toBeNull();
+      expect(screen.getByText('Note')).not.toBeNull();
+      expect(screen.getByText('Related nodes')).not.toBeNull();
+      expect(screen.getByText('No connected nodes.')).not.toBeNull();
+      expect(screen.getAllByRole('button', { name: 'Close' })).toHaveLength(2);
+      expect(screen.queryByText('노트')).toBeNull();
+    },
+  );
+
+  it('translates the backend Archive category to the active locale', () => {
+    const archiveNode: GraphNode = {
+      ...nodes[0],
+      properties: { para_category: 'Archive' },
+    };
+    mocks.graphData = { nodes: [archiveNode], edges: [] };
+    mocks.loading = false;
+
+    renderGraphContainer('en');
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate graph node click' }));
+
+    expect(screen.getByText('Archives')).not.toBeNull();
+    expect(screen.queryByText('Archive')).toBeNull();
   });
 });
