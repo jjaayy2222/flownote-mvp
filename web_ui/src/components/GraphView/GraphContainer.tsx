@@ -1,36 +1,44 @@
 "use client";
 
-import React, { useCallback } from "react";
-import { useRouter } from "next/navigation";
+import React, { useCallback, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
-import { NodeType, GraphNode } from "@/types/websocket";
+import type { GraphNode } from "@/types/websocket";
+import { GraphNodePanel } from "@/components/layout/graph-node-panel";
 import { GraphViewLoader as GraphView } from "./GraphViewLoader";
 import { useGraphData } from "./useGraphData";
 import { useGraphLiveUpdates } from "./useGraphLiveUpdates";
 
 export function GraphContainer() {
-  const router = useRouter();
   const { data, loading, reload } = useGraphData();
   const { isConnected } = useGraphLiveUpdates(reload);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+
+  const selectedNode = useMemo(
+    () => data?.nodes.find((node) => node.id === selectedNodeId) ?? null,
+    [data, selectedNodeId],
+  );
+
+  const relatedNodes = useMemo(() => {
+    if (!data || !selectedNode) return [];
+
+    const relatedNodeIds = new Set<string>();
+    for (const edge of data.edges) {
+      if (edge.source === selectedNode.id) relatedNodeIds.add(edge.target);
+      if (edge.target === selectedNode.id) relatedNodeIds.add(edge.source);
+    }
+
+    return data.nodes.filter((node) => relatedNodeIds.has(node.id));
+  }, [data, selectedNode]);
 
   const handleNodeClick = useCallback(
     (node: GraphNode) => {
-      // 캔버스 내 노드 클릭 시
-      if (node.node_type === NodeType.NOTE) {
-        toast.success(`노트로 이동: ${node.label}`);
-        // 해당 마크다운 노트의 라우팅 경로로 이동
-        router.push("/chat");
-      } else {
-        toast(`선택됨: ${node.label}`, {
-          description: `타입: ${node.node_type}`,
-          id: `node-click-${node.id}`
-        });
-      }
+      setSelectedNodeId(node.id);
     },
-    [router]
+    [],
   );
+
+  const handlePanelClose = useCallback(() => setSelectedNodeId(null), []);
 
   if (loading && !data) {
     return (
@@ -70,13 +78,20 @@ export function GraphContainer() {
           </Badge>
         )}
       </div>
-      
+
       {data && (
-        <GraphView 
-          data={data} 
-          onNodeClick={handleNodeClick} 
+        <GraphView
+          data={data}
+          onNodeClick={handleNodeClick}
         />
       )}
+      <GraphNodePanel
+        node={selectedNode}
+        relatedNodes={relatedNodes}
+        isOpen={selectedNode !== null}
+        onClose={handlePanelClose}
+        onNodeSelect={handleNodeClick}
+      />
     </div>
   );
 }
