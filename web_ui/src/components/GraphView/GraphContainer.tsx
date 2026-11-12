@@ -8,16 +8,21 @@ import { GraphNodePanel } from "@/components/layout/graph-node-panel";
 import { GraphViewLoader as GraphView } from "./GraphViewLoader";
 import { useGraphData } from "./useGraphData";
 import { useGraphLiveUpdates } from "./useGraphLiveUpdates";
+import { adaptGraphData } from "./graphViewAdapter";
 
 export function GraphContainer() {
   const { data, loading, reload } = useGraphData();
   const { isConnected } = useGraphLiveUpdates(reload);
+  const preparedData = useMemo(
+    () => (data ? adaptGraphData(data) : null),
+    [data],
+  );
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [observedData, setObservedData] = useState(data);
 
   if (data !== observedData) {
     setObservedData(data);
-    const selectedNodeStillExists = data?.nodes.some(
+    const selectedNodeStillExists = preparedData?.nodes.some(
       (node) => node.id === selectedNodeId,
     );
     if (selectedNodeId !== null && !selectedNodeStillExists) {
@@ -26,12 +31,12 @@ export function GraphContainer() {
   }
 
   const selectedNode = useMemo(
-    () => data?.nodes.find((node) => node.id === selectedNodeId) ?? null,
-    [data, selectedNodeId],
+    () => preparedData?.nodes.find((node) => node.id === selectedNodeId) ?? null,
+    [preparedData, selectedNodeId],
   );
 
   const relatedNodes = useMemo(() => {
-    if (!data || !selectedNode) return [];
+    if (!data || !preparedData || !selectedNode) return [];
 
     const relatedNodeIds = new Set<string>();
     for (const edge of data.edges) {
@@ -39,8 +44,8 @@ export function GraphContainer() {
       if (edge.target === selectedNode.id) relatedNodeIds.add(edge.source);
     }
 
-    return data.nodes.filter((node) => relatedNodeIds.has(node.id));
-  }, [data, selectedNode]);
+    return preparedData.nodes.filter((node) => relatedNodeIds.has(node.id));
+  }, [data, preparedData, selectedNode]);
 
   const handleNodeClick = useCallback(
     (node: GraphNode) => {
@@ -52,8 +57,12 @@ export function GraphContainer() {
   );
 
   const handleRelatedNodeSelect = useCallback(
-    (node: GraphNode) => setSelectedNodeId(node.id),
-    [],
+    (node: GraphNode) => {
+      if (preparedData?.nodes.some((renderedNode) => renderedNode.id === node.id)) {
+        setSelectedNodeId(node.id);
+      }
+    },
+    [preparedData],
   );
 
   const handlePanelClose = useCallback(() => setSelectedNodeId(null), []);
@@ -100,6 +109,7 @@ export function GraphContainer() {
       {data && (
         <GraphView
           data={data}
+          preparedData={preparedData ?? undefined}
           onNodeClick={handleNodeClick}
           selectedNodeId={selectedNodeId}
         />

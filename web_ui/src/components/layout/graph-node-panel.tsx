@@ -28,6 +28,14 @@ const NODE_TYPE_TRANSLATION_KEYS = {
   [NodeType.TAG]: 'nodeTypes.tag',
 } as const satisfies Record<NodeType, string>;
 
+type NodeTypeTranslationKey =
+  | (typeof NODE_TYPE_TRANSLATION_KEYS)[NodeType]
+  | 'nodeTypes.unknown';
+
+function getNodeTypeTranslationKey(nodeType: NodeType): NodeTypeTranslationKey {
+  return NODE_TYPE_TRANSLATION_KEYS[nodeType] ?? 'nodeTypes.unknown';
+}
+
 export function GraphNodePanel({
   node,
   relatedNodes,
@@ -51,7 +59,7 @@ export function GraphNodePanel({
       : category
         ? t('unknownCategory')
         : null;
-  const nodeTypeLabel = t(NODE_TYPE_TRANSLATION_KEYS[node.node_type]);
+  const nodeTypeLabel = t(getNodeTypeTranslationKey(node.node_type));
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -110,7 +118,7 @@ export function GraphNodePanel({
                     >
                       <span className="truncate">{relatedNode.label}</span>
                       <span className="ml-3 shrink-0 text-xs text-slate-400">
-                        {t(NODE_TYPE_TRANSLATION_KEYS[relatedNode.node_type])}
+                        {t(getNodeTypeTranslationKey(relatedNode.node_type))}
                       </span>
                     </button>
                   </li>

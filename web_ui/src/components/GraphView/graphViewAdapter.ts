@@ -2,7 +2,12 @@
 
 import type { GraphNode } from "@/types/websocket";
 import { MAX_GRAPH_NODES } from "@/config/graph";
-import type { ForceGraphNode, ForceGraphLink, GraphViewData, GraphViewEdge } from "./types";
+import type {
+  AdaptedGraphData,
+  ForceGraphLink,
+  GraphViewData,
+  GraphViewEdge,
+} from "./types";
 
 // ─────────────────────────────────────────
 // 헬퍼: 구조화된 개발 환경 전용 로깅 (DRY 패턴 & 민감정보 보호)
@@ -86,17 +91,11 @@ export function getLinkId(endpoint: unknown): string | null {
  * MAX_GRAPH_NODES 초과 시, OOM(Out of Memory) 방지를 위해
  * 연결 수(Degree)가 높은 중심 노드 위주로 상위 N개만 필터링합니다.
  */
-export function adaptGraphData(data: GraphViewData): {
-  nodes: ForceGraphNode[];
-  links: ForceGraphLink[];
-} {
+export function adaptGraphData(data: GraphViewData): AdaptedGraphData {
   // [Confirm] 스키마 변경(Schema drift)에 대비하여 렌더링 전 유효하지 않은 노드(불량 데이터)를 원천 차단
   const rawNodes = data.nodes.filter((node) => {
     if (!isValidGraphNode(node)) {
-      devWarn("Dropped invalid node missing required fields before rendering", {
-        id: (node as Record<string, unknown>).id,
-        node_type: (node as Record<string, unknown>).node_type,
-      });
+      devWarn("Dropped invalid node missing required fields before rendering");
       return false; // 불량 노드 렌더링 및 클릭 이벤트 대상에서 완전 제외
     }
     return true;
@@ -149,7 +148,7 @@ export function adaptGraphData(data: GraphViewData): {
     .filter((e) => {
       // 1. 엣지 자체의 스키마 유효성 검증
       if (!isValidGraphLink(e)) {
-        devWarn("Dropped invalid edge missing source or target", { edge: e });
+        devWarn("Dropped invalid edge missing source or target");
         return false;
       }
 
@@ -159,7 +158,7 @@ export function adaptGraphData(data: GraphViewData): {
 
       // 3. 조기 종료(Short-circuit): 식별자를 추출할 수 없는 구조적 결함이 있으면 명시적 드롭
       if (sourceId === null || targetId === null) {
-        devWarn("Dropped edge due to unresolvable or malformed source/target IDs", { edge: e });
+        devWarn("Dropped edge due to unresolvable or malformed source/target IDs");
         return false;
       }
 

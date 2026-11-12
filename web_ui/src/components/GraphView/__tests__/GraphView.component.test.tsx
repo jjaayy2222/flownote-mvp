@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MAX_GRAPH_NODES } from '@/config/graph';
 import { GRAPH_HIGHLIGHT_COLOR } from '@/config/graph';
 import { EdgeRelationshipType, NodeType } from '@/types/websocket';
 import type { GraphEdge, GraphNode } from '@/types/websocket';
@@ -8,7 +9,7 @@ import enMessages from '@/locales/en.json';
 import koMessages from '@/locales/ko.json';
 import { GraphContainer } from '../GraphContainer';
 import { GraphView } from '../GraphView';
-import type { GraphViewData, GraphViewEdge } from '../types';
+import type { AdaptedGraphData, GraphViewData, GraphViewEdge } from '../types';
 import type { OnLinkClickCallback } from '..';
 
 const mocks = vi.hoisted(() => ({
@@ -32,6 +33,11 @@ const mocks = vi.hoisted(() => ({
     textAlign: 'center',
     textBaseline: 'top',
   },
+}));
+
+vi.mock('@/config/graph', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/config/graph')>()),
+  MAX_GRAPH_NODES: 3,
 }));
 
 vi.mock('react-force-graph-2d', async () => {
@@ -110,16 +116,19 @@ vi.mock('../useGraphLiveUpdates', () => ({
 vi.mock('../GraphViewLoader', () => ({
   GraphViewLoader: ({
     onNodeClick,
+    preparedData,
     selectedNodeId,
   }: {
     onNodeClick?: (node: GraphNode) => void;
+    preparedData?: AdaptedGraphData;
     selectedNodeId?: string | null;
   }) => (
     <button
       type="button"
       data-selected-node-id={selectedNodeId ?? ''}
+      data-rendered-node-ids={preparedData?.nodes.map((node) => node.id).join(',') ?? ''}
       onClick={() => {
-        const firstNode = mocks.graphData?.nodes[0];
+        const firstNode = preparedData?.nodes[0];
         if (firstNode) onNodeClick?.(firstNode);
       }}
     >
@@ -378,6 +387,151 @@ describe('GraphContainer loading state', () => {
         .getByRole('button', { name: 'Simulate graph node click' })
         .getAttribute('data-selected-node-id'),
     ).toBe('');
+  });
+
+  it('clears the panel when refreshed data retains a selected node ID but the adapter rejects the node', async () => {
+    mocks.graphData = graphData;
+    mocks.loading = false;
+
+    const { rerender } = renderGraphContainer('en');
+    const renderUpdatedGraph = () =>
+      rerender(
+        <NextIntlClientProvider locale="en" messages={enMessages}>
+          <GraphContainer />
+        </NextIntlClientProvider>,
+      );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate graph node click' }));
+    expect(screen.getByRole('dialog')).not.toBeNull();
+
+    const invalidSelectedNode = {
+      ...nodes[0],
+      node_type: null,
+    } as unknown as GraphNode;
+    mocks.graphData = { nodes: [invalidSelectedNode, nodes[1]], edges };
+    renderUpdatedGraph();
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(
+      screen
+        .getByRole('button', { name: 'Simulate graph node click' })
+        .getAttribute('data-selected-node-id'),
+    ).toBe('');
+  });
+
+  it('omits related nodes that the graph adapter filters from the canvas', () => {
+    const invalidRelatedNode = {
+      ...nodes[1],
+      node_type: null,
+    } as unknown as GraphNode;
+    mocks.graphData = {
+      nodes: [nodes[0], invalidRelatedNode],
+      edges,
+    };
+    mocks.loading = false;
+
+    renderGraphContainer('en');
+    const graphCanvas = screen.getByRole('button', {
+      name: 'Simulate graph node click',
+    });
+    fireEvent.click(graphCanvas);
+
+    expect(screen.getByRole('dialog')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: /Related keyword/ })).toBeNull();
+    expect(graphCanvas.getAttribute('data-rendered-node-ids')).toBe('node-a');
+  });
+
+  it('does not offer related nodes removed by the configured canvas size limit', () => {
+    const centerNode: GraphNode = {
+      ...nodes[0],
+      id: 'center',
+      label: 'Center',
+      properties: {},
+    };
+    const relatedNodes: GraphNode[] = ['related-a', 'related-b', 'related-z'].map(
+      (id) => ({ ...nodes[1], id, label: id }),
+    );
+    const relatedEdges: GraphEdge[] = relatedNodes.map((node) => ({
+      ...edges[0],
+      id: `edge-center-${node.id}`,
+      source: centerNode.id,
+      target: node.id,
+    }));
+    mocks.graphData = {
+      nodes: [centerNode, ...relatedNodes],
+      edges: relatedEdges,
+    };
+    mocks.loading = false;
+
+    renderGraphContainer('en');
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate graph node click' }));
+
+    expect(MAX_GRAPH_NODES).toBe(3);
+    expect(screen.getByRole('button', { name: /related-a/ })).not.toBeNull();
+    expect(screen.getByRole('button', { name: /related-b/ })).not.toBeNull();
+    expect(screen.queryByRole('button', { name: /related-z/ })).toBeNull();
+  });
+
+  it('clears a selection when the size limit removes the node from the canvas', async () => {
+    const selectedNode: GraphNode = {
+      ...nodes[0],
+      id: 'selected-z',
+      label: 'Selected node',
+    };
+    mocks.graphData = { nodes: [selectedNode], edges: [] };
+    mocks.loading = false;
+
+    const { rerender } = renderGraphContainer('en');
+    const renderUpdatedGraph = () =>
+      rerender(
+        <NextIntlClientProvider locale="en" messages={enMessages}>
+          <GraphContainer />
+        </NextIntlClientProvider>,
+      );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate graph node click' }));
+    expect(screen.getByRole('dialog')).not.toBeNull();
+
+    mocks.graphData = {
+      nodes: [
+        selectedNode,
+        ...['node-a', 'node-b', 'node-c'].map((id) => ({
+          ...nodes[1],
+          id,
+          label: id,
+        })),
+      ],
+      edges: [],
+    };
+    renderUpdatedGraph();
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(
+      screen
+        .getByRole('button', { name: 'Simulate graph node click' })
+        .getAttribute('data-rendered-node-ids'),
+    ).toBe('node-a,node-b,node-c');
+  });
+
+  it('uses the fallback translation for unknown selected and related node types', () => {
+    const unknownTypeNode = {
+      ...nodes[0],
+      node_type: 'UNRECOGNIZED' as NodeType,
+    } as GraphNode;
+    const unknownTypeRelatedNode = {
+      ...nodes[1],
+      node_type: 'FUTURE_TYPE' as NodeType,
+    } as GraphNode;
+    mocks.graphData = {
+      nodes: [unknownTypeNode, unknownTypeRelatedNode],
+      edges,
+    };
+    mocks.loading = false;
+
+    renderGraphContainer('en');
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate graph node click' }));
+
+    expect(screen.getAllByText('Other')).toHaveLength(2);
   });
 
   it.each([null, undefined])(

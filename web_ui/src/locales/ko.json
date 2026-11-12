@@ -44,7 +44,8 @@
         "category": "카테고리",
         "note": "노트",
         "keyword": "키워드",
-        "tag": "태그"
+        "tag": "태그",
+        "unknown": "기타"
       }
     }
   },
