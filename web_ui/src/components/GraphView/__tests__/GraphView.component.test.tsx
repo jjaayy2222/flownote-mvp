@@ -15,6 +15,7 @@ import type { OnLinkClickCallback } from '..';
 const mocks = vi.hoisted(() => ({
   graphData: null as GraphViewData | null,
   loading: true,
+  useRealGraphView: false,
   forceGraphRender: vi.fn(),
   reload: vi.fn(),
   isConnected: false,
@@ -113,29 +114,44 @@ vi.mock('../useGraphLiveUpdates', () => ({
   useGraphLiveUpdates: () => ({ isConnected: mocks.isConnected }),
 }));
 
-vi.mock('../GraphViewLoader', () => ({
-  GraphViewLoader: ({
-    onNodeClick,
-    preparedData,
-    selectedNodeId,
-  }: {
-    onNodeClick?: (node: GraphNode) => void;
-    preparedData?: AdaptedGraphData;
-    selectedNodeId?: string | null;
-  }) => (
-    <button
-      type="button"
-      data-selected-node-id={selectedNodeId ?? ''}
-      data-rendered-node-ids={preparedData?.nodes.map((node) => node.id).join(',') ?? ''}
-      onClick={() => {
-        const firstNode = preparedData?.nodes[0];
-        if (firstNode) onNodeClick?.(firstNode);
-      }}
-    >
-      Simulate graph node click
-    </button>
-  ),
-}));
+vi.mock('../GraphViewLoader', async () => {
+  const React = await import('react');
+  const { GraphView } = await import('../GraphView');
+
+  return {
+    GraphViewLoader: ({
+      data,
+      onNodeClick,
+      selectedNodeId,
+    }: {
+      data: AdaptedGraphData;
+      onNodeClick?: (node: GraphNode) => void;
+      selectedNodeId?: string | null;
+    }) => {
+      if (mocks.useRealGraphView) {
+        return React.createElement(GraphView, {
+          data,
+          onNodeClick,
+          selectedNodeId,
+        });
+      }
+
+      return React.createElement(
+        'button',
+        {
+          type: 'button',
+          'data-selected-node-id': selectedNodeId ?? '',
+          'data-rendered-node-ids': data.nodes.map((node) => node.id).join(','),
+          onClick: () => {
+            const firstNode = data.nodes[0];
+            if (firstNode) onNodeClick?.(firstNode);
+          },
+        },
+        'Simulate graph node click',
+      );
+    },
+  };
+});
 const nodes: GraphNode[] = [
   {
     id: 'node-a',
@@ -185,6 +201,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.graphData = null;
   mocks.loading = true;
+  mocks.useRealGraphView = false;
   mocks.isConnected = false;
   mocks.context.fillStyle = '';
 });
@@ -429,16 +446,21 @@ describe('GraphContainer loading state', () => {
       edges,
     };
     mocks.loading = false;
+    mocks.useRealGraphView = true;
 
-    renderGraphContainer('en');
-    const graphCanvas = screen.getByRole('button', {
-      name: 'Simulate graph node click',
-    });
+    const { container } = renderGraphContainer('en');
+    const renderedNodes = screen.getByRole('list', { name: 'Graph nodes' });
+    expect(renderedNodes.textContent).toContain('First note');
+    expect(renderedNodes.textContent).not.toContain('Related keyword');
+
+    const graphCanvas = screen.getByRole('button', { name: 'Simulate node click' });
     fireEvent.click(graphCanvas);
 
     expect(screen.getByRole('dialog')).not.toBeNull();
     expect(screen.queryByRole('button', { name: /Related keyword/ })).toBeNull();
-    expect(graphCanvas.getAttribute('data-rendered-node-ids')).toBe('node-a');
+    expect(container.querySelector('[aria-label="Graph nodes"]')?.textContent).toBe(
+      'First note',
+    );
   });
 
   it('does not offer related nodes removed by the configured canvas size limit', () => {
@@ -516,11 +538,11 @@ describe('GraphContainer loading state', () => {
   it('uses the fallback translation for unknown selected and related node types', () => {
     const unknownTypeNode = {
       ...nodes[0],
-      node_type: 'UNRECOGNIZED' as NodeType,
+      node_type: 'constructor' as NodeType,
     } as GraphNode;
     const unknownTypeRelatedNode = {
       ...nodes[1],
-      node_type: 'FUTURE_TYPE' as NodeType,
+      node_type: 'toString' as NodeType,
     } as GraphNode;
     mocks.graphData = {
       nodes: [unknownTypeNode, unknownTypeRelatedNode],

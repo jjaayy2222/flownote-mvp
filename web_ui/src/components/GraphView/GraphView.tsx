@@ -90,20 +90,24 @@ function resolveNodeColor(nodeType: NodeType): string {
 // ─────────────────────────────────────────
 
 export interface GraphViewProps {
-  /** 렌더링할 그래프 데이터 (백엔드 GraphDataResponse 형태) */
-  data: GraphViewData;
+  /** 렌더링할 그래프 데이터. 원본 API 데이터 또는 단일 어댑터 결과를 받습니다. */
+  data: GraphViewData | AdaptedGraphData;
   /** 캔버스 너비 (px). 미지정 시 부모 컨테이너 너비 사용. */
   width?: number;
   /** 캔버스 높이 (px). 기본값은 컨테이너에서 CSS로 제어. */
   height?: number;
   /** 노드 클릭 시 호출되는 콜백 */
   onNodeClick?: OnNodeClickCallback;
-  /** 컨테이너에서 이미 검증·제한한 그래프 데이터 */
-  preparedData?: AdaptedGraphData;
   /** 선택 상태를 외부에서 관리할 때 사용할 노드 ID. `null`은 선택 해제 상태. */
   selectedNodeId?: string | null;
   /** 엣지 클릭 시 호출되는 콜백 */
   onLinkClick?: OnLinkClickCallback;
+}
+
+function isAdaptedGraphData(
+  data: GraphViewData | AdaptedGraphData,
+): data is AdaptedGraphData {
+  return "links" in data && Array.isArray(data.links);
 }
 
 // ─────────────────────────────────────────
@@ -125,7 +129,6 @@ export const GraphView = React.memo(function GraphView({
   width,
   height = 600,
   onNodeClick,
-  preparedData,
   selectedNodeId: selectedNodeIdProp,
   onLinkClick,
 }: GraphViewProps) {
@@ -139,8 +142,8 @@ export const GraphView = React.memo(function GraphView({
 
   // SSOT 에서 변환한 데이터 (재계산 방지를 위해 메모이제이션)
   const { nodes, links } = useMemo(
-    () => preparedData ?? adaptGraphData(data),
-    [data, preparedData],
+    () => (isAdaptedGraphData(data) ? data : adaptGraphData(data)),
+    [data],
   );
   const graphData = useMemo(() => ({ nodes, links }), [nodes, links]);
 
