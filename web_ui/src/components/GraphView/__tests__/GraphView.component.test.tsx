@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GRAPH_HIGHLIGHT_COLOR } from '@/config/graph';
 import { EdgeRelationshipType, NodeType } from '@/types/websocket';
@@ -104,16 +104,29 @@ vi.mock('../useGraphLiveUpdates', () => ({
   useGraphLiveUpdates: () => ({ isConnected: mocks.isConnected }),
 }));
 
-vi.mock('../GraphViewLoader', () => ({ GraphViewLoader: () => null }));
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
-
+vi.mock('../GraphViewLoader', () => ({
+  GraphViewLoader: ({
+    onNodeClick,
+  }: {
+    onNodeClick?: (node: GraphNode) => void;
+  }) => (
+    <button
+      type="button"
+      onClick={() => {
+        const firstNode = mocks.graphData?.nodes[0];
+        if (firstNode) onNodeClick?.(firstNode);
+      }}
+    >
+      Simulate graph node click
+    </button>
+  ),
+}));
 const nodes: GraphNode[] = [
   {
     id: 'node-a',
     label: 'First note',
     node_type: NodeType.NOTE,
-    properties: {},
+    properties: { para_category: 'Projects' },
     position_x: null,
     position_y: null,
     user_id_hash: null,
@@ -253,5 +266,24 @@ describe('GraphContainer loading state', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
 
     expect(mocks.reload).toHaveBeenCalledOnce();
+  });
+
+  it('opens a node side panel and lets the user inspect a connected node', async () => {
+    mocks.graphData = graphData;
+    mocks.loading = false;
+
+    render(<GraphContainer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate graph node click' }));
+
+    expect(screen.getByRole('dialog')).not.toBeNull();
+    expect(screen.getByRole('heading', { name: 'First note' })).not.toBeNull();
+    expect(screen.getByText('Projects')).not.toBeNull();
+    expect(screen.getByRole('button', { name: /Related keyword/ })).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /Related keyword/ }));
+    expect(screen.getByRole('heading', { name: 'Related keyword' })).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '닫기' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });
