@@ -367,8 +367,28 @@ describe('SyncMonitor Integration Tests', () => {
     screen.getByText(errorMessage);
     const retryButton = screen.getByRole('button', { name: /retry/i });
 
+    // Track API calls before retry
+    const initialCallCount = vi.mocked(apiLib.fetchAPI).mock.calls.length;
+    expect(initialCallCount).toBeGreaterThan(0);
+
+    // Update mock data before retry to ensure the rendered data came from the refetch
+    mockSyncStatus = {
+      ...MOCK_SYNC_STATUS,
+      vault_path: '/tmp/recovered-vault',
+      file_count: 250,
+    };
+    mockMcpStatus = {
+      ...MOCK_MCP_STATUS,
+      active_sessions: 3,
+    };
+
     // Click retry to recover
     fireEvent.click(retryButton);
+
+    // Assert that retry triggers refetching
+    await waitFor(() => {
+      expect(vi.mocked(apiLib.fetchAPI).mock.calls.length).toBeGreaterThan(initialCallCount);
+    });
 
     await waitFor(() => {
       screen.getByText('Sync Monitor');
@@ -376,5 +396,16 @@ describe('SyncMonitor Integration Tests', () => {
 
     expect(screen.queryByText('Error')).toBeNull();
     expect(screen.queryByText(errorMessage)).toBeNull();
+
+    // Verify that data returned by retry refetch is accurately rendered on screen
+    const vaultPathContainer = getContainerByText('Vault Path');
+    within(vaultPathContainer).getByText('/tmp/recovered-vault');
+
+    const fileCountContainer = getContainerByText('Total Files');
+    within(fileCountContainer).getByText('250');
+
+    const mcpCard = getContainerByText('MCP Server', 'div[class*="bg-card"]');
+    within(mcpCard).getByText('Running');
+    within(mcpCard).getByText('Active sessions: 3');
   });
 });
