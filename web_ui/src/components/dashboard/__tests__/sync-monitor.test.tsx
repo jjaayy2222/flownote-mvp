@@ -1,6 +1,6 @@
 // web_ui/src/components/dashboard/__tests__/sync-monitor.test.tsx
 
-import { render, screen, waitFor, act, within } from '@testing-library/react';
+import { render, screen, waitFor, act, within, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { SyncMonitor } from '../sync-monitor';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -301,5 +301,80 @@ describe('SyncMonitor Integration Tests', () => {
     screen.getByText('Registration information unavailable');
     expect(screen.queryByText('No clients connected')).toBeNull();
     expect(screen.queryByText('Stopped')).toBeNull();
+    expect(screen.queryByText(/Active sessions/i)).toBeNull();
+  });
+
+  it('renders active_sessions correctly when session count is 0', async () => {
+    mockMcpStatus = {
+      ...MOCK_MCP_STATUS,
+      active_sessions: 0,
+    };
+
+    renderSyncMonitor();
+
+    await waitFor(() => {
+      expect(screen.queryByText(/loading sync status/i)).toBeNull();
+    });
+
+    const mcpCard = getContainerByText('MCP Server', 'div[class*="bg-card"]');
+    within(mcpCard).getByText('Active sessions: 0');
+  });
+
+  it('renders active_sessions correctly when session count is a positive number', async () => {
+    mockMcpStatus = {
+      ...MOCK_MCP_STATUS,
+      active_sessions: 5,
+    };
+
+    renderSyncMonitor();
+
+    await waitFor(() => {
+      expect(screen.queryByText(/loading sync status/i)).toBeNull();
+    });
+
+    const mcpCard = getContainerByText('MCP Server', 'div[class*="bg-card"]');
+    within(mcpCard).getByText('Active sessions: 5');
+  });
+
+  it('does not render active_sessions when active_sessions is null', async () => {
+    mockMcpStatus = {
+      ...MOCK_MCP_STATUS,
+      active_sessions: null,
+    };
+
+    renderSyncMonitor();
+
+    await waitFor(() => {
+      expect(screen.queryByText(/loading sync status/i)).toBeNull();
+    });
+
+    const mcpCard = getContainerByText('MCP Server', 'div[class*="bg-card"]');
+    expect(within(mcpCard).queryByText(/Active sessions/i)).toBeNull();
+  });
+
+  it('renders error state and retries fetching data when initial API call fails', async () => {
+    const errorMessage = 'Network connection timeout';
+    vi.mocked(apiLib.fetchAPI).mockRejectedValueOnce(new Error(errorMessage));
+
+    renderSyncMonitor();
+
+    await waitFor(() => {
+      expect(screen.queryByText(/loading sync status/i)).toBeNull();
+    });
+
+    // Error UI assertions
+    screen.getByText('Error');
+    screen.getByText(errorMessage);
+    const retryButton = screen.getByRole('button', { name: /retry/i });
+
+    // Click retry to recover
+    fireEvent.click(retryButton);
+
+    await waitFor(() => {
+      screen.getByText('Sync Monitor');
+    });
+
+    expect(screen.queryByText('Error')).toBeNull();
+    expect(screen.queryByText(errorMessage)).toBeNull();
   });
 });
