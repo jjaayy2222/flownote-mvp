@@ -28,7 +28,6 @@ jobs:
         if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
 
     - name: Run tests with pytest
-      continue-on-error: true
       env:
         # API Keys (Mock)
         GPT4O_MINI_API_KEY: "mock-key"
@@ -54,29 +53,13 @@ jobs:
         CLAUDE_4_SONNET_MODEL: "anthropic/claude-sonnet-4"
         CLAUDE_35_HAIKU_MODEL: "anthropic/claude-3-5-haiku"
       run: |
-        pytest
+        pytest --cov=backend --cov-report=term-missing --cov-report=xml:coverage.xml --cov-report=html:htmlcov
 
     - name: Publish Coverage Summary to GitHub Step Summary
       if: always()
       run: |
         if [ -f coverage.xml ]; then
-          echo "### 📊 Backend Code Coverage Report" >> $GITHUB_STEP_SUMMARY
-          python -c '
-          import xml.etree.ElementTree as ET
-          try:
-              tree = ET.parse("coverage.xml")
-              root = tree.getroot()
-              rate = float(root.attrib.get("line-rate", 0)) * 100
-              branch_rate = float(root.attrib.get("branch-rate", 0)) * 100
-              lines_valid = root.attrib.get("lines-valid", "N/A")
-              lines_covered = root.attrib.get("lines-covered", "N/A")
-              print("| Metric | Value |")
-              print("|:---|:---|")
-              print(f"| **Line Coverage** | **{rate:.2f}%** ({lines_covered}/{lines_valid}) |")
-              print(f"| **Branch Coverage** | **{branch_rate:.2f}%** |")
-          except Exception as e:
-              print(f"Coverage summary parsing skipped: {e}")
-          ' >> $GITHUB_STEP_SUMMARY
+          python scripts/generate_coverage_summary.py
         fi
 
     - name: Upload Coverage Reports Artifact
