@@ -3,10 +3,7 @@
 import os
 import sys
 
-try:
-    import defusedxml.etree.ElementTree as ET
-except ImportError:  # pragma: no cover
-    import xml.etree.ElementTree as ET  # type: ignore[no-redef]
+import defusedxml.ElementTree as ET
 
 
 def format_coverage_summary(root: ET.Element) -> str:
