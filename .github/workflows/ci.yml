@@ -15,18 +15,18 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
-        
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-        
+
     - name: Run tests with pytest
       continue-on-error: true
       env:
@@ -37,7 +37,7 @@ jobs:
         GPT41_API_KEY: "mock-key"
         CLAUDE_4_SONNET_API_KEY: "mock-key"
         CLAUDE_35_HAIKU_API_KEY: "mock-key"
-        
+
         # Base URLs (Mock)
         GPT4O_MINI_BASE_URL: "https://mlapi.run/mock/v1"
         GPT4O_BASE_URL: "https://mlapi.run/mock/v1"
@@ -45,7 +45,7 @@ jobs:
         GPT41_BASE_URL: "https://mlapi.run/mock/v1"
         CLAUDE_4_SONNET_BASE_URL: "https://mlapi.run/mock/v1"
         CLAUDE_35_HAIKU_BASE_URL: "https://mlapi.run/mock/v1"
-        
+
         # Models
         GPT4O_MINI_MODEL: "openai/gpt-4o-mini"
         GPT4O_MODEL: "openai/gpt-4o"
@@ -54,11 +54,45 @@ jobs:
         CLAUDE_4_SONNET_MODEL: "anthropic/claude-sonnet-4"
         CLAUDE_35_HAIKU_MODEL: "anthropic/claude-3-5-haiku"
       run: |
-        pytest --cov=backend --cov-report=xml --cov-report=term
-        
-    # - name: Upload coverage reports to Codecov
-    #   uses: codecov/codecov-action@v4
-    #   continue-on-error: true
-    #   with:
-    #     token: ${{ secrets.CODECOV_TOKEN }}
-    #     fail_ci_if_error: true
+        pytest
+
+    - name: Publish Coverage Summary to GitHub Step Summary
+      if: always()
+      run: |
+        if [ -f coverage.xml ]; then
+          echo "### 📊 Backend Code Coverage Report" >> $GITHUB_STEP_SUMMARY
+          python -c '
+          import xml.etree.ElementTree as ET
+          try:
+              tree = ET.parse("coverage.xml")
+              root = tree.getroot()
+              rate = float(root.attrib.get("line-rate", 0)) * 100
+              branch_rate = float(root.attrib.get("branch-rate", 0)) * 100
+              lines_valid = root.attrib.get("lines-valid", "N/A")
+              lines_covered = root.attrib.get("lines-covered", "N/A")
+              print("| Metric | Value |")
+              print("|:---|:---|")
+              print(f"| **Line Coverage** | **{rate:.2f}%** ({lines_covered}/{lines_valid}) |")
+              print(f"| **Branch Coverage** | **{branch_rate:.2f}%** |")
+          except Exception as e:
+              print(f"Coverage summary parsing skipped: {e}")
+          ' >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Upload Coverage Reports Artifact
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: backend-coverage-report
+        path: |
+          coverage.xml
+          htmlcov/
+        if-no-files-found: warn
+
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v4
+      continue-on-error: true
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: ./coverage.xml
+        fail_ci_if_error: false
