@@ -2,12 +2,10 @@
 
 import os
 import sys
-from typing import Optional
-
-import defusedxml.ElementTree as ET
+from typing import Any, Optional
 
 
-def format_coverage_summary(root: ET.Element) -> str:
+def format_coverage_summary(root: Any) -> str:
     """Format coverage metrics from XML root element into markdown table."""
     rate = float(root.attrib.get("line-rate", 0)) * 100
     branch_rate = float(root.attrib.get("branch-rate", 0)) * 100
@@ -48,12 +46,15 @@ def generate_coverage_summary(xml_path: str = "coverage.xml") -> None:
     """Parse coverage XML report and append summary table to GITHUB_STEP_SUMMARY."""
     summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
 
+    # If coverage.xml is missing, handle fallback immediately without requiring defusedxml
     if not os.path.isfile(xml_path):
         handle_missing_coverage(summary_file)
         return
 
-    # 1. Parse XML and format markdown (isolated parsing error handling)
+    # 1. Parse XML and format markdown (import defusedxml only when parsing existing XML)
     try:
+        import defusedxml.ElementTree as ET
+
         tree = ET.parse(xml_path)
         summary_content = format_coverage_summary(tree.getroot())
     except Exception as exc:
