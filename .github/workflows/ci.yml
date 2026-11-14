@@ -28,7 +28,6 @@ jobs:
         if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
 
     - name: Run tests with pytest
-      continue-on-error: true
       env:
         # API Keys (Mock)
         GPT4O_MINI_API_KEY: "mock-key"
@@ -59,9 +58,7 @@ jobs:
     - name: Publish Coverage Summary to GitHub Step Summary
       if: always()
       run: |
-        if [ -f coverage.xml ]; then
-          python scripts/generate_coverage_summary.py
-        fi
+        python scripts/generate_coverage_summary.py
 
     - name: Upload Coverage Reports Artifact
       uses: actions/upload-artifact@v4
@@ -75,6 +72,7 @@ jobs:
 
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v4
+      if: always() && hashFiles('coverage.xml') != ''
       continue-on-error: true
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
