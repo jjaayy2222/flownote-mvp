@@ -2,6 +2,7 @@ pytest==8.3.0
 pytest-asyncio==1.3.0
 pytest-cov==7.0.0
 codecov==2.1.13
+defusedxml==0.7.1
 
 # Pre-commit & Formatting Tooling
 pre-commit==4.6.0
