@@ -60,6 +60,8 @@ desktop.ini
 coverage.xml
 htmlcov/
 .tox/
+# 프론트엔드 커버리지
+web_ui/coverage/
 
 # 데이터베이스 (레거시)
 *.db
@@ -117,7 +119,7 @@ test_*.pdf
 .env.backup
 # .env.example  <-- Included!
 
-# backend 백업 
+# backend 백업
 backend/classifier/prompts/backup_*
 backend/classifier/prompts/backup_20251107/
 backend/classifier/prompts/bacoup_20251107_2/

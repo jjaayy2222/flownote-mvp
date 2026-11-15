@@ -78,3 +78,59 @@ jobs:
         token: ${{ secrets.CODECOV_TOKEN }}
         files: ./coverage.xml
         fail_ci_if_error: false
+
+  frontend-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+        cache: "npm"
+        cache-dependency-path: web_ui/package-lock.json
+
+    - name: Install frontend dependencies
+      working-directory: web_ui
+      run: npm ci
+
+    - name: Run Vitest with coverage
+      working-directory: web_ui
+      run: npm run test:coverage
+
+    - name: Publish Frontend Coverage Summary to GitHub Step Summary
+      if: always()
+      working-directory: web_ui
+      run: |
+        SUMMARY_FILE="coverage/coverage-summary.json"
+        if [ ! -f "$SUMMARY_FILE" ]; then
+          echo "## ⚠️ Frontend Coverage" >> "$GITHUB_STEP_SUMMARY"
+          echo "커버리지 데이터를 찾을 수 없습니다 (\`${SUMMARY_FILE}\` 없음)" >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+        fi
+
+        TOTAL_LINES=$(node -e "const d=require('./${SUMMARY_FILE}');const t=d.total;console.log(t.lines.pct + '% (' + t.lines.covered + '/' + t.lines.total + ')')" 2>/dev/null || echo "N/A")
+        TOTAL_STMTS=$(node -e "const d=require('./${SUMMARY_FILE}');const t=d.total;console.log(t.statements.pct + '% (' + t.statements.covered + '/' + t.statements.total + ')')" 2>/dev/null || echo "N/A")
+        TOTAL_FUNCS=$(node -e "const d=require('./${SUMMARY_FILE}');const t=d.total;console.log(t.functions.pct + '% (' + t.functions.covered + '/' + t.functions.total + ')')" 2>/dev/null || echo "N/A")
+        TOTAL_BRANCHES=$(node -e "const d=require('./${SUMMARY_FILE}');const t=d.total;console.log(t.branches.pct + '% (' + t.branches.covered + '/' + t.branches.total + ')')" 2>/dev/null || echo "N/A")
+
+        {
+          echo "## 🧪 Frontend Coverage Report"
+          echo ""
+          echo "| Metric | Coverage |"
+          echo "|:-------|:---------|"
+          echo "| Lines | ${TOTAL_LINES} |"
+          echo "| Statements | ${TOTAL_STMTS} |"
+          echo "| Functions | ${TOTAL_FUNCS} |"
+          echo "| Branches | ${TOTAL_BRANCHES} |"
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload Frontend Coverage Artifact
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: frontend-coverage-report
+        path: web_ui/coverage/
+        if-no-files-found: warn
