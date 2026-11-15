@@ -15,5 +15,19 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     include: ['**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov', 'json', 'json-summary'],
+      reportsDirectory: './coverage',
+      exclude: [
+        'node_modules/**',
+        '.next/**',
+        'coverage/**',
+        '**/*.config.{js,ts,mjs}',
+        '**/*.d.ts',
+        '**/types/**',
+        '**/index.ts',
+      ],
+    },
   },
 })
