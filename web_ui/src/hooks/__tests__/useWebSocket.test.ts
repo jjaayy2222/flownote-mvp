@@ -28,14 +28,14 @@ function createMockCloseEvent(code: number = 1000, reason: string = ''): CloseEv
       bubbles: false,
       cancelable: false,
     });
-    
+
     // Extend the generic Event with CloseEvent specific properties
     Object.assign(event, {
       code,
       reason,
       wasClean: true,
     });
-    
+
     return event as unknown as CloseEvent;
   }
 
@@ -132,7 +132,7 @@ class MockWebSocket {
   simulateError() {
     this.onerror?.(new Event('error'));
   }
-  
+
   /**
    * Helper to simulate a server-initiated close.
    * Uses the same event factory as the client-initiated close for consistency.
@@ -149,13 +149,13 @@ describe('useWebSocket Hook', () => {
   beforeEach(() => {
     MockWebSocket.instances = [];
     vi.stubGlobal('WebSocket', MockWebSocket);
-    
+
     // Explicitly mock window.WebSocket for jsdom environment consistency
     Object.defineProperty(window, 'WebSocket', {
       writable: true,
       value: MockWebSocket,
     });
-    
+
     vi.useRealTimers();
   });
 
@@ -166,13 +166,13 @@ describe('useWebSocket Hook', () => {
   // 1. Connection & Status
   it('should connect to WebSocket and update status', async () => {
     const { result } = renderHook(() => useWebSocket(TEST_URL));
-    
+
     await waitFor(() => {
       expect(MockWebSocket.instances.length).toBe(1);
     }, { timeout: 1000 });
 
     const ws = MockWebSocket.instances[0];
-    
+
     expect(result.current.status).toBe(WebSocketStatus.CONNECTING);
     expect(result.current.isConnected).toBe(false);
 
@@ -187,18 +187,18 @@ describe('useWebSocket Hook', () => {
   // 2. Message Parsing
   it('should receive and parse messages', async () => {
     const { result } = renderHook(() => useWebSocket(TEST_URL));
-    
+
     await waitFor(() => {
       expect(MockWebSocket.instances.length).toBe(1);
     });
     const ws = MockWebSocket.instances[0];
-    
+
     act(() => {
       ws.simulateOpen();
     });
 
     const testMessage = { type: 'test', data: 'hello' };
-    
+
     act(() => {
       ws.simulateMessage(testMessage);
     });
@@ -210,7 +210,7 @@ describe('useWebSocket Hook', () => {
   it('should handle JSON parse errors gracefully', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { result } = renderHook(() => useWebSocket(TEST_URL));
-    
+
     await waitFor(() => {
       expect(MockWebSocket.instances.length).toBe(1);
     });
@@ -224,9 +224,9 @@ describe('useWebSocket Hook', () => {
       ws.onmessage?.({ data: '{ invalid json }' });
     });
 
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to parse message'), expect.any(SyntaxError));
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to process message'), expect.any(SyntaxError));
     expect(result.current.lastMessage).toBeNull();
-    
+
     consoleSpy.mockRestore();
   });
 
@@ -236,7 +236,7 @@ describe('useWebSocket Hook', () => {
     const { result } = renderHook(() => useWebSocket(TEST_URL, { reconnect: true }));
 
     await act(async () => { vi.advanceTimersByTime(10); });
-    
+
     expect(MockWebSocket.instances.length).toBe(1);
     const ws1 = MockWebSocket.instances[0];
 
@@ -245,19 +245,19 @@ describe('useWebSocket Hook', () => {
 
     act(() => { ws1.simulateClose(); });
     expect(result.current.isConnected).toBe(false);
-    
+
     await act(async () => {
       vi.advanceTimersByTime(2000);
     });
-    
+
     expect(MockWebSocket.instances.length).toBeGreaterThan(1);
     const ws2 = MockWebSocket.instances[MockWebSocket.instances.length - 1];
-    
+
     expect(result.current.status).toBe(WebSocketStatus.CONNECTING);
-    
+
     act(() => { ws2.simulateOpen(); });
     expect(result.current.isConnected).toBe(true);
-    
+
     vi.useRealTimers();
   });
 
@@ -265,12 +265,12 @@ describe('useWebSocket Hook', () => {
   it('should not attempt to reconnect when reconnect option is disabled', async () => {
     vi.useFakeTimers();
     const { result } = renderHook(() => useWebSocket(TEST_URL, { reconnect: false }));
-    
+
     await act(async () => { vi.advanceTimersByTime(10); });
-    
+
     const initialCount = MockWebSocket.instances.length;
     const ws = MockWebSocket.instances[0];
-    
+
     act(() => { ws.simulateOpen(); });
     expect(result.current.isConnected).toBe(true);
 
@@ -279,11 +279,11 @@ describe('useWebSocket Hook', () => {
 
     // Wait long time
     await act(async () => { vi.advanceTimersByTime(10000); });
-    
+
     // Should NOT create new instance
     expect(MockWebSocket.instances.length).toBe(initialCount);
     expect(result.current.status).toBe(WebSocketStatus.DISCONNECTED);
-    
+
     vi.useRealTimers();
   });
 
@@ -291,31 +291,31 @@ describe('useWebSocket Hook', () => {
   it('should clean up WebSocket and timers on unmount', async () => {
     vi.useFakeTimers();
     const { unmount } = renderHook(() => useWebSocket(TEST_URL));
-    
+
     await act(async () => { vi.advanceTimersByTime(10); });
-    
+
     const ws = MockWebSocket.instances[0];
     const closeSpy = vi.spyOn(ws, 'close');
-    
+
     unmount();
-    
+
     expect(closeSpy).toHaveBeenCalled();
-    
+
     // Ensure no reconnect attempt after unmount
     await act(async () => { vi.advanceTimersByTime(5000); });
     expect(MockWebSocket.instances.length).toBe(1);
-    
+
     vi.useRealTimers();
   });
 
   // 7. Manual Disconnect
   it('should close connection when disconnect is called manually', async () => {
     const { result } = renderHook(() => useWebSocket(TEST_URL));
-    
+
     await waitFor(() => expect(MockWebSocket.instances.length).toBe(1));
     const ws = MockWebSocket.instances[0];
     const closeSpy = vi.spyOn(ws, 'close');
-    
+
     act(() => {
       result.current.disconnect();
     });
@@ -327,7 +327,7 @@ describe('useWebSocket Hook', () => {
   // 8. Connection Error Handling
   it('should handle connection errors', async () => {
     const { result } = renderHook(() => useWebSocket(TEST_URL));
-    
+
     await waitFor(() => expect(MockWebSocket.instances.length).toBe(1));
     const ws = MockWebSocket.instances[0];
 
@@ -338,7 +338,7 @@ describe('useWebSocket Hook', () => {
     });
 
     expect(result.current.status).toBe(WebSocketStatus.ERROR);
-    
+
     consoleSpy.mockRestore();
   });
 });
