@@ -1,6 +1,6 @@
 // web_ui/vitest.config.ts
 
-import { defineConfig } from 'vitest/config'
+import { defineConfig, coverageConfigDefaults } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
 
@@ -19,7 +19,11 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'lcov', 'json', 'json-summary'],
       reportsDirectory: './coverage',
+      include: ['src/**/*.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
       exclude: [
+        ...coverageConfigDefaults.exclude,
+        '**/__tests__/**',
+        '**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}',
         'node_modules/**',
         '.next/**',
         'coverage/**',
