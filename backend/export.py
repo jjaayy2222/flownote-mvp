@@ -80,9 +80,19 @@ class MarkdownExporter:
             # 메타데이터
             if include_metadata:
                 if metadata := result.get("metadata", {}):
-                    md += f"### 메타데이터\n\n"
-                    md += f"- **출처**: {metadata.get('source', 'N/A')}\n"
+                    md += "### 메타데이터\n\n"
+                    # 출처 (source 우선, Streamlit caller 호환을 위해 filename fallback 지원)
+                    source = metadata.get("source") or metadata.get("filename", "N/A")
+                    md += f"- **출처**: {source}\n"
+
+                    # 청크 번호 (file_type 존재 여부와 무관하게 독립적인 N/A 폴백 유지)
                     md += f"- **청크 번호**: {metadata.get('chunk_index', 'N/A')}\n"
+
+                    # 파일 유형 (Streamlit caller 등에서 제공 시 선택적 추가 렌더링)
+                    if "file_type" in metadata:
+                        md += f"- **파일 유형**: {metadata.get('file_type', 'N/A')}\n"
+
+                    # 파일 크기 (file_type 존재 여부와 무관하게 독립적인 N/A 폴백 유지)
                     md += f"- **파일 크기**: {metadata.get('file_size', 'N/A')} bytes\n"
                     md += "\n"
 
