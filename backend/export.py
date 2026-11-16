@@ -85,17 +85,15 @@ class MarkdownExporter:
                     source = metadata.get("source") or metadata.get("filename", "N/A")
                     md += f"- **출처**: {source}\n"
 
-                    # 청크 번호
-                    if "chunk_index" in metadata or "file_type" not in metadata:
-                        md += f"- **청크 번호**: {metadata.get('chunk_index', 'N/A')}\n"
+                    # 청크 번호 (file_type 존재 여부와 무관하게 독립적인 N/A 폴백 유지)
+                    md += f"- **청크 번호**: {metadata.get('chunk_index', 'N/A')}\n"
 
-                    # 파일 유형 (Streamlit caller 등에서 제공 시)
+                    # 파일 유형 (Streamlit caller 등에서 제공 시 선택적 추가 렌더링)
                     if "file_type" in metadata:
                         md += f"- **파일 유형**: {metadata.get('file_type', 'N/A')}\n"
 
-                    # 파일 크기
-                    if "file_size" in metadata or "file_type" not in metadata:
-                        md += f"- **파일 크기**: {metadata.get('file_size', 'N/A')} bytes\n"
+                    # 파일 크기 (file_type 존재 여부와 무관하게 독립적인 N/A 폴백 유지)
+                    md += f"- **파일 크기**: {metadata.get('file_size', 'N/A')} bytes\n"
                     md += "\n"
 
             md += "---\n\n"
