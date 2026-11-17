@@ -12,6 +12,19 @@ import {
 } from '../api';
 import { CONFLICT_STATUS } from '@/types/sync';
 
+/**
+ * Helper to safely restore process.env variables in Node.js.
+ * In Node.js, assigning `undefined` to `process.env.FOO` coerces it to the truthy string `"undefined"`.
+ * To truly unset the environment variable, `delete` must be used.
+ */
+const restoreApiBaseEnv = (originalValue: string | undefined) => {
+  if (originalValue === undefined) {
+    delete process.env.NEXT_PUBLIC_API_BASE;
+  } else {
+    process.env.NEXT_PUBLIC_API_BASE = originalValue;
+  }
+};
+
 describe('api.ts - API_BASE & STATUS_MAP', () => {
   it('DEFAULT_API_BASE should match localhost fallback', () => {
     expect(DEFAULT_API_BASE).toBe('http://localhost:8000');
@@ -33,7 +46,7 @@ describe('api.ts - API_BASE & STATUS_MAP', () => {
       expect(getApiBaseUrl()).toBe(distinctEnvUrl);
       expect(getApiBaseUrl(undefined)).toBe(distinctEnvUrl);
     } finally {
-      process.env.NEXT_PUBLIC_API_BASE = originalEnv;
+      restoreApiBaseEnv(originalEnv);
     }
   });
 
@@ -44,7 +57,7 @@ describe('api.ts - API_BASE & STATUS_MAP', () => {
 
       expect(getApiBaseUrl('https://explicit.flownote.app')).toBe('https://explicit.flownote.app');
     } finally {
-      process.env.NEXT_PUBLIC_API_BASE = originalEnv;
+      restoreApiBaseEnv(originalEnv);
     }
   });
 
@@ -57,7 +70,20 @@ describe('api.ts - API_BASE & STATUS_MAP', () => {
       expect(getApiBaseUrl('')).toBe(DEFAULT_API_BASE);
       expect(getApiBaseUrl(undefined)).toBe(DEFAULT_API_BASE);
     } finally {
-      process.env.NEXT_PUBLIC_API_BASE = originalEnv;
+      restoreApiBaseEnv(originalEnv);
+    }
+  });
+
+  it('cleanup should never leave truthy "undefined" string in process.env', () => {
+    // Regression check: ensure cleanup properly unsets the key instead of stringifying to "undefined"
+    const originalEnv = process.env.NEXT_PUBLIC_API_BASE;
+    try {
+      delete process.env.NEXT_PUBLIC_API_BASE;
+      restoreApiBaseEnv(undefined);
+      expect(process.env.NEXT_PUBLIC_API_BASE).toBeUndefined();
+      expect(process.env.NEXT_PUBLIC_API_BASE).not.toBe('undefined');
+    } finally {
+      restoreApiBaseEnv(originalEnv);
     }
   });
 
