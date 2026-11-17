@@ -3,6 +3,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   API_BASE,
+  DEFAULT_API_BASE,
+  getApiBaseUrl,
   STATUS_MAP,
   getStatusClassName,
   fetchAPI,
@@ -11,9 +13,28 @@ import {
 import { CONFLICT_STATUS } from '@/types/sync';
 
 describe('api.ts - API_BASE & STATUS_MAP', () => {
-  it('API_BASE should be a defined string', () => {
-    expect(typeof API_BASE).toBe('string');
-    expect(API_BASE.length).toBeGreaterThan(0);
+  it('DEFAULT_API_BASE should match localhost fallback', () => {
+    expect(DEFAULT_API_BASE).toBe('http://localhost:8000');
+  });
+
+  it('API_BASE should match configured env URL or default fallback', () => {
+    const expected = process.env.NEXT_PUBLIC_API_BASE || DEFAULT_API_BASE;
+    expect(API_BASE).toBe(expected);
+  });
+
+  it('getApiBaseUrl should resolve custom URL, environment variable, or fallback', () => {
+    // 1. Explicit custom URL takes highest precedence
+    expect(getApiBaseUrl('https://api.flownote.app')).toBe('https://api.flownote.app');
+
+    // 2. Fallback when argument is empty
+    const envValue = process.env.NEXT_PUBLIC_API_BASE;
+    if (envValue) {
+      expect(getApiBaseUrl('')).toBe(envValue);
+      expect(getApiBaseUrl(undefined)).toBe(envValue);
+    } else {
+      expect(getApiBaseUrl('')).toBe(DEFAULT_API_BASE);
+      expect(getApiBaseUrl(undefined)).toBe(DEFAULT_API_BASE);
+    }
   });
 
   it('STATUS_MAP should contain all expected status mappings', () => {
@@ -55,6 +76,15 @@ describe('api.ts - getStatusClassName', () => {
     expect(getStatusClassName('   ')).toBe('status-unknown');
     expect(getStatusClassName(null)).toBe('status-unknown');
     expect(getStatusClassName(undefined)).toBe('status-unknown');
+  });
+
+  it('should fallback to status-unknown for inherited prototype properties (security regression test)', () => {
+    // Inherited Object.prototype properties must NOT bypass the fallback
+    expect(getStatusClassName('constructor')).toBe('status-unknown');
+    expect(getStatusClassName('toString')).toBe('status-unknown');
+    expect(getStatusClassName('valueOf')).toBe('status-unknown');
+    expect(getStatusClassName('__proto__')).toBe('status-unknown');
+    expect(getStatusClassName('hasOwnProperty')).toBe('status-unknown');
   });
 
   it('should handle non-string primitive and object values safely', () => {
@@ -188,17 +218,32 @@ describe('api.ts - validateResponse', () => {
     expect(result).toEqual(validData);
   });
 
-  it('should throw default error message when validation fails', () => {
+  it('should throw exact default error message when validation fails', () => {
     const invalidData = { id: 'not-a-number', name: 123 };
 
-    expect(() => validateResponse(invalidData, isUser)).toThrow('Invalid response');
+    expect(() => validateResponse(invalidData, isUser)).toThrowError(/^Invalid response$/);
+
+    try {
+      validateResponse(invalidData, isUser);
+      expect.unreachable('Should have thrown an error');
+    } catch (error) {
+      expect((error as Error).message).toBe('Invalid response');
+    }
   });
 
-  it('should throw custom error message when validation fails', () => {
+  it('should throw exact custom error message when validation fails', () => {
     const invalidData = null;
+    const customMessage = 'Custom user validation failed';
 
     expect(() =>
-      validateResponse(invalidData, isUser, 'Custom user validation failed')
-    ).toThrow('Custom user validation failed');
+      validateResponse(invalidData, isUser, customMessage)
+    ).toThrowError(/^Custom user validation failed$/);
+
+    try {
+      validateResponse(invalidData, isUser, customMessage);
+      expect.unreachable('Should have thrown an error');
+    } catch (error) {
+      expect((error as Error).message).toBe(customMessage);
+    }
   });
 });
