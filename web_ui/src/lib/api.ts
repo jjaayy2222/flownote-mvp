@@ -2,10 +2,16 @@
 
 /**
  * API Configuration
- * 
+ *
  * Next.js uses NEXT_PUBLIC_ prefix for client-side environment variables.
  */
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000';
+export const DEFAULT_API_BASE = 'http://localhost:8000';
+
+export const getApiBaseUrl = (envBase?: string): string => {
+  return envBase || process.env.NEXT_PUBLIC_API_BASE || DEFAULT_API_BASE;
+};
+
+export const API_BASE = getApiBaseUrl();
 
 import { CONFLICT_STATUS } from '@/types/sync';
 
@@ -24,17 +30,19 @@ export const STATUS_MAP: Record<string, string> = {
 
 /**
  * 상태 값에 해당하는 CSS 클래스명 반환
- * 
+ *
  * @param status - 원본 상태 값
  * @returns CSS 클래스명 (예: 'status-running', 'status-unknown')
  */
 export const getStatusClassName = (status: unknown): string => {
   if (status == null) return `status-${STATUS_MAP.unknown}`;
-  
+
   const normalized = String(status).toLowerCase().trim();
   if (!normalized) return `status-${STATUS_MAP.unknown}`;
-  
-  const key = STATUS_MAP[normalized] || STATUS_MAP.unknown;
+
+  const key = Object.prototype.hasOwnProperty.call(STATUS_MAP, normalized)
+    ? STATUS_MAP[normalized]
+    : STATUS_MAP.unknown;
   return `status-${key}`;
 };
 
@@ -45,11 +53,11 @@ export const getStatusClassName = (status: unknown): string => {
 export const fetchAPI = async <T = any>(url: string, options: RequestInit = {}): Promise<T> => {
   try {
     const response = await fetch(url, options);
-    
+
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
-    
+
     return await response.json();
   } catch (error) {
     console.error(`API Error [${url}]:`, error);
@@ -61,8 +69,8 @@ export const fetchAPI = async <T = any>(url: string, options: RequestInit = {}):
  * Response 데이터 검증 헬퍼
  */
 export const validateResponse = <T>(
-  data: unknown, 
-  validator: (d: unknown) => boolean, 
+  data: unknown,
+  validator: (d: unknown) => boolean,
   errorMessage: string = 'Invalid response'
 ): T => {
   if (!validator(data)) {
