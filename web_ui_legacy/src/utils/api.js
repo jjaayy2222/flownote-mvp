@@ -2,11 +2,11 @@
 
 /**
  * API Configuration
- * 
+ *
  * 환경 변수를 통해 API Base URL을 관리합니다.
  * - Development: REACT_APP_API_BASE 환경 변수 사용
  * - Production: 환경 변수 또는 기본값 사용
- * 
+ *
  * @example
  * // .env.local 파일에 추가:
  * REACT_APP_API_BASE=http://localhost:8000
@@ -16,7 +16,7 @@ export const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000
 
 /**
  * 공통 상태 매핑
- * 
+ *
  * 모든 상태 값을 정규화된 CSS 클래스명으로 매핑합니다.
  * 중복 제거: 동일한 키-값 쌍은 한 번만 정의
  */
@@ -24,7 +24,7 @@ export const STATUS_MAP = {
   // Connection status
   connected: 'connected',
   disconnected: 'disconnected',
-  
+
   // Server/Task status
   running: 'running',
   stopped: 'stopped',
@@ -33,54 +33,56 @@ export const STATUS_MAP = {
   pending: 'pending',
   completed: 'completed',
   resolved: 'resolved',
-  
+
   // Fallback
   unknown: 'unknown',
 };
 
 /**
  * 상태 값에 해당하는 CSS 클래스명 반환
- * 
+ *
  * 원본 상태 값을 매핑된 안전한 CSS 클래스명('status-{key}')으로 변환합니다.
  * 매핑되지 않은 값은 'status-unknown'을 반환합니다.
- * 
+ *
  * @param {any} status - 원본 상태 값
  * @returns {string} CSS 클래스명 (예: 'status-running', 'status-unknown')
  */
 export const getStatusClassName = (status) => {
   // null, undefined 체크
   if (status == null) return `status-${STATUS_MAP.unknown}`;
-  
+
   // 문자열로 변환 후 정규화
   const normalized = String(status).toLowerCase().trim();
 
   // 빈 문자열 체크
   if (!normalized) return `status-${STATUS_MAP.unknown}`;
-  
-  // STATUS_MAP에서 찾거나, 없으면 unknown 반환
-  const key = STATUS_MAP[normalized] || STATUS_MAP.unknown;
+
+  // STATUS_MAP에서 고유 속성(own property) 여부 확인하여 프로토타입 상속 키 우회 차단
+  const key = Object.prototype.hasOwnProperty.call(STATUS_MAP, normalized)
+    ? STATUS_MAP[normalized]
+    : STATUS_MAP.unknown;
   return `status-${key}`;
 };
 
 /**
  * Fetch with error handling
- * 
+ *
  * @param {string} url - API endpoint URL (full URL)
  * @param {Object} options - fetch options
  * @returns {Promise<Object>} Response data
  * @throws {Error} Fetch error
- * 
+ *
  * @example
  * const data = await fetchAPI(`${API_BASE}/api/tasks`);
  */
 export const fetchAPI = async (url, options = {}) => {
   try {
     const response = await fetch(url, options);
-    
+
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
-    
+
     const data = await response.json();
     return data;
   } catch (error) {
@@ -91,13 +93,13 @@ export const fetchAPI = async (url, options = {}) => {
 
 /**
  * Response 데이터 검증 헬퍼
- * 
+ *
  * @param {any} data - 검증할 데이터
  * @param {Function} validator - 검증 함수
  * @param {string} errorMessage - 에러 메시지
  * @returns {any} 검증된 데이터
  * @throws {Error} 검증 실패 시
- * 
+ *
  * @example
  * const data = await fetchAPI(`${API_BASE}/api/tasks`);
  * validateResponse(data, (d) => Array.isArray(d.tasks), 'Invalid tasks response');

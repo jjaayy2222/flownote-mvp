@@ -22,18 +22,42 @@ describe('api.ts - API_BASE & STATUS_MAP', () => {
     expect(API_BASE).toBe(expected);
   });
 
-  it('getApiBaseUrl should resolve custom URL, environment variable, or fallback', () => {
-    // 1. Explicit custom URL takes highest precedence
-    expect(getApiBaseUrl('https://api.flownote.app')).toBe('https://api.flownote.app');
+  it('getApiBaseUrl should prioritize NEXT_PUBLIC_API_BASE over explicit URL and default fallback', () => {
+    const originalEnv = process.env.NEXT_PUBLIC_API_BASE;
+    try {
+      const distinctEnvUrl = 'https://configured-env.flownote.app';
+      process.env.NEXT_PUBLIC_API_BASE = distinctEnvUrl;
 
-    // 2. Fallback when argument is empty
-    const envValue = process.env.NEXT_PUBLIC_API_BASE;
-    if (envValue) {
-      expect(getApiBaseUrl('')).toBe(envValue);
-      expect(getApiBaseUrl(undefined)).toBe(envValue);
-    } else {
+      // NEXT_PUBLIC_API_BASE takes precedence over explicit URL
+      expect(getApiBaseUrl('https://explicit.flownote.app')).toBe(distinctEnvUrl);
+      expect(getApiBaseUrl()).toBe(distinctEnvUrl);
+      expect(getApiBaseUrl(undefined)).toBe(distinctEnvUrl);
+    } finally {
+      process.env.NEXT_PUBLIC_API_BASE = originalEnv;
+    }
+  });
+
+  it('getApiBaseUrl should use explicit URL when NEXT_PUBLIC_API_BASE is absent', () => {
+    const originalEnv = process.env.NEXT_PUBLIC_API_BASE;
+    try {
+      delete process.env.NEXT_PUBLIC_API_BASE;
+
+      expect(getApiBaseUrl('https://explicit.flownote.app')).toBe('https://explicit.flownote.app');
+    } finally {
+      process.env.NEXT_PUBLIC_API_BASE = originalEnv;
+    }
+  });
+
+  it('getApiBaseUrl should fallback to DEFAULT_API_BASE when both environment variable and explicit URL are absent', () => {
+    const originalEnv = process.env.NEXT_PUBLIC_API_BASE;
+    try {
+      delete process.env.NEXT_PUBLIC_API_BASE;
+
+      expect(getApiBaseUrl()).toBe(DEFAULT_API_BASE);
       expect(getApiBaseUrl('')).toBe(DEFAULT_API_BASE);
       expect(getApiBaseUrl(undefined)).toBe(DEFAULT_API_BASE);
+    } finally {
+      process.env.NEXT_PUBLIC_API_BASE = originalEnv;
     }
   });
 
