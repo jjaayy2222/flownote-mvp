@@ -78,10 +78,24 @@ describe('api.ts - API_BASE & STATUS_MAP', () => {
     // Regression check: ensure cleanup properly unsets the key instead of stringifying to "undefined"
     const originalEnv = process.env.NEXT_PUBLIC_API_BASE;
     try {
-      delete process.env.NEXT_PUBLIC_API_BASE;
+      // Set to a dirty dummy value before calling cleanup with undefined
+      process.env.NEXT_PUBLIC_API_BASE = 'https://dirty-env.flownote.app';
       restoreApiBaseEnv(undefined);
       expect(process.env.NEXT_PUBLIC_API_BASE).toBeUndefined();
       expect(process.env.NEXT_PUBLIC_API_BASE).not.toBe('undefined');
+    } finally {
+      restoreApiBaseEnv(originalEnv);
+    }
+  });
+
+  it('restoreApiBaseEnv should restore original string value when original value was defined', () => {
+    const originalEnv = process.env.NEXT_PUBLIC_API_BASE;
+    try {
+      const initialOriginalValue = 'https://initial-origin.flownote.app';
+      process.env.NEXT_PUBLIC_API_BASE = initialOriginalValue;
+      process.env.NEXT_PUBLIC_API_BASE = 'https://temporary-changed.flownote.app';
+      restoreApiBaseEnv(initialOriginalValue);
+      expect(process.env.NEXT_PUBLIC_API_BASE).toBe(initialOriginalValue);
     } finally {
       restoreApiBaseEnv(originalEnv);
     }
