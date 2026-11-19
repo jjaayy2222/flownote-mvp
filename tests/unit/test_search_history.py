@@ -54,13 +54,13 @@ class TestSearchHistoryInit:
     def test_init_creates_empty_history_when_file_absent(self, tmp_history_file: str):
         """파일이 없을 때 빈 히스토리로 초기화됩니다."""
         sh = SearchHistory(storage_path=tmp_history_file)
-        assert sh.history == {}
+        assert not sh.history
 
     def test_init_creates_data_directory_when_absent(self, tmp_path: Path):
         """부모 디렉터리가 없어도 자동 생성됩니다."""
         storage = str(tmp_path / "nested" / "dir" / "history.json")
         sh = SearchHistory(storage_path=storage)
-        assert sh.history == {}
+        assert not sh.history
         assert os.path.isdir(str(tmp_path / "nested" / "dir"))
 
     def test_load_history_reads_existing_valid_json(self, tmp_history_file: str):
@@ -94,7 +94,7 @@ class TestSearchHistoryInit:
             sh = SearchHistory(storage_path=tmp_history_file)
 
         # 빈 히스토리 폴백
-        assert sh.history == {}
+        assert not sh.history
         # 경고 로그 발생 여부 (Comment 4: 운영자 진단 경고 보장)
         assert any("히스토리 로드 실패" in record.message for record in caplog.records)
 
@@ -109,7 +109,7 @@ class TestSearchHistoryInit:
         sh.history = {}
         with patch("builtins.open", side_effect=OSError("mock read failure")):
             sh._load_history()
-        assert sh.history == {}
+        assert not sh.history
 
 
 # ─────────────────────────────────────────────────────────
@@ -156,7 +156,7 @@ class TestAddSearch:
         with patch.object(sh, "_save_history", return_value=False):
             sid = sh.add_search("rollback test", results_count=1)
         assert sid is None
-        assert sh.history == {}
+        assert not sh.history
 
 
 # ─────────────────────────────────────────────────────────
@@ -170,6 +170,7 @@ class TestGetSearch:
     def test_get_search_returns_record(self, sh: SearchHistory):
         """존재하는 ID로 조회하면 레코드 딕셔너리를 반환합니다."""
         sid = sh.add_search("get test", results_count=3)
+        assert sid is not None
         record = sh.get_search(sid)
         assert record is not None
         assert record["query"] == "get test"
@@ -231,12 +232,12 @@ class TestGetRecentSearches:
 
     def test_get_recent_searches_empty_history(self, sh: SearchHistory):
         """히스토리가 없으면 빈 리스트를 반환합니다."""
-        assert sh.get_recent_searches() == []
+        assert not sh.get_recent_searches()
 
     def test_get_recent_searches_limit_zero(self, sh: SearchHistory):
         """limit=0 이면 빈 리스트를 반환합니다."""
         self._add_n(sh, 3)
-        assert sh.get_recent_searches(limit=0) == []
+        assert not sh.get_recent_searches(limit=0)
 
 
 # ─────────────────────────────────────────────────────────
@@ -255,6 +256,8 @@ class TestGetAllSearches:
         """
         sid_a = sh.add_search("alpha", 1)
         sid_b = sh.add_search("beta", 2)
+        assert sid_a is not None
+        assert sid_b is not None
         all_searches = sh.get_all_searches()
 
         # 개수
@@ -270,7 +273,7 @@ class TestGetAllSearches:
 
     def test_get_all_searches_empty(self, sh: SearchHistory):
         """히스토리가 없으면 빈 딕셔너리를 반환합니다."""
-        assert sh.get_all_searches() == {}
+        assert not sh.get_all_searches()
 
 
 # ─────────────────────────────────────────────────────────
@@ -284,6 +287,7 @@ class TestDeleteSearch:
     def test_delete_search_removes_record(self, sh: SearchHistory):
         """존재하는 ID 삭제는 True를 반환하고 메모리에서 제거됩니다."""
         sid = sh.add_search("delete me", 1)
+        assert sid is not None
         result = sh.delete_search(sid)
         assert result is True
         assert sh.get_search(sid) is None
@@ -323,7 +327,7 @@ class TestClearAll:
         sh.add_search("b", 2)
         result = sh.clear_all()
         assert result is True
-        assert sh.history == {}
+        assert not sh.history
 
     def test_clear_all_rollback_restores_exact_history(self, sh: SearchHistory):
         """_save_history 실패 시 이전 히스토리가 정확히 복원됩니다.
@@ -385,27 +389,25 @@ class TestGetStatistics:
 
 
 # ─────────────────────────────────────────────────────────
-# _save_history 원자적 쓰기 테스트
+# _save_history 원자적 쓰기 및 견고성 테스트 (Edge Cases & Resilience)
 # ─────────────────────────────────────────────────────────
 
 
 class TestSaveHistory:
-    """_save_history의 원자적 쓰기 및 파일 I/O 오류 경로를 검증합니다."""
+    """_save_history의 원자적 쓰기, 심볼릭 링크, 권한 유지 및 I/O 오류 복구 경로를 검증합니다."""
 
     def test_save_history_does_not_corrupt_existing_file_on_write_failure(
         self, sh: SearchHistory
     ):
         """쓰기 오류 발생 시 기존 파일이 손상되지 않습니다.
-        (Comment 1: 원자적 쓰기 — 임시 파일 접근 실패 시 기존 파일 보존 검증)
+        (원자적 쓰기 — 임시 파일 접근 실패 시 기존 파일 보존 검증)
         """
-        # 먼저 정상적인 초기 데이터 저장
         sid = sh.add_search("original", 5)
         assert os.path.exists(sh.storage_path)
         with open(sh.storage_path, encoding="utf-8") as f:
             original_content = f.read()
         assert "original" in original_content
 
-        # NamedTemporaryFile 생성 단계에서 OSError를 주입하여 쓰기 실패를 시뮬레이션
         sh.history["new_key"] = {
             "query": "new",
             "results_count": 1,
@@ -417,30 +419,194 @@ class TestSaveHistory:
             result = sh._save_history()
 
         assert result is False
-        # 기존 파일이 손상되지 않고 원본 내용 유지
         with open(sh.storage_path, encoding="utf-8") as f:
             after_content = f.read()
         assert after_content == original_content
 
-    def test_save_history_returns_false_on_write_oserror(self, sh: SearchHistory):
-        """NamedTemporaryFile 생성 실패 시 False를 반환합니다."""
-        sh.history = {
-            "k": {
-                "query": "q",
-                "results_count": 1,
-                "top_results": [],
-                "search_time": "2026-01-01T00:00:00",
-                "created_at": "2026-01-01 00:00:00",
-            }
-        }
-        with patch("tempfile.NamedTemporaryFile", side_effect=OSError("disk full")):
-            result = sh._save_history()
-        assert result is False
+    def test_symlink_target_updated_and_symlink_preserved(self, tmp_path: Path):
+        """Comment 1: 심볼릭 링크를 통해 저장할 때 심볼릭 링크 자체가 교체되지 않고
+        대상 파일이 업데이트되며 심볼릭 링크가 온전히 유지되는지 검증합니다.
+        """
+        real_file = tmp_path / "real_history.json"
+        symlink_file = tmp_path / "symlink_history.json"
 
-    def test_save_history_returns_true_on_success(self, sh: SearchHistory):
-        """정상적인 저장은 True를 반환하고 파일이 존재합니다."""
-        sh.add_search("saved", 3)
-        assert os.path.exists(sh.storage_path)
+        # 실제 대상 파일 생성
+        real_file.write_text("{}", encoding="utf-8")
+        # 심볼릭 링크 생성
+        os.symlink(real_file, symlink_file)
+        assert os.path.islink(symlink_file)
+
+        sh = SearchHistory(storage_path=str(symlink_file))
+        sid = sh.add_search("symlink test query", 4)
+        assert sid is not None
+
+        # 심볼릭 링크가 여전히 링크로 유지되어야 함
+        assert os.path.islink(symlink_file)
+        # 실제 대상 파일에 저장된 내용이 반영되어 있어야 함
+        content = real_file.read_text(encoding="utf-8")
+        assert "symlink test query" in content
+
+    def test_saved_searches_reconcile_between_instances(self, tmp_history_file: str):
+        """Comment 2: 두 개 이상의 SearchHistory 인스턴스가 순차적으로 변경사항을 저장할 때,
+        늦게 저장한 인스턴스가 이전 인스턴스의 커밋을 덮어쓰지 않고 조정(Reconcile)하여 보존하는지 검증합니다.
+        """
+        sh1 = SearchHistory(storage_path=tmp_history_file)
+        sh2 = SearchHistory(storage_path=tmp_history_file)
+
+        id1 = sh1.add_search("search from instance 1", 1)
+        assert id1 is not None
+
+        id2 = sh2.add_search("search from instance 2", 2)
+        assert id2 is not None
+
+        # 디스크에서 직접 읽어 두 인스턴스의 검색이 모두 보존되었는지 검증
+        with open(tmp_history_file, "r", encoding="utf-8") as f:
+            disk_data = json.load(f)
+
+        assert id1 in disk_data
+        assert id2 in disk_data
+        assert disk_data[id1]["query"] == "search from instance 1"
+        assert disk_data[id2]["query"] == "search from instance 2"
+
+    def test_file_permissions_preserved_on_save(self, tmp_history_file: str):
+        """Comment 3: 기존 파일의 권한 모드가 저장 후에도 유지되는지 검증합니다."""
+        import stat
+
+        os.makedirs(os.path.dirname(tmp_history_file), exist_ok=True)
+        # 초기 파일 생성 및 0o640 권한 부여
+        with open(tmp_history_file, "w", encoding="utf-8") as f:
+            f.write("{}")
+        os.chmod(tmp_history_file, 0o640)
+        expected_mode = stat.S_IMODE(os.stat(tmp_history_file).st_mode)
+
+        sh = SearchHistory(storage_path=tmp_history_file)
+        sh.add_search("perm check", 1)
+
+        new_mode = stat.S_IMODE(os.stat(tmp_history_file).st_mode)
+        assert new_mode == expected_mode
+
+    def test_unicode_encode_error_cleans_up_temporary_file(self, sh: SearchHistory):
+        """Comment 4: 직렬화/쓰기 중 UnicodeEncodeError 발생 시 예외를 전파하지 않고
+        False를 반환하며 임시 파일이 깨끗이 정리되는지 검증합니다.
+        """
+        storage_dir = os.path.dirname(os.path.realpath(sh.storage_path))
+
+        def _raise_unicode_error(*args, **kwargs):
+            raise UnicodeEncodeError("utf-8", "surrogate", 0, 1, "unpaired surrogate")
+
+        with patch("tempfile.NamedTemporaryFile") as mock_tmp:
+            dummy_file = Path(storage_dir) / "dummy_test.tmp"
+            dummy_file.write_text("temporary", encoding="utf-8")
+
+            mock_instance = mock_tmp.return_value.__enter__.return_value
+            mock_instance.name = str(dummy_file)
+            mock_instance.write.side_effect = _raise_unicode_error
+
+            result = sh._save_history()
+
+        assert result is False
+        # 임시 파일이 디스크에 남아있지 않아야 함
+        assert not dummy_file.exists()
+
+    def test_fallback_to_direct_write_when_directory_not_writable(
+        self, tmp_history_file: str
+    ):
+        """Comment 5: 디렉토리 권한으로 인해 임시 파일 생성이 실패(PermissionError)하더라도,
+        기존 대상 파일이 쓰기 가능하면 직접 저장으로 폴백하여 성공하는지 검증합니다.
+        """
+        # 기존 파일 정상 생성
+        os.makedirs(os.path.dirname(tmp_history_file), exist_ok=True)
+        with open(tmp_history_file, "w", encoding="utf-8") as f:
+            f.write("{}")
+
+        sh = SearchHistory(storage_path=tmp_history_file)
+        sh.history["k"] = {
+            "query": "fallback_query",
+            "results_count": 1,
+            "top_results": [],
+            "search_time": "2026-01-01T00:00:00",
+            "created_at": "2026-01-01 00:00:00",
+        }
+
+        # NamedTemporaryFile 시점에 PermissionError 주입 (디렉토리 생성 권한 없음 시뮬레이션)
+        with patch(
+            "tempfile.NamedTemporaryFile",
+            side_effect=PermissionError("Permission denied"),
+        ):
+            result = sh._save_history()
+
+        assert result is True
+        with open(tmp_history_file, "r", encoding="utf-8") as f:
+            saved = json.load(f)
+        assert "k" in saved
+        assert saved["k"]["query"] == "fallback_query"
+
+    def test_bare_path_without_directory_saves_successfully(self, tmp_path: Path):
+        """Comment 6: storage_path에 디렉토리 요소가 없는 순수 파일명(bare filename)이 주어졌을 때
+        NamedTemporaryFile이 오류 없이 동작하고 저장이 성공하는지 검증합니다.
+        """
+        bare_filename = str(tmp_path / "bare_history.json")
+        orig_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            # 디렉토리 없이 파일명만 전달
+            sh_bare = SearchHistory(storage_path="bare_history.json")
+            sid = sh_bare.add_search("bare path query", 3)
+            assert sid is not None
+            assert os.path.exists("bare_history.json")
+        finally:
+            os.chdir(orig_cwd)
+
+    def test_prune_history_when_exceeding_max_entries(self, tmp_history_file: str):
+        """Comment 7: 검색 기록이 max_history_entries를 초과할 경우 오래된 항목을 자동 정리하여
+        디스크 공간 사용량을 제한(bound)하는지 검증합니다.
+        """
+        sh = SearchHistory(storage_path=tmp_history_file, max_history_entries=3)
+        sh.add_search("query 1", 1)
+        sh.add_search("query 2", 2)
+        sh.add_search("query 3", 3)
+        assert len(sh.history) == 3
+
+        # 4번째, 5번째 추가
+        sh.add_search("query 4", 4)
+        sh.add_search("query 5", 5)
+
+        # 최대 3개로 정리되어야 함
+        assert len(sh.history) == 3
+        queries = [item["query"] for item in sh.history.values()]
+        assert "query 5" in queries
+        assert "query 4" in queries
+        assert "query 3" in queries
+        assert "query 1" not in queries
+
+    def test_enospc_falls_back_to_direct_write(self, tmp_history_file: str):
+        """Comment 7: 디스크 용량 한계(ENOSPC)로 임시 파일 생성/쓰기가 실패하더라도,
+        기존 파일이 있으면 직접 덮어쓰기로 폴백하여 2배 피크 공간 요구 없이 저장되는지 검증합니다.
+        """
+        import errno
+
+        os.makedirs(os.path.dirname(tmp_history_file), exist_ok=True)
+        with open(tmp_history_file, "w", encoding="utf-8") as f:
+            f.write("{}")
+
+        sh = SearchHistory(storage_path=tmp_history_file)
+        sh.history["enospc_key"] = {
+            "query": "enospc_query",
+            "results_count": 1,
+            "top_results": [],
+            "search_time": "2026-01-01T00:00:00",
+            "created_at": "2026-01-01 00:00:00",
+        }
+
+        enospc_err = OSError(errno.ENOSPC, "No space left on device")
+        enospc_err.errno = errno.ENOSPC
+        with patch("tempfile.NamedTemporaryFile", side_effect=enospc_err):
+            result = sh._save_history()
+
+        assert result is True
+        with open(tmp_history_file, "r", encoding="utf-8") as f:
+            saved = json.load(f)
+        assert "enospc_key" in saved
 
 
 # ─────────────────────────────────────────────────────────

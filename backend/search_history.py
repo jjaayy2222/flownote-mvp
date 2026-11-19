@@ -7,10 +7,13 @@
 [EN] FlowNote MVP - Search History Management
 """
 
+import errno
 import json
 import logging
 import os
+import stat
 import tempfile
+import threading
 import uuid
 from collections import Counter
 from datetime import date, datetime
@@ -19,6 +22,10 @@ from typing import Any, Callable, Dict, List, Optional, TypedDict
 from backend.utils.common import format_error_msg
 
 logger = logging.getLogger(__name__)
+
+# [KO] 최대 보관 검색 기록 수 기본값 (디스크 공간 제약 방어)
+# [EN] Default maximum number of search history entries to keep (bounds disk footprint)
+DEFAULT_MAX_HISTORY_ENTRIES = 1000
 
 
 def _custom_json_serializer(obj: Any) -> str:
@@ -45,23 +52,47 @@ class SearchHistory:
     [EN] A class to persist and manage search history in a local JSON file.
     """
 
-    def __init__(self, storage_path: str = "data/search_history.json"):
+    # [KO] 다중 인스턴스/스레드 간 파일 쓰기 직렬화를 위한 공유 락
+    # [EN] Shared lock to serialize file writes across threads and instances
+    _lock = threading.RLock()
+
+    def __init__(
+        self,
+        storage_path: str = "data/search_history.json",
+        max_history_entries: int = DEFAULT_MAX_HISTORY_ENTRIES,
+    ):
         """
         [KO]
         히스토리 저장 경로를 설정하고 기존 데이터를 로드합니다.
 
         Args:
             storage_path: 히스토리를 저장할 JSON 파일 경로
+            max_history_entries: 보관할 최대 검색 기록 수 (초과 시 오래된 순 정리)
 
         [EN]
         Sets the history storage path and loads existing data.
 
         Args:
             storage_path: JSON file path to store history
+            max_history_entries: Maximum number of search history entries to keep
         """
         self.storage_path = storage_path
+        self.max_history_entries = max_history_entries
         self.history: Dict[str, Dict] = {}
         self._load_history()
+
+    def _prune_history(self) -> None:
+        """
+        [KO] 최대 보관 수를 초과할 경우 오래된 검색 기록을 정리하여 디스크 공간을 제한합니다.
+        [EN] Prunes older search records when exceeding maximum entries to bound disk usage.
+        """
+        if len(self.history) > self.max_history_entries:
+            sorted_items = sorted(
+                self.history.items(),
+                key=lambda x: x[1].get("search_time", ""),
+                reverse=True,
+            )
+            self.history = dict(sorted_items[: self.max_history_entries])
 
     def _load_history(self):
         """
@@ -71,11 +102,12 @@ class SearchHistory:
         [EN]
         Loads saved search history from the specified path. Creates it if it doesn't exist.
         """
-        if os.path.exists(self.storage_path):
+        target_path = os.path.realpath(self.storage_path)
+        if os.path.exists(target_path):
             try:
-                with open(self.storage_path, "r", encoding="utf-8") as f:
+                with open(target_path, "r", encoding="utf-8") as f:
                     self.history = json.load(f)
-            except (OSError, ValueError, json.JSONDecodeError) as e:
+            except (OSError, ValueError) as e:
                 logger.warning(
                     f"히스토리 로드 실패: {type(e).__name__}: {format_error_msg(e)}",
                     extra={
@@ -86,83 +118,147 @@ class SearchHistory:
                 )
                 self.history = {}
         else:
-            # data 폴더 확인
-            os.makedirs(os.path.dirname(self.storage_path), exist_ok=True)
+            storage_dir = os.path.dirname(target_path) or "."
+            if storage_dir != ".":
+                os.makedirs(storage_dir, exist_ok=True)
             self.history = {}
 
     def _save_history(self) -> bool:
         """
         [KO]
-        메모리의 히스토리 데이터를 JSON 파일에 저장합니다.
+        메모리의 히스토리 데이터를 JSON 파일에 안전하게 저장합니다.
+        심볼릭 링크 대상 보존, 권한 유지, 임시 파일 정리, 디렉토리 권한/디스크 용량 한계 폴백을 지원합니다.
 
         Returns:
             저장 성공 시 True, 직렬화 또는 I/O 실패 시 False
 
         [EN]
-        Saves the in-memory history data to a JSON file.
+        Safely saves the in-memory history data to a JSON file.
+        Preserves symlink targets, file permissions, cleans up temporary files,
+        and falls back on directory permission restrictions or disk quota exhaustion.
 
         Returns:
             True if saved successfully, False on serialization or I/O failure.
         """
-        # [KO] 1단계: 직렬화 - 파일 I/O와 분리하여 예외 범위를 명확히 제한
-        # [EN] Step 1: Serialization — separated from file I/O to narrow the exception scope
-        try:
-            serialized = json.dumps(
-                self.history,
-                ensure_ascii=False,
-                indent=2,
-                default=_custom_json_serializer,
-            )
-        except (TypeError, ValueError) as e:
-            logger.error(
-                f"히스토리 직렬화 실패: {type(e).__name__}: {format_error_msg(e)}",
-                extra={
-                    "action": "save_history_serialize",
-                    "path": self.storage_path,
-                    "error_type": type(e).__name__,
-                },
-            )
-            return False
+        with SearchHistory._lock:
+            self._prune_history()
 
-        # [KO] 2단계: 원자적 파일 I/O
-        #   임시 파일에 먼저 기록한 뒤 os.replace()로 원자적 교체하여
-        #   쓰기 중 오류가 발생해도 기존 파일이 손상되지 않습니다.
-        # [EN] Step 2: Atomic file I/O
-        #   Write to a temporary file first, then atomically replace the target
-        #   with os.replace() so that an error during write never corrupts the
-        #   existing history file.
-        storage_dir = os.path.dirname(self.storage_path)
-        tmp_path: Optional[str] = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=storage_dir,
-                delete=False,
-                suffix=".tmp",
-            ) as tmp_f:
-                tmp_path = tmp_f.name
-                tmp_f.write(serialized)
-            os.replace(tmp_path, self.storage_path)
-        except OSError as e:
-            logger.error(
-                f"히스토리 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
-                extra={
-                    "action": "save_history_write",
-                    "path": self.storage_path,
-                    "error_type": type(e).__name__,
-                },
-            )
-            # [KO] 임시 파일이 생성된 경우에만 정리합니다.
-            # [EN] Clean up the temporary file only if it was successfully created.
-            if tmp_path is not None:
+            # [KO] 1단계: 직렬화 - 파일 I/O와 분리하여 예외 범위를 명확히 제한
+            # [EN] Step 1: Serialization — separated from file I/O to narrow the exception scope
+            try:
+                serialized = json.dumps(
+                    self.history,
+                    ensure_ascii=False,
+                    indent=2,
+                    default=_custom_json_serializer,
+                )
+            except (TypeError, ValueError) as e:
+                logger.error(
+                    f"히스토리 직렬화 실패: {type(e).__name__}: {format_error_msg(e)}",
+                    extra={
+                        "action": "save_history_serialize",
+                        "path": self.storage_path,
+                        "error_type": type(e).__name__,
+                    },
+                )
+                return False
+
+            # [KO] 2단계: 대상 경로 해석 (심볼릭 링크 대상 보존 및 단독 파일명 처리)
+            # [EN] Step 2: Target path resolution (preserves symlink targets & handles bare filenames)
+            target_path = os.path.realpath(self.storage_path)
+            storage_dir = os.path.dirname(target_path) or "."
+            target_exists = os.path.exists(target_path)
+            target_stat = None
+            if target_exists:
                 try:
-                    os.unlink(tmp_path)
+                    target_stat = os.stat(target_path)
                 except OSError:
                     pass
-            return False
 
-        return True
+            tmp_path: Optional[str] = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    dir=storage_dir,
+                    delete=False,
+                    suffix=".tmp",
+                ) as tmp_f:
+                    tmp_path = tmp_f.name
+                    tmp_f.write(serialized)
+
+                # [KO] 파일 권한 복제 (기존 파일 권한 승계 또는 umask 반영 표준 모드)
+                # [EN] Preserve permissions (copy existing mode or respect umask for new file)
+                if target_stat is not None:
+                    try:
+                        os.chmod(tmp_path, stat.S_IMODE(target_stat.st_mode))
+                    except OSError:
+                        pass
+                else:
+                    try:
+                        umask = os.umask(0)
+                        os.umask(umask)
+                        os.chmod(tmp_path, 0o666 & ~umask)
+                    except OSError:
+                        pass
+
+                os.replace(tmp_path, target_path)
+                return True
+
+            except (OSError, UnicodeEncodeError) as e:
+                # [KO] 예외 발생 시 생성된 임시 파일 즉시 정리
+                # [EN] Clean up temporary file immediately on failure
+                if tmp_path is not None and os.path.exists(tmp_path):
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+                    tmp_path = None
+
+                # [KO] 폴백: 디렉토리 권한 거부(PermissionError) 또는 디스크 용량 한계(ENOSPC) 시,
+                # 대상 파일 자체가 쓰기 가능한 상태이면 직접 덮어쓰기로 복구 시도
+                # [EN] Fallback: If atomic replacement fails due to directory permissions or disk quota (ENOSPC),
+                # and the target file itself is writable, attempt direct in-place write.
+                is_disk_full = (
+                    isinstance(e, OSError) and getattr(e, "errno", None) == errno.ENOSPC
+                )
+                is_perm_error = isinstance(e, PermissionError)
+                if (
+                    target_exists
+                    and (is_perm_error or is_disk_full)
+                    and os.access(target_path, os.W_OK)
+                ):
+                    try:
+                        with open(target_path, "w", encoding="utf-8") as f:
+                            f.write(serialized)
+                        return True
+                    except (OSError, UnicodeEncodeError) as direct_err:
+                        logger.error(
+                            f"히스토리 직접 저장 실패: {type(direct_err).__name__}: {format_error_msg(direct_err)}",
+                            extra={
+                                "action": "save_history_write_direct",
+                                "path": self.storage_path,
+                                "error_type": type(direct_err).__name__,
+                            },
+                        )
+                        return False
+
+                logger.error(
+                    f"히스토리 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
+                    extra={
+                        "action": "save_history_write",
+                        "path": self.storage_path,
+                        "error_type": type(e).__name__,
+                    },
+                )
+                return False
+
+            finally:
+                if tmp_path is not None and os.path.exists(tmp_path):
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
 
     def _apply_and_persist(
         self,
@@ -174,7 +270,7 @@ class SearchHistory:
         """
         [KO]
         메모리 변경 → 저장 → 실패 시 롤백을 단일 헬퍼로 코드화합니다.
-        add_search, delete_search, clear_all 등에서 반복되는 저장/롤백 패턴을 중앙화합니다.
+        공유 락을 획득하고 디스크의 최신 상태와 조정(reconcile)한 후 변경사항을 적용합니다.
 
         Args:
             mutate: 메모리 상태를 변경하는 함수
@@ -187,7 +283,7 @@ class SearchHistory:
 
         [EN]
         Encapsulates the mutate → persist → rollback-on-failure pattern into a single helper.
-        Centralizes the repeated save/rollback pattern used by add_search, delete_search, clear_all, etc.
+        Acquires shared lock, reconciles with latest on-disk changes, and applies mutations.
 
         Args:
             mutate: Function that applies the in-memory change
@@ -198,15 +294,30 @@ class SearchHistory:
         Returns:
             True if persisted successfully, False if rolled back due to failure.
         """
-        mutate()
-        if self._save_history():
-            return True
-        rollback()
-        logger.error(
-            rollback_msg,
-            extra={"action": action, "error_type": "save_failure"},
-        )
-        return False
+        with SearchHistory._lock:
+            # [KO] 다른 인스턴스에서 커밋한 디스크의 최신 기록을 동기화하여 조정(Reconcile)
+            # [EN] Reconcile with latest on-disk state committed by other instances
+            target_path = os.path.realpath(self.storage_path)
+            if os.path.exists(target_path):
+                try:
+                    with open(target_path, "r", encoding="utf-8") as f:
+                        disk_data = json.load(f)
+                    if isinstance(disk_data, dict):
+                        for k, v in disk_data.items():
+                            if k not in self.history:
+                                self.history[k] = v
+                except (OSError, ValueError):
+                    pass
+
+            mutate()
+            if self._save_history():
+                return True
+            rollback()
+            logger.error(
+                rollback_msg,
+                extra={"action": action, "error_type": "save_failure"},
+            )
+            return False
 
     def add_search(
         self, query: str, results_count: int, top_results: Optional[List[str]] = None
