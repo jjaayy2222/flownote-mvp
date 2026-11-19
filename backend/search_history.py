@@ -10,6 +10,7 @@
 import json
 import logging
 import os
+import tempfile
 import uuid
 from collections import Counter
 from datetime import date, datetime
@@ -123,11 +124,26 @@ class SearchHistory:
             )
             return False
 
-        # [KO] 2단계: 파일 I/O - 직렬화 성공 후에만 파일에 기록
-        # [EN] Step 2: File I/O — only writes to disk after successful serialization
+        # [KO] 2단계: 원자적 파일 I/O
+        #   임시 파일에 먼저 기록한 뒤 os.replace()로 원자적 교체하여
+        #   쓰기 중 오류가 발생해도 기존 파일이 손상되지 않습니다.
+        # [EN] Step 2: Atomic file I/O
+        #   Write to a temporary file first, then atomically replace the target
+        #   with os.replace() so that an error during write never corrupts the
+        #   existing history file.
+        storage_dir = os.path.dirname(self.storage_path)
+        tmp_path: Optional[str] = None
         try:
-            with open(self.storage_path, "w", encoding="utf-8") as f:
-                f.write(serialized)
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=storage_dir,
+                delete=False,
+                suffix=".tmp",
+            ) as tmp_f:
+                tmp_path = tmp_f.name
+                tmp_f.write(serialized)
+            os.replace(tmp_path, self.storage_path)
         except OSError as e:
             logger.error(
                 f"히스토리 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
@@ -137,6 +153,13 @@ class SearchHistory:
                     "error_type": type(e).__name__,
                 },
             )
+            # [KO] 임시 파일이 생성된 경우에만 정리합니다.
+            # [EN] Clean up the temporary file only if it was successfully created.
+            if tmp_path is not None:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
             return False
 
         return True

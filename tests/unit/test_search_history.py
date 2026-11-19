@@ -5,15 +5,17 @@
 [EN] Unit tests for SearchHistory in backend/search_history.py.
 
 테스트 범위:
-- 파일 I/O 실패 시 격리 (mocking)
-- 손상된 데이터(JSON 파싱 오류) 복원력
-- 검색 기록 최대 보관 수(limit) 슬라이싱
-- add_search / get_search / get_recent_searches / get_all_searches
-- delete_search / clear_all / get_statistics
-- _apply_and_persist 롤백 패턴
+- 파일 I/O 실패 시 격리 (mocking) + 원자적 쓰기 검증
+- 손상된 데이터(JSON 파싱 오류) 복원력 + 경고 로그 발생 검증
+- 검색 기록 최대 보관 수(limit) 슬라이싱 + 최신 항목 선택 검증
+- add_search / get_search / get_recent_searches / get_all_searches 내용 검증
+- delete_search / clear_all 삭제 및 정확한 롤백 스냅샷 검증
+- _apply_and_persist 롤백 패턴 (정확한 히스토리 동등성)
+- get_statistics 반올림 회귀 감지
 """
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Generator
@@ -81,32 +83,30 @@ class TestSearchHistoryInit:
         assert sh.history["search_20260101_120000_abcdef01"]["query"] == "hello"
 
     def test_load_history_falls_back_to_empty_on_corrupt_json(
-        self, tmp_history_file: str
+        self, tmp_history_file: str, caplog: pytest.LogCaptureFixture
     ):
-        """손상된 JSON 파일이 있을 때 빈 히스토리로 폴백됩니다."""
+        """손상된 JSON 파일이 있을 때 빈 히스토리로 폴백되고 경고 로그가 발생합니다."""
         os.makedirs(os.path.dirname(tmp_history_file), exist_ok=True)
         with open(tmp_history_file, "w", encoding="utf-8") as f:
             f.write("{corrupt: json,,}")
 
-        sh = SearchHistory(storage_path=tmp_history_file)
-        assert sh.history == {}
+        with caplog.at_level(logging.WARNING, logger="backend.search_history"):
+            sh = SearchHistory(storage_path=tmp_history_file)
 
-    def test_load_history_falls_back_to_empty_on_oserror(
-        self, tmp_history_file: str, monkeypatch: pytest.MonkeyPatch
-    ):
+        # 빈 히스토리 폴백
+        assert sh.history == {}
+        # 경고 로그 발생 여부 (Comment 4: 운영자 진단 경고 보장)
+        assert any("히스토리 로드 실패" in record.message for record in caplog.records)
+
+    def test_load_history_falls_back_to_empty_on_oserror(self, tmp_history_file: str):
         """파일 읽기 중 OSError가 발생하면 빈 히스토리로 폴백됩니다."""
         os.makedirs(os.path.dirname(tmp_history_file), exist_ok=True)
         with open(tmp_history_file, "w", encoding="utf-8") as f:
             json.dump({}, f)
 
-        def _raise_oserror(path, mode, **kwargs):
-            raise OSError("mock read failure")
-
-        monkeypatch.setattr("builtins.open", _raise_oserror)
         sh = SearchHistory.__new__(SearchHistory)
         sh.storage_path = tmp_history_file
         sh.history = {}
-        # 직접 _load_history 호출하여 OSError 경로 커버
         with patch("builtins.open", side_effect=OSError("mock read failure")):
             sh._load_history()
         assert sh.history == {}
@@ -180,7 +180,7 @@ class TestGetSearch:
 
 
 # ─────────────────────────────────────────────────────────
-# get_recent_searches 테스트 (limit 슬라이싱)
+# get_recent_searches 테스트 (limit 슬라이싱 + 최신 항목 검증)
 # ─────────────────────────────────────────────────────────
 
 
@@ -197,11 +197,24 @@ class TestGetRecentSearches:
         results = sh.get_recent_searches(limit=10)
         assert len(results) == 3
 
-    def test_get_recent_searches_respects_limit(self, sh: SearchHistory):
-        """기록 수가 limit을 초과할 때 정확히 limit개만 반환합니다."""
+    def test_get_recent_searches_respects_limit_and_selects_newest(
+        self, sh: SearchHistory
+    ):
+        """기록 수가 limit을 초과할 때 가장 최신 N개를 정확히 반환합니다.
+        (Comment 3: 개수 뿐 아니라 최신 항목인지 검증)
+        """
         self._add_n(sh, 15)
-        results = sh.get_recent_searches(limit=5)
-        assert len(results) == 5
+        limit = 5
+        results = sh.get_recent_searches(limit=limit)
+        assert len(results) == limit
+
+        # 전체 히스토리를 최신순 정렬했을 때 상위 limit개 search_time과 일치해야 합니다
+        all_sorted_times = sorted(
+            (v["search_time"] for v in sh.history.values()), reverse=True
+        )
+        expected_top_times = set(all_sorted_times[:limit])
+        returned_times = {r["search_time"] for r in results}
+        assert returned_times == expected_top_times
 
     def test_get_recent_searches_sorted_newest_first(self, sh: SearchHistory):
         """반환 목록이 최신순(내림차순)으로 정렬됩니다."""
@@ -227,19 +240,33 @@ class TestGetRecentSearches:
 
 
 # ─────────────────────────────────────────────────────────
-# get_all_searches 테스트
+# get_all_searches 테스트 (내용 동등성 검증)
 # ─────────────────────────────────────────────────────────
 
 
 class TestGetAllSearches:
     """get_all_searches 메서드를 검증합니다."""
 
-    def test_get_all_searches_returns_full_history(self, sh: SearchHistory):
-        """추가된 모든 기록을 딕셔너리로 반환합니다."""
-        sh.add_search("a", 1)
-        sh.add_search("b", 2)
+    def test_get_all_searches_returns_full_history_with_correct_content(
+        self, sh: SearchHistory
+    ):
+        """추가된 모든 기록의 ID와 내용이 반환 딕셔너리와 정확히 일치합니다.
+        (Comment 6: 개수뿐 아니라 키와 레코드 내용까지 검증)
+        """
+        sid_a = sh.add_search("alpha", 1)
+        sid_b = sh.add_search("beta", 2)
         all_searches = sh.get_all_searches()
+
+        # 개수
         assert len(all_searches) == 2
+        # 키 존재
+        assert sid_a in all_searches
+        assert sid_b in all_searches
+        # 레코드 내용
+        assert all_searches[sid_a]["query"] == "alpha"
+        assert all_searches[sid_a]["results_count"] == 1
+        assert all_searches[sid_b]["query"] == "beta"
+        assert all_searches[sid_b]["results_count"] == 2
 
     def test_get_all_searches_empty(self, sh: SearchHistory):
         """히스토리가 없으면 빈 딕셔너리를 반환합니다."""
@@ -247,7 +274,7 @@ class TestGetAllSearches:
 
 
 # ─────────────────────────────────────────────────────────
-# delete_search 테스트
+# delete_search 테스트 (정확한 롤백 스냅샷)
 # ─────────────────────────────────────────────────────────
 
 
@@ -265,19 +292,25 @@ class TestDeleteSearch:
         """존재하지 않는 ID 삭제는 False를 반환합니다."""
         assert sh.delete_search("not_a_real_id") is False
 
-    def test_delete_search_rollback_on_save_failure(self, sh: SearchHistory):
-        """_save_history 실패 시 삭제가 롤백되고 False를 반환합니다."""
+    def test_delete_search_rollback_restores_exact_history(self, sh: SearchHistory):
+        """_save_history 실패 시 삭제가 롤백되고 히스토리가 정확히 복원됩니다.
+        (Comment 2: 존재 여부 뿐 아니라 전체 히스토리 동등성 검증)
+        """
         sid = sh.add_search("rollback delete", 2)
         assert sid is not None
+        # 롤백 전 히스토리 스냅샷 (깊은 복사)
+        snapshot_before = {k: dict(v) for k, v in sh.history.items()}
+
         with patch.object(sh, "_save_history", return_value=False):
             result = sh.delete_search(sid)
+
         assert result is False
-        # 롤백: 레코드가 복원되어야 합니다
-        assert sh.get_search(sid) is not None
+        # 정확한 히스토리 동등성 (키, 레코드 내용 모두 일치)
+        assert sh.history == snapshot_before
 
 
 # ─────────────────────────────────────────────────────────
-# clear_all 테스트
+# clear_all 테스트 (정확한 롤백 스냅샷)
 # ─────────────────────────────────────────────────────────
 
 
@@ -292,18 +325,25 @@ class TestClearAll:
         assert result is True
         assert sh.history == {}
 
-    def test_clear_all_rollback_on_save_failure(self, sh: SearchHistory):
-        """_save_history 실패 시 이전 히스토리가 복원됩니다."""
+    def test_clear_all_rollback_restores_exact_history(self, sh: SearchHistory):
+        """_save_history 실패 시 이전 히스토리가 정확히 복원됩니다.
+        (Comment 2: 개수뿐 아니라 전체 히스토리 동등성 검증)
+        """
         sh.add_search("keep me", 5)
-        original_count = len(sh.history)
+        sh.add_search("also keep", 3)
+        # 롤백 전 히스토리 스냅샷 (깊은 복사)
+        snapshot_before = {k: dict(v) for k, v in sh.history.items()}
+
         with patch.object(sh, "_save_history", return_value=False):
             result = sh.clear_all()
+
         assert result is False
-        assert len(sh.history) == original_count
+        # 정확한 히스토리 동등성
+        assert sh.history == snapshot_before
 
 
 # ─────────────────────────────────────────────────────────
-# get_statistics 테스트
+# get_statistics 테스트 (반올림 회귀 감지)
 # ─────────────────────────────────────────────────────────
 
 
@@ -324,12 +364,16 @@ class TestGetStatistics:
         stats = sh.get_statistics()
         assert stats["total_searches"] == 2
 
-    def test_statistics_avg_results(self, sh: SearchHistory):
-        """avg_results가 소수점 첫째 자리로 반올림됩니다."""
-        sh.add_search("a", 2)
-        sh.add_search("b", 4)
+    def test_statistics_avg_results_rounds_to_one_decimal(self, sh: SearchHistory):
+        """avg_results가 소수점 첫째 자리로 반올림됩니다.
+        (Comment 5: 비정수 평균값으로 반올림 회귀를 감지합니다)
+        avg = (1 + 2 + 4) / 3 = 2.333... → round(2.333..., 1) = 2.3
+        """
+        sh.add_search("a", 1)
+        sh.add_search("b", 2)
+        sh.add_search("c", 4)
         stats = sh.get_statistics()
-        assert stats["avg_results"] == 3.0
+        assert stats["avg_results"] == 2.3
 
     def test_statistics_most_common_query(self, sh: SearchHistory):
         """most_common_query는 가장 많이 등장한 쿼리를 반환합니다."""
@@ -341,15 +385,45 @@ class TestGetStatistics:
 
 
 # ─────────────────────────────────────────────────────────
-# _save_history 파일 I/O 격리 테스트
+# _save_history 원자적 쓰기 테스트
 # ─────────────────────────────────────────────────────────
 
 
 class TestSaveHistory:
-    """_save_history의 직렬화/파일 I/O 오류 경로를 검증합니다."""
+    """_save_history의 원자적 쓰기 및 파일 I/O 오류 경로를 검증합니다."""
+
+    def test_save_history_does_not_corrupt_existing_file_on_write_failure(
+        self, sh: SearchHistory
+    ):
+        """쓰기 오류 발생 시 기존 파일이 손상되지 않습니다.
+        (Comment 1: 원자적 쓰기 — 임시 파일 접근 실패 시 기존 파일 보존 검증)
+        """
+        # 먼저 정상적인 초기 데이터 저장
+        sid = sh.add_search("original", 5)
+        assert os.path.exists(sh.storage_path)
+        with open(sh.storage_path, encoding="utf-8") as f:
+            original_content = f.read()
+        assert "original" in original_content
+
+        # NamedTemporaryFile 생성 단계에서 OSError를 주입하여 쓰기 실패를 시뮬레이션
+        sh.history["new_key"] = {
+            "query": "new",
+            "results_count": 1,
+            "top_results": [],
+            "search_time": "2026-01-01T00:00:00",
+            "created_at": "2026-01-01 00:00:00",
+        }
+        with patch("tempfile.NamedTemporaryFile", side_effect=OSError("disk full")):
+            result = sh._save_history()
+
+        assert result is False
+        # 기존 파일이 손상되지 않고 원본 내용 유지
+        with open(sh.storage_path, encoding="utf-8") as f:
+            after_content = f.read()
+        assert after_content == original_content
 
     def test_save_history_returns_false_on_write_oserror(self, sh: SearchHistory):
-        """파일 쓰기 중 OSError 발생 시 False를 반환합니다."""
+        """NamedTemporaryFile 생성 실패 시 False를 반환합니다."""
         sh.history = {
             "k": {
                 "query": "q",
@@ -359,7 +433,7 @@ class TestSaveHistory:
                 "created_at": "2026-01-01 00:00:00",
             }
         }
-        with patch("builtins.open", side_effect=OSError("disk full")):
+        with patch("tempfile.NamedTemporaryFile", side_effect=OSError("disk full")):
             result = sh._save_history()
         assert result is False
 
