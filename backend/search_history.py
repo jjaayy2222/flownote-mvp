@@ -7,7 +7,7 @@
 [EN] FlowNote MVP - Search History Management
 """
 
-import errno
+import copy
 import json
 import logging
 import os
@@ -16,8 +16,16 @@ import tempfile
 import threading
 import uuid
 from collections import Counter
+from contextlib import contextmanager
 from datetime import date, datetime
 from typing import Any, Callable, Dict, List, Optional, TypedDict
+
+try:
+    import fcntl
+
+    HAS_FCNTL = True
+except ImportError:
+    HAS_FCNTL = False
 
 from backend.utils.common import format_error_msg
 
@@ -52,14 +60,16 @@ class SearchHistory:
     [EN] A class to persist and manage search history in a local JSON file.
     """
 
-    # [KO] 다중 인스턴스/스레드 간 파일 쓰기 직렬화를 위한 공유 락
-    # [EN] Shared lock to serialize file writes across threads and instances
+    # [KO] 프로세스 내 스레드 간 직렬화를 위한 재진입 락 및 재진입 깊이 추적
+    # [EN] Reentrant lock to serialize threads within a process and track reentrancy depth
     _lock = threading.RLock()
+    _lock_depth = threading.local()
 
     def __init__(
         self,
         storage_path: str = "data/search_history.json",
         max_history_entries: int = DEFAULT_MAX_HISTORY_ENTRIES,
+        user_id: Optional[str] = None,
     ):
         """
         [KO]
@@ -67,19 +77,132 @@ class SearchHistory:
 
         Args:
             storage_path: 히스토리를 저장할 JSON 파일 경로
-            max_history_entries: 보관할 최대 검색 기록 수 (초과 시 오래된 순 정리)
+            max_history_entries: 보관할 최대 검색 기록 수 (양의 정수)
+            user_id: 특정 사용자에 한정하여 격리 관리할 사용자 식별자 (선택 사항)
 
         [EN]
         Sets the history storage path and loads existing data.
 
         Args:
             storage_path: JSON file path to store history
-            max_history_entries: Maximum number of search history entries to keep
+            max_history_entries: Maximum number of search history entries to keep (positive int)
+            user_id: Optional user identifier to partition/isolate history records
         """
+        if max_history_entries <= 0:
+            raise ValueError(
+                f"max_history_entries must be a positive integer, got {max_history_entries}"
+            )
         self.storage_path = storage_path
         self.max_history_entries = max_history_entries
+        self.user_id = user_id
         self.history: Dict[str, Dict] = {}
-        self._load_history()
+        with self._interprocess_lock():
+            self._load_history()
+
+    def _validate_and_resolve_storage_path(self) -> str:
+        """
+        [KO] 저장 경로의 심볼릭 링크를 검증하고 안전한 대상 경로를 반환합니다.
+             심볼릭 링크가 신뢰할 수 있는 기본 디렉토리 외부를 가리키면 보안 예외를 발생시킵니다.
+        [EN] Validates storage_path symlinks and returns a safe destination path.
+             Rejects symlinks pointing outside the trusted base directory.
+        """
+        abs_path = os.path.abspath(self.storage_path)
+        trusted_dir = os.path.realpath(os.path.dirname(abs_path) or ".")
+        real_path = os.path.realpath(abs_path)
+
+        if os.path.islink(abs_path):
+            try:
+                common = os.path.commonpath([trusted_dir, real_path])
+                if common != trusted_dir:
+                    raise PermissionError(
+                        f"보안 경고: 신뢰할 수 없는 디렉토리를 가리키는 심볼릭 링크 거부: {self.storage_path} -> {real_path}"
+                    )
+            except ValueError:
+                raise PermissionError(
+                    f"보안 경고: 신뢰할 수 없는 경로를 가리키는 심볼릭 링크 거부: {self.storage_path}"
+                )
+        return real_path
+
+    @contextmanager
+    def _interprocess_lock(self):
+        """
+        [KO] 프로세스 간(fcntl.flock) 및 스레드 간(_lock) 배타적 잠금을 제공하는 컨텍스트 매니저.
+        [EN] Context manager providing cross-process (fcntl.flock) and cross-thread (_lock) synchronization.
+        """
+        with SearchHistory._lock:
+            if not HAS_FCNTL:
+                yield
+                return
+
+            current_depth = getattr(SearchHistory._lock_depth, "depth", 0)
+            if current_depth > 0:
+                # 동일 스레드 내 재진입인 경우 이미 flock이 획득되어 있으므로 중복 flock을 피함
+                SearchHistory._lock_depth.depth = current_depth + 1
+                try:
+                    yield
+                finally:
+                    SearchHistory._lock_depth.depth -= 1
+                return
+
+            try:
+                target_path = self._validate_and_resolve_storage_path()
+            except PermissionError:
+                target_path = os.path.abspath(self.storage_path)
+
+            lock_dir = os.path.dirname(target_path) or "."
+            if lock_dir != ".":
+                try:
+                    os.makedirs(lock_dir, exist_ok=True)
+                except OSError:
+                    pass
+            lock_path = f"{target_path}.lock"
+
+            try:
+                fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+            except OSError as e:
+                logger.error(f"락 파일 생성 실패: {e}")
+                yield
+                return
+
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+                SearchHistory._lock_depth.depth = 1
+                try:
+                    yield
+                finally:
+                    SearchHistory._lock_depth.depth = 0
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+            finally:
+                os.close(fd)
+
+    def _refresh_history(self) -> bool:
+        """
+        [KO] 디스크에서 최신 히스토리를 읽어와 메모리를 동기화합니다. (락 내부에서 호출)
+        [EN] Refreshes in-memory history from disk. (Must be called under lock)
+        """
+        try:
+            target_path = self._validate_and_resolve_storage_path()
+        except PermissionError as e:
+            logger.error(f"저장 경로 검증 실패: {e}")
+            return False
+
+        if os.path.exists(target_path):
+            try:
+                with open(target_path, "r", encoding="utf-8") as f:
+                    self.history = json.load(f)
+                self._prune_history()
+                return True
+            except (OSError, ValueError) as e:
+                logger.error(
+                    f"히스토리 갱신 실패: {type(e).__name__}: {format_error_msg(e)}",
+                    extra={
+                        "action": "refresh_history",
+                        "path": self.storage_path,
+                        "error_type": type(e).__name__,
+                    },
+                )
+                return False
+        return True
 
     def _prune_history(self) -> None:
         """
@@ -97,16 +220,23 @@ class SearchHistory:
     def _load_history(self):
         """
         [KO]
-        지정된 경로에서 저장된 검색 히스토리를 로드합니다. 파일이 없으면 새로 생성합니다.
+        지정된 경로에서 저장된 검색 히스토리를 로드합니다. 파일이 없으면 디렉터리를 생성합니다.
 
         [EN]
-        Loads saved search history from the specified path. Creates it if it doesn't exist.
+        Loads saved search history from the specified path. Creates directory if it doesn't exist.
         """
-        target_path = os.path.realpath(self.storage_path)
+        try:
+            target_path = self._validate_and_resolve_storage_path()
+        except PermissionError as e:
+            logger.error(f"보안 오류로 히스토리 로드 실패: {e}")
+            self.history = {}
+            return
+
         if os.path.exists(target_path):
             try:
                 with open(target_path, "r", encoding="utf-8") as f:
                     self.history = json.load(f)
+                self._prune_history()
             except (OSError, ValueError) as e:
                 logger.warning(
                     f"히스토리 로드 실패: {type(e).__name__}: {format_error_msg(e)}",
@@ -127,138 +257,99 @@ class SearchHistory:
         """
         [KO]
         메모리의 히스토리 데이터를 JSON 파일에 안전하게 저장합니다.
-        심볼릭 링크 대상 보존, 권한 유지, 임시 파일 정리, 디렉토리 권한/디스크 용량 한계 폴백을 지원합니다.
+        원자적 교체, 소유자 전용 권한 설정(0o600), 임시 파일 정리를 보장합니다.
 
         Returns:
             저장 성공 시 True, 직렬화 또는 I/O 실패 시 False
 
         [EN]
-        Safely saves the in-memory history data to a JSON file.
-        Preserves symlink targets, file permissions, cleans up temporary files,
-        and falls back on directory permission restrictions or disk quota exhaustion.
+        Safely saves in-memory history data to a JSON file.
+        Guarantees atomic replacement, owner-only permissions (0o600), and tempfile cleanup.
 
         Returns:
             True if saved successfully, False on serialization or I/O failure.
         """
-        with SearchHistory._lock:
-            self._prune_history()
+        self._prune_history()
 
-            # [KO] 1단계: 직렬화 - 파일 I/O와 분리하여 예외 범위를 명확히 제한
-            # [EN] Step 1: Serialization — separated from file I/O to narrow the exception scope
+        # 1단계: 직렬화
+        try:
+            serialized = json.dumps(
+                self.history,
+                ensure_ascii=False,
+                indent=2,
+                default=_custom_json_serializer,
+            )
+        except (TypeError, ValueError) as e:
+            logger.error(
+                f"히스토리 직렬화 실패: {type(e).__name__}: {format_error_msg(e)}",
+                extra={
+                    "action": "save_history_serialize",
+                    "path": self.storage_path,
+                    "error_type": type(e).__name__,
+                },
+            )
+            return False
+
+        # 2단계: 대상 경로 해석 및 검증
+        try:
+            target_path = self._validate_and_resolve_storage_path()
+        except PermissionError as e:
+            logger.error(f"보안 오류로 저장 실패: {e}")
+            return False
+
+        storage_dir = os.path.dirname(target_path) or "."
+        target_exists = os.path.exists(target_path)
+        target_stat = None
+        if target_exists:
             try:
-                serialized = json.dumps(
-                    self.history,
-                    ensure_ascii=False,
-                    indent=2,
-                    default=_custom_json_serializer,
-                )
-            except (TypeError, ValueError) as e:
-                logger.error(
-                    f"히스토리 직렬화 실패: {type(e).__name__}: {format_error_msg(e)}",
-                    extra={
-                        "action": "save_history_serialize",
-                        "path": self.storage_path,
-                        "error_type": type(e).__name__,
-                    },
-                )
-                return False
+                target_stat = os.stat(target_path)
+            except OSError:
+                pass
 
-            # [KO] 2단계: 대상 경로 해석 (심볼릭 링크 대상 보존 및 단독 파일명 처리)
-            # [EN] Step 2: Target path resolution (preserves symlink targets & handles bare filenames)
-            target_path = os.path.realpath(self.storage_path)
-            storage_dir = os.path.dirname(target_path) or "."
-            target_exists = os.path.exists(target_path)
-            target_stat = None
-            if target_exists:
+        tmp_path: Optional[str] = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=storage_dir,
+                delete=False,
+                suffix=".tmp",
+            ) as tmp_f:
+                tmp_path = tmp_f.name
+                tmp_f.write(serialized)
+
+            # 권한 복제 또는 소유자 전용 0o600 강제 (개인정보 보호)
+            if target_stat is not None:
                 try:
-                    target_stat = os.stat(target_path)
+                    os.chmod(tmp_path, stat.S_IMODE(target_stat.st_mode))
+                except OSError:
+                    pass
+            else:
+                try:
+                    os.chmod(tmp_path, 0o600)
                 except OSError:
                     pass
 
-            tmp_path: Optional[str] = None
-            try:
-                with tempfile.NamedTemporaryFile(
-                    mode="w",
-                    encoding="utf-8",
-                    dir=storage_dir,
-                    delete=False,
-                    suffix=".tmp",
-                ) as tmp_f:
-                    tmp_path = tmp_f.name
-                    tmp_f.write(serialized)
+            os.replace(tmp_path, target_path)
+            return True
 
-                # [KO] 파일 권한 복제 (기존 파일 권한 승계 또는 umask 반영 표준 모드)
-                # [EN] Preserve permissions (copy existing mode or respect umask for new file)
-                if target_stat is not None:
-                    try:
-                        os.chmod(tmp_path, stat.S_IMODE(target_stat.st_mode))
-                    except OSError:
-                        pass
-                else:
-                    try:
-                        umask = os.umask(0)
-                        os.umask(umask)
-                        os.chmod(tmp_path, 0o666 & ~umask)
-                    except OSError:
-                        pass
+        except (OSError, UnicodeEncodeError) as e:
+            logger.error(
+                f"히스토리 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
+                extra={
+                    "action": "save_history_write",
+                    "path": self.storage_path,
+                    "error_type": type(e).__name__,
+                },
+            )
+            return False
 
-                os.replace(tmp_path, target_path)
-                return True
-
-            except (OSError, UnicodeEncodeError) as e:
-                # [KO] 예외 발생 시 생성된 임시 파일 즉시 정리
-                # [EN] Clean up temporary file immediately on failure
-                if tmp_path is not None and os.path.exists(tmp_path):
-                    try:
-                        os.unlink(tmp_path)
-                    except OSError:
-                        pass
-                    tmp_path = None
-
-                # [KO] 폴백: 디렉토리 권한 거부(PermissionError) 또는 디스크 용량 한계(ENOSPC) 시,
-                # 대상 파일 자체가 쓰기 가능한 상태이면 직접 덮어쓰기로 복구 시도
-                # [EN] Fallback: If atomic replacement fails due to directory permissions or disk quota (ENOSPC),
-                # and the target file itself is writable, attempt direct in-place write.
-                is_disk_full = (
-                    isinstance(e, OSError) and getattr(e, "errno", None) == errno.ENOSPC
-                )
-                is_perm_error = isinstance(e, PermissionError)
-                if (
-                    target_exists
-                    and (is_perm_error or is_disk_full)
-                    and os.access(target_path, os.W_OK)
-                ):
-                    try:
-                        with open(target_path, "w", encoding="utf-8") as f:
-                            f.write(serialized)
-                        return True
-                    except (OSError, UnicodeEncodeError) as direct_err:
-                        logger.error(
-                            f"히스토리 직접 저장 실패: {type(direct_err).__name__}: {format_error_msg(direct_err)}",
-                            extra={
-                                "action": "save_history_write_direct",
-                                "path": self.storage_path,
-                                "error_type": type(direct_err).__name__,
-                            },
-                        )
-                        return False
-
-                logger.error(
-                    f"히스토리 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
-                    extra={
-                        "action": "save_history_write",
-                        "path": self.storage_path,
-                        "error_type": type(e).__name__,
-                    },
-                )
-                return False
-
-            finally:
-                if tmp_path is not None and os.path.exists(tmp_path):
-                    try:
-                        os.unlink(tmp_path)
-                    except OSError:
-                        pass
+        finally:
+            if tmp_path is not None and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
 
     def _apply_and_persist(
         self,
@@ -269,12 +360,11 @@ class SearchHistory:
     ) -> bool:
         """
         [KO]
-        메모리 변경 → 저장 → 실패 시 롤백을 단일 헬퍼로 코드화합니다.
-        공유 락을 획득하고 디스크의 최신 상태와 조정(reconcile)한 후 변경사항을 적용합니다.
+        락 획득 → 디스크 최신 상태 동기화 → 스냅샷 캡처 → 뮤테이션 → 저장 → 실패 시 원복을 수행합니다.
 
         Args:
             mutate: 메모리 상태를 변경하는 함수
-            rollback: 저장 실패 시 메모리를 원복하는 함수
+            rollback: 보조 롤백 함수
             rollback_msg: 롤백 시 로그에 남길 메시지
             action: 로그 extra에 포함할 액션 식별자
 
@@ -282,37 +372,38 @@ class SearchHistory:
             영속화 성공 시 True, 실패(롤백 완료) 시 False
 
         [EN]
-        Encapsulates the mutate → persist → rollback-on-failure pattern into a single helper.
-        Acquires shared lock, reconciles with latest on-disk changes, and applies mutations.
-
-        Args:
-            mutate: Function that applies the in-memory change
-            rollback: Function that reverts the in-memory change on save failure
-            rollback_msg: Log message to emit on rollback
-            action: Action identifier included in the log extra dict
-
-        Returns:
-            True if persisted successfully, False if rolled back due to failure.
+        Acquires lock -> reconciles from disk -> captures snapshot -> mutates -> saves -> rolls back on failure.
         """
-        with SearchHistory._lock:
-            # [KO] 다른 인스턴스에서 커밋한 디스크의 최신 기록을 동기화하여 조정(Reconcile)
-            # [EN] Reconcile with latest on-disk state committed by other instances
-            target_path = os.path.realpath(self.storage_path)
-            if os.path.exists(target_path):
-                try:
-                    with open(target_path, "r", encoding="utf-8") as f:
-                        disk_data = json.load(f)
-                    if isinstance(disk_data, dict):
-                        for k, v in disk_data.items():
-                            if k not in self.history:
-                                self.history[k] = v
-                except (OSError, ValueError):
-                    pass
+        with self._interprocess_lock():
+            # 1. 디스크 최신 상태와 동기화
+            if not self._refresh_history():
+                logger.error(
+                    "디스크 히스토리 조정 실패로 영속화가 취소되었습니다.",
+                    extra={"action": action, "error_type": "reconcile_failure"},
+                )
+                return False
 
-            mutate()
+            # 2. 락 내부에서 프루닝/뮤테이션 전 전체 스냅샷 캡처
+            snapshot_before = copy.deepcopy(self.history)
+
+            # 3. 변경 적용
+            try:
+                mutate()
+            except Exception as e:
+                self.history = snapshot_before
+                logger.error(f"뮤테이션 적용 실패: {e}")
+                return False
+
+            # 4. 저장 시도
             if self._save_history():
                 return True
-            rollback()
+
+            # 5. 저장 실패 시 완전한 이전 스냅샷 복원
+            self.history = snapshot_before
+            try:
+                rollback()
+            except Exception:
+                pass
             logger.error(
                 rollback_msg,
                 extra={"action": action, "error_type": "save_failure"},
@@ -324,8 +415,7 @@ class SearchHistory:
     ) -> Optional[str]:
         """
         [KO]
-        새로운 검색 기록을 추가하고 저장합니다.
-        영속화(디스크 저장)가 실패하면 메모리도 롤백되고 None을 반환합니다.
+        새로운 검색 기록을 추가하고 영속화합니다.
 
         Args:
             query: 검색에 사용된 쿼리 문자열
@@ -334,18 +424,6 @@ class SearchHistory:
 
         Returns:
             저장 성공 시 새로 생성된 검색 고유 ID, 실패 시 None
-
-        [EN]
-        Adds and saves a new search record.
-        Returns None if persistence fails; in-memory state is also rolled back.
-
-        Args:
-            query: Query string used for the search
-            results_count: Total number of retrieved results
-            top_results: List of preview texts for top search results
-
-        Returns:
-            Newly generated unique search ID on success, or None on failure.
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         unique_id = uuid.uuid4().hex[:8]
@@ -356,6 +434,7 @@ class SearchHistory:
             "top_results": top_results[:3] if top_results else [],
             "search_time": datetime.now().isoformat(),
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "user_id": self.user_id,
         }
 
         persisted = self._apply_and_persist(
@@ -364,235 +443,126 @@ class SearchHistory:
             rollback_msg="히스토리 저장 실패로 검색 기록 추가가 취소되었습니다.",
             action="add_search_rollback",
         )
-        return search_id if persisted else None
+        if not persisted or search_id not in self.history:
+            return None
+        return search_id
 
     def get_search(self, search_id: str) -> Optional[Dict]:
         """
-        [KO]
-        특정 검색 ID에 해당하는 기록을 조회합니다.
-
-        Args:
-            search_id: 조회할 검색 고유 ID
-
-        Returns:
-            해당 ID의 검색 기록 딕셔너리(키: query, results_count, top_results, search_time, created_at), 없으면 None
-
-        [EN]
-        Retrieves the record corresponding to a specific search ID.
-
-        Args:
-            search_id: Unique search ID to retrieve
-
-        Returns:
-            Search record dict (keys: query, results_count, top_results, search_time, created_at), or None if not found
+        [KO] 특정 검색 ID의 기록을 조회합니다. 사용자 ID가 설정된 경우 격리 검증을 수행합니다.
         """
-        return self.history.get(search_id)
+        with self._interprocess_lock():
+            self._refresh_history()
+            record = self.history.get(search_id)
+            if (
+                record
+                and self.user_id is not None
+                and record.get("user_id") != self.user_id
+            ):
+                return None
+            return record
 
     def get_recent_searches(self, limit: int = 10) -> List[Dict]:
         """
-        [KO]
-        최근 수행된 검색 기록들을 최신순으로 정렬하여 조회합니다.
-
-        Args:
-            limit: 반환할 최대 결과 수
-
-        Returns:
-            최신순 정렬된 검색 기록 리스트. 각 항목은 id, query, results_count, top_results, search_time, created_at 키를 포함
-
-        [EN]
-        Retrieves recently performed search records, sorted from newest to oldest.
-
-        Args:
-            limit: Maximum number of results to return
-
-        Returns:
-            List of search records sorted newest-first; each item contains id, query, results_count, top_results, search_time, created_at
+        [KO] 최근 수행된 검색 기록들을 최신순으로 정렬하여 조회합니다.
         """
-        # 시간순 정렬 (최신순)
-        sorted_history = sorted(
-            self.history.items(), key=lambda x: x[1]["search_time"], reverse=True
-        )
-
-        # 상위 limit개 반환
-        return [{"id": sid, **info} for sid, info in sorted_history[:limit]]
+        with self._interprocess_lock():
+            self._refresh_history()
+            user_items = [
+                (sid, info)
+                for sid, info in self.history.items()
+                if self.user_id is None or info.get("user_id") == self.user_id
+            ]
+            sorted_history = sorted(
+                user_items, key=lambda x: x[1]["search_time"], reverse=True
+            )
+            return [{"id": sid, **info} for sid, info in sorted_history[:limit]]
 
     def get_all_searches(self) -> Dict[str, Dict]:
         """
-        [KO]
-        저장된 모든 검색 기록을 조회합니다.
-
-        Returns:
-            search_id를 키, 검색 기록 딕셔너리를 값으로 하는 전체 히스토리
-
-        [EN]
-        Retrieves all saved search records.
-
-        Returns:
-            Full history dict keyed by search_id, with each value being a search record dict
+        [KO] 저장된 모든 검색 기록을 조회합니다. 사용자 ID가 설정된 경우 격리 조회합니다.
         """
-        return self.history
+        with self._interprocess_lock():
+            self._refresh_history()
+            if self.user_id is None:
+                return dict(self.history)
+            return {
+                sid: info
+                for sid, info in self.history.items()
+                if info.get("user_id") == self.user_id
+            }
 
     def delete_search(self, search_id: str) -> bool:
         """
-        [KO]
-        특정 검색 ID의 기록을 삭제합니다.
-        영속화 실패 시 메모리에서도 롤백되고 False를 반환합니다.
-
-        Args:
-            search_id: 삭제할 검색 고유 ID
-
-        Returns:
-            삭제 및 영속화 성공 시 True, 실패 시(없는 ID 또는 저장 실패) False
-
-        [EN]
-        Deletes the record for a specific search ID.
-        Rolls back in-memory state on persistence failure and returns False.
-
-        Args:
-            search_id: Unique search ID to delete
-
-        Returns:
-            True if deletion and persistence succeeded, False otherwise
+        [KO] 특정 검색 ID의 기록을 삭제합니다. 디스크 갱신 후 삭제 대상을 확인합니다.
         """
-        if search_id not in self.history:
-            return False
-        record = self.history[search_id]
-        return self._apply_and_persist(
-            mutate=lambda: self.history.pop(search_id, None),
-            rollback=lambda: self.history.update({search_id: record}),
-            rollback_msg="히스토리 저장 실패로 검색 기록 삭제가 취소되었습니다.",
-            action="delete_search_rollback",
-        )
+        with self._interprocess_lock():
+            if not self._refresh_history():
+                return False
+            if search_id not in self.history:
+                return False
+            record = self.history[search_id]
+            if self.user_id is not None and record.get("user_id") != self.user_id:
+                return False
+
+            return self._apply_and_persist(
+                mutate=lambda: self.history.pop(search_id, None),
+                rollback=lambda: self.history.update({search_id: record}),
+                rollback_msg="히스토리 저장 실패로 검색 기록 삭제가 취소되었습니다.",
+                action="delete_search_rollback",
+            )
 
     def clear_all(self) -> bool:
         """
-        [KO]
-        모든 검색 기록을 영구적으로 삭제합니다.
-        영속화 실패 시 이전 히스토리를 복원하고 False를 반환합니다.
-
-        Returns:
-            성공 시 True, 영속화 실패(이전 상태 복원) 시 False
-
-        [EN]
-        Permanently clears all search records.
-        Restores previous history on persistence failure and returns False.
-
-        Returns:
-            True if cleared and persisted successfully, False if rollback occurred.
+        [KO] 검색 기록을 삭제합니다. user_id 설정 시 해당 사용자의 기록만 삭제합니다.
         """
-        prev_history = self.history
-        return self._apply_and_persist(
-            mutate=lambda: setattr(self, "history", {}),
-            rollback=lambda: setattr(self, "history", prev_history),
-            rollback_msg="히스토리 저장 실패로 전체 삭제가 취소되었습니다.",
-            action="clear_all_rollback",
-        )
+        with self._interprocess_lock():
+            if not self._refresh_history():
+                return False
+
+            def _mutate():
+                if self.user_id is None:
+                    self.history.clear()
+                else:
+                    self.history = {
+                        k: v
+                        for k, v in self.history.items()
+                        if v.get("user_id") != self.user_id
+                    }
+
+            return self._apply_and_persist(
+                mutate=_mutate,
+                rollback=lambda: None,
+                rollback_msg="히스토리 저장 실패로 전체 삭제가 취소되었습니다.",
+                action="clear_all_rollback",
+            )
 
     def get_statistics(self) -> SearchStatistics:
         """
-        [KO]
-        누적된 검색 히스토리를 바탕으로 통계 정보를 계산합니다.
-        성능 최적화: 가장 많이 검색된 쿼리를 찾을 때 O(n) 복잡도를 가지는 `collections.Counter`를 사용합니다.
-
-        Returns:
-            총 검색 횟수, 평균 결과 수, 최다 검색 쿼리를 포함하는 통계 딕셔너리
-
-        [EN]
-        Calculates statistical information based on the accumulated search history.
-        Performance optimization: Uses `collections.Counter` with O(n) complexity to find the most common query.
-
-        Returns:
-            Statistics dictionary containing total searches, average results count, and most common query
+        [KO] 검색 통계 정보를 계산합니다. user_id 격리를 지원합니다.
         """
-        if not self.history:
-            return {"total_searches": 0, "avg_results": 0.0, "most_common_query": None}
+        with self._interprocess_lock():
+            self._refresh_history()
+            user_records = [
+                h
+                for h in self.history.values()
+                if self.user_id is None or h.get("user_id") == self.user_id
+            ]
+            if not user_records:
+                return {
+                    "total_searches": 0,
+                    "avg_results": 0.0,
+                    "most_common_query": None,
+                }
 
-        # 전체 검색 수
-        total_searches = len(self.history)
+            total_searches = len(user_records)
+            avg_results = sum(h["results_count"] for h in user_records) / total_searches
+            query_counts = Counter(h["query"] for h in user_records)
+            top_queries = query_counts.most_common(1)
+            most_common = top_queries[0][0] if top_queries else None
 
-        # 평균 결과 수
-        avg_results = (
-            sum(h["results_count"] for h in self.history.values()) / total_searches
-        )
-
-        # 가장 많이 검색된 쿼리 (메모리 최적화: 제너레이터 사용)
-        query_counts = Counter(h["query"] for h in self.history.values())
-        top_queries = query_counts.most_common(1)
-        most_common = top_queries[0][0] if top_queries else None
-
-        return {
-            "total_searches": total_searches,
-            "avg_results": round(avg_results, 1),
-            "most_common_query": most_common,
-        }
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 테스트 코드
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    logger.info("=" * 50)
-    logger.info("검색 히스토리 테스트")
-    logger.info("=" * 50)
-
-    # 히스토리 관리자 생성
-    history = SearchHistory()
-
-    # 테스트 검색 추가
-    logger.info("\n1. 검색 기록 추가 테스트")
-    logger.info("-" * 50)
-
-    search_id1 = history.add_search(
-        query="FlowNote 사용법",
-        results_count=5,
-        top_results=[
-            "FlowNote는 AI 대화 관리 도구입니다.",
-            "파일 업로드 기능을 제공합니다.",
-            "검색 기능이 강력합니다.",
-        ],
-    )
-    logger.info(f"✅ 검색 추가 완료: {search_id1}")
-
-    search_id2 = history.add_search(
-        query="임베딩이란",
-        results_count=8,
-        top_results=[
-            "임베딩은 텍스트를 벡터로 변환합니다.",
-            "유사도 검색에 사용됩니다.",
-        ],
-    )
-    logger.info(f"✅ 검색 추가 완료: {search_id2}")
-
-    search_id3 = history.add_search(
-        query="FlowNote 사용법",  # 중복 검색
-        results_count=5,
-        top_results=["FlowNote는 간단합니다."],
-    )
-    logger.info(f"✅ 검색 추가 완료: {search_id3}")
-
-    # 최근 검색 조회
-    logger.info("\n2. 최근 검색 조회 테스트")
-    logger.info("-" * 50)
-
-    recent = history.get_recent_searches(limit=5)
-    logger.info(f"📚 최근 검색 {len(recent)}개:")
-    for i, search in enumerate(recent, 1):
-        logger.info(f"\n{i}. {search['query']}")
-        logger.info(f"   - 결과: {search['results_count']}개")
-        logger.info(f"   - 시간: {search['created_at']}")
-
-    # 통계
-    logger.info("\n3. 통계 테스트")
-    logger.info("-" * 50)
-
-    stats = history.get_statistics()
-    logger.info("📊 통계:")
-    logger.info(f"   - 총 검색: {stats['total_searches']}회")
-    logger.info(f"   - 평균 결과: {stats['avg_results']}개")
-    logger.info(f"   - 자주 검색: {stats['most_common_query']}")
-
-    logger.info("\n" + "=" * 50)
-    logger.info("테스트 완료!")
-    logger.info("=" * 50)
+            return {
+                "total_searches": total_searches,
+                "avg_results": round(avg_results, 1),
+                "most_common_query": most_common,
+            }
