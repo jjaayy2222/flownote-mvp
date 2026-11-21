@@ -512,7 +512,11 @@ class SearchHistory:
     @staticmethod
     def _is_valid_record(info: Any) -> bool:
         """Validate persisted fields that public methods consume."""
-        if not isinstance(info, dict) or not isinstance(info.get("query"), str):
+        if (
+            not isinstance(info, dict)
+            or not isinstance(info.get("query"), str)
+            or not info["query"].strip()
+        ):
             return False
 
         results_count = info.get("results_count")
@@ -659,11 +663,13 @@ class SearchHistory:
         rollback: Callable[[], object],
         rollback_msg: str,
         action: str,
+        timeout_action: Optional[str] = None,
     ) -> bool:
         """
         [KO]
         락 획득(write=True) → 디스크 최신 상태 동기화 → 스냅샷 캡처 → 뮤테이션 → 저장 → 실패 시 원복을 수행합니다.
-        Comment 10: 락 타임아웃(TimeoutError) 발생 시 예외를 던지지 않고 False를 반환합니다.
+        락 타임아웃은 민감한 예외 메시지 없이 구조화 로그로 남기고 False를 반환합니다.
+        timeout_action을 지정하면 해당 메서드의 전용 타임아웃 이벤트를 기록합니다.
         """
         try:
             with self._interprocess_lock(write=True):
@@ -704,7 +710,10 @@ class SearchHistory:
                     extra={"action": action, "error_type": "save_failure"},
                 )
                 return False
-        except (TimeoutError, PermissionError, RuntimeError) as e:
+        except TimeoutError:
+            self._log_lock_timeout(timeout_action or f"{action}_lock_timeout")
+            return False
+        except (PermissionError, RuntimeError) as e:
             logger.error(
                 "영속화 중 락 또는 권한 오류 발생",
                 extra={"action": action, "error_type": type(e).__name__},
@@ -854,6 +863,7 @@ class SearchHistory:
                 rollback=lambda: self.history.update({search_id: record}),
                 rollback_msg="히스토리 저장 실패로 검색 기록 삭제가 취소되었습니다.",
                 action="delete_search_rollback",
+                timeout_action="delete_search_lock_timeout",
             )
         except TimeoutError:
             self._log_lock_timeout("delete_search_lock_timeout")

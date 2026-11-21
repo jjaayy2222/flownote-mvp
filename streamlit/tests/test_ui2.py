@@ -45,7 +45,6 @@ except:
     pass
 
 
-import json
 from datetime import datetime
 
 import numpy as np
@@ -54,7 +53,6 @@ from backend.chunking import TextChunker
 
 # 네 번째: 다음 임포트
 from backend.classifier.para_agent_wrapper import run_para_agent_sync
-from backend.database.connection import DatabaseConnection
 from backend.database.metadata_schema import ClassificationMetadataExtender
 from backend.embedding import EmbeddingGenerator
 from backend.export import MarkdownExporter
@@ -79,14 +77,14 @@ st.markdown(
     .stApp {
         background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
     }
-    
+
     /* 헤더 스타일 */
     h1 {
         color: #1d1d1f;
         font-weight: 600;
         letter-spacing: -0.5px;
     }
-    
+
     /* 카드 스타일 */
     .upload-card, .search-card, .result-card {
         background: white;
@@ -95,7 +93,7 @@ st.markdown(
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
         margin: 16px 0;
     }
-    
+
     /* 버튼 스타일 */
     .stButton>button {
         border-radius: 12px;
@@ -103,29 +101,29 @@ st.markdown(
         border: none;
         transition: all 0.3s ease;
     }
-    
+
     .stButton>button:hover {
         transform: translateY(-2px);
         box-shadow: 0 8px 12px rgba(0, 0, 0, 0.1);
     }
-    
+
     /* 탭 스타일 */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
     }
-    
+
     .stTabs [data-baseweb="tab"] {
         border-radius: 12px 12px 0 0;
         padding: 12px 24px;
         font-weight: 500;
     }
-    
+
     /* 메트릭 카드 */
     [data-testid="stMetricValue"] {
         font-size: 28px;
         font-weight: 600;
     }
-    
+
     /* 입력 필드 */
     .stTextInput>div>div>input {
         border-radius: 12px;
@@ -320,7 +318,7 @@ with tab1:
             with col_btn:
                 search_button = st.button("🔎 검색", type="primary", width="stretch")
 
-            if query and search_button:
+            if query.strip() and search_button:
                 with st.spinner("검색 중..."):
                     results = st.session_state.faiss_retriever.search(query, k=k)
                     st.session_state.search_history.add_search(

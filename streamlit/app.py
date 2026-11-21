@@ -56,29 +56,19 @@ try:
 except:
     pass
 
-import json
 from datetime import datetime
 
 import numpy as np
 import pandas as pd
 
 from backend.chunking import TextChunker
-from backend.classifier.para_agent_wrapper import run_para_agent_sync
-from backend.classifier.para_classifier import PARAClassifier
-from backend.data_manager import DataManager
-from backend.database.connection import DatabaseConnection
 from backend.database.metadata_schema import ClassificationMetadataExtender
 
 # Backend 임포트
 from backend.embedding import EmbeddingGenerator
-from backend.exceptions import FileValidationError
 from backend.export import MarkdownExporter
 from backend.faiss_search import FAISSRetriever
-from backend.metadata import FileMetadata
-from backend.modules import extract_text_from_pdf
-from backend.search_history import SearchHistory
-from backend.utils import format_file_size, load_pdf
-from backend.validators import FileValidator
+from backend.utils import load_pdf
 
 # 페이지 설정
 st.set_page_config(page_title="FlowNote 통합 UI 테스트", page_icon="📚", layout="wide")
@@ -668,7 +658,7 @@ with tab3:
             )
 
         search_clicked = st.session_state.get("search_clicked_btn_tab3")
-        if query and search_clicked:
+        if query.strip() and search_clicked:
             try:
                 results = st.session_state["faiss_retriever"].search(query, k=k)
             except Exception as e:
