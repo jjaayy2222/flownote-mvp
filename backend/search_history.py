@@ -360,7 +360,7 @@ class SearchHistory:
                 return True
             except (OSError, ValueError) as e:
                 logger.error(
-                    f"히스토리 갱신 실패: {type(e).__name__}: {format_error_msg(e)}",
+                    "히스토리 갱신 실패",
                     extra={
                         "action": "refresh_history",
                         "error_type": type(e).__name__,
@@ -493,7 +493,7 @@ class SearchHistory:
                         self.history = {}
             except (OSError, ValueError) as e:
                 logger.warning(
-                    f"히스토리 로드 실패: {type(e).__name__}: {format_error_msg(e)}",
+                    "히스토리 로드 실패",
                     extra={
                         "action": "load_history",
                         "error_type": type(e).__name__,
@@ -534,6 +534,18 @@ class SearchHistory:
             if value is not None and not isinstance(value, str):
                 return False
         return True
+
+    @staticmethod
+    def _log_lock_timeout(action: str) -> None:
+        """Report contention without logging paths, queries, or exception text."""
+        logger.warning(
+            "Search history operation timed out waiting for the lock.",
+            extra={
+                "action": action,
+                "error_type": "TimeoutError",
+                "timeout_seconds": _FLOCK_TIMEOUT_SECONDS,
+            },
+        )
 
     def _save_history(self) -> bool:
         """
@@ -708,6 +720,16 @@ class SearchHistory:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         unique_id = uuid.uuid4().hex[:8]
         search_id = f"search_{timestamp}_{unique_id}"
+        if top_results is not None and (
+            not isinstance(top_results, list)
+            or any(not isinstance(result, str) for result in top_results[:3])
+        ):
+            logger.warning(
+                "검색 기록 입력값 검증 실패",
+                extra={"action": "add_search_invalid_record"},
+            )
+            return None
+
         record = {
             "query": query,
             "results_count": results_count,
@@ -716,6 +738,12 @@ class SearchHistory:
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "user_id": self.user_id,
         }
+        if not self._is_valid_record(record):
+            logger.warning(
+                "검색 기록 입력값 검증 실패",
+                extra={"action": "add_search_invalid_record"},
+            )
+            return None
 
         persisted = self._apply_and_persist(
             mutate=lambda: self.history.update({search_id: record}),
@@ -744,7 +772,10 @@ class SearchHistory:
                 ):
                     return None
                 return record
-        except (PermissionError, RuntimeError, TimeoutError):
+        except TimeoutError:
+            self._log_lock_timeout("get_search_lock_timeout")
+            return None
+        except (PermissionError, RuntimeError):
             return None
 
     def get_recent_searches(self, limit: int = 10) -> List[Dict]:
@@ -767,8 +798,11 @@ class SearchHistory:
                     key=lambda x: str(x[1].get("search_time", "")),
                     reverse=True,
                 )
-                return [{"id": sid, **info} for sid, info in sorted_history[:limit]]
-        except (PermissionError, RuntimeError, TimeoutError):
+                return [{**info, "id": sid} for sid, info in sorted_history[:limit]]
+        except TimeoutError:
+            self._log_lock_timeout("get_recent_searches_lock_timeout")
+            return []
+        except (PermissionError, RuntimeError):
             return []
 
     def get_all_searches(self) -> Dict[str, Dict]:
@@ -791,7 +825,10 @@ class SearchHistory:
                     for sid, info in self.history.items()
                     if isinstance(info, dict) and info.get("user_id") == self.user_id
                 }
-        except (PermissionError, RuntimeError, TimeoutError):
+        except TimeoutError:
+            self._log_lock_timeout("get_all_searches_lock_timeout")
+            return {}
+        except (PermissionError, RuntimeError):
             return {}
 
     def delete_search(self, search_id: str) -> bool:
@@ -818,7 +855,10 @@ class SearchHistory:
                 rollback_msg="히스토리 저장 실패로 검색 기록 삭제가 취소되었습니다.",
                 action="delete_search_rollback",
             )
-        except (PermissionError, RuntimeError, TimeoutError):
+        except TimeoutError:
+            self._log_lock_timeout("delete_search_lock_timeout")
+            return False
+        except (PermissionError, RuntimeError):
             return False
 
     def clear_all(self) -> bool:
@@ -880,5 +920,8 @@ class SearchHistory:
                     "avg_results": round(avg_results, 1),
                     "most_common_query": most_common,
                 }
-        except (PermissionError, RuntimeError, TimeoutError):
+        except TimeoutError:
+            self._log_lock_timeout("get_statistics_lock_timeout")
+            return default_stats
+        except (PermissionError, RuntimeError):
             return default_stats

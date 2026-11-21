@@ -12,7 +12,7 @@
 - delete_search / clear_all 삭제 및 정확한 롤백 스냅샷 검증
 - _apply_and_persist 롤백 패턴 (정확한 히스토리 동등성)
 - get_statistics 반올림 회귀 감지
-- 5·6차 리뷰 전방위 대응 검증:
+- 5·6·7차 리뷰 전방위 대응 검증:
   - 심볼릭 링크 상위 컴포넌트 검증 및 탈출 시 락 파일 미생성 검증 (Comment 1, 3)
   - fcntl 미지원 시 읽기 허용 및 쓰기 fail-closed 검증 (Comment 9)
   - 락 타임아웃 시 add_search 계약 준수(None 반환) 및 플랫폼 무관 errno.EWOULDBLOCK 검증 (Comment 10, 11)
@@ -23,6 +23,7 @@
   - Malformed record 방어 검증 (Comment 8)
   - 필드 타입이 잘못된 persisted record 제거 및 fcntl 미지원 읽기 무쓰기 검증
   - 암묵적 경로 신뢰 기준의 심볼릭 링크 차단 및 조회 락 타임아웃 기본값 검증
+  - 추가 입력 레코드 검증, 예약 ID 우선순위, 민감 예외 메시지 비노출 및 타임아웃 로그 검증
 """
 
 import errno
@@ -32,7 +33,7 @@ import os
 import stat
 from datetime import date, datetime
 from pathlib import Path
-from typing import Generator
+from typing import Any, Generator
 from unittest.mock import patch
 
 import pytest
@@ -177,6 +178,36 @@ class TestSearchHistoryInit:
         assert sh.history == {}
         assert any("dict가 아닌 타입" in record.message for record in caplog.records)
 
+    def test_load_and_refresh_logs_do_not_include_exception_text(
+        self, tmp_history_file: str, caplog: pytest.LogCaptureFixture
+    ):
+        os.makedirs(os.path.dirname(tmp_history_file), exist_ok=True)
+        with open(tmp_history_file, "w", encoding="utf-8") as history_file:
+            history_file.write("{}")
+
+        with caplog.at_level(logging.WARNING, logger="backend.search_history"):
+            with patch(
+                "backend.search_history.json.load",
+                side_effect=ValueError("sensitive marker"),
+            ):
+                history = SearchHistory(storage_path=tmp_history_file)
+                assert history._refresh_history() is False
+
+        assert "sensitive marker" not in caplog.text
+        error_records = [
+            record
+            for record in caplog.records
+            if getattr(record, "action", None) in {"load_history", "refresh_history"}
+        ]
+        assert {getattr(record, "action", None) for record in error_records} == {
+            "load_history",
+            "refresh_history",
+        }
+        assert all(
+            getattr(record, "error_type", None) == "ValueError"
+            for record in error_records
+        )
+
     def test_load_history_ignores_malformed_records(self, tmp_history_file: str):
         """Comment 8: 레코드 값이 None이나 문자열 등 dict가 아닌 malformed 항목이 섞여 있어도 정상 로드됩니다."""
         os.makedirs(os.path.dirname(tmp_history_file), exist_ok=True)
@@ -259,6 +290,23 @@ class TestAddSearch:
         sid = sh.add_search("q", 2, top_results=None)
         assert sid is not None
         assert sh.history[sid]["top_results"] == []
+
+    @pytest.mark.parametrize(
+        ("query", "results_count", "top_results"),
+        [
+            (None, 1, None),
+            ("query", True, None),
+            ("query", -1, None),
+            ("query", "1", None),
+            ("query", 1, ["valid", None]),
+            ("query", 1, "not-a-list"),
+        ],
+    )
+    def test_add_search_rejects_invalid_record_values(
+        self, sh: SearchHistory, query: Any, results_count: Any, top_results: Any
+    ):
+        assert sh.add_search(query, results_count, top_results) is None
+        assert sh.get_all_searches() == {}
 
     def test_add_search_multiple_returns_unique_ids(self, sh: SearchHistory):
         """여러 번 추가해도 고유한 ID가 생성됩니다."""
@@ -389,6 +437,27 @@ class TestGetRecentAndAllSearches:
         self._add_n(sh, 2)
         results = sh.get_recent_searches()
         assert all("id" in r for r in results)
+
+    def test_get_recent_searches_uses_storage_id_over_record_field(
+        self, tmp_history_file: str
+    ):
+        os.makedirs(os.path.dirname(tmp_history_file), exist_ok=True)
+        storage_id = "stored-search-id"
+        with open(tmp_history_file, "w", encoding="utf-8") as history_file:
+            json.dump(
+                {
+                    storage_id: {
+                        "id": "forged-search-id",
+                        "query": "safe query",
+                        "results_count": 1,
+                    }
+                },
+                history_file,
+            )
+
+        history = SearchHistory(storage_path=tmp_history_file)
+
+        assert history.get_recent_searches()[0]["id"] == storage_id
 
     def test_get_recent_searches_empty_history(self, sh: SearchHistory):
         """히스토리가 없으면 빈 리스트를 반환합니다."""
@@ -676,19 +745,37 @@ class TestSecurityAndRobustness:
         with open(tmp_history_file, "r", encoding="utf-8") as history_file:
             assert len(json.load(history_file)) == 2
 
-    def test_read_apis_return_defaults_on_lock_timeout(self, sh: SearchHistory):
-        with patch.object(
-            sh, "_interprocess_lock", side_effect=TimeoutError("lock timeout")
-        ):
-            assert sh.get_search("missing") is None
-            assert sh.get_recent_searches() == []
-            assert sh.get_all_searches() == {}
-            assert sh.get_statistics() == {
-                "total_searches": 0,
-                "avg_results": 0.0,
-                "most_common_query": None,
-            }
-            assert sh.delete_search("missing") is False
+    def test_read_apis_return_defaults_and_log_lock_timeout(
+        self, sh: SearchHistory, caplog: pytest.LogCaptureFixture
+    ):
+        with caplog.at_level(logging.WARNING, logger="backend.search_history"):
+            with patch.object(
+                sh, "_interprocess_lock", side_effect=TimeoutError("sensitive marker")
+            ):
+                assert sh.get_search("missing") is None
+                assert sh.get_recent_searches() == []
+                assert sh.get_all_searches() == {}
+                assert sh.get_statistics() == {
+                    "total_searches": 0,
+                    "avg_results": 0.0,
+                    "most_common_query": None,
+                }
+                assert sh.delete_search("missing") is False
+
+        timeout_records = [
+            record
+            for record in caplog.records
+            if record.name == "backend.search_history"
+        ]
+        assert len(timeout_records) == 5
+        assert all(
+            getattr(record, "error_type", None) == "TimeoutError"
+            for record in timeout_records
+        )
+        assert all(
+            getattr(record, "timeout_seconds", 0) > 0 for record in timeout_records
+        )
+        assert "sensitive marker" not in caplog.text
 
     def test_history_file_always_enforces_0o600_permissions(self, tmp_path: Path):
         """신규 및 기존 파일 모두 항상 0o600으로 강화됩니다."""
