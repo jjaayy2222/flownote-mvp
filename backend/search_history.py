@@ -72,7 +72,7 @@ class SearchHistory:
     - user_id=None 으로 사용하면 파일에 저장된 모든 사용자의 기록이 노출됩니다.
       공유 파일을 사용하는 멀티유저 환경에서는 반드시 user_id를 지정하세요.
     - storage_path는 신뢰 가능한 디렉터리 아래에 위치해야 합니다.
-      부모 경로에 심볼릭 링크가 포함되어 있으면 보안상 거부됩니다.
+      암묵적 신뢰 기준 자체가 심볼릭 링크를 거치면 보안상 거부됩니다.
 
     [EN] A class to persist and manage search history in a local JSON file.
 
@@ -80,7 +80,7 @@ class SearchHistory:
     - Using user_id=None exposes all users' records stored in the file.
       Always specify user_id in multi-user environments sharing a file.
     - storage_path should reside within a trusted directory.
-      Symlinked parent components are strictly rejected for security.
+      An inferred trust root that resolves through a symlink is rejected.
     """
 
     # [KO] 프로세스 내 스레드 간 직렬화를 위한 재진입 락 및 재진입 깊이 추적
@@ -134,7 +134,7 @@ class SearchHistory:
             logger.warning(
                 "SearchHistory initialized without user_id: all records in the file are "
                 "accessible. Set user_id to isolate records in multi-user environments.",
-                extra={"action": "init_no_user_id", "storage_path": storage_path},
+                extra={"action": "init_no_user_id"},
             )
 
         self.storage_path = storage_path
@@ -146,16 +146,18 @@ class SearchHistory:
         raw_dir = os.path.dirname(abs_path) or "."
         if trusted_base_dir is not None:
             self._trusted_base_dir: str = os.path.abspath(trusted_base_dir)
+            self._trusted_base_is_explicit = True
         else:
             # trusted_base_dir 미지정 시: storage_path의 상위 경로 중
             # 심볼릭 링크가 존재하면 신뢰 경계를 벗어날 위험이 있으므로 엄격히 검증
             self._trusted_base_dir = os.path.abspath(raw_dir)
+            self._trusted_base_is_explicit = False
 
         self.history: Dict[str, Dict] = {}
         # Comment 9: 초기화(로드) 시에는 읽기 모드로 락 획득 (fcntl 없어도 초기화 허용)
         try:
             with self._interprocess_lock(write=False):
-                self._load_history()
+                self._load_history(persist_pruning=HAS_FCNTL)
         except PermissionError:
             # 잘못된 경로인 경우 빈 히스토리 유지
             self.history = {}
@@ -169,6 +171,13 @@ class SearchHistory:
         """
         abs_path = os.path.abspath(self.storage_path)
         trusted_dir = os.path.realpath(self._trusted_base_dir)
+
+        # An inferred trust root must not resolve through a symlink, or the
+        # symlink target would accidentally become its own trust boundary.
+        if not self._trusted_base_is_explicit and trusted_dir != self._trusted_base_dir:
+            raise PermissionError(
+                "Inferred storage trust root resolves through a symlink"
+            )
 
         # Comment 1: storage_path의 모든 상위 디렉터리 컴포넌트 순회 검증
         current = abs_path
@@ -299,7 +308,7 @@ class SearchHistory:
             finally:
                 os.close(fd)
 
-    def _refresh_history(self) -> bool:
+    def _refresh_history(self, persist_pruning: bool = True) -> bool:
         """
         [KO] 디스크에서 최신 히스토리를 읽어와 메모리를 동기화합니다. (락 내부에서 호출)
              파일이 없으면 self.history를 {}로 초기화합니다.
@@ -309,7 +318,13 @@ class SearchHistory:
         try:
             target_path = self._validate_and_resolve_storage_path()
         except PermissionError as e:
-            logger.error(f"저장 경로 검증 실패: {e}")
+            logger.error(
+                "저장 경로 검증 실패",
+                extra={
+                    "action": "refresh_path_validation",
+                    "error_type": type(e).__name__,
+                },
+            )
             self.history = {}
             return False
 
@@ -330,12 +345,15 @@ class SearchHistory:
 
                 # Comment 8: dict가 아닌 레코드(None, int, str 등)는 필터링
                 sanitized_loaded = {
-                    sid: info for sid, info in loaded.items() if isinstance(info, dict)
+                    sid: info
+                    for sid, info in loaded.items()
+                    if self._is_valid_record(info)
                 }
+                records_filtered = len(sanitized_loaded) != len(loaded)
                 self.history = sanitized_loaded
                 pruned = self._prune_history()
                 # Comment 6: 프루닝 후 저장 실패 시 False 반환
-                if pruned:
+                if (pruned or records_filtered) and persist_pruning:
                     if not self._save_history():
                         logger.error("프루닝된 히스토리 디스크 동기화 실패")
                         return False
@@ -424,7 +442,7 @@ class SearchHistory:
                 return True
             return pruned_any
 
-    def _load_history(self) -> None:
+    def _load_history(self, persist_pruning: bool = True) -> None:
         """
         [KO] 지정된 경로에서 저장된 검색 히스토리를 로드합니다.
         [EN] Loads saved search history from the specified path.
@@ -432,7 +450,13 @@ class SearchHistory:
         try:
             target_path = self._validate_and_resolve_storage_path()
         except PermissionError as e:
-            logger.error(f"보안 오류로 히스토리 로드 실패: {e}")
+            logger.error(
+                "보안 오류로 히스토리 로드 실패",
+                extra={
+                    "action": "load_path_validation",
+                    "error_type": type(e).__name__,
+                },
+            )
             self.history = {}
             return
 
@@ -453,12 +477,15 @@ class SearchHistory:
 
                 # Comment 8: dict가 아닌 레코드 필터링
                 sanitized_loaded = {
-                    sid: info for sid, info in loaded.items() if isinstance(info, dict)
+                    sid: info
+                    for sid, info in loaded.items()
+                    if self._is_valid_record(info)
                 }
+                records_filtered = len(sanitized_loaded) != len(loaded)
                 self.history = sanitized_loaded
                 pruned = self._prune_history()
                 # Comment 6: 로드 시 프루닝 발생 시 디스크 반영 및 실패 시 안전 처리
-                if pruned:
+                if (pruned or records_filtered) and persist_pruning:
                     if not self._save_history():
                         logger.warning(
                             "로드 중 프루닝된 히스토리 저장 실패. 빈 상태로 초기화합니다."
@@ -475,12 +502,38 @@ class SearchHistory:
                 self.history = {}
         else:
             storage_dir = os.path.dirname(target_path) or "."
-            if storage_dir != ".":
+            if persist_pruning and storage_dir != ".":
                 try:
                     os.makedirs(storage_dir, exist_ok=True)
                 except OSError:
                     pass
             self.history = {}
+
+    @staticmethod
+    def _is_valid_record(info: Any) -> bool:
+        """Validate persisted fields that public methods consume."""
+        if not isinstance(info, dict) or not isinstance(info.get("query"), str):
+            return False
+
+        results_count = info.get("results_count")
+        if (
+            not isinstance(results_count, int)
+            or isinstance(results_count, bool)
+            or results_count < 0
+        ):
+            return False
+
+        top_results = info.get("top_results", [])
+        if not isinstance(top_results, list) or any(
+            not isinstance(result, str) for result in top_results
+        ):
+            return False
+
+        for key in ("search_time", "created_at", "user_id"):
+            value = info.get(key)
+            if value is not None and not isinstance(value, str):
+                return False
+        return True
 
     def _save_history(self) -> bool:
         """
@@ -516,7 +569,13 @@ class SearchHistory:
         try:
             target_path = self._validate_and_resolve_storage_path()
         except PermissionError as e:
-            logger.error(f"보안 오류로 저장 실패: {e}")
+            logger.error(
+                "보안 오류로 저장 실패",
+                extra={
+                    "action": "save_path_validation",
+                    "error_type": type(e).__name__,
+                },
+            )
             return False
 
         storage_dir = os.path.dirname(target_path) or "."
@@ -549,10 +608,10 @@ class SearchHistory:
                 os.fsync(dir_fd)
             except OSError as dir_err:
                 logger.error(
-                    f"디렉터리 fsync 실패로 저장 불완전: {dir_err}",
+                    "디렉터리 fsync 실패로 저장이 불완전합니다.",
                     extra={
                         "action": "save_history_dir_fsync",
-                        "storage_dir": storage_dir,
+                        "error_type": type(dir_err).__name__,
                     },
                 )
                 return False
@@ -597,7 +656,7 @@ class SearchHistory:
         try:
             with self._interprocess_lock(write=True):
                 # 1. 디스크 최신 상태와 동기화
-                if not self._refresh_history():
+                if not self._refresh_history(persist_pruning=True):
                     logger.error(
                         "디스크 히스토리 조정 실패로 영속화가 취소되었습니다.",
                         extra={"action": action, "error_type": "reconcile_failure"},
@@ -612,7 +671,10 @@ class SearchHistory:
                     mutate()
                 except Exception as e:
                     self.history = snapshot_before
-                    logger.error(f"뮤테이션 적용 실패: {e}")
+                    logger.error(
+                        "히스토리 변경 적용 실패",
+                        extra={"action": action, "error_type": type(e).__name__},
+                    )
                     return False
 
                 # 4. 저장 시도
@@ -632,8 +694,8 @@ class SearchHistory:
                 return False
         except (TimeoutError, PermissionError, RuntimeError) as e:
             logger.error(
-                f"영속화 중 락 또는 권한 오류 발생: {e}",
-                extra={"action": action, "error": str(e)},
+                "영속화 중 락 또는 권한 오류 발생",
+                extra={"action": action, "error_type": type(e).__name__},
             )
             return False
 
@@ -672,7 +734,7 @@ class SearchHistory:
         """
         try:
             with self._interprocess_lock(write=False):
-                if not self._refresh_history():
+                if not self._refresh_history(persist_pruning=HAS_FCNTL):
                     return None
                 record = self.history.get(search_id)
                 if (
@@ -682,7 +744,7 @@ class SearchHistory:
                 ):
                     return None
                 return record
-        except (PermissionError, RuntimeError):
+        except (PermissionError, RuntimeError, TimeoutError):
             return None
 
     def get_recent_searches(self, limit: int = 10) -> List[Dict]:
@@ -692,7 +754,7 @@ class SearchHistory:
         """
         try:
             with self._interprocess_lock(write=False):
-                if not self._refresh_history():
+                if not self._refresh_history(persist_pruning=HAS_FCNTL):
                     return []
                 user_items = [
                     (sid, info)
@@ -706,7 +768,7 @@ class SearchHistory:
                     reverse=True,
                 )
                 return [{"id": sid, **info} for sid, info in sorted_history[:limit]]
-        except (PermissionError, RuntimeError):
+        except (PermissionError, RuntimeError, TimeoutError):
             return []
 
     def get_all_searches(self) -> Dict[str, Dict]:
@@ -716,7 +778,7 @@ class SearchHistory:
         """
         try:
             with self._interprocess_lock(write=False):
-                if not self._refresh_history():
+                if not self._refresh_history(persist_pruning=HAS_FCNTL):
                     return {}
                 if self.user_id is None:
                     return {
@@ -729,7 +791,7 @@ class SearchHistory:
                     for sid, info in self.history.items()
                     if isinstance(info, dict) and info.get("user_id") == self.user_id
                 }
-        except (PermissionError, RuntimeError):
+        except (PermissionError, RuntimeError, TimeoutError):
             return {}
 
     def delete_search(self, search_id: str) -> bool:
@@ -738,7 +800,7 @@ class SearchHistory:
         """
         try:
             with self._interprocess_lock(write=False):
-                if not self._refresh_history():
+                if not self._refresh_history(persist_pruning=HAS_FCNTL):
                     return False
                 if search_id not in self.history:
                     return False
@@ -756,7 +818,7 @@ class SearchHistory:
                 rollback_msg="히스토리 저장 실패로 검색 기록 삭제가 취소되었습니다.",
                 action="delete_search_rollback",
             )
-        except (PermissionError, RuntimeError):
+        except (PermissionError, RuntimeError, TimeoutError):
             return False
 
     def clear_all(self) -> bool:
@@ -793,7 +855,7 @@ class SearchHistory:
         }
         try:
             with self._interprocess_lock(write=False):
-                if not self._refresh_history():
+                if not self._refresh_history(persist_pruning=HAS_FCNTL):
                     return default_stats
                 user_records = [
                     h
@@ -818,5 +880,5 @@ class SearchHistory:
                     "avg_results": round(avg_results, 1),
                     "most_common_query": most_common,
                 }
-        except (PermissionError, RuntimeError):
+        except (PermissionError, RuntimeError, TimeoutError):
             return default_stats

@@ -12,7 +12,7 @@
 - delete_search / clear_all 삭제 및 정확한 롤백 스냅샷 검증
 - _apply_and_persist 롤백 패턴 (정확한 히스토리 동등성)
 - get_statistics 반올림 회귀 감지
-- 5차 리뷰 전방위 대응 검증:
+- 5·6차 리뷰 전방위 대응 검증:
   - 심볼릭 링크 상위 컴포넌트 검증 및 탈출 시 락 파일 미생성 검증 (Comment 1, 3)
   - fcntl 미지원 시 읽기 허용 및 쓰기 fail-closed 검증 (Comment 9)
   - 락 타임아웃 시 add_search 계약 준수(None 반환) 및 플랫폼 무관 errno.EWOULDBLOCK 검증 (Comment 10, 11)
@@ -21,6 +21,8 @@
   - 프루닝 저장 실패 시 로드/갱신 실패 전파 검증 (Comment 6)
   - 갱신 실패 시 stale 캐시 노출 방지 검증 (Comment 4)
   - Malformed record 방어 검증 (Comment 8)
+  - 필드 타입이 잘못된 persisted record 제거 및 fcntl 미지원 읽기 무쓰기 검증
+  - 암묵적 경로 신뢰 기준의 심볼릭 링크 차단 및 조회 락 타임아웃 기본값 검증
 """
 
 import errno
@@ -197,6 +199,31 @@ class TestSearchHistoryInit:
         assert "valid_record" in sh.history
         assert "invalid_none" not in sh.history
         assert len(sh.get_all_searches()) == 1
+
+    def test_load_history_rejects_records_with_invalid_field_types(
+        self, tmp_history_file: str
+    ):
+        os.makedirs(os.path.dirname(tmp_history_file), exist_ok=True)
+        seed = {
+            "valid": {"query": "ok", "results_count": 2},
+            "invalid_query": {"query": [], "results_count": 1},
+            "invalid_count": {"query": "bad", "results_count": "1"},
+            "invalid_boolean_count": {"query": "bad", "results_count": True},
+            "invalid_top_results": {
+                "query": "bad",
+                "results_count": 1,
+                "top_results": [None],
+            },
+        }
+        with open(tmp_history_file, "w", encoding="utf-8") as history_file:
+            json.dump(seed, history_file)
+
+        history = SearchHistory(storage_path=tmp_history_file)
+
+        assert list(history.history) == ["valid"]
+        assert history.get_statistics()["avg_results"] == 2.0
+        with open(tmp_history_file, "r", encoding="utf-8") as history_file:
+            assert list(json.load(history_file)) == ["valid"]
 
 
 # ─────────────────────────────────────────────────────────
@@ -549,6 +576,21 @@ class TestSecurityAndRobustness:
 
         assert not (outside_dir / "target.json.lock").exists()
 
+    def test_inferred_trust_root_cannot_be_a_symlink(self, tmp_path: Path):
+        outside_dir = tmp_path / "outside"
+        outside_dir.mkdir()
+        target_file = outside_dir / "history.json"
+        target_file.write_text("{}", encoding="utf-8")
+        linked_parent = tmp_path / "linked-parent"
+        os.symlink(outside_dir, linked_parent)
+        storage_path = linked_parent / "history.json"
+
+        history = SearchHistory(storage_path=str(storage_path))
+
+        assert history.add_search("must be rejected", 1) is None
+        assert not (outside_dir / "history.json.lock").exists()
+        assert json.loads(target_file.read_text(encoding="utf-8")) == {}
+
     def test_save_history_calls_both_file_and_directory_fsync(
         self, tmp_history_file: str
     ):
@@ -606,9 +648,47 @@ class TestSecurityAndRobustness:
             sh_no_fcntl = SearchHistory(storage_path=tmp_history_file)
             assert sh_no_fcntl.get_all_searches() == {}
             assert sh_no_fcntl.get_recent_searches() == []
+            assert not os.path.exists(os.path.dirname(tmp_history_file))
 
             sid = sh_no_fcntl.add_search("will fail", 1)
             assert sid is None
+
+    def test_no_fcntl_read_pruning_does_not_write_to_disk(self, tmp_history_file: str):
+        os.makedirs(os.path.dirname(tmp_history_file), exist_ok=True)
+        seed = {
+            f"search_{index}": {
+                "query": f"query {index}",
+                "results_count": index,
+                "search_time": f"2026-01-01T00:00:0{index}",
+            }
+            for index in range(2)
+        }
+        with open(tmp_history_file, "w", encoding="utf-8") as history_file:
+            json.dump(seed, history_file)
+
+        with patch("backend.search_history.HAS_FCNTL", False):
+            history = SearchHistory(
+                storage_path=tmp_history_file, max_history_entries=1
+            )
+            assert len(history.history) == 1
+            assert len(history.get_all_searches()) == 1
+
+        with open(tmp_history_file, "r", encoding="utf-8") as history_file:
+            assert len(json.load(history_file)) == 2
+
+    def test_read_apis_return_defaults_on_lock_timeout(self, sh: SearchHistory):
+        with patch.object(
+            sh, "_interprocess_lock", side_effect=TimeoutError("lock timeout")
+        ):
+            assert sh.get_search("missing") is None
+            assert sh.get_recent_searches() == []
+            assert sh.get_all_searches() == {}
+            assert sh.get_statistics() == {
+                "total_searches": 0,
+                "avg_results": 0.0,
+                "most_common_query": None,
+            }
+            assert sh.delete_search("missing") is False
 
     def test_history_file_always_enforces_0o600_permissions(self, tmp_path: Path):
         """신규 및 기존 파일 모두 항상 0o600으로 강화됩니다."""
