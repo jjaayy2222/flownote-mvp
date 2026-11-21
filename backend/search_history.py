@@ -2,23 +2,25 @@
 # backend/search_history.py
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+
 """
 [KO] FlowNote MVP - 검색 히스토리 관리
 [EN] FlowNote MVP - Search History Management
 """
 
 import copy
+import errno
 import json
 import logging
 import os
-import stat
 import tempfile
 import threading
+import time
 import uuid
 from collections import Counter
 from contextlib import contextmanager
 from datetime import date, datetime
-from typing import Any, Callable, Dict, List, Optional, TypedDict
+from typing import Any, Callable, Dict, Generator, List, Optional, TypedDict
 
 try:
     import fcntl
@@ -34,6 +36,11 @@ logger = logging.getLogger(__name__)
 # [KO] 최대 보관 검색 기록 수 기본값 (디스크 공간 제약 방어)
 # [EN] Default maximum number of search history entries to keep (bounds disk footprint)
 DEFAULT_MAX_HISTORY_ENTRIES = 1000
+
+# [KO] 프로세스 간 락 획득 재시도 최대 대기 시간(초) / 재시도 간격(초)
+# [EN] Max wait seconds and retry interval for cross-process lock acquisition
+_FLOCK_TIMEOUT_SECONDS = 5.0
+_FLOCK_RETRY_INTERVAL_SECONDS = 0.05
 
 
 def _custom_json_serializer(obj: Any) -> str:
@@ -57,7 +64,20 @@ class SearchStatistics(TypedDict):
 class SearchHistory:
     """
     [KO] 검색 히스토리를 로컬 JSON 파일에 영속화하고 관리하는 클래스.
+
+    보안 주의사항:
+    - user_id=None 으로 사용하면 파일에 저장된 모든 사용자의 기록이 노출됩니다.
+      공유 파일을 사용하는 멀티유저 환경에서는 반드시 user_id를 지정하세요.
+    - storage_path는 신뢰 가능한 디렉터리 아래에 위치해야 합니다.
+      악의적인 심볼릭 링크가 삽입될 수 있는 공유 writable 디렉터리는 피하세요.
+
     [EN] A class to persist and manage search history in a local JSON file.
+
+    Security notes:
+    - Using user_id=None exposes all users' records stored in the file.
+      Always specify user_id in multi-user environments sharing a file.
+    - storage_path should reside within a trusted directory.
+      Avoid shared writable directories where adversarial symlinks may be planted.
     """
 
     # [KO] 프로세스 내 스레드 간 직렬화를 위한 재진입 락 및 재진입 깊이 추적
@@ -70,6 +90,7 @@ class SearchHistory:
         storage_path: str = "data/search_history.json",
         max_history_entries: int = DEFAULT_MAX_HISTORY_ENTRIES,
         user_id: Optional[str] = None,
+        trusted_base_dir: Optional[str] = None,
     ):
         """
         [KO]
@@ -77,24 +98,60 @@ class SearchHistory:
 
         Args:
             storage_path: 히스토리를 저장할 JSON 파일 경로
-            max_history_entries: 보관할 최대 검색 기록 수 (양의 정수)
-            user_id: 특정 사용자에 한정하여 격리 관리할 사용자 식별자 (선택 사항)
+            max_history_entries: 보관할 최대 검색 기록 수 (양의 정수여야 함)
+            user_id: 특정 사용자에 한정하여 격리 관리할 사용자 식별자 (선택 사항).
+                     None으로 사용 시 파일 내 모든 레코드가 노출될 수 있으므로
+                     멀티유저 환경에서는 반드시 지정하세요.
+            trusted_base_dir: 허용할 심볼릭 링크 대상의 기준 디렉터리 (절대 경로).
+                              None이면 storage_path의 절대 경로 디렉터리(symlink 미해석)를 사용합니다.
 
         [EN]
         Sets the history storage path and loads existing data.
 
         Args:
             storage_path: JSON file path to store history
-            max_history_entries: Maximum number of search history entries to keep (positive int)
-            user_id: Optional user identifier to partition/isolate history records
+            max_history_entries: Maximum number of search history entries to keep.
+                                 Must be a positive integer (not float or zero).
+            user_id: Optional user identifier to partition/isolate history records.
+                     When None, all records in the file are visible — specify in multi-user setups.
+            trusted_base_dir: Absolute path that symlink targets must reside within.
+                              Defaults to the non-symlink-resolved directory of storage_path.
         """
+        # Comment 7: float/bool/non-int 타입 거부
+        if not isinstance(max_history_entries, int) or isinstance(
+            max_history_entries, bool
+        ):
+            raise TypeError(
+                f"max_history_entries must be a plain int, got {type(max_history_entries).__name__}"
+            )
         if max_history_entries <= 0:
             raise ValueError(
                 f"max_history_entries must be a positive integer, got {max_history_entries}"
             )
+
+        # Comment 2: user_id=None 사용 시 경고 로그
+        if user_id is None:
+            logger.warning(
+                "SearchHistory initialized without user_id: all records in the file are "
+                "accessible. Set user_id to isolate records in multi-user environments.",
+                extra={"action": "init_no_user_id", "storage_path": storage_path},
+            )
+
         self.storage_path = storage_path
         self.max_history_entries = max_history_entries
         self.user_id = user_id
+
+        # Comment 1: trusted_base_dir 를 storage_path 자체에서 파생하지 않고
+        # 호출자 제공값 또는 abspath(dirname) 사용 (realpath로 symlink 해석 금지)
+        if trusted_base_dir is not None:
+            self._trusted_base_dir: str = os.path.abspath(trusted_base_dir)
+        else:
+            abs_path = os.path.abspath(storage_path)
+            raw_dir = os.path.dirname(abs_path) or "."
+            # abspath만 사용: realpath 사용 시 부모 디렉터리 자체가 symlink일 때
+            # 그 대상(outside)으로 trusted_dir가 설정되어 검증을 우회할 수 있음
+            self._trusted_base_dir = os.path.abspath(raw_dir)
+
         self.history: Dict[str, Dict] = {}
         with self._interprocess_lock():
             self._load_history()
@@ -102,37 +159,64 @@ class SearchHistory:
     def _validate_and_resolve_storage_path(self) -> str:
         """
         [KO] 저장 경로의 심볼릭 링크를 검증하고 안전한 대상 경로를 반환합니다.
-             심볼릭 링크가 신뢰할 수 있는 기본 디렉토리 외부를 가리키면 보안 예외를 발생시킵니다.
-        [EN] Validates storage_path symlinks and returns a safe destination path.
-             Rejects symlinks pointing outside the trusted base directory.
+             심볼릭 링크 대상이 _trusted_base_dir 외부를 가리키면 보안 예외를 발생시킵니다.
+             부모 디렉터리 자체가 외부를 가리키는 symlink인 경우도 거부합니다.
+        [EN] Validates storage_path symlinks and returns a safe resolved destination path.
+             Rejects symlinks pointing outside _trusted_base_dir, including parent-dir symlinks.
         """
         abs_path = os.path.abspath(self.storage_path)
-        trusted_dir = os.path.realpath(os.path.dirname(abs_path) or ".")
+
+        # Comment 1: trusted_dir를 self._trusted_base_dir로 고정 (storage_path 파생 아님)
+        # realpath로 완전히 심볼릭 링크를 해석한 경로가 trusted 범위 내인지 확인
         real_path = os.path.realpath(abs_path)
+        trusted_dir = os.path.realpath(self._trusted_base_dir)
 
         if os.path.islink(abs_path):
             try:
                 common = os.path.commonpath([trusted_dir, real_path])
                 if common != trusted_dir:
                     raise PermissionError(
-                        f"보안 경고: 신뢰할 수 없는 디렉토리를 가리키는 심볼릭 링크 거부: {self.storage_path} -> {real_path}"
+                        f"보안 경고: 신뢰할 수 없는 디렉토리를 가리키는 심볼릭 링크 거부: "
+                        f"{self.storage_path} -> (외부 경로)"
                     )
             except ValueError:
                 raise PermissionError(
                     f"보안 경고: 신뢰할 수 없는 경로를 가리키는 심볼릭 링크 거부: {self.storage_path}"
                 )
+
+        # Comment 1 (추가): 부모 디렉터리가 trusted_dir 밖으로 벗어나는지 확인
+        # (최종 파일이 symlink가 아니어도 중간 경로 컴포넌트가 symlink일 수 있음)
+        real_parent = os.path.realpath(os.path.dirname(abs_path) or ".")
+        try:
+            common_parent = os.path.commonpath([trusted_dir, real_parent])
+            if common_parent != trusted_dir:
+                raise PermissionError(
+                    f"보안 경고: 부모 디렉터리가 신뢰 범위 외부를 가리킵니다: {self.storage_path}"
+                )
+        except ValueError:
+            raise PermissionError(
+                f"보안 경고: 부모 디렉터리가 신뢰 범위 외부를 가리킵니다: {self.storage_path}"
+            )
+
         return real_path
 
     @contextmanager
-    def _interprocess_lock(self):
+    def _interprocess_lock(self) -> Generator[None, None, None]:
         """
         [KO] 프로세스 간(fcntl.flock) 및 스레드 간(_lock) 배타적 잠금을 제공하는 컨텍스트 매니저.
-        [EN] Context manager providing cross-process (fcntl.flock) and cross-thread (_lock) synchronization.
+             fcntl을 사용할 수 없는 플랫폼에서는 쓰기 연산을 거부합니다 (fail-closed).
+             잠금 획득에 _FLOCK_TIMEOUT_SECONDS 초 이상 걸리면 TimeoutError를 발생시킵니다.
+        [EN] Context manager providing cross-process (fcntl.flock) and cross-thread (_lock) sync.
+             Fails closed (raises RuntimeError) when fcntl is unavailable.
+             Raises TimeoutError if the lock cannot be acquired within _FLOCK_TIMEOUT_SECONDS.
         """
         with SearchHistory._lock:
+            # Comment 4 & 9: fcntl 없으면 fail-closed (yield 없이 예외 발생)
             if not HAS_FCNTL:
-                yield
-                return
+                raise RuntimeError(
+                    "fcntl을 사용할 수 없는 플랫폼에서는 SearchHistory 쓰기 연산이 허용되지 않습니다. "
+                    "데이터 무결성을 위해 fcntl 지원 플랫폼(Linux/macOS)에서 실행하세요."
+                )
 
             current_depth = getattr(SearchHistory._lock_depth, "depth", 0)
             if current_depth > 0:
@@ -160,12 +244,26 @@ class SearchHistory:
             try:
                 fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
             except OSError as e:
-                logger.error(f"락 파일 생성 실패: {e}")
-                yield
-                return
+                # Comment 4 & 9: 락 파일 생성 실패 시 fail-closed
+                raise RuntimeError(f"락 파일 생성 실패로 연산을 중단합니다: {e}") from e
 
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX)
+                # Comment 11: 비차단 flock + 타임아웃 재시도
+                deadline = time.monotonic() + _FLOCK_TIMEOUT_SECONDS
+                while True:
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except OSError as lock_err:
+                        if lock_err.errno not in (errno.EWOULDBLOCK, errno.EAGAIN):
+                            raise
+                        if time.monotonic() >= deadline:
+                            raise TimeoutError(
+                                f"프로세스 간 락 획득 타임아웃 "
+                                f"({_FLOCK_TIMEOUT_SECONDS}초): {lock_path}"
+                            ) from lock_err
+                        time.sleep(_FLOCK_RETRY_INTERVAL_SECONDS)
+
                 SearchHistory._lock_depth.depth = 1
                 try:
                     yield
@@ -178,7 +276,9 @@ class SearchHistory:
     def _refresh_history(self) -> bool:
         """
         [KO] 디스크에서 최신 히스토리를 읽어와 메모리를 동기화합니다. (락 내부에서 호출)
+             파일이 없으면 self.history를 {}로 초기화합니다.
         [EN] Refreshes in-memory history from disk. (Must be called under lock)
+             Clears self.history to {} when the file is absent (no stale data).
         """
         try:
             target_path = self._validate_and_resolve_storage_path()
@@ -189,35 +289,82 @@ class SearchHistory:
         if os.path.exists(target_path):
             try:
                 with open(target_path, "r", encoding="utf-8") as f:
-                    self.history = json.load(f)
-                self._prune_history()
+                    loaded = json.load(f)
+                # Comment 6: JSON이 dict가 아닌 경우(예: 배열) 손상으로 간주
+                if not isinstance(loaded, dict):
+                    logger.warning(
+                        "히스토리 파일 형식 오류: dict가 아닌 타입이 로드됨. 빈 히스토리로 초기화합니다.",
+                        extra={
+                            "action": "refresh_history_type_error",
+                            "loaded_type": type(loaded).__name__,
+                        },
+                    )
+                    self.history = {}
+                    return True
+                self.history = loaded
+                pruned = self._prune_history()
+                # Comment 12: 프루닝이 발생했으면 디스크에도 즉시 반영
+                if pruned:
+                    self._save_history()
                 return True
             except (OSError, ValueError) as e:
                 logger.error(
                     f"히스토리 갱신 실패: {type(e).__name__}: {format_error_msg(e)}",
                     extra={
                         "action": "refresh_history",
-                        "path": self.storage_path,
                         "error_type": type(e).__name__,
                     },
                 )
                 return False
-        return True
+        else:
+            # Comment 5: 파일 없으면 stale 데이터 방지를 위해 명시적으로 초기화
+            self.history = {}
+            return True
 
-    def _prune_history(self) -> None:
+    def _prune_history(self) -> bool:
         """
-        [KO] 최대 보관 수를 초과할 경우 오래된 검색 기록을 정리하여 디스크 공간을 제한합니다.
-        [EN] Prunes older search records when exceeding maximum entries to bound disk usage.
+        [KO] 최대 보관 수를 초과할 경우 오래된 검색 기록을 정리합니다.
+             user_id가 설정된 경우 해당 사용자의 기록만 프루닝하고 다른 사용자의 기록은 보존합니다.
+             프루닝이 실제로 발생했으면 True를 반환합니다.
+        [EN] Prunes older search records when exceeding maximum entries.
+             When user_id is set, only prunes records belonging to that user.
+             Returns True if any records were actually pruned.
         """
-        if len(self.history) > self.max_history_entries:
-            sorted_items = sorted(
-                self.history.items(),
-                key=lambda x: x[1].get("search_time", ""),
-                reverse=True,
-            )
-            self.history = dict(sorted_items[: self.max_history_entries])
+        # Comment 3: user_id가 설정된 경우 해당 사용자 레코드만 프루닝
+        if self.user_id is not None:
+            user_records = {
+                sid: info
+                for sid, info in self.history.items()
+                if info.get("user_id") == self.user_id
+            }
+            other_records = {
+                sid: info
+                for sid, info in self.history.items()
+                if info.get("user_id") != self.user_id
+            }
+            if len(user_records) > self.max_history_entries:
+                sorted_user = sorted(
+                    user_records.items(),
+                    key=lambda x: x[1].get("search_time", ""),
+                    reverse=True,
+                )
+                pruned_user = dict(sorted_user[: self.max_history_entries])
+                self.history = {**other_records, **pruned_user}
+                return True
+            return False
+        else:
+            # user_id 미설정: 전체 히스토리 기준 프루닝
+            if len(self.history) > self.max_history_entries:
+                sorted_items = sorted(
+                    self.history.items(),
+                    key=lambda x: x[1].get("search_time", ""),
+                    reverse=True,
+                )
+                self.history = dict(sorted_items[: self.max_history_entries])
+                return True
+            return False
 
-    def _load_history(self):
+    def _load_history(self) -> None:
         """
         [KO]
         지정된 경로에서 저장된 검색 히스토리를 로드합니다. 파일이 없으면 디렉터리를 생성합니다.
@@ -235,14 +382,28 @@ class SearchHistory:
         if os.path.exists(target_path):
             try:
                 with open(target_path, "r", encoding="utf-8") as f:
-                    self.history = json.load(f)
-                self._prune_history()
+                    loaded = json.load(f)
+                # Comment 6: JSON이 dict가 아닌 경우 손상으로 간주
+                if not isinstance(loaded, dict):
+                    logger.warning(
+                        "히스토리 파일 형식 오류: dict가 아닌 타입. 빈 히스토리로 초기화합니다.",
+                        extra={
+                            "action": "load_history_type_error",
+                            "loaded_type": type(loaded).__name__,
+                        },
+                    )
+                    self.history = {}
+                    return
+                self.history = loaded
+                pruned = self._prune_history()
+                # Comment 12: 로드 시 프루닝 발생 시 디스크 반영
+                if pruned:
+                    self._save_history()
             except (OSError, ValueError) as e:
                 logger.warning(
                     f"히스토리 로드 실패: {type(e).__name__}: {format_error_msg(e)}",
                     extra={
                         "action": "load_history",
-                        "path": self.storage_path,
                         "error_type": type(e).__name__,
                     },
                 )
@@ -257,14 +418,14 @@ class SearchHistory:
         """
         [KO]
         메모리의 히스토리 데이터를 JSON 파일에 안전하게 저장합니다.
-        원자적 교체, 소유자 전용 권한 설정(0o600), 임시 파일 정리를 보장합니다.
+        원자적 교체, 소유자 전용 권한 강제(0o600), fsync, 임시 파일 정리를 보장합니다.
 
         Returns:
             저장 성공 시 True, 직렬화 또는 I/O 실패 시 False
 
         [EN]
         Safely saves in-memory history data to a JSON file.
-        Guarantees atomic replacement, owner-only permissions (0o600), and tempfile cleanup.
+        Guarantees atomic replacement, enforced 0o600 permissions, fsync, and tempfile cleanup.
 
         Returns:
             True if saved successfully, False on serialization or I/O failure.
@@ -284,7 +445,6 @@ class SearchHistory:
                 f"히스토리 직렬화 실패: {type(e).__name__}: {format_error_msg(e)}",
                 extra={
                     "action": "save_history_serialize",
-                    "path": self.storage_path,
                     "error_type": type(e).__name__,
                 },
             )
@@ -298,13 +458,6 @@ class SearchHistory:
             return False
 
         storage_dir = os.path.dirname(target_path) or "."
-        target_exists = os.path.exists(target_path)
-        target_stat = None
-        if target_exists:
-            try:
-                target_stat = os.stat(target_path)
-            except OSError:
-                pass
 
         tmp_path: Optional[str] = None
         try:
@@ -317,20 +470,28 @@ class SearchHistory:
             ) as tmp_f:
                 tmp_path = tmp_f.name
                 tmp_f.write(serialized)
+                # Comment 10: fsync로 OS 버퍼를 디스크에 플러시
+                tmp_f.flush()
+                os.fsync(tmp_f.fileno())
 
-            # 권한 복제 또는 소유자 전용 0o600 강제 (개인정보 보호)
-            if target_stat is not None:
-                try:
-                    os.chmod(tmp_path, stat.S_IMODE(target_stat.st_mode))
-                except OSError:
-                    pass
-            else:
-                try:
-                    os.chmod(tmp_path, 0o600)
-                except OSError:
-                    pass
+            # Comment 8: 항상 소유자 전용(0o600) 권한 강제 (기존 파일 모드 복제 금지)
+            try:
+                os.chmod(tmp_path, 0o600)
+            except OSError:
+                pass
 
             os.replace(tmp_path, target_path)
+
+            # Comment 10: 디렉터리 메타데이터 fsync (rename이 디렉터리에 반영되도록)
+            try:
+                dir_fd = os.open(storage_dir, os.O_RDONLY)
+                try:
+                    os.fsync(dir_fd)
+                finally:
+                    os.close(dir_fd)
+            except OSError:
+                pass
+
             return True
 
         except (OSError, UnicodeEncodeError) as e:
@@ -338,7 +499,6 @@ class SearchHistory:
                 f"히스토리 저장 실패: {type(e).__name__}: {format_error_msg(e)}",
                 extra={
                     "action": "save_history_write",
-                    "path": self.storage_path,
                     "error_type": type(e).__name__,
                 },
             )
@@ -450,6 +610,12 @@ class SearchHistory:
     def get_search(self, search_id: str) -> Optional[Dict]:
         """
         [KO] 특정 검색 ID의 기록을 조회합니다. 사용자 ID가 설정된 경우 격리 검증을 수행합니다.
+
+        [EN] Returns the search record for the given ID. Enforces user isolation when user_id is set.
+
+        Note:
+            Comment 13: user_id가 None인 레거시 레코드(user_id 필드 없음)는
+            user_id 설정 인스턴스에서 조회되지 않습니다 (레거시 레코드 = 소유자 미지정).
         """
         with self._interprocess_lock():
             self._refresh_history()
@@ -465,6 +631,9 @@ class SearchHistory:
     def get_recent_searches(self, limit: int = 10) -> List[Dict]:
         """
         [KO] 최근 수행된 검색 기록들을 최신순으로 정렬하여 조회합니다.
+
+        Note:
+            Comment 13: user_id=None 레거시 레코드는 user_id 설정 인스턴스에서 필터링됩니다.
         """
         with self._interprocess_lock():
             self._refresh_history()
@@ -481,6 +650,9 @@ class SearchHistory:
     def get_all_searches(self) -> Dict[str, Dict]:
         """
         [KO] 저장된 모든 검색 기록을 조회합니다. 사용자 ID가 설정된 경우 격리 조회합니다.
+
+        Note:
+            Comment 13: user_id=None 레거시 레코드는 user_id 설정 인스턴스에서 필터링됩니다.
         """
         with self._interprocess_lock():
             self._refresh_history()
@@ -520,7 +692,7 @@ class SearchHistory:
             if not self._refresh_history():
                 return False
 
-            def _mutate():
+            def _mutate() -> None:
                 if self.user_id is None:
                     self.history.clear()
                 else:
