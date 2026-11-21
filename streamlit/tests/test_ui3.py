@@ -44,7 +44,6 @@ from backend.chunking import TextChunker
 
 # Backend 임포트
 from backend.classifier.para_agent_wrapper import run_para_agent_sync
-from backend.database.connection import DatabaseConnection
 from backend.database.metadata_schema import ClassificationMetadataExtender
 from backend.embedding import EmbeddingGenerator
 from backend.export import MarkdownExporter
@@ -69,14 +68,14 @@ st.markdown(
     .stApp {
         background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
     }
-    
+
     /* 헤더 */
     h1, h2, h3 {
         color: #ecf0f1;
         font-weight: 600;
         letter-spacing: -0.5px;
     }
-    
+
     /* 카드 스타일 - 라이트 배경 */
     .card {
         background: rgba(255, 255, 255, 0.95);
@@ -86,7 +85,7 @@ st.markdown(
         margin: 24px 0;
         backdrop-filter: blur(10px);
     }
-    
+
     /* 업로드 영역 */
     .upload-area {
         background: white;
@@ -96,12 +95,12 @@ st.markdown(
         text-align: center;
         transition: all 0.3s ease;
     }
-    
+
     .upload-area:hover {
         border-color: #3498db;
         background: #f8f9fa;
     }
-    
+
     /* 버튼 스타일 */
     .stButton>button {
         border-radius: 12px;
@@ -112,12 +111,12 @@ st.markdown(
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
     }
-    
+
     .stButton>button:hover {
         transform: translateY(-2px);
         box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
     }
-    
+
     /* 탭 스타일 */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
@@ -125,26 +124,26 @@ st.markdown(
         padding: 8px;
         border-radius: 12px;
     }
-    
+
     .stTabs [data-baseweb="tab"] {
         border-radius: 8px;
         padding: 12px 24px;
         color: #ecf0f1;
         font-weight: 500;
     }
-    
+
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
         background: white;
         color: #2c3e50;
     }
-    
+
     /* 메트릭 카드 */
     [data-testid="stMetricValue"] {
         font-size: 32px;
         font-weight: 700;
         color: #2c3e50;
     }
-    
+
     /* 분류 결과 카드 */
     .result-card {
         background: white;
@@ -153,7 +152,7 @@ st.markdown(
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
         margin: 16px 0;
     }
-    
+
     /* 카테고리 배지 */
     .category-badge {
         display: inline-block;
@@ -163,30 +162,30 @@ st.markdown(
         font-size: 18px;
         margin: 16px 0;
     }
-    
-    .badge-projects { 
+
+    .badge-projects {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
     }
-    .badge-areas { 
+    .badge-areas {
         background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
         color: white;
     }
-    .badge-resources { 
+    .badge-resources {
         background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
         color: white;
     }
-    .badge-archives { 
+    .badge-archives {
         background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
         color: white;
     }
-    
+
     /* 구분선 */
     .divider {
         border-top: 2px solid rgba(255, 255, 255, 0.2);
         margin: 32px 0;
     }
-    
+
     /* 입력 필드 */
     .stTextInput>div>div>input {
         border-radius: 12px;
@@ -504,7 +503,7 @@ with tab2:
                 "🔎 검색", type="primary", use_container_width=True
             )
 
-        if query and search_button:
+        if query.strip() and search_button:
             with st.spinner("검색 중..."):
                 results = st.session_state.faiss_retriever.search(query, k=k)
                 st.session_state.search_history.add_search(

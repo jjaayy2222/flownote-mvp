@@ -12,7 +12,7 @@
 - delete_search / clear_all 삭제 및 정확한 롤백 스냅샷 검증
 - _apply_and_persist 롤백 패턴 (정확한 히스토리 동등성)
 - get_statistics 반올림 회귀 감지
-- 5·6·7차 리뷰 전방위 대응 검증:
+- 5·6·7·8차 리뷰 전방위 대응 검증:
   - 심볼릭 링크 상위 컴포넌트 검증 및 탈출 시 락 파일 미생성 검증 (Comment 1, 3)
   - fcntl 미지원 시 읽기 허용 및 쓰기 fail-closed 검증 (Comment 9)
   - 락 타임아웃 시 add_search 계약 준수(None 반환) 및 플랫폼 무관 errno.EWOULDBLOCK 검증 (Comment 10, 11)
@@ -24,6 +24,7 @@
   - 필드 타입이 잘못된 persisted record 제거 및 fcntl 미지원 읽기 무쓰기 검증
   - 암묵적 경로 신뢰 기준의 심볼릭 링크 차단 및 조회 락 타임아웃 기본값 검증
   - 추가 입력 레코드 검증, 예약 ID 우선순위, 민감 예외 메시지 비노출 및 타임아웃 로그 검증
+  - 공백 질의 저장 거부 및 삭제 쓰기 락 타임아웃 전용 이벤트 검증
 """
 
 import errno
@@ -31,6 +32,7 @@ import json
 import logging
 import os
 import stat
+from contextlib import nullcontext
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Generator
@@ -237,6 +239,7 @@ class TestSearchHistoryInit:
         os.makedirs(os.path.dirname(tmp_history_file), exist_ok=True)
         seed = {
             "valid": {"query": "ok", "results_count": 2},
+            "blank_query": {"query": " \t\n", "results_count": 1},
             "invalid_query": {"query": [], "results_count": 1},
             "invalid_count": {"query": "bad", "results_count": "1"},
             "invalid_boolean_count": {"query": "bad", "results_count": True},
@@ -295,6 +298,8 @@ class TestAddSearch:
         ("query", "results_count", "top_results"),
         [
             (None, 1, None),
+            ("   ", 1, None),
+            ("\t\n", 1, None),
             ("query", True, None),
             ("query", -1, None),
             ("query", "1", None),
@@ -775,6 +780,32 @@ class TestSecurityAndRobustness:
         assert all(
             getattr(record, "timeout_seconds", 0) > 0 for record in timeout_records
         )
+        assert "sensitive marker" not in caplog.text
+
+    def test_delete_write_lock_timeout_uses_dedicated_telemetry(
+        self, sh: SearchHistory, caplog: pytest.LogCaptureFixture
+    ):
+        search_id = sh.add_search("delete timeout case", 1)
+        assert search_id is not None
+
+        def lock_with_write_timeout(write: bool = False):
+            if write:
+                raise TimeoutError("sensitive marker")
+            return nullcontext()
+
+        with caplog.at_level(logging.WARNING, logger="backend.search_history"):
+            with patch.object(
+                sh, "_interprocess_lock", side_effect=lock_with_write_timeout
+            ):
+                assert sh.delete_search(search_id) is False
+
+        timeout_records = [
+            record
+            for record in caplog.records
+            if getattr(record, "action", None) == "delete_search_lock_timeout"
+        ]
+        assert len(timeout_records) == 1
+        assert getattr(timeout_records[0], "timeout_seconds", 0) > 0
         assert "sensitive marker" not in caplog.text
 
     def test_history_file_always_enforces_0o600_permissions(self, tmp_path: Path):
