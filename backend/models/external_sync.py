@@ -12,6 +12,16 @@ from typing import Any, Dict, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
+def _current_timestamp() -> datetime:
+    """실시간 생성 시각을 반환하는 기본 팩토리 함수 (테스트 시 제어된 시계 주입 가능)"""
+    return _time_provider()
+
+
+def _time_provider() -> datetime:
+    """현재 시각을 반환하는 내부 프로바이더 함수"""
+    return datetime.now()
+
+
 class SyncStatus(str, Enum):
     """동기화 상태 열거형"""
 
@@ -66,14 +76,14 @@ class ExternalFileMapping(BaseModel):
     external_path: str  # Obsidian Absolute Path or Notion Page ID
     tool_type: ExternalToolType
     last_synced_hash: Optional[str] = None  # 변경 감지용 해시
-    last_synced_at: datetime = Field(default_factory=datetime.now)
+    last_synced_at: datetime = Field(default_factory=_current_timestamp)
 
 
 class ExternalSyncLog(BaseModel):
     """동기화 활동 로그"""
 
     id: str
-    timestamp: datetime = Field(default_factory=datetime.now)
+    timestamp: datetime = Field(default_factory=_current_timestamp)
     tool_type: ExternalToolType
     action: str  # "pull", "push", "conflict_resolve"
     file_path: Optional[str] = None
