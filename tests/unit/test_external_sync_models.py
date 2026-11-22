@@ -5,14 +5,17 @@
 [EN] Unit tests for Pydantic models in backend/models/external_sync.py.
 
 테스트 범위:
-- Pydantic V2 ConfigDict 마이그레이션 검증 (class Config 제거 및 DeprecationWarning 미발생)
-- ExternalToolConnection schema_extra 예시 내 PII(사용자 개인정보/로컬 경로) 비포함 검증
+- Pydantic V2 ConfigDict 마이그레이션 검증 (class Config 제거 및 import/인스턴스화 시 DeprecationWarning 미발생)
+- ExternalToolConnection schema_extra 예시 내 PII 비포함 및 범용 경로 검증
 - ConnectionConfig 기본값 및 선택 필드 검증
 - ExternalToolConnection 인스턴스화, 직렬화(model_dump), 역직렬화(model_validate) 검증
-- ExternalFileMapping 및 ExternalSyncLog default_factory 동작 및 유효성 검증
+- ExternalFileMapping 및 ExternalSyncLog default_factory 실시간 호출 및 유효성 검증
 - Enum 타입 정합성 및 직렬화 검증
 """
 
+import importlib
+import sys
+import time
 import warnings
 from datetime import datetime
 
@@ -34,16 +37,24 @@ class TestExternalSyncModelsConfigDict:
     """Pydantic V2 ConfigDict 마이그레이션 및 스키마 검증"""
 
     def test_no_pydantic_deprecated_warnings_on_import_and_instantiation(self):
-        """PydanticDeprecatedSince20 경고 없이 모델이 인스턴스화되는지 검증합니다."""
+        """PydanticDeprecatedSince20 경고 없이 모델이 임포트 및 인스턴스화되는지 검증합니다."""
         with warnings.catch_warnings(record=True) as recorded_warnings:
             warnings.simplefilter("always")
 
+            # Comment 2: warning-capture 블록 내에서 모듈을 리로드하여 정의(임포트) 시점의 경고까지 캡처
+            if "backend.models.external_sync" in sys.modules:
+                sync_module = importlib.reload(
+                    sys.modules["backend.models.external_sync"]
+                )
+            else:
+                sync_module = importlib.import_module("backend.models.external_sync")
+
             # 모델 인스턴스화
-            conn = ExternalToolConnection(
-                tool_type=ExternalToolType.OBSIDIAN,
-                config=ConnectionConfig(base_path="/path/to/vault"),
+            conn = sync_module.ExternalToolConnection(
+                tool_type=sync_module.ExternalToolType.OBSIDIAN,
+                config=sync_module.ConnectionConfig(base_path="/path/to/vault"),
             )
-            assert conn.tool_type == ExternalToolType.OBSIDIAN
+            assert conn.tool_type == sync_module.ExternalToolType.OBSIDIAN
 
             # PydanticDeprecatedSince20 경고가 발생하지 않아야 함
             deprecated_warnings = [
@@ -60,7 +71,7 @@ class TestExternalSyncModelsConfigDict:
         assert "json_schema_extra" in config
 
     def test_json_schema_extra_contains_no_pii(self):
-        """json_schema_extra 예시에 사용자 개인정보(예: /Users/jay 등)가 포함되지 않는지 검증합니다."""
+        """Comment 1: json_schema_extra 예시가 범용 경로이며 개인 홈 디렉터리 패턴이 없는지 검증합니다."""
         schema_extra = ExternalToolConnection.model_config.get("json_schema_extra")
         assert isinstance(schema_extra, dict)
         example = schema_extra.get("example")
@@ -69,8 +80,9 @@ class TestExternalSyncModelsConfigDict:
         assert isinstance(config_example, dict)
         base_path = config_example.get("base_path", "")
 
-        assert "/Users/jay" not in str(base_path)
+        # 특정 로컬 사용자명 리터럴 없이 범용 경로 일치 및 일반적인 개인 사용자 경로 패턴 부재 검증
         assert base_path == "/path/to/vault"
+        assert not str(base_path).startswith(("/Users/", "/home/", "C:\\Users"))
 
 
 class TestConnectionConfig:
@@ -141,17 +153,28 @@ class TestExternalFileMapping:
     """ExternalFileMapping 모델 단위 테스트"""
 
     def test_instantiation_with_defaults(self):
-        """필수 필드 입력 시 default_factory가 동작하여 last_synced_at이 자동 생성되는지 검증합니다."""
-        mapping = ExternalFileMapping(
+        """Comment 3: default_factory가 인스턴스 생성 시점에 실시간 호출되어 유효 범위 타임스탬프를 부여하는지 검증합니다."""
+        before = datetime.now()
+        mapping1 = ExternalFileMapping(
             internal_file_id="flownote_doc_001",
             external_path="/vault/notes/daily.md",
             tool_type=ExternalToolType.OBSIDIAN,
         )
-        assert mapping.internal_file_id == "flownote_doc_001"
-        assert mapping.external_path == "/vault/notes/daily.md"
-        assert mapping.tool_type == ExternalToolType.OBSIDIAN
-        assert mapping.last_synced_hash is None
-        assert isinstance(mapping.last_synced_at, datetime)
+        time.sleep(0.002)
+        mapping2 = ExternalFileMapping(
+            internal_file_id="flownote_doc_002",
+            external_path="/vault/notes/weekly.md",
+            tool_type=ExternalToolType.OBSIDIAN,
+        )
+        after = datetime.now()
+
+        assert mapping1.internal_file_id == "flownote_doc_001"
+        assert mapping1.external_path == "/vault/notes/daily.md"
+        assert mapping1.tool_type == ExternalToolType.OBSIDIAN
+        assert mapping1.last_synced_hash is None
+
+        # 생성 시간 범위 검증 및 고정 기본값이 아닌 팩토리 호출 검증
+        assert before <= mapping1.last_synced_at <= mapping2.last_synced_at <= after
 
     def test_custom_synced_hash_and_time(self):
         """해시 및 특정 시각이 올바르게 반영되는지 검증합니다."""
@@ -171,7 +194,8 @@ class TestExternalSyncLog:
     """ExternalSyncLog 모델 단위 테스트"""
 
     def test_instantiation_and_details(self):
-        """동기화 활동 로그가 올바르게 인스턴스화되는지 검증합니다."""
+        """Comment 3: 동기화 활동 로그가 올바르게 인스턴스화되며 timestamp가 실시간 생성되는지 검증합니다."""
+        before = datetime.now()
         log = ExternalSyncLog(
             id="log_001",
             tool_type=ExternalToolType.OBSIDIAN,
@@ -181,9 +205,12 @@ class TestExternalSyncLog:
             message="Pushing local changes",
             details={"chunks_count": 5},
         )
+        after = datetime.now()
+
         assert log.id == "log_001"
         assert log.action == "push"
         assert log.status == SyncStatus.SYNCING
         assert log.status.value == "syncing"
-        assert isinstance(log.timestamp, datetime)
         assert log.details == {"chunks_count": 5}
+        # 생성 시간 범위 검증 (factory 호출 검증)
+        assert before <= log.timestamp <= after
