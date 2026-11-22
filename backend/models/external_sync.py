@@ -9,7 +9,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SyncStatus(str, Enum):
@@ -42,20 +42,21 @@ class ConnectionConfig(BaseModel):
 class ExternalToolConnection(BaseModel):
     """외부 도구 연결 상태"""
 
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "tool_type": "obsidian",
+                "config": {"base_path": "/path/to/vault", "enabled": True},
+                "sync_status": "idle",
+            }
+        }
+    )
+
     tool_type: ExternalToolType
     config: ConnectionConfig
     last_synced_at: Optional[datetime] = None
     sync_status: SyncStatus = SyncStatus.IDLE
     error_message: Optional[str] = None
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "tool_type": "obsidian",
-                "config": {"base_path": "/Users/jay/Documents/Vault", "enabled": True},
-                "sync_status": "idle",
-            }
-        }
 
 
 class ExternalFileMapping(BaseModel):
