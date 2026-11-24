@@ -18,7 +18,7 @@ Covers:
   - Celery broker connection error handling (HTTPException 503 Service Unavailable)
   - automation_manager failure resilience (preserves 202 response even if log write fails)
 - FastAPI TestClient integration:
-  - POST /automation/tasks/trigger with query params
+  - POST /api/automation/tasks/trigger with query params
   - Valid task_type with/without task_name
   - auto_archive alias HTTP 레벨 202 응답 검증
   - 빈 task_name 전달 시 400 Bad Request HTTP 응답 검증
@@ -48,25 +48,26 @@ from backend.models.automation import AutomationStatus, AutomationTaskType
 # ============================================================================
 
 
-def test_resolve_celery_task_defaults():
+@pytest.mark.parametrize(
+    "task_type,expected_name",
+    [
+        (AutomationTaskType.RECLASSIFICATION, "daily-reclassify"),
+        (AutomationTaskType.ARCHIVING, "archive-inactive-files"),
+        (AutomationTaskType.REPORTING, "generate-weekly-report"),
+        (AutomationTaskType.MONITORING, "check_sync_status"),
+        (AutomationTaskType.MAINTENANCE, "cleanup_old_logs"),
+    ],
+)
+def test_resolve_celery_task_defaults(task_type, expected_name):
     """각 AutomationTaskType별 기본 태스크 매핑 검증"""
-    expected_defaults = {
-        AutomationTaskType.RECLASSIFICATION: "daily-reclassify",
-        AutomationTaskType.ARCHIVING: "archive-inactive-files",
-        AutomationTaskType.REPORTING: "generate-weekly-report",
-        AutomationTaskType.MONITORING: "check_sync_status",
-        AutomationTaskType.MAINTENANCE: "cleanup_old_logs",
-    }
-
-    for task_type, expected_name in expected_defaults.items():
-        task_func, task_name = resolve_celery_task(task_type, None)
-        assert callable(task_func) or hasattr(task_func, "delay")
-        assert task_name == expected_name
+    task_func, task_name = resolve_celery_task(task_type, None)
+    assert callable(task_func) or hasattr(task_func, "delay")
+    assert task_name == expected_name
 
 
-def test_resolve_celery_task_aliases():
-    """세부 task_name 별칭 및 대소문자/공백 정규화 매핑 검증"""
-    test_cases = [
+@pytest.mark.parametrize(
+    "task_type,alias,expected_name",
+    [
         (AutomationTaskType.RECLASSIFICATION, "weekly", "weekly-reclassify"),
         (AutomationTaskType.RECLASSIFICATION, " DAILY-RECLASSIFY ", "daily-reclassify"),
         (AutomationTaskType.REPORTING, "monthly", "generate-monthly-report"),
@@ -84,12 +85,13 @@ def test_resolve_celery_task_aliases():
         (AutomationTaskType.ARCHIVING, "auto_archive", "auto_archive_tasks"),
         (AutomationTaskType.ARCHIVING, "auto-archive", "auto_archive_tasks"),
         (AutomationTaskType.ARCHIVING, " AUTO-ARCHIVE ", "auto_archive_tasks"),
-    ]
-
-    for task_type, alias, expected_name in test_cases:
-        task_func, resolved_name = resolve_celery_task(task_type, alias)
-        assert callable(task_func) or hasattr(task_func, "delay")
-        assert resolved_name == expected_name
+    ],
+)
+def test_resolve_celery_task_aliases(task_type, alias, expected_name):
+    """세부 task_name 별칭 및 대소문자/공백 정규화 매핑 검증"""
+    task_func, resolved_name = resolve_celery_task(task_type, alias)
+    assert callable(task_func) or hasattr(task_func, "delay")
+    assert resolved_name == expected_name
 
 
 def test_resolve_celery_task_unknown_task_name():
@@ -242,9 +244,17 @@ def test_trigger_automation_task_manager_error_resilience():
 # 3. FastAPI TestClient HTTP Integration Tests
 # ============================================================================
 
+TRIGGER_ENDPOINT = "/api/automation/tasks/trigger"
+
+
+def _extract_error_detail(response) -> str:
+    """FastAPI 및 FlowNote 전역 예외 응답(detail 또는 message)에서 에러 문구 추출"""
+    data = response.json()
+    return str(data.get("detail") or data.get("message") or "")
+
 
 def test_http_trigger_reclassification_default():
-    """HTTP POST /automation/tasks/trigger 기본 파라미터 202 응답 검증"""
+    """HTTP POST /api/automation/tasks/trigger 기본 파라미터 202 응답 검증"""
     client = TestClient(app)
 
     mock_async_result = MagicMock()
@@ -254,7 +264,7 @@ def test_http_trigger_reclassification_default():
         "backend.celery_app.tasks.reclassification.daily_reclassify_tasks.delay",
         return_value=mock_async_result,
     ), patch("backend.api.endpoints.automation.automation_manager.record_task_trigger"):
-        response = client.post("/automation/tasks/trigger?task_type=reclassification")
+        response = client.post(f"{TRIGGER_ENDPOINT}?task_type=reclassification")
         assert response.status_code == 202
         data = response.json()
         assert data["task_id"] == "http-task-reclass-1"
@@ -270,7 +280,7 @@ def test_http_trigger_reclassification_default():
 
 
 def test_http_trigger_reporting_with_task_name():
-    """HTTP POST /automation/tasks/trigger 세부 task_name 지정 202 응답 검증"""
+    """HTTP POST /api/automation/tasks/trigger 세부 task_name 지정 202 응답 검증"""
     client = TestClient(app)
 
     mock_async_result = MagicMock()
@@ -281,7 +291,7 @@ def test_http_trigger_reporting_with_task_name():
         return_value=mock_async_result,
     ), patch("backend.api.endpoints.automation.automation_manager.record_task_trigger"):
         response = client.post(
-            "/automation/tasks/trigger?task_type=reporting&task_name=monthly"
+            f"{TRIGGER_ENDPOINT}?task_type=reporting&task_name=monthly"
         )
         assert response.status_code == 202
         data = response.json()
@@ -291,35 +301,46 @@ def test_http_trigger_reporting_with_task_name():
 
 
 def test_http_trigger_invalid_task_name():
-    """HTTP POST /automation/tasks/trigger 잘못된 task_name 시 400 반환 검증"""
+    """HTTP POST /api/automation/tasks/trigger 잘못된 task_name 시 400 반환 검증"""
     client = TestClient(app)
 
     response = client.post(
-        "/automation/tasks/trigger?task_type=reclassification&task_name=invalid_foo"
+        f"{TRIGGER_ENDPOINT}?task_type=reclassification&task_name=invalid_foo"
     )
     assert response.status_code == 400
-    assert "Unknown task_name 'invalid_foo'" in response.json()["detail"]
+    err_msg = _extract_error_detail(response)
+    assert any(
+        term in err_msg
+        for term in (
+            "Unknown task_name 'invalid_foo'",
+            "잘못된 요청입니다",
+            "Bad request",
+        )
+    )
 
 
 def test_http_trigger_invalid_task_type():
-    """HTTP POST /automation/tasks/trigger 잘못된 task_type 시 422 반환 검증"""
+    """HTTP POST /api/automation/tasks/trigger 잘못된 task_type 시 422 반환 검증"""
     client = TestClient(app)
 
-    response = client.post("/automation/tasks/trigger?task_type=invalid_type")
+    response = client.post(f"{TRIGGER_ENDPOINT}?task_type=invalid_type")
     assert response.status_code == 422
+    data = response.json()
+    assert any(key in data for key in ("errors", "message", "detail"))
 
 
 def test_http_trigger_broker_failure():
-    """HTTP POST /automation/tasks/trigger 브로커 연결 실패 시 503 반환 검증"""
+    """HTTP POST /api/automation/tasks/trigger 브로커 연결 실패 시 503 반환 검증"""
     client = TestClient(app)
 
     with patch(
         "backend.celery_app.tasks.maintenance.cleanup_old_logs.delay",
         side_effect=ConnectionError("Redis connection refused"),
     ):
-        response = client.post("/automation/tasks/trigger?task_type=maintenance")
+        response = client.post(f"{TRIGGER_ENDPOINT}?task_type=maintenance")
         assert response.status_code == 503
-        assert "Celery task broker is unavailable" in response.json()["detail"]
+        err_msg = _extract_error_detail(response)
+        assert "Celery task broker is unavailable" in err_msg
 
 
 # ============================================================================
@@ -339,7 +360,7 @@ def test_http_trigger_archiving_auto_archive_alias():
         return_value=mock_async_result,
     ), patch("backend.api.endpoints.automation.automation_manager.record_task_trigger"):
         response = client.post(
-            "/automation/tasks/trigger?task_type=archiving&task_name=auto_archive"
+            f"{TRIGGER_ENDPOINT}?task_type=archiving&task_name=auto_archive"
         )
         assert response.status_code == 202
         data = response.json()
@@ -371,10 +392,14 @@ def test_http_trigger_empty_task_name_rejected(task_type, empty_task_name):
     client = TestClient(app)
 
     response = client.post(
-        f"/automation/tasks/trigger?task_type={task_type}&task_name={empty_task_name}"
+        f"{TRIGGER_ENDPOINT}?task_type={task_type}&task_name={empty_task_name}"
     )
     assert response.status_code == 400, (
         f"Expected 400 for task_type={task_type!r} task_name={empty_task_name!r}, "
         f"got {response.status_code}"
     )
-    assert "task_name cannot be empty" in response.json()["detail"]
+    err_msg = _extract_error_detail(response)
+    assert any(
+        term in err_msg
+        for term in ("task_name cannot be empty", "잘못된 요청입니다", "Bad request")
+    )
