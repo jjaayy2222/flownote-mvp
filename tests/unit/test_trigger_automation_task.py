@@ -143,6 +143,33 @@ def test_resolve_celery_task_empty_task_name_rejected(task_type, empty_task_name
 # ============================================================================
 
 
+def _assert_utc_datetime(dt: datetime) -> None:
+    """triggered_at이 timezone-aware UTC datetime인지 검증 (naive datetime 방지)"""
+    assert isinstance(dt, datetime)
+    assert (
+        dt.tzinfo is not None
+    ), "triggered_at must be timezone-aware (UTC). Got naive datetime without tzinfo."
+    assert (
+        dt.tzinfo == timezone.utc
+    ), f"triggered_at must be UTC, got tzinfo={dt.tzinfo}"
+
+
+def _assert_trigger_response(
+    response: TaskTriggerResponse,
+    expected_task_id: str,
+    expected_task_type: AutomationTaskType,
+    expected_task_name: str,
+) -> None:
+    """TaskTriggerResponse 객체의 공통 필드 및 UTC 타임스탬프 검증 헬퍼"""
+    assert isinstance(response, TaskTriggerResponse)
+    assert response.task_id == expected_task_id
+    assert response.task_type == expected_task_type
+    assert response.task_name == expected_task_name
+    assert response.status == "queued"
+    assert "successfully triggered" in response.message
+    _assert_utc_datetime(response.triggered_at)
+
+
 def test_trigger_automation_task_success():
     """수동 태스크 트리거 성공 시 .delay() 호출, 202 응답 및 매니저 이력 기록 검증"""
     mock_async_result = MagicMock()
@@ -154,44 +181,32 @@ def test_trigger_automation_task_success():
     with patch.dict(
         TASK_REGISTRY[AutomationTaskType.RECLASSIFICATION],
         {"default": (mock_celery_task, "daily-reclassify")},
-    ):
-        with patch(
-            "backend.api.endpoints.automation.automation_manager.record_task_trigger"
-        ) as mock_record:
-            response = trigger_automation_task(
-                task_type=AutomationTaskType.RECLASSIFICATION,
-                task_name=None,
-            )
+    ), patch(
+        "backend.api.endpoints.automation.automation_manager.record_task_trigger"
+    ) as mock_record:
+        response = trigger_automation_task(
+            task_type=AutomationTaskType.RECLASSIFICATION,
+            task_name=None,
+        )
 
-            assert isinstance(response, TaskTriggerResponse)
-            assert response.task_id == "celery-mock-id-777"
-            assert response.task_type == AutomationTaskType.RECLASSIFICATION
-            assert response.task_name == "daily-reclassify"
-            assert response.status == "queued"
-            assert "successfully triggered" in response.message
+        _assert_trigger_response(
+            response=response,
+            expected_task_id="celery-mock-id-777",
+            expected_task_type=AutomationTaskType.RECLASSIFICATION,
+            expected_task_name="daily-reclassify",
+        )
 
-            # triggered_at: UTC timezone-aware datetime 검증
-            # naive datetime(tzinfo=None)은 서버 로컬 시간 의존으로 국제화 오류 원인이 되므로 허용 안 함
-            assert isinstance(response.triggered_at, datetime)
-            assert response.triggered_at.tzinfo is not None, (
-                "triggered_at must be timezone-aware (UTC). "
-                "Got naive datetime without tzinfo."
-            )
-            assert (
-                response.triggered_at.tzinfo == timezone.utc
-            ), f"triggered_at must be UTC, got tzinfo={response.triggered_at.tzinfo}"
-
-            mock_celery_task.delay.assert_called_once()
-            mock_record.assert_called_once_with(
-                task_type=AutomationTaskType.RECLASSIFICATION,
-                task_name="daily-reclassify",
-                celery_task_id="celery-mock-id-777",
-                status=AutomationStatus.PENDING,
-                details={
-                    "trigger": "manual_api",
-                    "triggered_at": response.triggered_at.isoformat(),
-                },
-            )
+        mock_celery_task.delay.assert_called_once()
+        mock_record.assert_called_once_with(
+            task_type=AutomationTaskType.RECLASSIFICATION,
+            task_name="daily-reclassify",
+            celery_task_id="celery-mock-id-777",
+            status=AutomationStatus.PENDING,
+            details={
+                "trigger": "manual_api",
+                "triggered_at": response.triggered_at.isoformat(),
+            },
+        )
 
 
 def test_trigger_automation_task_broker_unavailable():
@@ -204,15 +219,14 @@ def test_trigger_automation_task_broker_unavailable():
     with patch.dict(
         TASK_REGISTRY[AutomationTaskType.ARCHIVING],
         {"default": (mock_celery_task, "archive-inactive-files")},
-    ):
-        with pytest.raises(HTTPException) as exc_info:
-            trigger_automation_task(
-                task_type=AutomationTaskType.ARCHIVING,
-                task_name=None,
-            )
+    ), pytest.raises(HTTPException) as exc_info:
+        trigger_automation_task(
+            task_type=AutomationTaskType.ARCHIVING,
+            task_name=None,
+        )
 
-        assert exc_info.value.status_code == 503
-        assert "Celery task broker is unavailable" in exc_info.value.detail
+    assert exc_info.value.status_code == 503
+    assert "Celery task broker is unavailable" in exc_info.value.detail
 
 
 def test_trigger_automation_task_manager_error_resilience():
@@ -226,18 +240,17 @@ def test_trigger_automation_task_manager_error_resilience():
     with patch.dict(
         TASK_REGISTRY[AutomationTaskType.MONITORING],
         {"default": (mock_celery_task, "check_sync_status")},
+    ), patch(
+        "backend.api.endpoints.automation.automation_manager.record_task_trigger",
+        side_effect=OSError("Disk full"),
     ):
-        with patch(
-            "backend.api.endpoints.automation.automation_manager.record_task_trigger",
-            side_effect=OSError("Disk full"),
-        ):
-            response = trigger_automation_task(
-                task_type=AutomationTaskType.MONITORING,
-                task_name=None,
-            )
+        response = trigger_automation_task(
+            task_type=AutomationTaskType.MONITORING,
+            task_name=None,
+        )
 
-            assert response.task_id == "celery-id-resilience"
-            assert response.status == "queued"
+        assert response.task_id == "celery-id-resilience"
+        assert response.status == "queued"
 
 
 # ============================================================================
@@ -253,6 +266,30 @@ def _extract_error_detail(response) -> str:
     return str(data.get("detail") or data.get("message") or "")
 
 
+def _assert_http_202_queued(
+    response,
+    expected_task_id: str,
+    expected_name: str,
+    expected_type: str | None = None,
+    check_utc_iso: bool = True,
+) -> dict:
+    """HTTP 202 응답 본문, 작업 ID/이름 및 queued 상태 검증 헬퍼"""
+    assert response.status_code == 202
+    data = response.json()
+    assert data["task_id"] == expected_task_id
+    assert data["task_name"] == expected_name
+    if expected_type is not None:
+        assert data["task_type"] == expected_type
+        assert data["status"] == "queued"
+    if check_utc_iso:
+        assert "triggered_at" in data
+        triggered_at_str = data["triggered_at"]
+        assert "+00:00" in triggered_at_str or triggered_at_str.endswith(
+            "Z"
+        ), f"triggered_at must be UTC ISO 8601, got: {triggered_at_str}"
+    return data
+
+
 def test_http_trigger_reclassification_default():
     """HTTP POST /api/automation/tasks/trigger 기본 파라미터 202 응답 검증"""
     client = TestClient(app)
@@ -265,18 +302,13 @@ def test_http_trigger_reclassification_default():
         return_value=mock_async_result,
     ), patch("backend.api.endpoints.automation.automation_manager.record_task_trigger"):
         response = client.post(f"{TRIGGER_ENDPOINT}?task_type=reclassification")
-        assert response.status_code == 202
-        data = response.json()
-        assert data["task_id"] == "http-task-reclass-1"
-        assert data["task_type"] == "reclassification"
-        assert data["task_name"] == "daily-reclassify"
-        assert data["status"] == "queued"
-        assert "triggered_at" in data
-        # UTC 오프셋이 ISO 8601 문자열에 포함되는지 검증 (+00:00 또는 Z)
-        triggered_at_str = data["triggered_at"]
-        assert "+00:00" in triggered_at_str or triggered_at_str.endswith(
-            "Z"
-        ), f"triggered_at must be UTC ISO 8601, got: {triggered_at_str}"
+        _assert_http_202_queued(
+            response,
+            expected_task_id="http-task-reclass-1",
+            expected_name="daily-reclassify",
+            expected_type="reclassification",
+            check_utc_iso=True,
+        )
 
 
 def test_http_trigger_reporting_with_task_name():
@@ -293,11 +325,13 @@ def test_http_trigger_reporting_with_task_name():
         response = client.post(
             f"{TRIGGER_ENDPOINT}?task_type=reporting&task_name=monthly"
         )
-        assert response.status_code == 202
-        data = response.json()
-        assert data["task_id"] == "http-task-report-monthly"
-        assert data["task_type"] == "reporting"
-        assert data["task_name"] == "generate-monthly-report"
+        _assert_http_202_queued(
+            response,
+            expected_task_id="http-task-report-monthly",
+            expected_name="generate-monthly-report",
+            expected_type="reporting",
+            check_utc_iso=False,
+        )
 
 
 def test_http_trigger_invalid_task_name():
@@ -320,13 +354,31 @@ def test_http_trigger_invalid_task_name():
 
 
 def test_http_trigger_invalid_task_type():
-    """HTTP POST /api/automation/tasks/trigger 잘못된 task_type 시 422 반환 검증"""
+    """HTTP POST /api/automation/tasks/trigger 잘못된 task_type 시 422 반환 및 errors 필드 검증"""
     client = TestClient(app)
 
     response = client.post(f"{TRIGGER_ENDPOINT}?task_type=invalid_type")
     assert response.status_code == 422
     data = response.json()
-    assert any(key in data for key in ("errors", "message", "detail"))
+
+    # FlowNote 422 응답 규약 검증: status='error', 'errors' 필드 필수 제공
+    assert data.get("status") == "error"
+    assert (
+        "errors" in data
+    ), f"422 response must contain documented 'errors' field: {data}"
+    errors = data["errors"]
+    assert isinstance(errors, list) and errors, "'errors' must be a non-empty list"
+
+    # 'errors' 항목 중 task_type 파라미터가 유효하지 않음을 식별하는지 검증
+    task_type_errors = [
+        err
+        for err in errors
+        if isinstance(err, dict) and "task_type" in err.get("loc", [])
+    ]
+    assert (
+        task_type_errors
+    ), f"Expected validation error for 'task_type' in errors: {errors}"
+    assert tuple(task_type_errors[0].get("loc", [])) == ("query", "task_type")
 
 
 def test_http_trigger_broker_failure():
@@ -362,15 +414,12 @@ def test_http_trigger_archiving_auto_archive_alias():
         response = client.post(
             f"{TRIGGER_ENDPOINT}?task_type=archiving&task_name=auto_archive"
         )
-        assert response.status_code == 202
-        data = response.json()
-        assert data["task_id"] == "http-task-auto-archive"
-        assert data["task_name"] == "auto_archive_tasks"
-        # UTC 오프셋 포함 여부 검증
-        triggered_at_str = data["triggered_at"]
-        assert "+00:00" in triggered_at_str or triggered_at_str.endswith(
-            "Z"
-        ), f"triggered_at must be UTC ISO 8601, got: {triggered_at_str}"
+        _assert_http_202_queued(
+            response,
+            expected_task_id="http-task-auto-archive",
+            expected_name="auto_archive_tasks",
+            check_utc_iso=True,
+        )
 
 
 @pytest.mark.parametrize(
