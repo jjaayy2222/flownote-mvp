@@ -269,24 +269,24 @@ def _extract_error_detail(response) -> str:
 def _assert_http_202_queued(
     response,
     expected_task_id: str,
+    expected_type: str,
     expected_name: str,
-    expected_type: str | None = None,
-    check_utc_iso: bool = True,
 ) -> dict:
-    """HTTP 202 응답 본문, 작업 ID/이름 및 queued 상태 검증 헬퍼"""
+    """HTTP 202 응답 본문, 작업 ID/유형/이름, queued 상태 및 UTC 타임스탬프 검증 헬퍼"""
     assert response.status_code == 202
     data = response.json()
+    assert isinstance(data, dict), f"Expected dict JSON response, got {type(data)}"
     assert data["task_id"] == expected_task_id
+    assert data["task_type"] == expected_type
     assert data["task_name"] == expected_name
-    if expected_type is not None:
-        assert data["task_type"] == expected_type
-        assert data["status"] == "queued"
-    if check_utc_iso:
-        assert "triggered_at" in data
-        triggered_at_str = data["triggered_at"]
-        assert "+00:00" in triggered_at_str or triggered_at_str.endswith(
-            "Z"
-        ), f"triggered_at must be UTC ISO 8601, got: {triggered_at_str}"
+    assert data["status"] == "queued"
+    assert "triggered_at" in data
+    triggered_at_str = data["triggered_at"]
+    assert "+00:00" in triggered_at_str or triggered_at_str.endswith(
+        "Z"
+    ), f"triggered_at must be UTC ISO 8601, got: {triggered_at_str}"
+    assert "message" in data
+    assert "successfully triggered" in data["message"]
     return data
 
 
@@ -305,9 +305,8 @@ def test_http_trigger_reclassification_default():
         _assert_http_202_queued(
             response,
             expected_task_id="http-task-reclass-1",
-            expected_name="daily-reclassify",
             expected_type="reclassification",
-            check_utc_iso=True,
+            expected_name="daily-reclassify",
         )
 
 
@@ -328,9 +327,8 @@ def test_http_trigger_reporting_with_task_name():
         _assert_http_202_queued(
             response,
             expected_task_id="http-task-report-monthly",
-            expected_name="generate-monthly-report",
             expected_type="reporting",
-            check_utc_iso=False,
+            expected_name="generate-monthly-report",
         )
 
 
@@ -417,8 +415,8 @@ def test_http_trigger_archiving_auto_archive_alias():
         _assert_http_202_queued(
             response,
             expected_task_id="http-task-auto-archive",
+            expected_type="archiving",
             expected_name="auto_archive_tasks",
-            check_utc_iso=True,
         )
 
 
