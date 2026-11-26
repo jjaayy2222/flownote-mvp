@@ -27,6 +27,7 @@ Covers:
   - Broker failure (503 Service Unavailable)
 """
 
+import re
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
@@ -154,6 +155,11 @@ def _assert_utc_datetime(dt: datetime) -> None:
     ), f"triggered_at must be UTC, got tzinfo={dt.tzinfo}"
 
 
+def _expected_trigger_message(task_name: str) -> str:
+    """엔드포인트가 반환하는 표준 태스크 트리거 성공 메시지 반환"""
+    return f"Automation task '{task_name}' successfully triggered and queued."
+
+
 def _assert_trigger_response(
     response: TaskTriggerResponse,
     expected_task_id: str,
@@ -166,7 +172,8 @@ def _assert_trigger_response(
     assert response.task_type == expected_task_type
     assert response.task_name == expected_task_name
     assert response.status == "queued"
-    assert "successfully triggered" in response.message
+    assert isinstance(response.message, str)
+    assert response.message == _expected_trigger_message(expected_task_name)
     _assert_utc_datetime(response.triggered_at)
 
 
@@ -266,6 +273,33 @@ def _extract_error_detail(response) -> str:
     return str(data.get("detail") or data.get("message") or "")
 
 
+_UTC_ISO_8601_PATTERN = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)$"
+)
+
+
+def _assert_utc_iso_timestamp(triggered_at_str: object) -> None:
+    """엄격한 UTC ISO 8601 형식('T' 구분자, '-00:00' 배제, 'Z'/'+'00:00' 오프셋) 및 파싱 검증"""
+    assert isinstance(
+        triggered_at_str, str
+    ), f"triggered_at must be a string, got {type(triggered_at_str)}"
+    assert _UTC_ISO_8601_PATTERN.fullmatch(triggered_at_str), (
+        "triggered_at must be strict UTC ISO 8601 ('T' separator, explicit UTC 'Z' or '+00:00'): "
+        f"{triggered_at_str!r}"
+    )
+    try:
+        triggered_at_dt = datetime.fromisoformat(triggered_at_str)
+    except ValueError as exc:
+        raise AssertionError(
+            f"triggered_at is not a valid ISO 8601 datetime: {triggered_at_str!r}"
+        ) from exc
+    utc_offset = triggered_at_dt.utcoffset()
+    assert utc_offset is not None and utc_offset.total_seconds() == 0, (
+        f"triggered_at must be UTC (offset=0), got offset={utc_offset}: "
+        f"{triggered_at_str!r}"
+    )
+
+
 def _assert_http_202_queued(
     response,
     expected_task_id: str,
@@ -281,36 +315,14 @@ def _assert_http_202_queued(
     assert data["task_name"] == expected_name
     assert data["status"] == "queued"
 
-    # triggered_at: ISO 8601 파싱 및 UTC 오프셋 검증
-    # 단순 문자열 포함 검사는 쓰레기값(e.g. "not-a-date+00:00")도 통과시키므로
-    # 실제 datetime으로 파싱하여 UTC timezone-aware 여부를 검증
     assert "triggered_at" in data, "Response must include 'triggered_at' field"
-    triggered_at_str = data["triggered_at"]
-    try:
-        triggered_at_dt = datetime.fromisoformat(triggered_at_str)
-    except ValueError as exc:
-        raise AssertionError(
-            f"triggered_at is not a valid ISO 8601 datetime: {triggered_at_str!r}"
-        ) from exc
-    utc_offset = triggered_at_dt.utcoffset()
-    assert (
-        utc_offset is not None
-    ), f"triggered_at must be timezone-aware (UTC), got naive datetime: {triggered_at_str!r}"
-    assert utc_offset.total_seconds() == 0, (
-        f"triggered_at must be UTC (offset=0), got offset={utc_offset}: "
-        f"{triggered_at_str!r}"
-    )
+    _assert_utc_iso_timestamp(data["triggered_at"])
 
-    # message: 엔드포인트 규약(성공 메시지 포함, 부정 패턴 미포함) 검증
-    # "not successfully triggered" 같은 부정 문구가 포함된 경우도 단순 in 검사는 통과하므로
-    # "and queued." 로 끝나는 패턴으로 엔드포인트 실제 형식에 맞춰 검증
     assert "message" in data, "Response must include 'message' field"
-    assert (
-        "successfully triggered" in data["message"]
-    ), f"Response message must indicate success: {data['message']!r}"
-    assert (
-        "and queued." in data["message"]
-    ), f"Response message must end with 'and queued.': {data['message']!r}"
+    assert isinstance(
+        data["message"], str
+    ), f"Response message must be a string, got {type(data['message'])}"
+    assert data["message"] == _expected_trigger_message(expected_name)
     return data
 
 
