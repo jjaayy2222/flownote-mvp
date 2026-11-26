@@ -280,13 +280,37 @@ def _assert_http_202_queued(
     assert data["task_type"] == expected_type
     assert data["task_name"] == expected_name
     assert data["status"] == "queued"
-    assert "triggered_at" in data
+
+    # triggered_at: ISO 8601 파싱 및 UTC 오프셋 검증
+    # 단순 문자열 포함 검사는 쓰레기값(e.g. "not-a-date+00:00")도 통과시키므로
+    # 실제 datetime으로 파싱하여 UTC timezone-aware 여부를 검증
+    assert "triggered_at" in data, "Response must include 'triggered_at' field"
     triggered_at_str = data["triggered_at"]
-    assert "+00:00" in triggered_at_str or triggered_at_str.endswith(
-        "Z"
-    ), f"triggered_at must be UTC ISO 8601, got: {triggered_at_str}"
-    assert "message" in data
-    assert "successfully triggered" in data["message"]
+    try:
+        triggered_at_dt = datetime.fromisoformat(triggered_at_str)
+    except ValueError as exc:
+        raise AssertionError(
+            f"triggered_at is not a valid ISO 8601 datetime: {triggered_at_str!r}"
+        ) from exc
+    utc_offset = triggered_at_dt.utcoffset()
+    assert (
+        utc_offset is not None
+    ), f"triggered_at must be timezone-aware (UTC), got naive datetime: {triggered_at_str!r}"
+    assert utc_offset.total_seconds() == 0, (
+        f"triggered_at must be UTC (offset=0), got offset={utc_offset}: "
+        f"{triggered_at_str!r}"
+    )
+
+    # message: 엔드포인트 규약(성공 메시지 포함, 부정 패턴 미포함) 검증
+    # "not successfully triggered" 같은 부정 문구가 포함된 경우도 단순 in 검사는 통과하므로
+    # "and queued." 로 끝나는 패턴으로 엔드포인트 실제 형식에 맞춰 검증
+    assert "message" in data, "Response must include 'message' field"
+    assert (
+        "successfully triggered" in data["message"]
+    ), f"Response message must indicate success: {data['message']!r}"
+    assert (
+        "and queued." in data["message"]
+    ), f"Response message must end with 'and queued.': {data['message']!r}"
     return data
 
 
