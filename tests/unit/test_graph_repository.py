@@ -22,9 +22,7 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from typing import Any
 
-import networkx as nx
 import pytest
 
 from backend.graph.base import AbstractGraphRepository, GraphLoadError
@@ -167,9 +165,20 @@ class TestNodeCRUD:
 
 
 class TestEdgeCRUD:
-    def test_add_and_has_edge(self, repo: NetworkXGraphRepository) -> None:
+    def _add_src_tgt_nodes(self, repo: NetworkXGraphRepository) -> None:
+        """src, tgt 테스트 노드를 추가한다."""
         repo.add_node(_DUMMY_HASH_A, "src")
         repo.add_node(_DUMMY_HASH_A, "tgt")
+
+    def _setup_weighted_edge(
+        self, repo: NetworkXGraphRepository, weight: float = 1.0
+    ) -> None:
+        """src, tgt 노드를 추가하고 가중치 엣지를 생성한다."""
+        self._add_src_tgt_nodes(repo)
+        repo.add_edge(_DUMMY_HASH_A, "src", "tgt", weight=weight)
+
+    def test_add_and_has_edge(self, repo: NetworkXGraphRepository) -> None:
+        self._add_src_tgt_nodes(repo)
         repo.add_edge(_DUMMY_HASH_A, "src", "tgt", weight=1.0, edge_type="explicit")
         assert repo.has_edge(_DUMMY_HASH_A, "src", "tgt") is True
 
@@ -181,11 +190,8 @@ class TestEdgeCRUD:
     def test_add_edge_is_idempotent_and_updates_attrs(
         self, repo: NetworkXGraphRepository
     ) -> None:
-        repo.add_node(_DUMMY_HASH_A, "src")
-        repo.add_node(_DUMMY_HASH_A, "tgt")
-
         # First add with initial attributes
-        repo.add_edge(_DUMMY_HASH_A, "src", "tgt", weight=0.5)
+        self._setup_weighted_edge(repo, weight=0.5)
 
         # Second add should be idempotent for existence, but update attributes
         repo.add_edge(_DUMMY_HASH_A, "src", "tgt", weight=0.9)
@@ -202,6 +208,16 @@ class TestEdgeCRUD:
         """존재하지 않는 엣지 제거 시 예외 없이 무시한다."""
         repo.remove_edge(_DUMMY_HASH_A, "ghost-src", "ghost-tgt")  # Must not raise
 
+    def test_remove_edge_removes_existing_edge_preserving_nodes(
+        self, repo: NetworkXGraphRepository
+    ) -> None:
+        """기존 엣지 제거 시 엣지만 삭제되고 양 끝 노드는 유지된다."""
+        self._setup_weighted_edge(repo)
+        repo.remove_edge(_DUMMY_HASH_A, "src", "tgt")
+        assert repo.has_edge(_DUMMY_HASH_A, "src", "tgt") is False
+        assert repo.has_node(_DUMMY_HASH_A, "src") is True
+        assert repo.has_node(_DUMMY_HASH_A, "tgt") is True
+
     def test_edge_is_directed(self, repo: NetworkXGraphRepository) -> None:
         """DiGraph 방향성 확인 — A→B는 B→A와 다르다."""
         repo.add_edge(_DUMMY_HASH_A, "a", "b")
@@ -217,9 +233,7 @@ class TestEdgeCRUD:
         self, repo: NetworkXGraphRepository
     ) -> None:
         """반환된 dict 변경이 내부 상태에 영향을 주지 않아야 한다."""
-        repo.add_node(_DUMMY_HASH_A, "src")
-        repo.add_node(_DUMMY_HASH_A, "tgt")
-        repo.add_edge(_DUMMY_HASH_A, "src", "tgt", weight=1.0)
+        self._setup_weighted_edge(repo)
 
         attrs = repo.get_edge_attrs(_DUMMY_HASH_A, "src", "tgt")
         assert attrs is not None
@@ -461,6 +475,40 @@ class TestClear:
         repo.add_node(_DUMMY_HASH_B, "n1")
         repo.clear(_DUMMY_HASH_A)
         assert repo.node_count(_DUMMY_HASH_B) == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# stateless_load (일회성 로드 및 자동 해제)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestStatelessLoad:
+    def test_stateless_load_loads_and_clears_on_exit(
+        self, repo: NetworkXGraphRepository, storage_path: str
+    ) -> None:
+        """블록 내부에서는 영속화된 그래프를 조회하고, 종료 시 인메모리 상태를 해제한다."""
+        repo.add_node(_DUMMY_HASH_A, "n1", title="Temp")
+        repo.persist(_DUMMY_HASH_A)
+
+        repo2 = NetworkXGraphRepository(storage_base_path=storage_path)
+        with repo2.stateless_load(_DUMMY_HASH_A) as loaded:
+            assert loaded.has_node(_DUMMY_HASH_A, "n1") is True
+            assert loaded.node_count(_DUMMY_HASH_A) == 1
+
+        assert repo2.node_count(_DUMMY_HASH_A) == 0
+        assert build_graph_path(_DUMMY_HASH_A, storage_path).exists()
+
+    def test_stateless_load_propagates_graph_load_error(
+        self, repo: NetworkXGraphRepository, storage_path: str
+    ) -> None:
+        """손상된 GraphML 파일 로드 시 GraphLoadError를 그대로 전파한다."""
+        invalid_path = build_graph_path(_DUMMY_HASH_A, storage_path)
+        invalid_path.parent.mkdir(parents=True, exist_ok=True)
+        invalid_path.write_text("corrupted graphml", encoding="utf-8")
+
+        with pytest.raises(GraphLoadError):
+            with repo.stateless_load(_DUMMY_HASH_A):
+                pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────
