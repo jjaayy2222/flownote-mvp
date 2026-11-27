@@ -21,10 +21,9 @@ Phase 4-2 Step 2: GraphHybridRouter 단위 테스트
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock, call, patch
+from typing import Any, Dict, List
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -541,6 +540,30 @@ class TestExceptionIsolation:
             hashed_user_id=_DUMMY_HASH,
         )
         assert result is simple_vector_results
+
+    def test_corrupted_graphml_falls_back_to_vector_results(
+        self,
+        healthy_registry: MagicMock,
+        repo: NetworkXGraphRepository,
+        storage_path: str,
+        simple_vector_results: List[Dict[str, Any]],
+    ) -> None:
+        """손상된 GraphML 파일로 인해 GraphLoadError 발생 시 vector_results로 폴백한다."""
+        from backend.graph.path_utils import build_graph_path
+
+        corrupted_path = build_graph_path(_DUMMY_HASH, storage_path)
+        corrupted_path.parent.mkdir(parents=True, exist_ok=True)
+        corrupted_path.write_text("corrupted graphml content", encoding="utf-8")
+
+        router = GraphHybridRouter(
+            health_registry=healthy_registry, graph_repository=repo
+        )
+        result = router.route_query(
+            "query",
+            simple_vector_results,
+            hashed_user_id=_DUMMY_HASH,
+        )
+        assert result == simple_vector_results
 
 
 # ─────────────────────────────────────────────────────────────────────────────

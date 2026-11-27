@@ -29,7 +29,7 @@ from backend.core.config.graph import (
 )
 from backend.core.config_validator import Subsystem
 from backend.core.health_registry import HealthRegistry
-from backend.graph.base import AbstractGraphRepository
+from backend.graph.base import AbstractGraphRepository, GraphLoadError
 
 logger = logging.getLogger(__name__)
 
@@ -385,7 +385,14 @@ class GraphHybridRouter:
                         graph_enriched.append(
                             _serialize_neighbor_node(neighbor_id, attrs)
                         )
-        except (ValueError, KeyError, OSError, RuntimeError, ImportError) as e:
+        except (
+            GraphLoadError,
+            ValueError,
+            KeyError,
+            OSError,
+            RuntimeError,
+            ImportError,
+        ) as e:
             log_agent_error(
                 logger,
                 "[GRAPH_ROUTER] Unexpected error during graph traversal. "
