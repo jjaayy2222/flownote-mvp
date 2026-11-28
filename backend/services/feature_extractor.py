@@ -138,7 +138,7 @@ class FeatureExtractor:
             return self._default_features()
 
     def _tokenize_words(self, text: str) -> List[str]:
-        """
+        r"""
         단어 토큰화 헬퍼 함수
 
         Note: 현재는 간단한 정규식(\b\w+\b)을 사용하여 문장부호를 제거하고 단어를 추출합니다.
